@@ -1,0 +1,24 @@
+struct Todo {
+    title: String
+}
+
+struct Todo { // error: declared more than once
+    name: String
+}
+
+view Text { // error: built-in name
+    Spacer()
+}
+
+fn useUnknown() {
+    let count = 1
+    print(cont) // error: cannot find `cont`
+    print(cuont) // error: did you mean `count`?
+    let t: Strng = "x" // error: unknown type `Strng`
+    let u = Todo // error: `Todo` is a struct
+    let v = Todo(title: "a")
+    print(v.titel) // error: has no field `titel`
+    let w = [1, 2]
+    print(w.cnt) // error: has no property `cnt`
+    w.push(3) // error: has no method `push`
+}

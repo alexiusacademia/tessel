@@ -1,0 +1,44 @@
+struct Todo {
+    title: String
+    done: Bool = false
+}
+
+fn mutate(todo: Todo) {
+    let n = 1
+    n = 2 // error: which is a constant
+    todo.done = true // error: which is a parameter
+    let list = [1, 2]
+    list.append(3) // error: because `append` changes it
+    var items = [1]
+    items.append(2)
+    [1, 2].append(3) // error: temporary value
+    state s = 1 // error: can only be declared directly inside a `view`
+}
+
+view Row(todo: bind Todo, label: String) {
+    Toggle(isOn: todo.done)
+    TextField("Label", text: label) // error: can't be given `label`, which is a parameter
+    TextField("Fixed", text: "x") // error: needs something it can change
+}
+
+app Main {
+    state todos: [Todo] = []
+    state draft = ""
+    let fixed = [Todo(title: "a")]
+
+    for todo in todos {
+        Row(todo: todo, label: "x")
+    }
+    for todo in fixed {
+        Row(todo: todo, label: "x") // error: which is a loop variable
+    }
+    draft = "x" // error: can't change values while they're being built
+    print("hi") // error: only views can appear here
+    "hello" // error: expected a view, found `String`
+    Text("a").tag(1) // error: only works on the options inside a `Picker`
+    var temp = 1 // error: `var` can't be used while building a view
+    Button("Add") {
+        todos.append(Todo(title: draft))
+        draft = ""
+    }
+}

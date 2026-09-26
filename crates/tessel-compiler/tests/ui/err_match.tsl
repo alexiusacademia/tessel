@@ -1,0 +1,37 @@
+enum Filter { all, active, done }
+
+fn label(f: Filter) -> String {
+    match f { // error: doesn't handle `.done`
+        .all -> "All"
+        .active -> "Active"
+    }
+}
+
+fn twice(f: Filter) -> Int {
+    match f {
+        .all -> 1
+        .all -> 2 // error: already handled
+        _ -> 3
+        .done -> 4 // error: can never run
+    }
+}
+
+fn unknown(f: Filter) -> Int {
+    match f {
+        .everything -> 1 // error: has no case `.everything`
+        _ -> 2
+    }
+}
+
+fn numbers(n: Int) -> String {
+    match n { // error: must handle every possible `Int`
+        1 -> "one"
+        2 -> "two"
+    }
+}
+
+fn dots() {
+    let f: Filter = .al // error: did you mean `.all`
+    let g = .all // error: can't tell which type `.all` belongs to
+    let h = Filter.none // error: has no case `.none`
+}

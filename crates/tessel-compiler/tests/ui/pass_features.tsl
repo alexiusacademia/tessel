@@ -1,0 +1,112 @@
+// Every line here must check without errors.
+
+struct Point {
+    x: Float
+    y: Float = 0
+
+    fn length() -> Float {
+        x * x + y * y
+    }
+
+    fn moveBy(dx: Float) {
+        x += dx
+    }
+}
+
+enum Shape {
+    circle(radius: Float)
+    rect(width: Float, height: Float)
+
+    fn area() -> Float {
+        match self {
+            .circle(r) -> 3.14 * r * r
+            .rect(w, h) -> w * h
+        }
+    }
+}
+
+fn describe(shape: Shape) -> String {
+    let a = shape.area()
+    if a > 100 { "big" } else if a > 10 { "medium" } else { "small" }
+}
+
+fn parse(text: String) -> Int? {
+    Int(text)
+}
+
+fn total(values: [Int]) -> Int {
+    var sum = 0
+    for v in values {
+        sum += v
+    }
+    for i in 0..3 {
+        sum += i
+    }
+    return sum
+}
+
+view Card(title: String, content: View) {
+    VStack(spacing: 4) {
+        Text(title).font(weight: .bold)
+        content
+    }
+    .padding()
+    .background(.gray, radius: 8)
+}
+
+app Showcase(title: "Showcase") {
+    state names: [String] = ["Ada", "Linus"]
+    state ages: [String: Int] = [:]
+    state selected: String? = nil
+    state point = Point(x: 1)
+    state shape = Shape.circle(radius: 2)
+    state enabled = true
+
+    Scroll {
+        Card(title: "People") {
+            for name in names {
+                HStack {
+                    Text(name)
+                    Spacer()
+                    Text("{ages[name] ?? 0} years")
+                }
+                .onTap { selected = name }
+            }
+            if let name = selected {
+                Text("Selected: {name}")
+            } else {
+                Text("Nobody selected")
+            }
+        }
+        Card(title: "Shapes") {
+            Text(describe(shape: shape))
+            match shape {
+                .circle(r) -> Text("Circle {r}")
+                .rect(_, _) -> Text("Rectangle")
+            }
+            Toggle("Enabled", isOn: enabled)
+            ZStack {
+                Image("logo.png").frame(width: 64, height: 64)
+            }
+        }
+        Button("Grow") { grow() }
+            .disabled(!enabled)
+    }
+
+    fn grow() {
+        point.moveBy(dx: 1.5)
+        names.append("Grace")
+        names = names.sorted()
+        ages["Grace"] = 85
+        let upper = names.map { n in n.uppercase() }
+        let long = names.filter { n in n.count > 3 }.count
+        print("{upper.joined(separator: ", ")} {long}")
+        selected = selected?.lowercase()
+        if let n = parse(text: "42") { print(n) }
+        after(seconds: 1) { enabled = !enabled }
+        fetch(url: "https://example.com") { text in
+            selected = text ?? "failed"
+        }
+        shape = .rect(width: 2, height: point.length())
+    }
+}

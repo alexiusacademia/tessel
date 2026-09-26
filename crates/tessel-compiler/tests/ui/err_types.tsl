@@ -1,0 +1,31 @@
+fn types() {
+    let a: Int = "hi" // error: expected `Int`, found `String`
+    let one = 1
+    let b = one + 2.5 // error: can't use `+` on `Int` and `Float`
+    let lit = 1 + 2.5
+    let c = nil // error: can't tell what type `nil` is
+    let d = [] // error: can't tell what type this empty list is
+    let e: Int = nil // error: `nil` can't be used as `Int`
+    let name: String? = nil
+    let f: String = name // error: expected `String`, found `String?`
+    let g = 5 ?? 3 // error: never `nil`
+    let h = "total: " + 5 // error: can't use `+` on `String` and `Int`
+    let i = if a > 1 { 1 } // error: has no `else`
+    print(name) // error: might be `nil`
+    print(name.count) // error: might be `nil`
+    let j = name?.count ?? 0
+    if 1 { } // error: expected `Bool`, found `Int`
+    print("{[1]}") // error: a list can't be shown as text
+}
+
+fn needsValue() -> Int {
+    let x = 1
+} // error: this block must end with `Int`
+
+fn noValue() {
+    return 5 // error: doesn't return a value
+}
+
+fn wrongReturn() -> String {
+    return 5 // error: expected `String`, found `Int`
+}

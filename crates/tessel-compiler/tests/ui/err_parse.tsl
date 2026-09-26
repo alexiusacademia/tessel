@@ -1,0 +1,30 @@
+fn semicolons() {
+    let a = 1; // error: doesn't use semicolons
+}
+
+fn strings() {
+    let s = "unterminated // error: missing its closing
+}
+
+fn operators(a: Bool, b: Bool) {
+    let c = a & b // error: unexpected `&`
+    let d = 1 < 2 < 3 // error: can't be chained
+}
+
+fn params(x) { // error: needs a type
+}
+
+fn keywordName() {
+    let match = 1 // error: is a keyword
+}
+
+enum E { a, b }
+
+fn arms(e: E) -> Int {
+    match e {
+        a -> 1 // error: start with a dot
+        .b -> 2
+    }
+}
+
+let top = 1 // error: can't be declared at the top level

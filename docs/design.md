@@ -89,6 +89,13 @@ because lists, dictionaries and strings are copy-on-write. This rules out
 reference cycles, which is what lets plain reference counting manage all
 memory without a garbage collector.
 
+**Number literals** take their type from context: `12` is a `Float` where a
+`Float` is expected, and `1 + 2.5` is a `Float`. Variables never convert
+implicitly: if `count` is an `Int`, `count + 2.5` is an error.
+
+**Converting text to numbers** can fail, so `Int("42")` and `Float("1.5")`
+return optionals (`Int?`, `Float?`).
+
 **Inference:** variable types are inferred from their initial value. Function
 parameters and non-`View` return types are written out. An empty literal
 needs a type: `state todos: [Todo] = []`.
@@ -159,8 +166,11 @@ enum Shape {
 }
 ```
 
-Structs and enums may declare methods with `fn` inside their body; methods
-that change fields may only be called on a `var`, `state` or `bind`.
+Structs and enums may declare methods with `fn` inside their body. Inside a
+method, fields are available by name and `self` is the whole value (so an enum
+method can `match self { … }`). `self` is not a keyword, just a name that
+exists inside methods. Methods that change fields may only be called on a
+`var`, `state` or `bind`.
 
 ## 7. Control flow
 
@@ -391,7 +401,7 @@ Still open, not blocking v1:
 | # | Milestone | Done when |
 |---|---|---|
 | M0 | This design doc | Syntax approved (see §11). ✅ |
-| M1 | Front end | `tessel check` parses and type-checks both examples, with clear errors for bad programs. |
+| M1 | Front end | `tessel check` parses and type-checks both examples, with clear errors for bad programs. ✅ |
 | M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. |
 | M3 | First window | `examples/counter.tsl` runs on macOS: window, text, stacks, buttons, state. |
 | M4 | Real app | `examples/todos.tsl` runs on macOS: text fields, toggles, pickers, loops, bindings. |

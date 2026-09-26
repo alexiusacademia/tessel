@@ -1,0 +1,30 @@
+fn area(width: Float, height: Float) -> Float {
+    width * height
+}
+
+fn double(n: Int) -> Int {
+    n * 2
+}
+
+fn calls() {
+    let a = area(2.0, height: 3.0) // error: needs its label `width:`
+    let b = area(width: 2.0, heigth: 3.0) // error: did you mean `height:`
+    let c = area(width: 2.0) // error: is missing `height:`
+    let d = area(height: 3.0, width: 2.0) // error: wrong position
+    let e = double(4)
+    let f = double(4, 5) // error: too many arguments
+    let g = double(n: "4") // error: expected `Int`, found `String`
+    let h = double(4) { print("x") } // error: doesn't take a block
+    let i = area // allowed: functions are values
+    let j = i(2.0, 3.0)
+}
+
+view Labels {
+    Text(text: "hi") // error: without a label
+    Button("Go") // error: is missing `action:`
+    VStack(spacing: "wide") { // error: expected `Float`, found `String`
+        Text("a")
+    }
+    Text("a").padding(size: 4) // error: has no parameter `size:`
+    Text("a").shadow(2) // error: no modifier `.shadow`
+}

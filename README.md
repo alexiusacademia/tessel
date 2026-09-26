@@ -14,8 +14,9 @@ app Counter(width: 320, height: 200) {
 }
 ```
 
-**Status:** early design. Nothing runs yet. See [docs/design.md](docs/design.md)
-for the language design and the milestone plan.
+**Status:** the front end works: `tessel check` parses and type-checks
+programs and reports errors. Nothing runs yet (that's milestone M2). See
+[docs/design.md](docs/design.md) for the language design and the milestone plan.
 
 ## Layout
 
@@ -31,5 +32,6 @@ for the language design and the milestone plan.
 
 ```sh
 cargo build
-./target/debug/tessel version
+./target/debug/tessel check examples/todos.tsl   # a file, or a folder of .tsl files
+cargo test                                        # unit tests + tests/ui error fixtures
 ```
