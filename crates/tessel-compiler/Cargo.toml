@@ -5,3 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+inkwell = { version = "0.10", features = ["llvm22-1-prefer-dynamic"] }
+
+[lints]
+workspace = true

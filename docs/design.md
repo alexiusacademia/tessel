@@ -100,6 +100,10 @@ return optionals (`Int?`, `Float?`).
 parameters and non-`View` return types are written out. An empty literal
 needs a type: `state todos: [Todo] = []`.
 
+**Optional chaining** short-circuits the whole chain, as in Swift: in
+`user?.address.city`, if `user` is `nil` the result is `nil`, and `.city`
+needs no second `?`.
+
 **Leading-dot shorthand:** when the expected type is known, `.name` refers to
 a case or constant of that type: `.bold`, `.red`, `Filter.all` → `.all`.
 
@@ -248,7 +252,10 @@ body is a list of view expressions plus any number of `state` declarations
 and `fn` helpers (which may read and change state).
 
 `app Name(width:, height:, title:) { … }` declares the program's entry point:
-a view that also owns the main window. A program has exactly one `app`.
+a view that also owns the main window.
+
+A program without a UI (a command-line tool, or a test) uses `fn main() { … }`
+instead. A program has exactly one entry point: an `app` or a `fn main()`.
 
 ### 8.2 State
 
@@ -367,6 +374,16 @@ with a reference count. Because every value is a value type (§4), cycles
 cannot be created, so reference counting alone frees everything. Mutation of
 a shared object copies it first (copy-on-write).
 
+Every expression produces an owned value; storing it moves it, and each
+variable is released when its scope ends (including on early `return`).
+`cargo test` runs every program in `tests/run/` under the macOS `leaks` tool.
+
+Known gaps (M2): an early `return` from inside a larger expression (for
+example `f(a(), if c { return 1 } else { 2 })`) can leak the already-evaluated
+`a()`. Iterating a changeable list that is itself nested in another list's
+element (`for x in outer[i].items`) while appending to `outer` in the loop
+body is not safe yet.
+
 ### 10.3 Runtime interface
 
 The runtime exposes a small C ABI that generated code calls. It is internal
@@ -402,7 +419,7 @@ Still open, not blocking v1:
 |---|---|---|
 | M0 | This design doc | Syntax approved (see §11). ✅ |
 | M1 | Front end | `tessel check` parses and type-checks both examples, with clear errors for bad programs. ✅ |
-| M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. |
+| M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. ✅ |
 | M3 | First window | `examples/counter.tsl` runs on macOS: window, text, stacks, buttons, state. |
 | M4 | Real app | `examples/todos.tsl` runs on macOS: text fields, toggles, pickers, loops, bindings. |
 | M5 | Windows | Both examples run on Windows from the same source. |

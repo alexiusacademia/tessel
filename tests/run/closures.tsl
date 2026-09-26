@@ -1,0 +1,60 @@
+struct Counter {
+    count: Int = 0
+
+    fn addAll(values: [Int]) {
+        for v in values.filter({ x in x > count }) {
+            count += v
+        }
+    }
+}
+
+fn makeAdder(amount: Int) -> fn(Int) -> Int {
+    { x in x + amount }
+}
+
+fn apply(f: fn(Int) -> Int, value: Int) -> Int {
+    f(value)
+}
+
+fn double(n: Int) -> Int {
+    n * 2
+}
+
+fn main() {
+    let add5 = makeAdder(amount: 5)
+    print(add5(10))
+    print(apply(f: add5, value: 1))
+    print(apply(f: double, value: 21))
+
+    var total = 0
+    let bump = { total += 1 }
+    bump()
+    bump()
+    print(total)
+
+    var log: [String] = []
+    let items = ["a", "b", "c"]
+    let upper = items.map { s in
+        log.append(s)
+        s.uppercase()
+    }
+    print(upper.joined(separator: ""))
+    print(log.count)
+
+    var c = Counter()
+    c.addAll(values: [1, 5, 2, 9])
+    print(c.count)
+
+    var name: String? = nil
+    print(name?.count ?? -1)
+    name = "Ada"
+    print(name?.count ?? -1)
+    print(name?.uppercase() ?? "none")
+    if let n = name {
+        print("hello {n}")
+    }
+    print(name == "Ada")
+    print(name != nil)
+    name = nil
+    print(name == nil)
+}

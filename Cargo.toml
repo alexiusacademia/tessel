@@ -6,3 +6,7 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+
+[workspace.lints.clippy]
+# Nested `if let` + condition often reads more clearly than a let-chain here.
+collapsible_if = "allow"

@@ -1,0 +1,115 @@
+// Edge cases for reference counting; the test also checks for leaks.
+
+struct Tag {
+    name: String
+    note: String? = nil
+}
+
+struct Item {
+    title: String
+    tags: [Tag] = []
+}
+
+enum Event {
+    added(item: Item)
+    renamed(from: String, to: String)
+    cleared
+}
+
+fn findTitle(items: [Item], prefix: String) -> String? {
+    for item in items {
+        if item.title.hasPrefix(prefix) {
+            return item.title
+        }
+    }
+    return nil
+}
+
+fn describe(e: Event) -> String {
+    match e {
+        .added(item) -> "added {item.title} with {item.tags.count} tags"
+        .renamed(a, b) -> "renamed {a} to {b}"
+        .cleared -> "cleared"
+    }
+}
+
+fn makeGreeters(names: [String]) -> [fn() -> String] {
+    var out: [fn() -> String] = []
+    for name in names {
+        out.append({ "hi {name}" })
+    }
+    out
+}
+
+fn main() {
+    var items = [Item(title: "alpha"), Item(title: "beta", tags: [Tag(name: "x")])]
+    items[0].tags.append(Tag(name: "new", note: "fresh"))
+    items[1].tags[0].note = "changed"
+    let snapshot = items
+    items[1].tags[0].name = "renamed"
+    print("{snapshot[1].tags[0].name} {items[1].tags[0].name}")
+    print(items[1].tags[0].note ?? "none")
+    print(items[0].tags[0].note?.uppercase() ?? "none")
+
+    print(findTitle(items: items, prefix: "be") ?? "missing")
+    print(findTitle(items: items, prefix: "zz") ?? "missing")
+
+    let events = [Event.added(item: items[0]), .renamed(from: "a", to: "b"), .cleared]
+    for e in events {
+        print(describe(e: e))
+    }
+
+    let greeters = makeGreeters(names: ["ada", "grace"])
+    for g in greeters {
+        print(g())
+    }
+
+    var counter = 0
+    let increments = [1, 2, 3].map { n in { counter += n } }
+    for inc in increments {
+        inc()
+    }
+    print(counter)
+
+    var text = "a"
+    for i in 0..3 {
+        if i == 2 {
+            text += "!"
+        } else {
+            text += "{i}"
+        }
+    }
+    print(text)
+
+    let sorted = items.sorted(by: { a, b in a.title > b.title }).map { i in i.title }
+    print(sorted.joined(separator: " "))
+    items.removeAll(where: { i in i.tags.isEmpty })
+    print(items.count)
+
+    var lookup: [String: [Int]] = ["odd": [1, 3], "even": []]
+    lookup["even"] = [2]
+    print(lookup["odd"]?.count ?? 0)
+    print(lookup["none"]?.count ?? 0)
+
+    var maybe: Item? = Item(title: "opt", tags: [Tag(name: "t")])
+    print(maybe?.tags.count ?? 0)
+    maybe = nil
+    print(maybe?.title ?? "gone")
+    check()
+}
+
+fn firstLong(words: [String]) -> Int {
+    for w in words {
+        match w.count > 3 {
+            true -> {
+                return w.count
+            }
+            false -> print("short {w}")
+        }
+    }
+    -1
+}
+
+fn check() {
+    print(firstLong(words: ["ab", "abcdef", "x"]))
+}

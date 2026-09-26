@@ -29,3 +29,15 @@ fn noValue() {
 fn wrongReturn() -> String {
     return 5 // error: expected `String`, found `Int`
 }
+
+struct Loop { // error: contains itself
+    next: Loop?
+}
+
+struct Tree {
+    children: [Tree]
+}
+
+fn keys() {
+    let d: [[Int]: String] = [:] // error: can't be used as a dictionary key
+}

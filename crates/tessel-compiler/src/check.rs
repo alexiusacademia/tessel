@@ -10,12 +10,70 @@ use crate::diag::{suggest, Diagnostic, Diagnostics};
 use crate::source::Span;
 use crate::types::*;
 
-/// Result of checking a program.
+/// Result of checking a program: everything code generation needs.
 pub struct Checked {
     pub types: HashMap<ExprId, Ty>,
+    pub calls: HashMap<ExprId, CallInfo>,
+    pub structs: Vec<StructDef>,
+    pub enums: Vec<EnumDef>,
+    /// Signatures of top-level functions.
+    pub fns: HashMap<String, FnSig>,
+    /// Type of each local variable, keyed by the span of its name.
+    pub locals: HashMap<Span, Ty>,
+    /// `for` loop variables (by name span) that are places in the list,
+    /// so changing them changes the list.
+    pub loop_places: HashSet<Span>,
 }
 
-pub fn check_program(program: &Program, diags: &mut Diagnostics, require_app: bool) -> Checked {
+/// What a call expression resolved to.
+#[derive(Clone, Debug)]
+pub enum Callee {
+    /// A top-level user function.
+    Fn(String),
+    /// A struct or enum method; the receiver is the callee's object.
+    Method { owner: Ty, name: String },
+    /// A method called by bare name inside another method of the same type.
+    SelfMethod { owner: Ty, name: String },
+    /// A function declared inside a view.
+    ViewFn(String),
+    /// A method of a built-in type (`[T]`, `String`, `[K: V]`).
+    Builtin { recv: Ty, name: String },
+    /// `print`, `fetch`, `after`, `Int(…)`, `Float(…)`, `String(…)`.
+    BuiltinFn(String),
+    StructInit(usize),
+    /// Enum id and case index.
+    EnumCase(usize, usize),
+    View(String),
+    BuiltinView(String),
+    Modifier(String),
+    /// Calling a value of function type.
+    Value,
+}
+
+/// Where each parameter's value comes from, in parameter order.
+#[derive(Clone, Copy, Debug)]
+pub enum ArgRef {
+    /// Index into the call's argument list.
+    Arg(usize),
+    /// The trailing block.
+    Trailing,
+}
+
+#[derive(Clone, Debug)]
+pub struct CallInfo {
+    pub callee: Callee,
+    /// `None` means the parameter's default value is used.
+    pub args: Vec<Option<ArgRef>>,
+}
+
+#[derive(Default)]
+struct CallFrame {
+    callee: Option<Callee>,
+    args: Vec<Option<ArgRef>>,
+}
+
+/// Checks a whole program. With `require_entry`, it must have an `app` or a `fn main()`.
+pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: bool) -> Checked {
     let enums = builtins::enums();
     let mut globals = HashMap::new();
     for (i, e) in enums.iter().enumerate() {
@@ -35,11 +93,34 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_app: bo
         returns: Vec::new(),
         tag_ty: None,
         types: HashMap::new(),
+        calls: HashMap::new(),
+        frames: Vec::new(),
+        locals: HashMap::new(),
+        loop_places: HashSet::new(),
     };
-    let ids = c.collect(program, require_app);
+    let ids = c.collect(program, require_entry);
     c.signatures(program, &ids);
+    c.check_main(program, require_entry);
+    c.check_recursive_structs();
     c.bodies(program, &ids);
-    Checked { types: c.types }
+    let fns = program
+        .items
+        .iter()
+        .zip(&ids)
+        .filter_map(|(item, id)| match (item, id) {
+            (Item::Fn(f), Some(id)) => Some((f.name.name.clone(), c.fns[*id].clone())),
+            _ => None,
+        })
+        .collect();
+    Checked {
+        types: c.types,
+        calls: c.calls,
+        structs: c.structs,
+        enums: c.enums,
+        fns,
+        locals: c.locals,
+        loop_places: c.loop_places,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -64,7 +145,13 @@ enum Kind {
     LoopLet,
     Field,
     SelfValue,
-    Fn(FnSig),
+    Fn(FnSig, FnOrigin),
+}
+
+#[derive(Clone, Debug)]
+enum FnOrigin {
+    Method(Ty),
+    View,
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +192,11 @@ struct Checker<'a> {
     /// Inside a `Picker`'s content: the type `.tag(…)` expects.
     tag_ty: Option<Ty>,
     types: HashMap<ExprId, Ty>,
+    calls: HashMap<ExprId, CallInfo>,
+    /// One frame per call being checked, innermost last.
+    frames: Vec<CallFrame>,
+    locals: HashMap<Span, Ty>,
+    loop_places: HashSet<Span>,
 }
 
 impl Checker<'_> {
@@ -181,6 +273,10 @@ impl Checker<'_> {
         if name.name == "_" {
             return;
         }
+        self.locals.insert(name.span, ty.clone());
+        if matches!(kind, Kind::LoopPlace) {
+            self.loop_places.insert(name.span);
+        }
         let scope = self.scopes.last_mut().expect("no scope");
         if let Some(prev) = scope.iter().find(|l| l.name == name.name) {
             let prev = prev.span;
@@ -219,7 +315,7 @@ impl Checker<'_> {
 
     // ===== pass 1: collect global names =====
 
-    fn collect(&mut self, program: &Program, require_app: bool) -> Vec<Option<usize>> {
+    fn collect(&mut self, program: &Program, require_entry: bool) -> Vec<Option<usize>> {
         let mut ids = Vec::new();
         let mut app: Option<Span> = None;
         for item in &program.items {
@@ -275,9 +371,14 @@ impl Checker<'_> {
             self.user_spans.insert(name.name.clone(), name.span);
             ids.push(id);
         }
-        if require_app && app.is_none() {
-            self.error(Span::default(), "this program has no `app`")
-                .help("add an entry point, like `app Hello { Text(\"Hello\") }`");
+        let has_main = program.items.iter().any(|i| matches!(i, Item::Fn(f) if f.name.name == "main"));
+        if require_entry && app.is_none() && !has_main {
+            self.error(Span::default(), "this program has no entry point")
+                .help("add an `app`, like `app Hello { Text(\"Hello\") }`, or a `fn main() { … }`");
+        }
+        if let (Some(app), true) = (app, has_main) {
+            self.error(app, "a program can have an `app` or a `fn main()`, but not both")
+                .help("remove `fn main()`; the `app` is where the program starts");
         }
         ids
     }
@@ -324,8 +425,9 @@ impl Checker<'_> {
                 },
             },
             TypeExpr::List(t, _) => Ty::list(self.resolve(t)),
-            TypeExpr::Dict(k, v, _) => {
-                let k = self.resolve(k);
+            TypeExpr::Dict(kt, v, _) => {
+                let k = self.resolve(kt);
+                self.check_key(&k, kt.span());
                 let v = self.resolve(v);
                 Ty::Dict(Box::new(k), Box::new(v))
             }
@@ -449,6 +551,46 @@ impl Checker<'_> {
         }
     }
 
+    fn check_main(&mut self, program: &Program, require_entry: bool) {
+        if !require_entry {
+            return;
+        }
+        for item in &program.items {
+            if let Item::Fn(f) = item {
+                if f.name.name == "main" && (!f.params.is_empty() || f.ret.is_some()) {
+                    self.error(f.name.span, "`main` can't take parameters or return a value")
+                        .help("declare it as `fn main() { … }`");
+                }
+            }
+        }
+    }
+
+    /// A struct can't contain itself (directly or through other structs or
+    /// optionals): its values would be infinitely large. Lists are fine.
+    fn check_recursive_structs(&mut self) {
+        fn reaches(structs: &[StructDef], from: usize, target: usize, seen: &mut HashSet<usize>) -> bool {
+            fn inline_structs(t: &Ty, out: &mut Vec<usize>) {
+                match t {
+                    Ty::Struct(id) => out.push(*id),
+                    Ty::Opt(inner) => inline_structs(inner, out),
+                    _ => {}
+                }
+            }
+            let mut next = Vec::new();
+            for f in &structs[from].fields {
+                inline_structs(&f.ty, &mut next);
+            }
+            next.into_iter().any(|id| id == target || (seen.insert(id) && reaches(structs, id, target, seen)))
+        }
+        for id in 0..self.structs.len() {
+            if reaches(&self.structs, id, id, &mut HashSet::new()) {
+                let (span, name) = (self.structs[id].span, self.structs[id].name.clone());
+                self.error(span, format!("`{name}` contains itself, so its values would be infinitely large"))
+                    .help("use a list (`[T]`) for nested items, like `children: [Node]`");
+            }
+        }
+    }
+
     // ===== pass 3: bodies =====
 
     fn bodies(&mut self, program: &Program, ids: &[Option<usize>]) {
@@ -469,7 +611,7 @@ impl Checker<'_> {
                     for f in &d.fields {
                         if let Some(default) = &f.default {
                             let ty = self.resolve(&f.ty);
-                            self.with_scope(|c| c.expect(default, &ty));
+                            self.default_value(default, &ty);
                         }
                     }
                     let fields: Vec<Local> = self.structs[id]
@@ -507,7 +649,7 @@ impl Checker<'_> {
                 scope.push(Local {
                     name: other.name.clone(),
                     ty: fn_type(&other.sig),
-                    kind: Kind::Fn(other.sig.clone()),
+                    kind: Kind::Fn(other.sig.clone(), FnOrigin::Method(self_ty.clone())),
                     span: other.span,
                 });
             }
@@ -520,7 +662,7 @@ impl Checker<'_> {
         self.with_scope(|c| {
             for (p, ps) in f.params.iter().zip(&sig.params) {
                 if let Some(default) = &p.default {
-                    c.expect(default, &ps.ty);
+                    c.default_value(default, &ps.ty);
                 }
                 c.declare(&p.name, ps.ty.clone(), Kind::Param);
             }
@@ -530,11 +672,20 @@ impl Checker<'_> {
         });
     }
 
+    /// Default values are evaluated where the call is made, so they can only
+    /// use global names, not other parameters or local variables.
+    fn default_value(&mut self, e: &Expr, ty: &Ty) {
+        let saved = std::mem::take(&mut self.scopes);
+        self.scopes.push(Vec::new());
+        self.expect(e, ty);
+        self.scopes = saved;
+    }
+
     fn view_body(&mut self, params: &[Param], sig: &[ParamSig], body: &Block, name: &Ident) {
         self.with_scope(|c| {
             for (p, ps) in params.iter().zip(sig) {
                 if let Some(default) = &p.default {
-                    c.expect(default, &ps.ty);
+                    c.default_value(default, &ps.ty);
                 }
                 let kind = if ps.bind { Kind::Bind } else { Kind::Param };
                 c.declare(&p.name, ps.ty.clone(), kind);
@@ -548,7 +699,7 @@ impl Checker<'_> {
             for s in &body.stmts {
                 if let Stmt::Fn(f) = s {
                     let sig = c.fn_sig(f);
-                    c.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone()));
+                    c.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone(), FnOrigin::View));
                     fns.push((f, sig));
                 }
             }
@@ -722,7 +873,7 @@ impl Checker<'_> {
                         decl: l.span,
                         help: "loop over a `var` or `state` list to be able to change its items",
                     }),
-                    Kind::Fn(_) => Err(PlaceErr::NotPlace),
+                    Kind::Fn(..) => Err(PlaceErr::NotPlace),
                 },
                 None => Err(PlaceErr::NotPlace),
             },
@@ -965,7 +1116,11 @@ impl Checker<'_> {
                             .help("give it a type, like `var ages: [String: Int] = [:]`");
                         return Ty::Error;
                     }
-                    (None, Some((k, v))) => (self.expr(k, None), self.expr(v, None)),
+                    (None, Some((k, v))) => {
+                        let kt = self.expr(k, None);
+                        self.check_key(&kt, k.span);
+                        (kt, self.expr(v, None))
+                    }
                 };
                 let skip = if expected.is_some() { 0 } else { 1 };
                 for (pk, pv) in &pairs[skip..] {
@@ -989,7 +1144,13 @@ impl Checker<'_> {
             }
             ExprKind::Binary(op, l, r) => self.binary(*op, l, r, expected),
             ExprKind::Call { callee, args, trailing } => {
-                self.call(callee, args, trailing.as_deref(), e.span, expected)
+                self.frames.push(CallFrame::default());
+                let t = self.call(callee, args, trailing.as_deref(), e.span, expected);
+                let frame = self.frames.pop().unwrap();
+                if let Some(callee) = frame.callee {
+                    self.calls.insert(e.id, CallInfo { callee, args: frame.args });
+                }
+                t
             }
             ExprKind::Member { object, name, optional } => self.member(object, name, *optional),
             ExprKind::Index(object, index) => {
@@ -1026,6 +1187,19 @@ impl Checker<'_> {
             ExprKind::Match { subject, arms } => self.match_expr(subject, arms, expected, e.span, Mode::Value),
             ExprKind::Block(b) => self.block(b, expected),
             ExprKind::Error => Ty::Error,
+        }
+    }
+
+    fn check_key(&mut self, t: &Ty, span: Span) {
+        let ok = match t {
+            Ty::Int | Ty::Str | Ty::Bool | Ty::Error => true,
+            Ty::Enum(id) => self.enums[*id].cases.iter().all(|c| c.fields.is_empty()),
+            _ => false,
+        };
+        if !ok {
+            let what = self.a(t);
+            self.error(span, format!("{what} can't be used as a dictionary key"))
+                .help("keys can be `Int`, `String`, `Bool`, or an enum whose cases have no values");
         }
     }
 
@@ -1427,6 +1601,7 @@ impl Checker<'_> {
                 }
             }
         let ot = self.expr(object, None);
+        let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, &name.name) else { return Ty::Error };
         let n = name.name.as_str();
         let t = match &recv {
@@ -1495,15 +1670,18 @@ impl Checker<'_> {
                 None
             }
             (Ty::Error, _) => Some((Ty::Error, false)),
-            (t, true) => {
-                self.error(span, "`?.` is only for optional values").help(format!("use `.{member}` instead"));
-                Some((t, false))
-            }
+            (t, true) => Some((t, false)),
             (t, false) => Some((t, false)),
         }
     }
 
     // ===== calls =====
+
+    fn set_callee(&mut self, callee: Callee) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.callee = Some(callee);
+        }
+    }
 
     fn call(&mut self, callee: &Expr, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
         match &callee.kind {
@@ -1520,6 +1698,7 @@ impl Checker<'_> {
             }
             _ => {
                 let t = self.expr(callee, None);
+                self.set_callee(Callee::Value);
                 self.call_value(&t, "this", args, trailing, span)
             }
         }
@@ -1529,20 +1708,29 @@ impl Checker<'_> {
         let what = format!("`{n}`");
         if let Some(l) = self.lookup(n).cloned() {
             return match l.kind {
-                Kind::Fn(sig) => {
+                Kind::Fn(sig, origin) => {
+                    self.set_callee(match origin {
+                        FnOrigin::Method(owner) => Callee::SelfMethod { owner, name: n.to_string() },
+                        FnOrigin::View => Callee::ViewFn(n.to_string()),
+                    });
                     self.args(&what, &sig.params, args, trailing, span);
                     sig.ret
                 }
-                _ => self.call_value(&l.ty, &what, args, trailing, span),
+                _ => {
+                    self.set_callee(Callee::Value);
+                    self.call_value(&l.ty, &what, args, trailing, span)
+                }
             };
         }
         match self.globals.get(n).copied() {
             Some(Global::Fn(i)) => {
                 let sig = self.fns[i].clone();
+                self.set_callee(Callee::Fn(n.to_string()));
                 self.args(&what, &sig.params, args, trailing, span);
                 sig.ret
             }
             Some(Global::Struct(id)) => {
+                self.set_callee(Callee::StructInit(id));
                 let params: Vec<ParamSig> = self.structs[id]
                     .fields
                     .iter()
@@ -1553,6 +1741,7 @@ impl Checker<'_> {
             }
             Some(Global::View(i)) => {
                 let params = self.views[i].clone();
+                self.set_callee(Callee::View(n.to_string()));
                 self.args(&what, &params, args, trailing, span);
                 Ty::View
             }
@@ -1568,10 +1757,14 @@ impl Checker<'_> {
             }
             None => {
                 if let Some(params) = self.builtins.view(n) {
+                    self.set_callee(Callee::BuiltinView(n.to_string()));
                     let saved = self.tag_ty.take();
                     self.args(&what, &params, args, trailing, span);
                     self.tag_ty = saved;
                     return Ty::View;
+                }
+                if builtins::FUNCTION_NAMES.contains(&n) {
+                    self.set_callee(Callee::BuiltinFn(n.to_string()));
                 }
                 match n {
                     "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
@@ -1655,6 +1848,8 @@ impl Checker<'_> {
 
     fn case_call(&mut self, id: usize, n: &str, name_span: Span, args: &[Arg], trailing: Option<&Expr>, span: Span) {
         let Some(case) = self.enum_case(id, n, name_span, true) else { return };
+        let index = self.enums[id].cases.iter().position(|c| c.name == n).unwrap();
+        self.set_callee(Callee::EnumCase(id, index));
         if case.fields.is_empty() {
             self.error(span, format!("`.{n}` doesn't take values")).help(format!("write `.{n}` without parentheses"));
             return;
@@ -1680,11 +1875,15 @@ impl Checker<'_> {
                     return Ty::Enum(id);
                 }
         let ot = self.expr(object, None);
+        let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, n) else { return Ty::Error };
         let what = format!("`{n}`");
         let ret = match &recv {
             Ty::Error => Ty::Error,
-            Ty::View => self.modifier_call(name, args, trailing, span),
+            Ty::View => {
+                self.set_callee(Callee::Modifier(n.to_string()));
+                self.modifier_call(name, args, trailing, span)
+            }
             Ty::Struct(_) | Ty::Enum(_) => {
                 let (methods, owner, fields) = match &recv {
                     Ty::Struct(id) => {
@@ -1699,6 +1898,7 @@ impl Checker<'_> {
                 };
                 match methods.iter().find(|m| m.name == n) {
                     Some(m) => {
+                        self.set_callee(Callee::Method { owner: recv.clone(), name: n.to_string() });
                         if m.mutating && !optional {
                             self.mutating_receiver(object, n);
                         }
@@ -1718,9 +1918,13 @@ impl Checker<'_> {
                     }
                 }
             }
-            Ty::List(elem) if n == "map" => self.map_call(elem, args, trailing, span),
+            Ty::List(elem) if n == "map" => {
+                self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                self.map_call(elem, args, trailing, span)
+            }
             Ty::List(_) | Ty::Str | Ty::Dict(..) => match builtins::method_of(&recv, n) {
                 Some(m) => {
+                    self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {
                         self.mutating_receiver(object, n);
                     }
@@ -1952,6 +2156,18 @@ impl Checker<'_> {
             let list = join_and(&missing);
             self.error(span, format!("{what} is missing {list}"))
                 .help(if missing.len() == 1 { "add it to the call" } else { "add them to the call" });
+        }
+        let refs = assigned
+            .iter()
+            .map(|a| {
+                a.map(|v| match args.iter().position(|arg| std::ptr::eq(&arg.value, v)) {
+                    Some(i) => ArgRef::Arg(i),
+                    None => ArgRef::Trailing,
+                })
+            })
+            .collect();
+        if let Some(frame) = self.frames.last_mut() {
+            frame.args = refs;
         }
         for (p, a) in params.iter().zip(assigned) {
             if let Some(v) = a {

@@ -5,3 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[lints]
+workspace = true

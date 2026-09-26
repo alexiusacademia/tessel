@@ -1,0 +1,2 @@
+error: index 5 is out of range for a list of 3 items
+ --> tests/run/err_index.tsl:4:11

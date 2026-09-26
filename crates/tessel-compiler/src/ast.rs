@@ -184,6 +184,19 @@ pub enum ExprKind {
     Error,
 }
 
+impl Expr {
+    /// Is this part of an optional chain (`a?.b`, `a?.b.c`, `a?.f().g`)?
+    /// Accesses after a `?.` apply to the unwrapped value, and the whole
+    /// chain is `nil` if any `?.` finds `nil`.
+    pub fn in_optional_chain(&self) -> bool {
+        match &self.kind {
+            ExprKind::Member { object, optional, .. } => *optional || object.in_optional_chain(),
+            ExprKind::Call { callee, .. } => callee.in_optional_chain(),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum StrPart {
     Text(String),

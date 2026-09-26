@@ -636,6 +636,25 @@ impl<'a> Parser<'a> {
                     let span = e.span.to(self.prev_span());
                     e = self.new_expr(ExprKind::Call { callee: Box::new(e), args, trailing }, span);
                 }
+                // `for x in list.filter { y in … } {`: a block with parameters
+                // can't be the loop body, so the user meant a trailing block.
+                Tok::LBrace if self.no_trailing && is_callable_head(&e) && self.block_has_params() => {
+                    let span = self.span();
+                    let name = match &e.kind {
+                        ExprKind::Member { name, .. } => name.name.clone(),
+                        ExprKind::Name(n) => n.clone(),
+                        _ => unreachable!(),
+                    };
+                    self.error(span, format!("a block can't follow `{name}` here"))
+                        .label("this looks like a block for `{name}`".replace("{name}", &name))
+                        .help(format!(
+                            "in `if`, `for` and `match` headers, pass it in parentheses: `{name}({{ … }})`"
+                        ));
+                    let block = self.closure()?;
+                    let span = e.span.to(block.span);
+                    let trailing = Some(Box::new(block));
+                    e = self.new_expr(ExprKind::Call { callee: Box::new(e), args: Vec::new(), trailing }, span);
+                }
                 Tok::LBrace if !self.no_trailing && is_callable_head(&e) => {
                     let trailing = self.trailing_block()?;
                     let span = e.span.to(self.prev_span());
@@ -664,6 +683,20 @@ impl<'a> Parser<'a> {
                 _ => return Ok(e),
             }
         }
+    }
+
+    /// Is the `{` at the current token the start of `{ a, b in … }`?
+    fn block_has_params(&self) -> bool {
+        let mut i = 1;
+        while let Tok::Ident(_) | Tok::Underscore = self.peek_at(i) {
+            i += 1;
+            match self.peek_at(i) {
+                Tok::Comma => i += 1,
+                Tok::In => return true,
+                _ => return false,
+            }
+        }
+        false
     }
 
     fn trailing_block(&mut self) -> PResult<Option<Box<Expr>>> {

@@ -1,0 +1,79 @@
+struct Point {
+    x: Float
+    y: Float = 0
+
+    fn length() -> Float {
+        x * x + y * y
+    }
+
+    fn moveBy(dx: Float, dy: Float) {
+        x += dx
+        y += dy
+    }
+}
+
+struct Todo {
+    title: String
+    done: Bool = false
+    tags: [String] = []
+}
+
+enum Shape {
+    circle(radius: Float)
+    rect(width: Float, height: Float)
+    empty
+
+    fn area() -> Float {
+        match self {
+            .circle(r) -> 3.0 * r * r
+            .rect(w, h) -> w * h
+            .empty -> 0
+        }
+    }
+}
+
+enum Filter { all, active, done }
+
+fn describe(f: Filter) -> String {
+    match f {
+        .all -> "everything"
+        .active -> "to do"
+        .done -> "finished"
+    }
+}
+
+fn main() {
+    var p = Point(x: 3, y: 4)
+    print(p.length())
+    p.moveBy(dx: 1, dy: -4)
+    print("{p.x} {p.y}")
+    let q = p
+    p.x = 100
+    print("{q.x} {p.x}")
+    print(p == q)
+    print(Point(x: 4) == Point(x: 4, y: 0))
+
+    var todos = [Todo(title: "write"), Todo(title: "test", tags: ["dev"])]
+    todos[0].done = true
+    todos[1].tags.append("urgent")
+    for todo in todos {
+        todo.title = todo.title.uppercase()
+    }
+    for todo in todos {
+        print("{todo.title} {todo.done} {todo.tags.count}")
+    }
+
+    let shapes = [Shape.circle(radius: 1), .rect(width: 2, height: 5), .empty]
+    for s in shapes {
+        print(s.area())
+    }
+    print(shapes[0] == .circle(radius: 1))
+    print(shapes[0] == .circle(radius: 2))
+    print(shapes[2] == .empty)
+
+    let f = Filter.active
+    print(f)
+    print(describe(f: f))
+    print("{Filter.done} is {describe(f: .done)}")
+    print(f == .active)
+}

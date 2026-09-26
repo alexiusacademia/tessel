@@ -1,0 +1,7 @@
+fn divide(a: Int, b: Int) -> Int {
+    a / b
+}
+
+fn main() {
+    print(divide(a: 10, b: 0))
+}

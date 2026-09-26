@@ -1,0 +1,43 @@
+fn fib(n: Int) -> Int {
+    if n < 2 { n } else { fib(n: n - 1) + fib(n: n - 2) }
+}
+
+fn classify(n: Int) -> String {
+    if n < 0 {
+        return "negative"
+    }
+    match n {
+        0 -> "zero"
+        1 -> "one"
+        _ -> "many"
+    }
+}
+
+fn main() {
+    print(fib(20))
+    print(classify(-5))
+    print(classify(0))
+    print(classify(7))
+    let x = 7
+    let y = 2
+    print("{x / y} {x % y} {Float(x) / Float(y)} {x * y - 1}")
+    print(1 + 2.5)
+    print(Int(3.99))
+    print(Int("42") ?? -1)
+    print(Int("forty") ?? -1)
+    print(Float("2.5") ?? 0)
+    print(String(12) + "!")
+    print(!true || (1 < 2 && 2 <= 2))
+    print("a" < "b")
+    print("tab\there, quote \" and brace \{ok}")
+    var s = "Hello"
+    s += ", world"
+    print(s)
+    print(s.count)
+    print(s.uppercase())
+    print(s.contains("world"))
+    print(s.split(", ").joined(separator: "|"))
+    print("  padded  ".trim())
+    print(s.replace("l", with: "L"))
+    print(s.hasPrefix("He") && s.hasSuffix("ld"))
+}

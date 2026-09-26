@@ -1,0 +1,2 @@
+error: division by zero
+ --> tests/run/err_divide.tsl:2:5

@@ -1,0 +1,10 @@
+fn main() {
+    let name = "Tessel"
+    print("Hello, {name}!")
+    var total = 0
+    for i in 0..5 {
+        total += i
+    }
+    print("sum of 0..5 is {total}")
+    print(3.0 / 2.0)
+}

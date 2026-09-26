@@ -10,3 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 tessel-compiler = { path = "../tessel-compiler" }
+# Not used from Rust: listed so building the CLI also builds the runtime
+# library (libtessel_runtime.a) that `tessel build` links programs against.
+tessel-runtime = { path = "../tessel-runtime" }
+
+[lints]
+workspace = true

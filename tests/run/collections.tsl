@@ -1,0 +1,54 @@
+fn main() {
+    var nums = [5, 3, 8, 1]
+    nums.append(4)
+    nums.insert(10, at: 0)
+    let removed = nums.remove(at: 2)
+    print(removed)
+    print(nums.count)
+    print(nums.sorted().map { n in String(n) }.joined(separator: ","))
+    print(nums.sorted(by: { a, b in a > b }).map { n in "{n}" }.joined(separator: ","))
+    print(nums.filter { n in n % 2 == 0 }.count)
+    print(nums.contains(8))
+    print(nums.first ?? 0)
+    print(nums.last ?? 0)
+    print(nums.first(where: { n in n > 6 }) ?? -1)
+    print(nums.reversed()[0])
+    nums[1] = 99
+    print(nums[1])
+
+    // Lists are values: changing a copy doesn't change the original.
+    var copy = nums
+    copy.append(1000)
+    print("{nums.count} {copy.count}")
+
+    let empty: [String] = []
+    print(empty.isEmpty)
+    print(empty.first ?? "none")
+
+    var words = ["pear", "apple", "fig"]
+    words.removeAll(where: { w in w.count < 4 })
+    print(words.sorted().joined(separator: " "))
+    print(words == ["pear", "apple"])
+    print((words + ["kiwi"]).count)
+
+    var ages: [String: Int] = [:]
+    ages["ada"] = 36
+    ages["alan"] = 41
+    ages["ada"] = 37
+    print(ages["ada"] ?? 0)
+    print(ages["nobody"] ?? 0)
+    print(ages.count)
+    print(ages.contains(key: "alan"))
+    ages["alan"] = nil
+    print(ages.count)
+    print(ages.keys.joined(separator: ","))
+    let old = ages.removeValue(forKey: "ada")
+    print(old ?? 0)
+    print(ages.isEmpty)
+    let colors = ["red": 1, "green": 2]
+    print(colors.values.count)
+
+    var grid: [[Int]] = [[1, 2], [3, 4]]
+    grid[1][0] = 30
+    print(grid[1][0] + grid[0][1])
+}
