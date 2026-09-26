@@ -7,6 +7,7 @@
 //! size 320 200          window size in points
 //! click "Add"           click the button / toggle / text / field with this label
 //! click 40 60           click at a point
+//! click toggle 2        click the 2nd view of a kind (toggle, button, field, text)
 //! type hello world      type into the text field being edited
 //! type "two words "     quoted, to keep leading or trailing spaces
 //! key backspace         a key, optionally with modifiers: `key shift+left`,
@@ -420,6 +421,26 @@ impl App {
         visit(self.tree.as_ref()?, label)
     }
 
+    /// Center of the `n`th (from 1) view of a kind, in tree order.
+    fn find_nth(&self, kind: &str, n: usize) -> Option<(f64, f64)> {
+        fn visit<'n>(node: &'n Node, kind: &str, out: &mut Vec<&'n Node>) {
+            let matches = matches!(
+                (&node.kind, kind),
+                (Kind::Toggle { .. }, "toggle") | (Kind::Button { .. }, "button") | (Kind::TextField { .. }, "field") | (Kind::Text(_), "text")
+            );
+            if matches && !node.mods.hidden {
+                out.push(node);
+            }
+            for c in &node.children {
+                visit(c, kind, out);
+            }
+        }
+        let mut found = Vec::new();
+        visit(self.tree.as_ref()?, kind, &mut found);
+        let r = found.get(n.checked_sub(1)?)?.layout.rect;
+        Some((r.x + r.w / 2.0, r.y + r.h / 2.0))
+    }
+
     fn dump(&self, positions: bool) -> String {
         fn visit(n: &Node, depth: usize, out: &mut String, positions: bool) {
             let r = n.layout.rect;
@@ -517,8 +538,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
             }
             "click" => {
+                let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
+                } else if let [kind @ ("toggle" | "button" | "field" | "text"), n] = words[..] {
+                    app.find_nth(kind, n.parse().unwrap_or(1))
                 } else {
                     let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                     (n.len() == 2).then(|| (n[0], n[1]))

@@ -24,7 +24,7 @@ fn run_programs() {
     for path in paths {
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
         let rel = format!("tests/run/{name}.tsl");
-        let exe = std::env::temp_dir().join(format!("tessel-test-{name}-{}", std::process::id()));
+        let exe = std::env::temp_dir().join(format!("tessel-test-{name}-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
         let built = Command::new(env!("CARGO_BIN_EXE_tessel"))
             .args(["build", &rel, "-o"])
             .arg(&exe)

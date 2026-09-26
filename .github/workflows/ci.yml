@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  LLVM_VERSION: "22.1.8"
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm@22
+          echo "LLVM_SYS_221_PREFIX=$(brew --prefix llvm@22)" >> "$GITHUB_ENV"
+
+      - name: Cache LLVM (Windows)
+        if: runner.os == 'Windows'
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\llvm
+          key: llvm-${{ env.LLVM_VERSION }}-x86_64-pc-windows-msvc
+
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
+          curl.exe -sSfL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/$name.tar.xz"
+          New-Item -ItemType Directory -Force C:\llvm | Out-Null
+          tar -xf llvm.tar.xz -C C:\llvm
+          Remove-Item llvm.tar.xz
+
+      - name: Point llvm-sys at LLVM (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = "C:\llvm\clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
+          "LLVM_SYS_221_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$prefix\bin\llvm-config.exe" --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Show the runtime's native link libraries
+        run: cargo rustc -p tessel-runtime --lib --crate-type staticlib -- --print native-static-libs
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build the examples
+        shell: bash
+        run: |
+          mkdir -p apps
+          ./target/debug/tessel build examples/counter.tsl -o "apps/counter$EXE"
+          ./target/debug/tessel build examples/todos.tsl -o "apps/todos$EXE"
+        env:
+          EXE: ${{ runner.os == 'Windows' && '.exe' || '' }}
+
+      - name: Upload the examples
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-apps-${{ runner.os }}
+          path: apps/

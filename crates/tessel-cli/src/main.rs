@@ -109,13 +109,18 @@ fn check(path: &Path) -> ExitCode {
 
 fn default_output(path: &Path) -> PathBuf {
     let stem = if path.is_dir() { path.file_name() } else { path.file_stem() };
-    PathBuf::from(stem.unwrap_or_else(|| "app".as_ref()))
+    let mut name = stem.unwrap_or_else(|| "app".as_ref()).to_os_string();
+    name.push(std::env::consts::EXE_SUFFIX);
+    PathBuf::from(name)
 }
+
+/// File name of the runtime static library on this platform.
+const RUNTIME_LIB: &str = if cfg!(target_env = "msvc") { "tessel_runtime.lib" } else { "libtessel_runtime.a" };
 
 /// The runtime library, found next to the `tessel` executable.
 fn runtime_lib() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let lib = exe.with_file_name("libtessel_runtime.a");
+    let lib = exe.with_file_name(RUNTIME_LIB);
     if lib.exists() {
         Ok(lib)
     } else {
@@ -140,14 +145,10 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
         report(&diags, &sources);
         return Err(ExitCode::FAILURE);
     }
-    let status = Command::new("cc")
-        .arg(&obj)
-        .arg(&runtime)
-        .args(platform_link_args())
-        .arg("-o")
-        .arg(out)
+    let status = linker(&obj, &runtime, out)
+        .map_err(fail)?
         .status()
-        .map_err(|e| fail(format!("can't run the system linker `cc`: {e}")))?;
+        .map_err(|e| fail(format!("can't run the system linker: {e}")))?;
     let _ = std::fs::remove_file(&obj);
     if !status.success() {
         return Err(fail("linking failed".into()));
@@ -155,8 +156,35 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
     Ok(())
 }
 
-/// System libraries the runtime needs (windowing, GPU, fonts).
+/// The command that links the program's object file with the runtime.
+fn linker(obj: &Path, runtime: &Path, out: &Path) -> Result<Command, String> {
+    if cfg!(target_env = "msvc") {
+        // MSVC's link.exe, found the way Rust finds it (Visual Studio Build Tools).
+        let target = if cfg!(target_arch = "aarch64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" };
+        let mut cmd = cc::windows_registry::find(target, "link.exe")
+            .ok_or("can't find the MSVC linker (link.exe); install Visual Studio Build Tools with the C++ workload")?;
+        cmd.arg("/NOLOGO").arg(obj).arg(runtime).args(platform_link_args());
+        cmd.arg(format!("/OUT:{}", out.display()));
+        Ok(cmd)
+    } else {
+        let mut cmd = Command::new("cc");
+        cmd.arg(obj).arg(runtime).args(platform_link_args()).arg("-o").arg(out);
+        Ok(cmd)
+    }
+}
+
+/// System libraries the runtime needs (windowing, GPU, fonts, networking).
 fn platform_link_args() -> Vec<&'static str> {
+    if cfg!(windows) {
+        return [
+            "kernel32.lib", "advapi32.lib", "bcrypt.lib", "ntdll.lib", "userenv.lib", "ws2_32.lib",
+            "synchronization.lib", "user32.lib", "gdi32.lib", "ole32.lib", "oleaut32.lib", "shell32.lib",
+            "uuid.lib", "dwmapi.lib", "uxtheme.lib", "imm32.lib", "comctl32.lib", "winmm.lib", "dxgi.lib",
+            "d3d12.lib", "d3dcompiler.lib", "opengl32.lib", "propsys.lib", "runtimeobject.lib", "secur32.lib",
+            "crypt32.lib", "ncrypt.lib", "dbghelp.lib",
+        ]
+        .to_vec();
+    }
     if cfg!(target_os = "macos") {
         let frameworks = [
             "AppKit", "ApplicationServices", "Carbon", "CoreFoundation", "CoreGraphics", "CoreText", "CoreVideo",
@@ -171,7 +199,7 @@ fn platform_link_args() -> Vec<&'static str> {
 }
 
 fn run(path: &Path, program_args: &[String]) -> ExitCode {
-    let exe = std::env::temp_dir().join(format!("tessel-run-{}", std::process::id()));
+    let exe = std::env::temp_dir().join(format!("tessel-run-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
     if let Err(code) = build(path, &exe) {
         return code;
     }

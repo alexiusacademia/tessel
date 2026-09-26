@@ -1,0 +1,3 @@
+# Keep Unix line endings everywhere, so expected test output matches on Windows.
+* text=auto eol=lf
+*.png binary

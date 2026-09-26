@@ -11,7 +11,7 @@ key enter
 click "Add"
 click "Add"
 tree
-click 35 245
+click toggle 1
 click "Active"
 tree
 click "Done"
