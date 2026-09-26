@@ -163,7 +163,7 @@ fn platform_link_args() -> Vec<&'static str> {
             "Foundation", "Metal", "QuartzCore",
         ];
         let mut args: Vec<&str> = frameworks.iter().flat_map(|f| ["-framework", *f]).collect();
-        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip"]);
+        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-mmacosx-version-min=11.0"]);
         args
     } else {
         vec![]

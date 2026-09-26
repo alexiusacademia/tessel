@@ -49,7 +49,12 @@ pub fn compile(
     optimize: bool,
 ) -> Result<(), Vec<Diagnostic>> {
     Target::initialize_native(&InitializationConfig::default()).map_err(|e| vec![internal(e)])?;
-    let triple = TargetMachine::get_default_triple();
+    let mut triple = TargetMachine::get_default_triple();
+    // On macOS, target the oldest supported version rather than this machine's.
+    let host = triple.as_str().to_string_lossy().to_string();
+    if let Some((arch, _)) = host.split_once("-apple-darwin") {
+        triple = inkwell::targets::TargetTriple::create(&format!("{arch}-apple-macosx11.0.0"));
+    }
     let target = Target::from_triple(&triple).map_err(|e| vec![internal(e.to_string())])?;
     let level = if optimize { OptimizationLevel::Default } else { OptimizationLevel::None };
     let tm = target
@@ -616,6 +621,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_dict_get" | "tsl_dict_remove" => (vec![p, p, p], Some(i8t)),
             "tsl_dict_set" => (vec![p, p, p], None),
             "tsl_after" => (vec![f64t, p, p], None),
+            "tsl_fetch" => (vec![p, p, p], None),
             "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
             "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
@@ -629,6 +635,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_border" => (vec![i32t, f64t, f64t], None),
             "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t], None),
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
+            "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, p, p], None),
             _ => panic!("unknown runtime function {name}"),
         };
@@ -3060,6 +3067,33 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.load(&opt, slot)
     }
 
+    /// `void adapter(ptr box, ptr text)`: calls the `fn(String?)` closure in
+    /// `box` with the fetched text (owned), or `nil` if `text` is null.
+    fn fetch_adapter(&mut self) -> PointerValue<'ctx> {
+        let name = "tsl_h_fetch_done";
+        if let Some(f) = self.helpers.get(name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name.to_string(), f);
+        let ft = Ty::func(vec![Ty::opt(Ty::Str)], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let text = f.get_nth_param(1).unwrap().into_pointer_value();
+            let data = g.box_data(bx);
+            let closure = g.load(&ft, data);
+            let opt_t = Ty::opt(Ty::Str);
+            let present = g.b.build_is_not_null(text, "").unwrap();
+            let st = g.llty(&opt_t).unwrap().into_struct_type();
+            let s = g.b.build_insert_value(st.get_undef(), present, 0, "").unwrap();
+            let s = g.b.build_insert_value(s, text, 1, "").unwrap().into_struct_value();
+            g.call_fn_value(closure, &ft, &[s.into()]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
     /// `i8 adapter(ptr closure, ptr a, ptr b)`: calls a `fn(T, T) -> Bool` closure for the runtime's sort.
     fn sort_adapter(&mut self, elem: &Ty) -> PointerValue<'ctx> {
         let name = format!("tsl_h_less_{}", self.key(elem));
@@ -3133,6 +3167,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     _ => unreachable!(),
                 })
+            }
+            "fetch" => {
+                let url = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+                let ft = Ty::func(vec![Ty::opt(Ty::Str)], Ty::Void);
+                let done = self.expr_as(arg(info.args[1].unwrap()), &ft).unwrap();
+                // The runtime calls `adapter(box, text-or-null)`; the box holds `done`.
+                let ti = self.type_info(&ft);
+                let bx = self.call_rt("tsl_box_new", &[ti.into()]).unwrap().into_pointer_value();
+                let data = self.box_data(bx);
+                self.b.build_store(data, done).unwrap();
+                let adapter = self.fetch_adapter();
+                self.call_rt("tsl_fetch", &[url, adapter.into(), bx.into()]);
+                self.release(url, &Ty::Str);
+                None
             }
             "after" => {
                 let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();

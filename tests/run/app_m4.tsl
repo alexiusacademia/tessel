@@ -1,0 +1,44 @@
+// Text editing, identity with .id, and fetch.
+
+struct Item {
+    id: Int
+    name: String
+}
+
+view Row(item: Item) {
+    state open = false
+
+    HStack {
+        Text(item.name)
+        Button(if open { "close {item.name}" } else { "open {item.name}" }) { open = !open }
+        if open {
+            Text("details of {item.name}")
+        }
+    }
+}
+
+app M4(width: 480, height: 640) {
+    state text = ""
+    state items = [Item(id: 1, name: "a"), Item(id: 2, name: "b"), Item(id: 3, name: "c")]
+    state loaded = "not loaded"
+    state missing = "not loaded"
+
+    TextField("Type here", text: text)
+    Text("text: [{text}]")
+
+    for item in items {
+        Row(item: item).id(item.id)
+    }
+    Button("Reverse") { items = items.reversed() }
+
+    Button("Load") {
+        fetch(url: "file://tests/run/fetch_data.txt") { body in
+            loaded = body?.trim() ?? "failed"
+        }
+        fetch(url: "file://tests/run/no_such_file.txt") { body in
+            missing = body ?? "nil, as expected"
+        }
+    }
+    Text(loaded)
+    Text(missing)
+}

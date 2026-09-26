@@ -45,7 +45,8 @@ impl TextEngine {
 pub struct Interaction {
     pub hovered: Option<u64>,
     pub pressed: Option<u64>,
-    pub focused: Option<u64>,
+    /// The text field being edited.
+    pub editing: Option<super::edit::Editing>,
     pub scroll: HashMap<u64, f64>,
 }
 
@@ -57,6 +58,7 @@ const FIELD_BORDER: Rgba = Rgba([199, 199, 204, 255]);
 const PLACEHOLDER: Rgba = Rgba([160, 160, 166, 255]);
 const SWITCH_ON: Rgba = Rgba([52, 199, 89, 255]);
 const WHITE: Rgba = Rgba([255, 255, 255, 255]);
+const SELECTION: Rgba = Rgba([179, 215, 255, 255]);
 pub const BACKGROUND: Rgba = Rgba([255, 255, 255, 255]);
 
 fn color(c: Rgba) -> Color {
@@ -149,25 +151,38 @@ impl Painter<'_> {
                     self.text(t, x, y, tint);
                 }
             }
-            Kind::TextField { text, .. } => {
-                let focused = self.ui.focused == Some(n.key);
+            Kind::TextField { .. } => {
+                let editing = self.ui.editing.as_ref().filter(|e| e.key == n.key);
                 self.fill(content, 6.0, WHITE);
-                if focused {
+                if editing.is_some() {
                     self.stroke(content, 6.0, 2.0, ACCENT);
                 } else {
                     self.stroke(content, 6.0, 1.0, FIELD_BORDER);
                 }
-                let empty = super::layout::read_string(text).is_empty();
-                if let Some(t) = &n.layout.text {
-                    let x = content.x + 8.0;
-                    let y = content.y + (content.h - t.height() as f64) / 2.0;
+                if let (Some(t), Some(ph)) = (&n.layout.text, &n.layout.placeholder) {
+                    let (x0, y0) = field_origin(n);
+                    let line_h = (ph.height() as f64).max(t.height() as f64);
                     let t_scene = self.t();
                     self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
-                    self.text(t, x, y, if empty { Some(PLACEHOLDER) } else { None });
-                    if focused {
-                        let cx = if empty { x } else { x + t.width() as f64 + 1.0 };
-                        let caret = Rect { x: cx, y: y + 1.0, w: 1.5, h: t.height() as f64 - 2.0 };
-                        self.fill(caret, 0.0, ACCENT);
+                    let scroll = editing.map_or(0.0, |e| e.scroll);
+                    if let Some(e) = editing {
+                        let (caret, rects) = super::edit::geometry(t, e);
+                        for r in rects {
+                            let sel = Rect { x: x0 - scroll + r.x0, y: y0 + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
+                            self.fill(sel, 2.0, SELECTION);
+                        }
+                        let caret = match caret {
+                            Some(c) => Rect { x: x0 - scroll + c.x0, y: y0 + c.y0, w: 1.5, h: c.y1 - c.y0 },
+                            None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
+                        };
+                        if e.range().is_empty() {
+                            self.fill(caret, 0.0, ACCENT);
+                        }
+                    }
+                    if n.layout.empty {
+                        self.text(ph, x0, y0, Some(PLACEHOLDER));
+                    } else {
+                        self.text(t, x0 - scroll, y0, None);
                     }
                     self.scene.pop_layer();
                 }
@@ -221,6 +236,16 @@ impl Painter<'_> {
             self.scene.pop_layer();
         }
     }
+}
+
+/// Where a text field's text starts (before horizontal scrolling).
+pub fn field_origin(n: &Node) -> (f64, f64) {
+    let content = n.layout.rect.inset(n.mods.padding.unwrap_or(0.0));
+    let line_h = match (&n.layout.text, &n.layout.placeholder) {
+        (Some(t), Some(p)) => (p.height() as f64).max(t.height() as f64),
+        _ => 0.0,
+    };
+    (content.x + 8.0, content.y + (content.h - line_h) / 2.0)
 }
 
 // ===== GPU =====

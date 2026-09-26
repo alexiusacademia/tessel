@@ -44,6 +44,9 @@ pub struct Box {
     pub size: Size,
     /// Laid-out text (labels, text, field contents).
     pub text: Option<parley::Layout<Paint>>,
+    /// A text field's placeholder, and whether the field is empty.
+    pub placeholder: Option<parley::Layout<Paint>>,
+    pub empty: bool,
     /// For scroll views: the height of the content.
     pub content_h: f64,
     /// For pickers: the rectangle of each option.
@@ -142,12 +145,15 @@ impl Layouter<'_> {
             }
             Kind::TextField { placeholder, text } => {
                 let value = read_string(text);
-                let shown = if value.is_empty() { placeholder.clone() } else { value };
-                let t = self.text_layout(&shown, style, None);
-                let h = t.height() as f64 + 2.0 * FIELD_PAD.1;
-                let w = (t.width() as f64 + 2.0 * FIELD_PAD.0).max(120.0);
+                let placeholder = placeholder.clone();
+                let ph = self.text_layout(&placeholder, style, None);
+                let t = self.text_layout(&value, style, None);
+                let line_h = (ph.height() as f64).max(t.height() as f64);
+                let w = (t.width().max(ph.width()) as f64 + 2.0 * FIELD_PAD.0).max(120.0);
+                n.layout.empty = value.is_empty();
                 n.layout.text = Some(t);
-                Size { w: w.min(avail.w.max(60.0)), h }
+                n.layout.placeholder = Some(ph);
+                Size { w: w.min(avail.w.max(60.0)), h: line_h + 2.0 * FIELD_PAD.1 }
             }
             Kind::Toggle { label, .. } => {
                 if label.is_empty() {

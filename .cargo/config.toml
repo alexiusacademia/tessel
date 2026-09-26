@@ -1,3 +1,5 @@
 [env]
 # LLVM used by inkwell (Homebrew: `brew install llvm@22`).
 LLVM_SYS_221_PREFIX = "/opt/homebrew/opt/llvm@22"
+# Oldest macOS that Tessel apps (and the runtime's C dependencies) support.
+MACOSX_DEPLOYMENT_TARGET = "11.0"

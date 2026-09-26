@@ -383,6 +383,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_call(f, &vals, "").unwrap();
             }
             Callee::BuiltinView(name) => self.builtin_view(name, &info, &arg),
+            Callee::Modifier(name) if name == "id" => {
+                // The id must be known before the view is built.
+                let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
+                let x = &args[0].value;
+                let t = self.ty(x);
+                let v = self.expr(x).unwrap();
+                let h = match t {
+                    Ty::Str => self.call_rt("tsl_str_hash", &[v]).unwrap(),
+                    _ => v,
+                };
+                self.call_rt("tsl_ui_next_id", &[h]);
+                self.release(v, &t);
+                self.content_expr(object);
+            }
             Callee::Modifier(name) => {
                 let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
                 self.content_expr(object);
@@ -562,13 +576,6 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let p = self.spill(&t, v);
                 let info = self.type_info(&t);
                 self.call_rt("tsl_ui_tag", &[p.into(), info.into()]);
-                self.release(v, &t);
-            }
-            "id" => {
-                // Identity by position for now; the value is evaluated and dropped.
-                let x = &args[0].value;
-                let t = self.ty(x);
-                let v = self.expr(x).unwrap();
                 self.release(v, &t);
             }
             _ => unreachable!("modifier {name}"),

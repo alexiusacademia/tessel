@@ -1,0 +1,21 @@
+click "Type here"
+type hello world
+key alt+left
+type "big "
+key cmd+a
+key cmd+c
+key right
+type " -- "
+key cmd+v
+key shift+left
+key shift+left
+key shift+left
+key backspace
+key home
+key delete
+click "open a"
+click "Reverse"
+tree
+click "Load"
+wait 0
+tree

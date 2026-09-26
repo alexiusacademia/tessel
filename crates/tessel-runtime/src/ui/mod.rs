@@ -7,6 +7,7 @@
 //! keyed by each view's position in the tree.
 
 mod app;
+mod edit;
 mod layout;
 mod render;
 
@@ -37,6 +38,12 @@ impl Callback {
     pub fn call(&self) {
         let f: extern "C" fn(*mut Header) = unsafe { std::mem::transmute(self.f) };
         f(self.env);
+    }
+
+    /// Runs a closure taking one pointer argument: `void fn(env, ptr)`.
+    pub fn call_with(&self, arg: *mut u8) {
+        let f: extern "C" fn(*mut Header, *mut u8) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, arg);
     }
 
     /// Runs a locator: `ptr fn(env)`, giving a pointer to a value's storage.
@@ -200,6 +207,8 @@ fn child_key(parent: u64, index: usize, salt: u64) -> u64 {
 struct Builder {
     /// Open containers, innermost last. The root is at the bottom.
     stack: Vec<Node>,
+    /// Set by `.id(…)`: the identity of the next view, instead of its position.
+    pending_id: Option<u64>,
 }
 
 impl Builder {
@@ -208,6 +217,11 @@ impl Builder {
     }
 
     fn next_key(&mut self, salt: u64) -> u64 {
+        if let Some(id) = self.pending_id.take() {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (self.parent().key, "id", id, salt).hash(&mut h);
+            return h.finish();
+        }
         let p = self.parent();
         child_key(p.key, p.children.len(), salt)
     }
@@ -260,7 +274,7 @@ pub fn build(root: &Callback) -> Node {
         *g.borrow_mut() += 1;
         *g.borrow()
     });
-    BUILDER.with(|b| *b.borrow_mut() = Some(Builder { stack: vec![Node::new(Kind::Root, 1)] }));
+    BUILDER.with(|b| *b.borrow_mut() = Some(Builder { stack: vec![Node::new(Kind::Root, 1)], pending_id: None }));
     root.call();
     let mut builder = BUILDER.with(|b| b.borrow_mut().take()).expect("builder");
     while builder.stack.len() > 1 {
@@ -391,6 +405,13 @@ pub unsafe extern "C" fn tsl_ui_record_box(data: *mut u8) -> *mut Header {
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_view_end() {
     with_builder(|b| b.end());
+}
+
+/// `.id(…)`: the next view is identified by `id` rather than its position,
+/// so its state follows it when a list is reordered.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_next_id(id: u64) {
+    with_builder(|b| b.pending_id = Some(id));
 }
 
 // ===== C ABI: modifiers (apply to the last finished view) =====

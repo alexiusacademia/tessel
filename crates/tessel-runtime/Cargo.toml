@@ -5,9 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+arboard = "3.6.1"
 parley = "0.11"
 png = "0.18.1"
 pollster = "1.0.1"
+ureq = "3.4.2"
 vello = "0.10"
 winit = "0.30"
 

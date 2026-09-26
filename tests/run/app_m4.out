@@ -1,0 +1,42 @@
+Root
+  View
+    TextField "Type here" = "ello big world -- hello big wo"
+    Text "text: [ello big world -- hello big wo]"
+    View
+      HStack
+        Text "c"
+        Button "open c"
+    View
+      HStack
+        Text "b"
+        Button "open b"
+    View
+      HStack
+        Text "a"
+        Button "close a"
+        Text "details of a"
+    Button "Reverse"
+    Button "Load"
+    Text "not loaded"
+    Text "not loaded"
+Root
+  View
+    TextField "Type here" = "ello big world -- hello big wo"
+    Text "text: [ello big world -- hello big wo]"
+    View
+      HStack
+        Text "c"
+        Button "open c"
+    View
+      HStack
+        Text "b"
+        Button "open b"
+    View
+      HStack
+        Text "a"
+        Button "close a"
+        Text "details of a"
+    Button "Reverse"
+    Button "Load"
+    Text "Tessel loaded this file."
+    Text "nil, as expected"
