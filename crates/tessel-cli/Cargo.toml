@@ -1,0 +1,12 @@
+[package]
+name = "tessel-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "tessel"
+path = "src/main.rs"
+
+[dependencies]
+tessel-compiler = { path = "../tessel-compiler" }
