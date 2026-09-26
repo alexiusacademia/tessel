@@ -1,0 +1,82 @@
+// Content features: if/else, match, loops, custom views with content,
+// bindings through two views, timers, hidden and disabled views.
+
+enum Mode { list, grid, empty }
+
+struct Setting {
+    name: String
+    on: Bool = false
+}
+
+view Card(title: String, content: View) {
+    VStack(spacing: 4) {
+        Text(title).font(size: 18, weight: .bold)
+        content
+    }
+    .padding(12)
+    .background(.gray, radius: 8)
+}
+
+view SettingRow(setting: bind Setting) {
+    HStack {
+        Toggle(setting.name, isOn: setting.on)
+        Button("flip") { setting.on = !setting.on }
+    }
+}
+
+view Settings(items: bind [Setting]) {
+    for item in items {
+        SettingRow(setting: item)
+    }
+}
+
+app Views(width: 400, height: 600) {
+    state mode = Mode.list
+    state ticks = 0
+    state settings = [Setting(name: "Wifi"), Setting(name: "Sound", on: true)]
+    state message: String? = nil
+
+    Card(title: "Mode") {
+        Picker(selection: mode) {
+            Text("List").tag(.list)
+            Text("Grid").tag(.grid)
+            Text("Empty").tag(.empty)
+        }
+        match mode {
+            .list -> {
+                for i in 0..3 {
+                    Text("row {i}")
+                }
+            }
+            .grid -> HStack {
+                Text("a")
+                Text("b")
+            }
+            .empty -> Text("nothing here").color(.secondary)
+        }
+    }
+    Card(title: "Settings") {
+        Settings(items: settings)
+        Text("{settings.filter { s in s.on }.count} on")
+    }
+    HStack {
+        Button("Start timer") { tick() }
+        Text("ticks: {ticks}")
+    }
+    if let m = message {
+        Text(m).onTap { message = nil }
+    } else {
+        Text("no message").onTap { message = "hello" }
+    }
+    Text("secret").hidden()
+    Button("Can't press") { ticks = 100 }.disabled(ticks < 100)
+
+    fn tick() {
+        after(seconds: 1) {
+            ticks += 1
+            if ticks < 3 {
+                tick()
+            }
+        }
+    }
+}

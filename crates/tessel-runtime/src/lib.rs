@@ -15,6 +15,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+pub mod ui;
+
 use std::collections::HashMap;
 use std::ffi::{c_char, CStr};
 use std::io::Write;
@@ -187,7 +189,7 @@ unsafe extern "C" fn str_drop(h: *mut Header) {
     unsafe { free(h as *mut u8) };
 }
 
-unsafe fn str_text<'a>(s: *const Str) -> &'a str {
+pub(crate) unsafe fn str_text<'a>(s: *const Str) -> &'a str {
     unsafe {
         let len = (*s).len as usize;
         let bytes = std::slice::from_raw_parts((s as *const u8).add(size_of::<Str>()), len);
@@ -195,7 +197,7 @@ unsafe fn str_text<'a>(s: *const Str) -> &'a str {
     }
 }
 
-fn str_new(text: &str) -> *mut Str {
+pub(crate) fn str_new(text: &str) -> *mut Str {
     unsafe {
         let s = new_object(size_of::<Str>() + text.len(), str_drop) as *mut Str;
         (*s).len = text.len() as i64;

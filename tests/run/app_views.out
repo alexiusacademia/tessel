@@ -1,0 +1,91 @@
+Root
+  View
+    View
+      VStack
+        Text "Mode"
+        Picker
+          Text "List"
+          Text "Grid"
+          Text "Empty"
+        Text "row 0"
+        Text "row 1"
+        Text "row 2"
+    View
+      VStack
+        Text "Settings"
+        View
+          View
+            HStack
+              Toggle "Wifi" = false
+              Button "flip"
+          View
+            HStack
+              Toggle "Sound" = true
+              Button "flip"
+        Text "1 on"
+    HStack
+      Button "Start timer"
+      Text "ticks: 0"
+    Text "no message"
+    Text "secret" hidden
+    Button "Can't press" disabled
+Root
+  View
+    View
+      VStack
+        Text "Mode"
+        Picker
+          Text "List"
+          Text "Grid"
+          Text "Empty"
+        HStack
+          Text "a"
+          Text "b"
+    View
+      VStack
+        Text "Settings"
+        View
+          View
+            HStack
+              Toggle "Wifi" = true
+              Button "flip"
+          View
+            HStack
+              Toggle "Sound" = true
+              Button "flip"
+        Text "2 on"
+    HStack
+      Button "Start timer"
+      Text "ticks: 3"
+    Text "hello"
+    Text "secret" hidden
+    Button "Can't press" disabled
+Root
+  View
+    View
+      VStack
+        Text "Mode"
+        Picker
+          Text "List"
+          Text "Grid"
+          Text "Empty"
+        Text "nothing here"
+    View
+      VStack
+        Text "Settings"
+        View
+          View
+            HStack
+              Toggle "Wifi" = true
+              Button "flip"
+          View
+            HStack
+              Toggle "Sound" = true
+              Button "flip"
+        Text "2 on"
+    HStack
+      Button "Start timer"
+      Text "ticks: 3"
+    Text "no message"
+    Text "secret" hidden
+    Button "Can't press" disabled

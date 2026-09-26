@@ -1,0 +1,16 @@
+// The smallest useful Tessel app: one piece of state and two buttons.
+
+app Counter(width: 320, height: 200) {
+    state count = 0
+
+    VStack(spacing: 12) {
+        Text("Count: {count}")
+            .font(size: 32, weight: .bold)
+
+        HStack(spacing: 8) {
+            Button("-") { count -= 1 }
+            Button("+") { count += 1 }
+        }
+    }
+    .padding(24)
+}

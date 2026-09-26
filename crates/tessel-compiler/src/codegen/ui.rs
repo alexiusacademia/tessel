@@ -1,0 +1,584 @@
+//! Code generation for views: view bodies emit the UI tree through the
+//! runtime's `tsl_ui_*` calls each time the UI is rebuilt.
+//!
+//! - A view compiles to `void tsl_v_<Name>(env, params…)`. It opens a view
+//!   instance in the tree, which gives it a persistent *state record* (a
+//!   struct of its `state` values, kept by the runtime across rebuilds).
+//! - Functions declared in a view compile to `tsl_vf_<View>_<name>(env,
+//!   record, params…)`; closures inside a view keep the record alive.
+//! - A `View` value is a closure that emits the view when called.
+//! - A `bind` argument is a *locator*: a closure returning a pointer to the
+//!   storage it names, evaluated fresh each time it's used.
+
+use std::hash::{Hash, Hasher};
+
+use inkwell::module::Linkage;
+use inkwell::types::{BasicMetadataTypeEnum, BasicTypeEnum};
+use inkwell::values::{BasicMetadataValueEnum, FunctionValue, PointerValue};
+use inkwell::IntPredicate;
+
+use super::{pick, Body, FnCtx, Gen, Record, Store, Val, Var};
+use crate::ast::*;
+use crate::check::{ArgRef, CallInfo, Callee};
+use crate::types::Ty;
+
+impl<'ctx, 'a> Gen<'ctx, 'a> {
+    // ===== declarations =====
+
+    /// Declares every view's build function, state record and functions.
+    pub(super) fn declare_views(&mut self) {
+        let names: Vec<String> = self.view_decls.keys().cloned().collect();
+        for name in names {
+            let src = self.view_decls[&name];
+            let fields: Vec<Ty> = src
+                .body
+                .stmts
+                .iter()
+                .filter_map(|s| match s {
+                    Stmt::State(d) => Some(self.checked.locals[&d.name.span].clone()),
+                    _ => None,
+                })
+                .collect();
+            let body: Vec<BasicTypeEnum> = fields.iter().map(|t| self.llty(t).unwrap()).collect();
+            let st = self.ctx.opaque_struct_type(&format!("tsl.state.{name}"));
+            st.set_body(&body, false);
+            self.records.insert(name.clone(), (st, fields));
+
+            let sigs = self.checked.views.get(&name).cloned().unwrap_or_default();
+            let mut ps: Vec<BasicMetadataTypeEnum> = vec![self.ptr_ty().into()];
+            for sig in &sigs {
+                let t = if sig.bind { Ty::View } else { sig.ty.clone() };
+                ps.push(self.llty(&t).unwrap().into());
+            }
+            let f = self.module.add_function(
+                &format!("tsl_v_{name}"),
+                self.ctx.void_type().fn_type(&ps, false),
+                Some(Linkage::Internal),
+            );
+            self.view_builds.insert(name.clone(), f);
+
+            for s in &src.body.stmts {
+                if let Stmt::Fn(fd) = s {
+                    let key = (name.clone(), fd.name.name.clone());
+                    let sig = self.checked.view_fns[&key].clone();
+                    let params: Vec<Ty> = sig.params.iter().map(|p| p.ty.clone()).collect();
+                    let ty = self.fn_type(&params, &sig.ret, true);
+                    let f = self.module.add_function(
+                        &format!("tsl_vf_{name}_{}", fd.name.name),
+                        ty,
+                        Some(Linkage::Internal),
+                    );
+                    self.view_fns.insert(key, f);
+                }
+            }
+        }
+    }
+
+    pub(super) fn view_fn_decl(&self, view: &str, name: &str) -> &'a FnDecl {
+        self.view_decls[view]
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Fn(f) if f.name.name == name => Some(f),
+                _ => None,
+            })
+            .expect("view function")
+    }
+
+    pub(super) fn compile_views(&mut self) {
+        let names: Vec<String> = self.view_decls.keys().cloned().collect();
+        for name in names {
+            self.compile_view(&name);
+            let src = self.view_decls[&name];
+            for s in &src.body.stmts {
+                if let Stmt::Fn(fd) = s {
+                    self.compile_view_fn(&name, fd);
+                }
+            }
+        }
+    }
+
+    /// Vars for a view's state values and functions.
+    fn view_vars(&self, name: &str) -> Vec<Var<'ctx>> {
+        let src = self.view_decls[name];
+        let mut vars = Vec::new();
+        let mut i = 0;
+        for s in &src.body.stmts {
+            match s {
+                Stmt::State(d) => {
+                    let ty = self.checked.locals[&d.name.span].clone();
+                    vars.push(Var { name: d.name.name.clone(), ty, store: Store::State(i) });
+                    i += 1;
+                }
+                Stmt::Fn(f) => vars.push(Var { name: f.name.name.clone(), ty: Ty::Void, store: Store::ViewFn }),
+                _ => {}
+            }
+        }
+        vars
+    }
+
+    fn compile_view(&mut self, name: &str) {
+        let src = self.view_decls[name];
+        let f = self.view_builds[name];
+        let sigs = self.checked.views.get(name).cloned().unwrap_or_default();
+        let entry = self.ctx.append_basic_block(f, "entry");
+        self.b.position_at_end(entry);
+        self.stack.push(FnCtx {
+            func: f,
+            scopes: vec![Vec::new()],
+            ret: Ty::Void,
+            self_ptr: None,
+            boxed: super::boxed_vars(src.body),
+            record: None,
+        });
+        for (i, (p, sig)) in src.params.iter().zip(&sigs).enumerate() {
+            let v = f.get_nth_param(1 + i as u32).unwrap();
+            if sig.bind {
+                let lt = self.llty(&Ty::View).unwrap();
+                let slot = self.alloca(lt, &p.name.name);
+                self.b.build_store(slot, v).unwrap();
+                self.push_var(Var { name: p.name.name.clone(), ty: sig.ty.clone(), store: Store::Binding { slot, owned: true } });
+            } else {
+                self.declare_value(&p.name.name, &sig.ty, Some(v));
+            }
+        }
+
+        // Open the view instance and get its state record.
+        let (st, fields) = self.records[name].clone();
+        let info = if fields.is_empty() { self.ptr_ty().const_null() } else { self.record_info(name) };
+        let fresh = self.alloca(self.i8().into(), "fresh");
+        let id = self.i64().const_int(view_id(name), false);
+        let data = self.call_rt("tsl_ui_view_begin", &[id.into(), info.into(), fresh.into()]).unwrap().into_pointer_value();
+        self.stack.last_mut().unwrap().record = Some(Record { data, ty: st, view: name.to_string() });
+        for v in self.view_vars(name) {
+            self.push_var(v);
+        }
+
+        // First time this instance appears: initialize its state.
+        if !fields.is_empty() {
+            let flag = self.b.build_load(self.i8(), fresh, "").unwrap().into_int_value();
+            let is_fresh = self.b.build_int_compare(IntPredicate::NE, flag, self.i8().const_zero(), "").unwrap();
+            let (init, cont) = (self.block_named("init"), self.block_named("built"));
+            self.b.build_conditional_branch(is_fresh, init, cont).unwrap();
+            self.b.position_at_end(init);
+            let mut i = 0;
+            for s in &src.body.stmts {
+                if let Stmt::State(d) = s {
+                    let ty = fields[i].clone();
+                    let v = self.expr_as(&d.value, &ty).unwrap();
+                    let p = self.b.build_struct_gep(st, data, i as u32, "").unwrap();
+                    self.b.build_store(p, v).unwrap();
+                    i += 1;
+                }
+            }
+            self.br(cont);
+            self.b.position_at_end(cont);
+        }
+
+        self.content_block(src.body, true);
+        self.call_rt("tsl_ui_view_end", &[]);
+        self.finish_function(None);
+        self.stack.pop();
+    }
+
+    fn compile_view_fn(&mut self, view: &str, fd: &FnDecl) {
+        let key = (view.to_string(), fd.name.name.clone());
+        let f = self.view_fns[&key];
+        let sig = self.checked.view_fns[&key].clone();
+        let (st, _) = self.records[view].clone();
+        let entry = self.ctx.append_basic_block(f, "entry");
+        self.b.position_at_end(entry);
+        let data = f.get_nth_param(1).unwrap().into_pointer_value();
+        let vars = self.view_vars(view);
+        self.stack.push(FnCtx {
+            func: f,
+            scopes: vec![vars],
+            ret: sig.ret.clone(),
+            self_ptr: None,
+            boxed: super::boxed_vars(&fd.body),
+            record: Some(Record { data, ty: st, view: view.to_string() }),
+        });
+        for (i, (p, ps)) in fd.params.iter().zip(&sig.params).enumerate() {
+            let v = f.get_nth_param(2 + i as u32).unwrap();
+            self.declare_value(&p.name.name, &ps.ty, Some(v));
+        }
+        let v = self.block(&fd.body, Some(&sig.ret));
+        self.finish_function(v);
+        self.stack.pop();
+    }
+
+    /// Type info for a view's state record: releases its values when the
+    /// view instance goes away.
+    fn record_info(&mut self, view: &str) -> PointerValue<'ctx> {
+        let (st, fields) = self.records[view].clone();
+        let f = self.module.add_function(
+            &format!("tsl_h_state_{view}"),
+            self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false),
+            Some(Linkage::Internal),
+        );
+        self.in_helper(f, |g| {
+            let p = f.get_nth_param(0).unwrap().into_pointer_value();
+            for (i, t) in fields.iter().enumerate() {
+                let fp = g.b.build_struct_gep(st, p, i as u32, "").unwrap();
+                let v = g.load(t, fp);
+                g.release(v, t);
+            }
+            g.b.build_return(None).unwrap();
+        });
+        let size = self.td.get_abi_size(&st);
+        let i = self.i64();
+        let p = self.ptr_ty();
+        let ty = self.ctx.struct_type(&[i.into(), i.into(), p.into(), p.into(), p.into(), p.into(), p.into()], false);
+        let g = self.module.add_global(ty, None, &format!("tsl_t_state_{view}"));
+        g.set_linkage(Linkage::Private);
+        g.set_constant(true);
+        g.set_initializer(&ty.const_named_struct(&[
+            i.const_int(size, false).into(),
+            i.const_int(8, false).into(),
+            p.const_null().into(),
+            f.as_global_value().as_pointer_value().into(),
+            p.const_null().into(),
+            p.const_null().into(),
+            p.const_null().into(),
+        ]));
+        g.as_pointer_value()
+    }
+
+    /// `tsl_main` for an app: hands the root view to the runtime's event loop.
+    pub(super) fn run_app(&mut self, app: &'a AppDecl, entry: FunctionValue<'ctx>) {
+        self.stack.push(FnCtx {
+            func: entry,
+            scopes: vec![Vec::new()],
+            ret: Ty::Void,
+            self_ptr: None,
+            boxed: Default::default(),
+            record: None,
+        });
+        let arg = |label: &str| app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == label));
+        let title = match arg("title") {
+            Some(a) => self.expr_as(&a.value, &Ty::Str).unwrap(),
+            None => self.str_lit(&app.name.name).into(),
+        };
+        let mut size = |label: &str, default: f64| match arg(label) {
+            Some(a) => self.expr_as(&a.value, &Ty::Float).unwrap(),
+            None => self.ctx.f64_type().const_float(default).into(),
+        };
+        let w = size("width", 640.0);
+        let h = size("height", 480.0);
+        let root = self.view_builds[&app.name.name].as_global_value().as_pointer_value();
+        let null = self.ptr_ty().const_null();
+        self.call_rt("tsl_ui_run", &[title, w, h, root.into(), null.into()]);
+        self.b.build_unreachable().unwrap();
+        self.stack.pop();
+    }
+
+    // ===== content =====
+
+    /// Emits the views in a block (a view body or a content block).
+    pub(super) fn content_block(&mut self, b: &Block, top: bool) {
+        let _ = top;
+        self.push_scope();
+        for s in &b.stmts {
+            if self.terminated() {
+                self.continue_dead();
+            }
+            match s {
+                Stmt::Expr(e) => self.content_expr(e),
+                Stmt::For { var, iter, body, .. } => {
+                    self.for_each_in(var, iter, &mut |g| g.content_block(body, false));
+                }
+                Stmt::Let(_) | Stmt::Var(_) => self.stmt(s),
+                // `state` and functions belong to the view; the checker rejects the rest.
+                _ => {}
+            }
+        }
+        self.pop_scope();
+    }
+
+    /// Emits the view(s) described by `e`.
+    pub(super) fn content_expr(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::If { cond, then, otherwise } => {
+                let (then_bb, else_bb, done) = (self.block_named("then"), self.block_named("else"), self.block_named("endif"));
+                self.push_scope();
+                match cond {
+                    Cond::Expr(c) => {
+                        let c = self.expr(c).unwrap().into_int_value();
+                        self.b.build_conditional_branch(c, then_bb, else_bb).unwrap();
+                        self.b.position_at_end(then_bb);
+                    }
+                    Cond::Let(name, value) => {
+                        let ov = self.expr(value).unwrap().into_struct_value();
+                        let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
+                        self.b.build_conditional_branch(flag, then_bb, else_bb).unwrap();
+                        self.b.position_at_end(then_bb);
+                        let inner = self.b.build_extract_value(ov, 1, "").unwrap();
+                        let ty = self.checked.locals[&name.span].clone();
+                        self.declare_value(&name.name, &ty, Some(inner));
+                    }
+                }
+                self.content_block(then, false);
+                self.pop_scope();
+                self.br(done);
+                self.b.position_at_end(else_bb);
+                match otherwise {
+                    Some(Else::Block(b)) => self.content_block(b, false),
+                    Some(Else::If(e)) => self.content_expr(e),
+                    None => {}
+                }
+                self.br(done);
+                self.b.position_at_end(done);
+            }
+            ExprKind::Match { subject, arms } => {
+                self.match_with(subject, arms, &Ty::Void, true);
+            }
+            ExprKind::Block(b) => self.content_block(b, false),
+            ExprKind::Call { callee, args, trailing }
+                if matches!(
+                    self.checked.calls.get(&e.id).map(|c| &c.callee),
+                    Some(Callee::View(_) | Callee::BuiltinView(_) | Callee::Modifier(_))
+                ) =>
+            {
+                self.emit_view(e, callee, args, trailing.as_deref());
+            }
+            _ => {
+                // A view value (a parameter, a `let`, a function's result): call it.
+                let t = self.ty(e);
+                let Some(v) = self.expr(e) else { return };
+                if t == Ty::View {
+                    self.call_emitter(v);
+                }
+                self.release(v, &t);
+            }
+        }
+    }
+
+    fn call_emitter(&mut self, v: Val<'ctx>) {
+        let s = v.into_struct_value();
+        let f = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+        let env = self.b.build_extract_value(s, 1, "").unwrap();
+        let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
+        self.b.build_indirect_call(ty, f, &[env.into()], "").unwrap();
+    }
+
+    fn emit_view(&mut self, e: &Expr, callee: &Expr, args: &[Arg], trailing: Option<&Expr>) {
+        let info = self.checked.calls[&e.id].clone();
+        let arg = move |r: ArgRef| pick(args, trailing, r);
+        match &info.callee {
+            Callee::View(name) => {
+                let sigs = self.checked.views[name].clone();
+                let src = self.view_decls[name];
+                let mut vals: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into()];
+                for (i, sig) in sigs.iter().enumerate() {
+                    let v = match info.args.get(i).copied().flatten() {
+                        Some(r) if sig.bind => self.locator(arg(r)),
+                        Some(r) if sig.ty == Ty::View => self.emitter(arg(r)),
+                        Some(r) => self.expr_as(arg(r), &sig.ty).unwrap(),
+                        None => self.expr_as(src.params[i].default.as_ref().expect("default"), &sig.ty).unwrap(),
+                    };
+                    vals.push(v.into());
+                }
+                let f = self.view_builds[name];
+                self.b.build_call(f, &vals, "").unwrap();
+            }
+            Callee::BuiltinView(name) => self.builtin_view(name, &info, &arg),
+            Callee::Modifier(name) => {
+                let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
+                self.content_expr(object);
+                self.modifier(name, &info, &arg, args);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// A `View` argument for a custom view: a closure that emits it.
+    fn emitter(&mut self, x: &Expr) -> Val<'ctx> {
+        match &x.kind {
+            ExprKind::Closure { body, .. } => self.make_closure(Body::Content(body), &Ty::View),
+            _ => self.expr(x).unwrap(),
+        }
+    }
+
+    /// A `bind` argument: a closure that locates the storage `x` names.
+    fn locator(&mut self, x: &Expr) -> Val<'ctx> {
+        self.make_closure(Body::Locator(x), &Ty::View)
+    }
+
+    /// Content given to a built-in container: emitted in place.
+    fn content_inline(&mut self, x: &Expr) {
+        match &x.kind {
+            ExprKind::Closure { body, .. } => self.content_block(body, false),
+            _ => self.content_expr(x),
+        }
+    }
+
+    /// Calls a runtime function with some leading arguments, then a closure
+    /// `{fn, env}` whose reference passes to the runtime.
+    pub(super) fn pass_closure(&mut self, rt: &str, leading: &[Val<'ctx>], closure: Val<'ctx>) {
+        let s = closure.into_struct_value();
+        let f = self.b.build_extract_value(s, 0, "").unwrap();
+        let env = self.b.build_extract_value(s, 1, "").unwrap();
+        let mut all = leading.to_vec();
+        all.push(f);
+        all.push(env);
+        self.call_rt(rt, &all);
+    }
+
+    fn builtin_view<'e>(&mut self, name: &str, info: &CallInfo, arg: &dyn Fn(ArgRef) -> &'e Expr) {
+        let a = |i: usize| info.args.get(i).copied().flatten().map(arg);
+        let string = |g: &mut Self, x: Option<&Expr>| match x {
+            Some(x) => g.expr_as(x, &Ty::Str).unwrap(),
+            None => g.str_lit("").into(),
+        };
+        match name {
+            "Text" | "Image" => {
+                let s = string(self, a(0));
+                self.call_rt(if name == "Text" { "tsl_ui_text" } else { "tsl_ui_image" }, &[s]);
+                self.release(s, &Ty::Str);
+            }
+            "Button" => {
+                let label = string(self, a(0));
+                let action = self.expr_as(a(1).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_button", &[label], action);
+                self.release(label, &Ty::Str);
+            }
+            "TextField" | "Toggle" => {
+                let label = string(self, a(0));
+                let loc = self.locator(a(1).unwrap());
+                let f = if name == "TextField" { "tsl_ui_text_field" } else { "tsl_ui_toggle" };
+                self.pass_closure(f, &[label], loc);
+                self.release(label, &Ty::Str);
+            }
+            "Picker" => {
+                let loc = self.locator(a(0).unwrap());
+                self.pass_closure("tsl_ui_begin_picker", &[], loc);
+                self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "VStack" | "HStack" | "ZStack" | "Scroll" => {
+                let (kind, content) = match name {
+                    "VStack" => (0, 1),
+                    "HStack" => (1, 1),
+                    "ZStack" => (2, 0),
+                    _ => (3, 0),
+                };
+                let spacing = match (content, a(0)) {
+                    (1, Some(x)) => self.expr_as(x, &Ty::Float).unwrap(),
+                    _ => self.ctx.f64_type().const_float(8.0).into(),
+                };
+                let k = self.ctx.i32_type().const_int(kind, false);
+                self.call_rt("tsl_ui_begin", &[k.into(), spacing]);
+                self.content_inline(a(content).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "Spacer" => {
+                self.call_rt("tsl_ui_spacer", &[]);
+            }
+            _ => unreachable!("built-in view {name}"),
+        }
+    }
+
+    fn modifier<'e>(&mut self, name: &str, info: &CallInfo, arg: &dyn Fn(ArgRef) -> &'e Expr, args: &[Arg]) {
+        let a = |i: usize| info.args.get(i).copied().flatten().map(arg);
+        let f64t = self.ctx.f64_type();
+        let float = |g: &mut Self, x: Option<&Expr>, default: f64| match x {
+            Some(x) => g.expr_as(x, &Ty::Float).unwrap(),
+            None => f64t.const_float(default).into(),
+        };
+        let flag = |g: &mut Self, x: Option<&Expr>| -> Val<'ctx> {
+            let b = match x {
+                Some(x) => g.expr(x).unwrap().into_int_value(),
+                None => g.ctx.bool_type().const_int(1, false),
+            };
+            g.to_c_bool(b)
+        };
+        let int = |g: &mut Self, x: &Expr| g.expr(x).unwrap();
+        match name {
+            "padding" => {
+                let v = float(self, a(0), 8.0);
+                self.call_rt("tsl_ui_padding", &[v]);
+            }
+            "opacity" => {
+                let v = float(self, a(0), 1.0);
+                self.call_rt("tsl_ui_opacity", &[v]);
+            }
+            "font" => {
+                let size = float(self, a(0), 0.0);
+                let has_size = self.i8().const_int(a(0).is_some() as u64, false);
+                let weight = match a(1) {
+                    Some(x) => int(self, x),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                let has_weight = self.i8().const_int(a(1).is_some() as u64, false);
+                self.call_rt("tsl_ui_font", &[size, has_size.into(), weight, has_weight.into()]);
+            }
+            "color" => {
+                let c = int(self, a(0).unwrap());
+                self.call_rt("tsl_ui_color", &[c]);
+            }
+            "background" => {
+                let c = int(self, a(0).unwrap());
+                let r = float(self, a(1), 0.0);
+                self.call_rt("tsl_ui_background", &[c, r]);
+            }
+            "border" => {
+                let c = int(self, a(0).unwrap());
+                let w = float(self, a(1), 1.0);
+                let r = float(self, a(2), 0.0);
+                self.call_rt("tsl_ui_border", &[c, w, r]);
+            }
+            "frame" => {
+                let mut dims = Vec::new();
+                for i in 0..2 {
+                    match a(i) {
+                        Some(x) => {
+                            let v = self.expr_as(x, &Ty::opt(Ty::Float)).unwrap().into_struct_value();
+                            let has = self.b.build_extract_value(v, 0, "").unwrap().into_int_value();
+                            let val = self.b.build_extract_value(v, 1, "").unwrap();
+                            dims.push(self.to_c_bool(has));
+                            dims.push(val);
+                        }
+                        None => {
+                            dims.push(self.i8().const_zero().into());
+                            dims.push(f64t.const_zero().into());
+                        }
+                    }
+                }
+                self.call_rt("tsl_ui_frame", &dims);
+            }
+            "hidden" | "disabled" => {
+                let b = flag(self, a(0));
+                self.call_rt(if name == "hidden" { "tsl_ui_hidden" } else { "tsl_ui_disabled" }, &[b]);
+            }
+            "onTap" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_tap", &[], action);
+            }
+            "tag" => {
+                let x = &args[0].value;
+                let t = self.ty(x);
+                let v = self.expr(x).unwrap();
+                let p = self.spill(&t, v);
+                let info = self.type_info(&t);
+                self.call_rt("tsl_ui_tag", &[p.into(), info.into()]);
+                self.release(v, &t);
+            }
+            "id" => {
+                // Identity by position for now; the value is evaluated and dropped.
+                let x = &args[0].value;
+                let t = self.ty(x);
+                let v = self.expr(x).unwrap();
+                self.release(v, &t);
+            }
+            _ => unreachable!("modifier {name}"),
+        }
+    }
+}
+
+/// A stable number identifying a view type (for state identity).
+fn view_id(name: &str) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut h);
+    h.finish()
+}

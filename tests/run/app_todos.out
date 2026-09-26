@@ -1,0 +1,69 @@
+Root
+  View
+    VStack
+      HStack
+        TextField "What needs doing?" = ""
+        Button "Add"
+      View
+        HStack
+          Toggle "" = false
+          Text "Write the spec"
+          Spacer
+      View
+        HStack
+          Toggle "" = false
+          Text "Build M3"
+          Spacer
+      View
+        HStack
+          Toggle "" = false
+          Text "Ship it"
+          Spacer
+      HStack
+        Text "3 left"
+        Spacer
+        Picker
+          Text "All"
+          Text "Active"
+          Text "Done"
+Root
+  View
+    VStack
+      HStack
+        TextField "What needs doing?" = ""
+        Button "Add"
+      View
+        HStack
+          Toggle "" = false
+          Text "Build M3"
+          Spacer
+      View
+        HStack
+          Toggle "" = false
+          Text "Ship it"
+          Spacer
+      HStack
+        Text "2 left"
+        Spacer
+        Picker
+          Text "All"
+          Text "Active"
+          Text "Done"
+Root
+  View
+    VStack
+      HStack
+        TextField "What needs doing?" = ""
+        Button "Add"
+      View
+        HStack
+          Toggle "" = true
+          Text "Write the spec"
+          Spacer
+      HStack
+        Text "2 left"
+        Spacer
+        Picker
+          Text "All"
+          Text "Active"
+          Text "Done"

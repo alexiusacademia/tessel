@@ -1,0 +1,11 @@
+tree
+click "Grid"
+click "flip"
+click "Start timer"
+wait 5
+click "no message"
+click "Can't press"
+tree
+click "Empty"
+click "hello"
+tree

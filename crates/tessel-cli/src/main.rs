@@ -143,6 +143,7 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
     let status = Command::new("cc")
         .arg(&obj)
         .arg(&runtime)
+        .args(platform_link_args())
         .arg("-o")
         .arg(out)
         .status()
@@ -152,6 +153,21 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
         return Err(fail("linking failed".into()));
     }
     Ok(())
+}
+
+/// System libraries the runtime needs (windowing, GPU, fonts).
+fn platform_link_args() -> Vec<&'static str> {
+    if cfg!(target_os = "macos") {
+        let frameworks = [
+            "AppKit", "ApplicationServices", "Carbon", "CoreFoundation", "CoreGraphics", "CoreText", "CoreVideo",
+            "Foundation", "Metal", "QuartzCore",
+        ];
+        let mut args: Vec<&str> = frameworks.iter().flat_map(|f| ["-framework", *f]).collect();
+        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip"]);
+        args
+    } else {
+        vec![]
+    }
 }
 
 fn run(path: &Path, program_args: &[String]) -> ExitCode {

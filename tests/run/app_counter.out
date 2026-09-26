@@ -1,0 +1,14 @@
+Root
+  View
+    VStack
+      Text "Count: 0"
+      HStack
+        Button "-"
+        Button "+"
+Root
+  View
+    VStack
+      Text "Count: 2"
+      HStack
+        Button "-"
+        Button "+"

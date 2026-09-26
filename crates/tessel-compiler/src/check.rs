@@ -23,6 +23,10 @@ pub struct Checked {
     /// `for` loop variables (by name span) that are places in the list,
     /// so changing them changes the list.
     pub loop_places: HashSet<Span>,
+    /// Parameters of each user view.
+    pub views: HashMap<String, Vec<ParamSig>>,
+    /// Signatures of functions declared inside views: (view, function).
+    pub view_fns: HashMap<(String, String), FnSig>,
 }
 
 /// What a call expression resolved to.
@@ -97,6 +101,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         frames: Vec::new(),
         locals: HashMap::new(),
         loop_places: HashSet::new(),
+        view_fns: HashMap::new(),
     };
     let ids = c.collect(program, require_entry);
     c.signatures(program, &ids);
@@ -120,6 +125,16 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         fns,
         locals: c.locals,
         loop_places: c.loop_places,
+        views: program
+            .items
+            .iter()
+            .zip(&ids)
+            .filter_map(|(item, id)| match (item, id) {
+                (Item::View(v), Some(id)) => Some((v.name.name.clone(), c.views[*id].clone())),
+                _ => None,
+            })
+            .collect(),
+        view_fns: c.view_fns,
     }
 }
 
@@ -197,6 +212,7 @@ struct Checker<'a> {
     frames: Vec<CallFrame>,
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
+    view_fns: HashMap<(String, String), FnSig>,
 }
 
 impl Checker<'_> {
@@ -699,6 +715,7 @@ impl Checker<'_> {
             for s in &body.stmts {
                 if let Stmt::Fn(f) = s {
                     let sig = c.fn_sig(f);
+                    c.view_fns.insert((name.name.clone(), f.name.name.clone()), sig.clone());
                     c.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone(), FnOrigin::View));
                     fns.push((f, sig));
                 }

@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+parley = "0.11"
+png = "0.18.1"
+pollster = "1.0.1"
+vello = "0.10"
+winit = "0.30"
 
 [lib]
 crate-type = ["staticlib", "rlib"]

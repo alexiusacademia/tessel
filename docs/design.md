@@ -420,6 +420,19 @@ Still open, not blocking v1:
 | M0 | This design doc | Syntax approved (see §11). ✅ |
 | M1 | Front end | `tessel check` parses and type-checks both examples, with clear errors for bad programs. ✅ |
 | M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. ✅ |
-| M3 | First window | `examples/counter.tsl` runs on macOS: window, text, stacks, buttons, state. |
-| M4 | Real app | `examples/todos.tsl` runs on macOS: text fields, toggles, pickers, loops, bindings. |
+| M3 | First window | `examples/counter.tsl` runs on macOS: window, text, stacks, buttons, state. ✅ |
+| M4 | Real app | `examples/todos.tsl` runs on macOS: text fields, toggles, pickers, loops, bindings. Mostly done: runs, see §12.1. |
 | M5 | Windows | Both examples run on Windows from the same source. |
+
+### 12.1 UI status after M3
+
+Working: windows, HiDPI, the build → layout → draw cycle, `state` that
+survives rebuilds, actions, `bind` through any number of views (including
+list elements), `Text`, `Button`, `TextField` (typing, backspace), `Toggle`,
+`Picker` (segmented), `VStack`/`HStack`/`ZStack`, `Spacer`, `Scroll` (mouse
+wheel), `Image` (placeholder box), all modifiers except `.id`, `after`,
+hover and pressed states, and a headless script mode for tests.
+
+Not yet: `fetch`; `.id` (views are matched by position); text cursor
+movement, selection, clipboard and IME input; keyboard focus with Tab;
+loading real images; accessibility; dark mode; animations.

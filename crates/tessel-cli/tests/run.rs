@@ -35,7 +35,13 @@ fn run_programs() {
             failures.push(format!("{name}: build failed:\n{}", String::from_utf8_lossy(&built.stderr)));
             continue;
         }
-        let out = Command::new(&exe).current_dir(repo()).output().unwrap();
+        let mut cmd = Command::new(&exe);
+        cmd.current_dir(repo());
+        // UI apps run headless, driven by `<name>.script`.
+        if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
+            cmd.env("TESSEL_SCRIPT", script);
+        }
+        let out = cmd.output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         let expected_out = std::fs::read_to_string(dir.join(format!("{name}.out"))).unwrap_or_default();
@@ -54,7 +60,12 @@ fn run_programs() {
             _ => {}
         }
         if cfg!(target_os = "macos") && expected_err.is_none() {
-            let leaks = Command::new("leaks").args(["--atExit", "--"]).arg(&exe).output();
+            let mut leaks = Command::new("leaks");
+            leaks.args(["--atExit", "--"]).arg(&exe).current_dir(repo());
+            if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
+                leaks.env("TESSEL_SCRIPT", script);
+            }
+            let leaks = leaks.output();
             if let Ok(leaks) = leaks {
                 let report = String::from_utf8_lossy(&leaks.stdout);
                 if !report.contains(" 0 leaks for 0 total leaked bytes") {

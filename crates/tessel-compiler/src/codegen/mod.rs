@@ -35,6 +35,8 @@ use crate::diag::Diagnostic;
 use crate::source::{SourceMap, Span};
 use crate::types::{FnSig, Ty};
 
+mod ui;
+
 /// Byte offset of a box's data (matches the runtime's `BOX_DATA`).
 const BOX_DATA: u64 = 32;
 
@@ -87,6 +89,30 @@ fn internal(msg: impl Into<String>) -> Diagnostic {
     Diagnostic::error(Span::default(), format!("internal compiler error: {}", msg.into()))
 }
 
+/// What a closure is made from.
+enum Body<'b> {
+    /// An ordinary closure `{ a, b in … }`.
+    Fn(&'b [Ident], &'b Block),
+    /// A view's content block; calling it emits the views.
+    Content(&'b Block),
+    /// A single view expression, wrapped so it can be passed around.
+    ContentExpr(&'b Expr),
+    /// A place (for `bind`); calling it returns a pointer to the storage.
+    Locator(&'b Expr),
+}
+
+/// How a closure captures a variable.
+#[derive(Clone, Copy)]
+enum Capture {
+    Value,
+    Box,
+    Binding,
+    /// A stable list element: the list slot pointer and the index.
+    Elem,
+    /// A list element found through a locator for its list, and the index.
+    ElemVia,
+}
+
 /// Where a variable lives.
 #[derive(Clone, Copy)]
 enum Store<'ctx> {
@@ -96,7 +122,13 @@ enum Store<'ctx> {
     /// Used for `var`s captured by closures, so changes are shared.
     Boxed(PointerValue<'ctx>),
     /// Element `idx` of the list in `slot`: a loop variable over a changeable list.
-    ListElem { slot: PointerValue<'ctx>, idx: PointerValue<'ctx> },
+    /// `stable` if `slot` outlives the function (it's in a view's state record),
+    /// so closures may keep pointing at it.
+    ListElem { slot: PointerValue<'ctx>, idx: PointerValue<'ctx>, stable: bool, relocate: Option<PointerValue<'ctx>> },
+    /// Element `idx` of the list a locator (in `locator`, a slot holding
+    /// `{ fn, env }`) points at: a loop variable captured by a closure when
+    /// the list's storage may move. Found again on every use.
+    ListElemVia { locator: PointerValue<'ctx>, idx: PointerValue<'ctx> },
     /// A captured value inside a closure's environment (not owned).
     EnvValue(PointerValue<'ctx>),
     /// A captured box pointer inside a closure's environment (not owned).
@@ -105,6 +137,13 @@ enum Store<'ctx> {
     Field(u32),
     /// The method's receiver itself.
     SelfRef,
+    /// A view `state` value: field `i` of the view's state record.
+    State(u32),
+    /// A `bind` parameter: `slot` holds a locator closure that returns a
+    /// pointer to the storage. `owned` if this function must release it.
+    Binding { slot: PointerValue<'ctx>, owned: bool },
+    /// A function declared inside a view (called with the state record).
+    ViewFn,
 }
 
 #[derive(Clone)]
@@ -122,6 +161,17 @@ struct FnCtx<'ctx> {
     self_ptr: Option<(PointerValue<'ctx>, Ty)>,
     /// `var`s captured by closures in this function; they live in boxes.
     boxed: HashSet<String>,
+    /// Inside a view (or its functions and closures): its state record.
+    record: Option<Record<'ctx>>,
+}
+
+/// A view's persistent state: the data of a box holding a struct of its
+/// `state` values.
+#[derive(Clone)]
+struct Record<'ctx> {
+    data: PointerValue<'ctx>,
+    ty: StructType<'ctx>,
+    view: String,
 }
 
 struct Gen<'ctx, 'a> {
@@ -146,6 +196,20 @@ struct Gen<'ctx, 'a> {
     locs: HashMap<(u32, u32), PointerValue<'ctx>>,
     closures: usize,
     stack: Vec<FnCtx<'ctx>>,
+
+    /// Views by name (the `app` included), and what's compiled for them.
+    view_decls: HashMap<String, ViewSource<'a>>,
+    view_builds: HashMap<String, FunctionValue<'ctx>>,
+    view_fns: HashMap<(String, String), FunctionValue<'ctx>>,
+    records: HashMap<String, (StructType<'ctx>, Vec<Ty>)>,
+    app: Option<&'a AppDecl>,
+}
+
+/// A view's source: a `view` declaration or the `app`.
+#[derive(Clone, Copy)]
+struct ViewSource<'a> {
+    params: &'a [Param],
+    body: &'a Block,
 }
 
 type Val<'ctx> = BasicValueEnum<'ctx>;
@@ -180,6 +244,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             locs: HashMap::new(),
             closures: 0,
             stack: Vec::new(),
+            view_decls: HashMap::new(),
+            view_builds: HashMap::new(),
+            view_fns: HashMap::new(),
+            records: HashMap::new(),
+            app: None,
         }
     }
 
@@ -211,13 +280,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Item::Fn(f) => {
                     self.fn_decls.insert(f.name.name.clone(), f);
                 }
-                Item::View(v) => self.unsupported(v.name.span, "views"),
-                Item::App(a) => self.unsupported(a.name.span, "running an `app`"),
+                Item::View(v) => {
+                    self.view_decls.insert(v.name.name.clone(), ViewSource { params: &v.params, body: &v.body });
+                }
+                Item::App(a) => {
+                    self.view_decls.insert(a.name.name.clone(), ViewSource { params: &[], body: &a.body });
+                    self.app = Some(a);
+                }
             }
         }
-        if !self.fn_decls.contains_key("main") {
+        if !self.fn_decls.contains_key("main") && self.app.is_none() {
             if self.errors.is_empty() {
-                self.errors.push(Diagnostic::error(Span::default(), "this program has no `fn main()` to run"));
+                self.errors.push(Diagnostic::error(Span::default(), "this program has no `app` or `fn main()` to run"));
             }
             return;
         }
@@ -242,6 +316,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.methods.insert(key, f);
         }
 
+        self.declare_views();
+
         for (name, decl) in self.fn_decls.clone() {
             let f = self.fns[&name];
             let sig = self.checked.fns[&name].clone();
@@ -258,12 +334,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2);
         }
 
+        self.compile_views();
+
         // Entry point called by the runtime.
         let entry = self.module.add_function("tsl_main", self.ctx.void_type().fn_type(&[], false), None);
         self.b.position_at_end(self.ctx.append_basic_block(entry, "entry"));
-        let null = self.ptr_ty().const_null();
-        self.b.build_call(self.fns["main"], &[null.into()], "").unwrap();
-        self.b.build_return(None).unwrap();
+        match self.app {
+            Some(app) => self.run_app(app, entry),
+            None => {
+                let null = self.ptr_ty().const_null();
+                self.b.build_call(self.fns["main"], &[null.into()], "").unwrap();
+                self.b.build_return(None).unwrap();
+            }
+        }
     }
 
     fn method_sig(&self, owner: &Ty, name: &str) -> FnSig {
@@ -291,7 +374,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             scope.extend(self.receiver_vars(owner));
         }
         let boxed = boxed_vars(body);
-        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed });
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None });
         for (i, (name, ty)) in params.iter().enumerate() {
             let value = func.get_nth_param(first_param + i as u32).unwrap();
             self.declare_value(&name.name, ty, Some(value));
@@ -348,7 +431,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Int => self.i64().into(),
             Ty::Float => self.ctx.f64_type().into(),
             Ty::Bool => self.ctx.bool_type().into(),
-            Ty::Str | Ty::List(_) | Ty::Dict(..) | Ty::View => self.ptr_ty().into(),
+            Ty::Str | Ty::List(_) | Ty::Dict(..) => self.ptr_ty().into(),
+            // A view value is a closure that emits the view when called.
+            Ty::View => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Range => self.ctx.struct_type(&[self.i64().into(), self.i64().into()], false).into(),
             Ty::Opt(inner) => {
                 let inner = self.llty(inner).expect("optional of nothing");
@@ -530,6 +615,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_dict_new" => (vec![p, p], Some(p)),
             "tsl_dict_get" | "tsl_dict_remove" => (vec![p, p, p], Some(i8t)),
             "tsl_dict_set" => (vec![p, p, p], None),
+            "tsl_after" => (vec![f64t, p, p], None),
+            "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
+            "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),
+            "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
+            "tsl_ui_begin" => (vec![i32t, f64t], None),
+            "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_tag" => (vec![p, p], None),
+            "tsl_ui_view_begin" => (vec![i, p, p], Some(p)),
+            "tsl_ui_padding" | "tsl_ui_opacity" => (vec![f64t], None),
+            "tsl_ui_font" => (vec![f64t, i8t, i32t, i8t], None),
+            "tsl_ui_color" => (vec![i32t], None),
+            "tsl_ui_background" => (vec![i32t, f64t], None),
+            "tsl_ui_border" => (vec![i32t, f64t, f64t], None),
+            "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t], None),
+            "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
+            "tsl_ui_run" => (vec![p, f64t, f64t, p, p], None),
             _ => panic!("unknown runtime function {name}"),
         };
         let ps: Vec<BasicMetadataTypeEnum> = params.into_iter().map(Into::into).collect();
@@ -636,10 +736,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let f = if retain { "tsl_retain" } else { "tsl_release" };
         match t {
-            Ty::Str | Ty::List(_) | Ty::Dict(..) | Ty::View => {
+            Ty::Str | Ty::List(_) | Ty::Dict(..) => {
                 self.call_rt(f, &[v]);
             }
-            Ty::Fn(..) | Ty::Enum(_) => {
+            Ty::Fn(..) | Ty::Enum(_) | Ty::View => {
                 let p = self.b.build_extract_value(v.into_struct_value(), 1, "").unwrap();
                 self.call_rt(f, &[p]);
             }
@@ -711,6 +811,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ret: Ty::Void,
             self_ptr: None,
             boxed: HashSet::new(),
+            record: None,
         });
         let entry = self.ctx.append_basic_block(f, "entry");
         self.b.position_at_end(entry);
@@ -1075,6 +1176,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let bx = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
                 self.call_rt("tsl_release", &[bx]);
             }
+            Store::Binding { slot, owned: true } => {
+                let t = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(t, slot, "").unwrap();
+                self.release(loc, &Ty::View);
+            }
             _ => {}
         }
     }
@@ -1095,7 +1201,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let bx = self.b.build_load(self.ptr_ty(), p, "").unwrap().into_pointer_value();
                 self.box_data(bx)
             }
-            Store::ListElem { slot, idx } => {
+            Store::ListElem { slot, idx, .. } => {
                 let list = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
                 let i = self.b.build_load(self.i64(), idx, "").unwrap();
                 let l = self.loc(span);
@@ -1108,13 +1214,49 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_struct_gep(st, p, i, "").unwrap()
             }
             Store::SelfRef => self.self_ptr().0,
+            Store::State(i) => {
+                let r = self.stack.last().unwrap().record.clone().expect("state outside a view");
+                self.b.build_struct_gep(r.ty, r.data, i, "").unwrap()
+            }
+            Store::ListElemVia { locator, idx } => {
+                let t = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(t, locator, "").unwrap();
+                let slot = self.call_locator(loc);
+                let list = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
+                let i = self.b.build_load(self.i64(), idx, "").unwrap();
+                let l = self.loc(span);
+                self.call_rt("tsl_list_get", &[list, i, l.into()]).unwrap().into_pointer_value()
+            }
+            Store::Binding { slot, .. } => {
+                let t = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(t, slot, "").unwrap();
+                self.call_locator(loc)
+            }
+            Store::ViewFn => unreachable!("a view function isn't a value"),
         }
+    }
+
+    /// Calls a locator closure `{ fn, env }`, giving a pointer to storage.
+    fn call_locator(&mut self, loc: Val<'ctx>) -> PointerValue<'ctx> {
+        let s = loc.into_struct_value();
+        let f = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+        let env = self.b.build_extract_value(s, 1, "").unwrap();
+        let ty = self.ptr_ty().fn_type(&[self.ptr_ty().into()], false);
+        self.b.build_indirect_call(ty, f, &[env.into()], "").unwrap().try_as_basic_value().basic().unwrap().into_pointer_value()
     }
 
     /// Pointer to a variable's storage, for writing.
     fn var_write_ptr(&mut self, v: &Var<'ctx>, span: Span) -> PointerValue<'ctx> {
         match v.store {
-            Store::ListElem { slot, idx } => {
+            Store::ListElem { slot, idx, .. } => {
+                let i = self.b.build_load(self.i64(), idx, "").unwrap();
+                let l = self.loc(span);
+                self.call_rt("tsl_list_elem_mut", &[slot.into(), i, l.into()]).unwrap().into_pointer_value()
+            }
+            Store::ListElemVia { locator, idx } => {
+                let t = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(t, locator, "").unwrap();
+                let slot = self.call_locator(loc);
                 let i = self.b.build_load(self.i64(), idx, "").unwrap();
                 let l = self.loc(span);
                 self.call_rt("tsl_list_elem_mut", &[slot.into(), i, l.into()]).unwrap().into_pointer_value()
@@ -1182,7 +1324,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Is `e` storage that can be changed (so it has a write pointer)?
     fn is_place(&self, e: &Expr) -> bool {
         match &e.kind {
-            ExprKind::Name(n) => self.lookup(n).is_some_and(|v| !matches!(v.store, Store::EnvValue(_))),
+            ExprKind::Name(n) => self.lookup(n).is_some_and(|v| !matches!(v.store, Store::EnvValue(_) | Store::ViewFn)),
             ExprKind::Member { object, optional: false, .. } => {
                 matches!(self.ty(object), Ty::Struct(_)) && self.is_place(object)
             }
@@ -1309,6 +1451,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn for_loop(&mut self, var: &Ident, iter: &Expr, body: &Block) {
+        self.for_each_in(var, iter, &mut |g| {
+            g.block(body, Some(&Ty::Void));
+        });
+    }
+
+    /// Is `e` rooted in a view's `state` (so its storage outlives this function)?
+    fn in_state(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Name(n) => self.lookup(n).is_some_and(|v| matches!(v.store, Store::State(_))),
+            ExprKind::Member { object, .. } => self.in_state(object),
+            _ => false,
+        }
+    }
+
+    /// A `for` loop whose body is emitted by `body`.
+    fn for_each_in(&mut self, var: &Ident, iter: &Expr, body: &mut dyn FnMut(&mut Self)) {
         if let ExprKind::Binary(BinOp::Range, lo, hi) = &iter.kind {
             let lo = self.expr(lo).unwrap().into_int_value();
             let hi = self.expr(hi).unwrap().into_int_value();
@@ -1323,7 +1481,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.b.position_at_end(body_bb);
             self.push_scope();
             self.declare_value(&var.name, &Ty::Int, Some(cur.into()));
-            self.block(body, Some(&Ty::Void));
+            body(self);
             self.pop_scope();
             if !self.terminated() {
                 let next = self.b.build_int_add(cur, self.i64().const_int(1, false), "").unwrap();
@@ -1340,6 +1498,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         // Either iterate the live list in place, or a snapshot of it. The
         // snapshot is a hidden variable, so an early `return` releases it.
         self.push_scope();
+        // A closure capturing the loop variable must find the element again
+        // later; if the list's storage may move, keep a locator for it.
+        let relocate = if place && !self.in_state(iter) {
+            let loc = self.make_closure(Body::Locator(iter), &Ty::View);
+            let lt = self.llty(&Ty::View).unwrap();
+            let slot = self.alloca(lt, "list_locator");
+            self.b.build_store(slot, loc).unwrap();
+            self.push_var(Var { name: String::new(), ty: Ty::View, store: Store::Binding { slot, owned: true } });
+            Some(slot)
+        } else {
+            None
+        };
         let slot = if place {
             self.write_ptr(iter)
         } else {
@@ -1360,7 +1530,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.b.position_at_end(body_bb);
         self.push_scope();
         if place {
-            self.push_var(Var { name: var.name.clone(), ty: (*elem).clone(), store: Store::ListElem { slot, idx } });
+            let stable = self.in_state(iter);
+            self.push_var(Var { name: var.name.clone(), ty: (*elem).clone(), store: Store::ListElem { slot, idx, stable, relocate } });
         } else {
             let l = self.loc(iter.span);
             let p = self.call_rt("tsl_list_get", &[list, cur.into(), l.into()]).unwrap().into_pointer_value();
@@ -1368,7 +1539,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.retain(v, &elem);
             self.declare_value(&var.name, &elem, Some(v));
         }
-        self.block(body, Some(&Ty::Void));
+        body(self);
         self.pop_scope();
         if !self.terminated() {
             let cur = self.b.build_load(self.i64(), idx, "").unwrap().into_int_value();
@@ -1936,6 +2107,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn match_expr(&mut self, subject: &Expr, arms: &[Arm], t: &Ty) -> Option<Val<'ctx>> {
+        self.match_with(subject, arms, t, false)
+    }
+
+    /// A `match`; with `content`, its arms emit views instead of producing a value.
+    fn match_with(&mut self, subject: &Expr, arms: &[Arm], t: &Ty, content: bool) -> Option<Val<'ctx>> {
         let st = self.ty(subject);
         let sv = self.expr(subject).unwrap();
         // The subject is a hidden variable, so a `return` in an arm releases it.
@@ -1994,6 +2170,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
             }
             let v = match &arm.body.kind {
+                ExprKind::Block(b) if content => {
+                    self.content_block(b, false);
+                    None
+                }
+                _ if content => {
+                    self.content_expr(&arm.body);
+                    None
+                }
                 ExprKind::Block(b) => self.block(b, Some(t)),
                 _ if *t == Ty::Void => {
                     let bt = self.ty(&arm.body);
@@ -2023,65 +2207,138 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     // ===== closures =====
 
     fn closure(&mut self, params: &[Ident], body: &Block, t: &Ty) -> Val<'ctx> {
-        let Ty::Fn(ptys, ret) = t else { unreachable!() };
-        let (ptys, ret) = (ptys.clone(), (**ret).clone());
-        let fn_ty = self.fn_type(&ptys, &ret, false);
+        self.make_closure(Body::Fn(params, body), t)
+    }
+
+    /// Builds a closure value `{ fn, env }`. Captured variables: values are
+    /// copied; boxed `var`s share their box; bindings share their locator;
+    /// fields and `self` are reached through the receiver pointer; view
+    /// `state` through the view's state record (whose box is kept alive).
+    fn make_closure(&mut self, body: Body, t: &Ty) -> Val<'ctx> {
+        let (fn_ty, ptys, ret) = match (&body, t) {
+            (Body::Fn(..), Ty::Fn(ptys, ret)) => (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone()),
+            (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
+            _ => (self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
+        };
         self.closures += 1;
         let f = self.module.add_function(&format!("tsl_c_{}", self.closures), fn_ty, Some(Linkage::Internal));
 
-        // Captured variables: values are copied; boxed `var`s share their box;
-        // fields and `self` are reached through the receiver pointer.
         let mut free = BTreeSet::new();
-        let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-        free_block(body, &mut bound, &mut free);
-        let mut captures: Vec<(Var<'ctx>, bool)> = Vec::new();
+        match &body {
+            Body::Fn(params, b) => {
+                let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                free_block(b, &mut bound, &mut free);
+            }
+            Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
+            Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
+        }
+        let mut captures: Vec<(Var<'ctx>, Capture)> = Vec::new();
         let mut needs_self = false;
+        let mut needs_record = false;
         for name in &free {
             let Some(v) = self.lookup(name) else { continue };
-            match v.store {
-                Store::Field(_) | Store::SelfRef => needs_self = true,
-                Store::Boxed(_) | Store::EnvBox(_) => captures.push((v, true)),
-                _ => captures.push((v, false)),
-            }
+            let kind = match v.store {
+                Store::Field(_) | Store::SelfRef => {
+                    needs_self = true;
+                    continue;
+                }
+                Store::State(_) | Store::ViewFn => {
+                    needs_record = true;
+                    continue;
+                }
+                Store::Boxed(_) | Store::EnvBox(_) => Capture::Box,
+                Store::Binding { .. } => Capture::Binding,
+                Store::ListElem { stable: true, .. } => Capture::Elem,
+                Store::ListElem { relocate: Some(_), .. } | Store::ListElemVia { .. } => Capture::ElemVia,
+                _ => Capture::Value,
+            };
+            captures.push((v, kind));
         }
         let mut env_fields: Vec<BasicTypeEnum> = Vec::new();
-        for (v, boxed) in &captures {
-            env_fields.push(if *boxed { self.ptr_ty().into() } else { self.llty(&v.ty).unwrap() });
+        for (v, kind) in &captures {
+            match kind {
+                Capture::Value => env_fields.push(self.llty(&v.ty).unwrap()),
+                Capture::Box => env_fields.push(self.ptr_ty().into()),
+                Capture::Binding => env_fields.push(self.llty(&Ty::View).unwrap()),
+                Capture::Elem => {
+                    env_fields.push(self.ptr_ty().into());
+                    env_fields.push(self.i64().into());
+                }
+                Capture::ElemVia => {
+                    env_fields.push(self.llty(&Ty::View).unwrap());
+                    env_fields.push(self.i64().into());
+                }
+            }
         }
         let self_info = if needs_self { self.stack.last().unwrap().self_ptr.clone() } else { None };
+        let self_field = env_fields.len() as u32;
         if self_info.is_some() {
+            env_fields.push(self.ptr_ty().into());
+        }
+        let record = if needs_record { self.stack.last().unwrap().record.clone() } else { None };
+        let record_field = env_fields.len() as u32;
+        if record.is_some() {
             env_fields.push(self.ptr_ty().into());
         }
         let env_ty = self.ctx.struct_type(&env_fields, false);
 
+        // Fill the environment.
         let env = if env_fields.is_empty() {
             self.ptr_ty().const_null()
         } else {
-            let info = self.env_info(env_ty, &captures);
+            let info = self.env_info(env_ty, &captures, record.is_some().then_some(record_field));
             let bx = self.call_rt("tsl_box_new", &[info.into()]).unwrap().into_pointer_value();
             let data = self.box_data(bx);
-            for (i, (v, boxed)) in captures.iter().enumerate() {
-                let fp = self.b.build_struct_gep(env_ty, data, i as u32, "").unwrap();
-                let val: Val = if *boxed {
-                    let bxp = match v.store {
-                        Store::Boxed(slot) | Store::EnvBox(slot) => {
-                            self.b.build_load(self.ptr_ty(), slot, "").unwrap()
-                        }
-                        _ => unreachable!(),
-                    };
-                    self.call_rt("tsl_retain", &[bxp]);
-                    bxp
-                } else {
-                    let p = self.var_read_ptr(v, body.span);
-                    let val = self.load(&v.ty, p);
-                    self.retain(val, &v.ty);
-                    val
-                };
-                self.b.build_store(fp, val).unwrap();
+            let mut field = 0;
+            for (v, kind) in &captures {
+                let fp = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                field += 1;
+                match (kind, v.store) {
+                    (Capture::Box, Store::Boxed(slot) | Store::EnvBox(slot)) => {
+                        let bxp = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
+                        self.call_rt("tsl_retain", &[bxp]);
+                        self.b.build_store(fp, bxp).unwrap();
+                    }
+                    (Capture::Binding, Store::Binding { slot, .. }) => {
+                        let lt = self.llty(&Ty::View).unwrap();
+                        let loc = self.b.build_load(lt, slot, "").unwrap();
+                        self.retain(loc, &Ty::View);
+                        self.b.build_store(fp, loc).unwrap();
+                    }
+                    (Capture::Elem, Store::ListElem { slot, idx, .. }) => {
+                        self.b.build_store(fp, slot).unwrap();
+                        let ip = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                        field += 1;
+                        let i = self.b.build_load(self.i64(), idx, "").unwrap();
+                        self.b.build_store(ip, i).unwrap();
+                    }
+                    (Capture::ElemVia, Store::ListElem { relocate: Some(locator), idx, .. } | Store::ListElemVia { locator, idx }) => {
+                        let lt = self.llty(&Ty::View).unwrap();
+                        let loc = self.b.build_load(lt, locator, "").unwrap();
+                        self.retain(loc, &Ty::View);
+                        self.b.build_store(fp, loc).unwrap();
+                        let ip = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                        field += 1;
+                        let i = self.b.build_load(self.i64(), idx, "").unwrap();
+                        self.b.build_store(ip, i).unwrap();
+                    }
+                    _ => {
+                        let p = self.var_read_ptr(v, Span::default());
+                        let val = self.load(&v.ty, p);
+                        self.retain(val, &v.ty);
+                        self.b.build_store(fp, val).unwrap();
+                    }
+                }
             }
             if let Some((sp, _)) = &self_info {
-                let fp = self.b.build_struct_gep(env_ty, data, captures.len() as u32, "").unwrap();
+                let fp = self.b.build_struct_gep(env_ty, data, self_field, "").unwrap();
                 self.b.build_store(fp, *sp).unwrap();
+            }
+            if let Some(r) = &record {
+                let fp = self.b.build_struct_gep(env_ty, data, record_field, "").unwrap();
+                let rb = self.record_box(r.data);
+                self.call_rt("tsl_retain", &[rb.into()]);
+                self.b.build_store(fp, rb).unwrap();
             }
             bx
         };
@@ -2093,60 +2350,153 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let env_param = f.get_nth_param(0).unwrap().into_pointer_value();
         let mut scope = Vec::new();
         let mut self_ptr = None;
+        let mut inner_record = None;
         if !env_fields.is_empty() {
             let data = self.box_data(env_param);
-            for (i, (v, boxed)) in captures.iter().enumerate() {
-                let fp = self.b.build_struct_gep(env_ty, data, i as u32, "").unwrap();
-                let store = if *boxed { Store::EnvBox(fp) } else { Store::EnvValue(fp) };
+            let mut field = 0;
+            for (v, kind) in &captures {
+                let fp = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                field += 1;
+                let store = match kind {
+                    Capture::Value => Store::EnvValue(fp),
+                    Capture::Box => Store::EnvBox(fp),
+                    Capture::Binding => Store::Binding { slot: fp, owned: false },
+                    Capture::Elem => {
+                        let slot = self.b.build_load(self.ptr_ty(), fp, "slot").unwrap().into_pointer_value();
+                        let idx = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                        field += 1;
+                        Store::ListElem { slot, idx, stable: true, relocate: None }
+                    }
+                    Capture::ElemVia => {
+                        let idx = self.b.build_struct_gep(env_ty, data, field, "").unwrap();
+                        field += 1;
+                        Store::ListElemVia { locator: fp, idx }
+                    }
+                };
                 scope.push(Var { name: v.name.clone(), ty: v.ty.clone(), store });
             }
             if let Some((_, owner)) = &self_info {
-                let fp = self.b.build_struct_gep(env_ty, data, captures.len() as u32, "").unwrap();
+                let fp = self.b.build_struct_gep(env_ty, data, self_field, "").unwrap();
                 let sp = self.b.build_load(self.ptr_ty(), fp, "self").unwrap().into_pointer_value();
                 self_ptr = Some((sp, owner.clone()));
                 let mut vars = self.receiver_vars(owner);
                 vars.append(&mut scope);
                 scope = vars;
             }
+            if let Some(r) = &record {
+                let fp = self.b.build_struct_gep(env_ty, data, record_field, "").unwrap();
+                let rb = self.b.build_load(self.ptr_ty(), fp, "record").unwrap().into_pointer_value();
+                let data = self.box_data(rb);
+                inner_record = Some(Record { data, ty: r.ty, view: r.view.clone() });
+                let mut vars = self.record_vars();
+                vars.append(&mut scope);
+                scope = vars;
+            }
         }
-        let boxed = boxed_vars(body);
-        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed });
-        for (i, (p, pt)) in params.iter().zip(&ptys).enumerate() {
-            let v = f.get_nth_param(1 + i as u32).unwrap();
-            self.declare_value(&p.name, pt, Some(v));
+        let boxed = match &body {
+            Body::Fn(_, b) | Body::Content(b) => boxed_vars(b),
+            _ => HashSet::new(),
+        };
+        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record });
+        match body {
+            Body::Fn(params, b) => {
+                for (i, (p, pt)) in params.iter().zip(&ptys).enumerate() {
+                    let v = f.get_nth_param(1 + i as u32).unwrap();
+                    self.declare_value(&p.name, pt, Some(v));
+                }
+                let v = self.block(b, Some(&ret));
+                self.finish_function(v);
+            }
+            Body::Content(b) => {
+                self.content_block(b, false);
+                self.finish_function(None);
+            }
+            Body::ContentExpr(e) => {
+                self.content_expr(e);
+                self.finish_function(None);
+            }
+            Body::Locator(e) => {
+                let p = self.write_ptr(e);
+                self.b.build_return(Some(&p)).unwrap();
+            }
         }
-        let v = self.block(body, Some(&ret));
-        self.finish_function(v);
         self.stack.pop();
         if let Some(bb) = saved {
             self.b.position_at_end(bb);
         }
 
-        let st = self.llty(t).unwrap().into_struct_type();
+        let st = self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false);
         let s = self.b.build_insert_value(st.get_undef(), f.as_global_value().as_pointer_value(), 0, "").unwrap();
         self.b.build_insert_value(s, env, 1, "").unwrap().into_struct_value().into()
     }
 
+    /// The box holding a view's state record.
+    fn record_box(&mut self, data: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        let back = self.i64().const_int(BOX_DATA, false);
+        let neg = self.b.build_int_neg(back, "").unwrap();
+        unsafe { self.b.build_gep(self.i8(), data, &[neg], "record").unwrap() }
+    }
+
+    /// Variables for the current view's `state` values and functions.
+    fn record_vars(&self) -> Vec<Var<'ctx>> {
+        self.stack
+            .last()
+            .map(|c| {
+                c.scopes
+                    .iter()
+                    .flatten()
+                    .filter(|v| matches!(v.store, Store::State(_) | Store::ViewFn))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Type info for a closure environment: releases the captures when freed.
-    fn env_info(&mut self, env_ty: StructType<'ctx>, captures: &[(Var<'ctx>, bool)]) -> PointerValue<'ctx> {
+    fn env_info(
+        &mut self,
+        env_ty: StructType<'ctx>,
+        captures: &[(Var<'ctx>, Capture)],
+        record_field: Option<u32>,
+    ) -> PointerValue<'ctx> {
         let n = self.closures;
         let f = self.module.add_function(
             &format!("tsl_h_env_{n}"),
             self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false),
             Some(Linkage::Internal),
         );
-        let caps: Vec<(Ty, bool)> = captures.iter().map(|(v, b)| (v.ty.clone(), *b)).collect();
+        let caps: Vec<(Ty, Capture)> = captures.iter().map(|(v, k)| (v.ty.clone(), *k)).collect();
         self.in_helper(f, |g| {
             let p = f.get_nth_param(0).unwrap().into_pointer_value();
-            for (i, (ty, boxed)) in caps.iter().enumerate() {
-                let fp = g.b.build_struct_gep(env_ty, p, i as u32, "").unwrap();
-                if *boxed {
-                    let bx = g.b.build_load(g.ptr_ty(), fp, "").unwrap();
-                    g.call_rt("tsl_release", &[bx]);
-                } else {
-                    let v = g.load(ty, fp);
-                    g.release(v, ty);
+            let mut field = 0;
+            for (ty, kind) in &caps {
+                let fp = g.b.build_struct_gep(env_ty, p, field, "").unwrap();
+                field += 1;
+                match kind {
+                    Capture::Box => {
+                        let bx = g.b.build_load(g.ptr_ty(), fp, "").unwrap();
+                        g.call_rt("tsl_release", &[bx]);
+                    }
+                    Capture::Binding => {
+                        let v = g.load(&Ty::View, fp);
+                        g.release(v, &Ty::View);
+                    }
+                    Capture::Elem => field += 1,
+                    Capture::ElemVia => {
+                        let v = g.load(&Ty::View, fp);
+                        g.release(v, &Ty::View);
+                        field += 1;
+                    }
+                    Capture::Value => {
+                        let v = g.load(ty, fp);
+                        g.release(v, ty);
+                    }
                 }
+            }
+            if let Some(rf) = record_field {
+                let fp = g.b.build_struct_gep(env_ty, p, rf, "").unwrap();
+                let bx = g.b.build_load(g.ptr_ty(), fp, "").unwrap();
+                g.call_rt("tsl_release", &[bx]);
             }
             g.b.build_return(None).unwrap();
         });
@@ -2329,9 +2679,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(fv, &ft);
                 r
             }
-            Callee::View(_) | Callee::BuiltinView(_) | Callee::Modifier(_) | Callee::ViewFn(_) => {
-                self.unsupported(e.span, "views");
-                self.undef(&t)
+            // A view used as a value: wrap it so it can be emitted later.
+            Callee::View(_) | Callee::BuiltinView(_) | Callee::Modifier(_) => {
+                Some(self.make_closure(Body::ContentExpr(e), &Ty::View))
+            }
+            Callee::ViewFn(name) => {
+                let r = self.stack.last().unwrap().record.clone().expect("view function outside its view");
+                let sig = self.checked.view_fns[&(r.view.clone(), name.clone())].clone();
+                let decl = self.view_fn_decl(&r.view, name);
+                let vals = self.call_args(&info, &sig, &decl.params, &arg);
+                let f = self.view_fns[&(r.view.clone(), name.clone())];
+                let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), r.data.into()];
+                all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
+                self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic()
             }
         }
     }
@@ -2773,6 +3133,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     _ => unreachable!(),
                 })
+            }
+            "after" => {
+                let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();
+                let action = self.expr_as(arg(info.args[1].unwrap()), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_after", &[secs], action);
+                None
             }
             _ => {
                 self.unsupported(span, &format!("`{name}`"));

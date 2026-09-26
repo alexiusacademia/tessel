@@ -1,0 +1,67 @@
+// A todo list: structs, lists, enums, loops, bindings and custom views.
+
+struct Todo {
+    title: String
+    done: Bool = false
+}
+
+enum Filter { all, active, done }
+
+app Todos(width: 420, height: 560) {
+    state todos: [Todo] = []
+    state draft = ""
+    state filter = Filter.all
+
+    VStack(spacing: 12) {
+        HStack(spacing: 8) {
+            TextField("What needs doing?", text: draft)
+            Button("Add") { add() }
+        }
+
+        for todo in todos {
+            if shows(todo) {
+                TodoRow(todo: todo)
+            }
+        }
+
+        HStack {
+            Text("{remaining()} left")
+            Spacer()
+            Picker(selection: filter) {
+                Text("All").tag(.all)
+                Text("Active").tag(.active)
+                Text("Done").tag(.done)
+            }
+        }
+    }
+    .padding(16)
+
+    fn add() {
+        if draft != "" {
+            todos.append(Todo(title: draft))
+            draft = ""
+        }
+    }
+
+    fn shows(todo: Todo) -> Bool {
+        match filter {
+            .all -> true
+            .active -> !todo.done
+            .done -> todo.done
+        }
+    }
+
+    fn remaining() -> Int {
+        todos.filter { t in !t.done }.count
+    }
+}
+
+// A reusable view. `bind` means the row edits the caller's Todo in place.
+view TodoRow(todo: bind Todo) {
+    HStack(spacing: 8) {
+        Toggle(isOn: todo.done)
+        Text(todo.title)
+            .color(if todo.done { .gray } else { .primary })
+        Spacer()
+    }
+}

@@ -1,0 +1,18 @@
+click "What needs doing?"
+type Write the spec
+click "Add"
+click "What needs doing?"
+type Build M3
+click "Add"
+click "What needs doing?"
+type Ship itt
+key backspace
+key enter
+click "Add"
+click "Add"
+tree
+click 35 245
+click "Active"
+tree
+click "Done"
+tree
