@@ -424,7 +424,28 @@ Still open, not blocking v1:
 | M4 | Real app | `examples/todos` runs on macOS: text fields, toggles, pickers, loops, bindings. ✅ |
 | M5 | Windows | Both examples run on Windows from the same source. |
 
-### 12.1 UI status after M4
+### 12.1 Roadmap after M5
+
+| Area | Status | What it means |
+|---|---|---|
+| Editor support | ✅ first version | VS Code extension: highlighting; `tessel lsp` for live errors and types on hover |
+| Packaging | ✅ first version | `tessel build --bundle` makes `Name.app` on macOS; Windows apps have no console window. Still to do: app icons, code signing, installers |
+| **Tessel IDE** | planned | Launching Tessel opens its own IDE. It edits `.tsl` files and runs the `tessel` commands for you: check (errors as you type, like `tessel lsp`), run, debug, build and package. No terminal needed. |
+| Hot reload | planned | Save a file and the running app updates, keeping its state |
+| App polish | planned | Dark mode, animations, real images, Tab between fields, IME input, accessibility |
+| Standard library | planned | Files, JSON, dates, math, richer `fetch` (POST, headers, status codes) |
+| Language gaps | planned | Error reasons (not just `nil`), generics for user types, more collection methods |
+
+**Tessel IDE — first thoughts.** Ideally the IDE is itself a Tessel app, built
+with the language it edits. That needs a few things Tessel doesn't have yet:
+a multi-line code editor view with syntax colors, reading and writing files,
+and starting other programs (`tessel run`) and showing their output. Those are
+useful for any Tessel app, so building the IDE drives the standard library
+forward too. "Debugging" first means clickable runtime errors and `print`
+output in a console panel; stepping through code with breakpoints is a larger
+project on top of that.
+
+### 12.2 UI status after M4
 
 Working: windows, HiDPI, the build → layout → draw cycle, `state` that
 survives rebuilds, actions, `bind` through any number of views (including
