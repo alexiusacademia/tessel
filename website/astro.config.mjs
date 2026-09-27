@@ -80,6 +80,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Design decisions', slug: 'about/design' },
 						{ label: 'Roadmap', slug: 'about/roadmap' },
+						{ label: 'Building from source', slug: 'about/source' },
 					],
 				},
 			],
