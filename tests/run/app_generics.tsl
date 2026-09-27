@@ -1,0 +1,31 @@
+// Generic types in an app's state and a view's parameters.
+
+struct History<T> {
+    items: [T] = []
+    limit: Int = 3
+
+    fn add(item: T) {
+        items.append(item)
+        if items.count > limit {
+            items.removeFirst()
+        }
+    }
+}
+
+view Recent(labels: [String]) {
+    Text(labels.joined(separator: ", "))
+}
+
+app Generic(width: 360, height: 200) {
+    state count = 0
+    state history = History<Int>()
+
+    VStack(spacing: 8) {
+        Text("{count}")
+        Button("Add") {
+            count += 1
+            history.add(item: count)
+        }
+        Recent(labels: history.items.map { n in "#{n}" })
+    }
+}

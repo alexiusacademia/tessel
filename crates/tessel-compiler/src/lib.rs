@@ -7,6 +7,7 @@ pub mod builtins;
 pub mod check;
 pub mod codegen;
 pub mod diag;
+pub mod generics;
 pub mod lexer;
 pub mod parser;
 pub mod source;
@@ -34,6 +35,7 @@ pub fn analyze(sources: &SourceMap, require_entry: bool) -> Analysis {
         let parsed = parser::parse_file(id, &file.text, &mut diags, &mut next_id);
         program.items.extend(parsed.items);
     }
+    program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
     diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
     Analysis { program, checked, diags }

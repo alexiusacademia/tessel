@@ -3,6 +3,7 @@
 //! for code generation.
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::ast::*;
 use crate::builtins::{self, Builtins};
@@ -35,6 +36,9 @@ pub struct Checked {
     /// What fits where the completion mark is (see `complete`), if the
     /// checker got there.
     pub completion: Option<Vec<Suggestion>>,
+    /// Specialized copies of generic declarations, to compile along with the
+    /// program's own items.
+    pub instances: Vec<Rc<Item>>,
 }
 
 /// The identifier `tessel complete` puts where the caret is, so the checker
@@ -110,6 +114,7 @@ impl Checked {
             Ty::Struct(id) => self.structs[*id].name.clone(),
             Ty::Enum(id) => self.enums[*id].name.clone(),
             Ty::Iface(id) => self.ifaces[*id].name.clone(),
+            Ty::Generic(_) => "T".into(),
         }
     }
 }
@@ -200,22 +205,26 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         conforms: Vec::new(),
         loops: 0,
         outer_loops: 0,
+        templates: Vec::new(),
+        type_params: Vec::new(),
+        specialized: HashMap::new(),
+        instance_of: HashMap::new(),
+        pending: std::collections::VecDeque::new(),
+        instances: Vec::new(),
+        fn_items: Vec::new(),
+        template_copy: false,
+        next_id: 0,
     };
-    let ids = c.collect(program, require_entry);
-    c.signatures(program, &ids);
-    c.check_main(program, require_entry);
+    c.next_id = program.next_id;
+    let ids = c.collect(&program.items, require_entry);
+    c.check_templates();
+    c.signatures(&program.items, &ids);
+    c.check_main(&program.items, require_entry);
+    c.bodies(&program.items, &ids);
+    c.check_pending();
     c.check_recursive_structs();
     c.check_conformance();
-    c.bodies(program, &ids);
-    let fns = program
-        .items
-        .iter()
-        .zip(&ids)
-        .filter_map(|(item, id)| match (item, id) {
-            (Item::Fn(f), Some(id)) => Some((f.name.name.clone(), c.fns[*id].clone())),
-            _ => None,
-        })
-        .collect();
+    let fns = c.fn_items.iter().map(|(name, id)| (name.clone(), c.fns[*id].clone())).collect();
     Checked {
         types: c.types,
         calls: c.calls,
@@ -238,7 +247,35 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         ifaces: c.ifaces,
         cast_targets: c.cast_targets,
         completion: c.completion,
+        instances: c.instances,
     }
+}
+
+/// A generic declaration: its parameters, and whether checking it on its own
+/// found errors (then its copies aren't checked again, to not repeat them).
+struct Template {
+    item: Rc<Item>,
+    params: Vec<usize>,
+    had_errors: bool,
+}
+
+/// A type parameter (`Ty::Generic(index)`).
+struct TypeParam {
+    name: String,
+    /// The interface it must conform to.
+    constraint: Option<usize>,
+}
+
+/// A specialized copy whose bodies still have to be checked.
+struct Pending {
+    item: Rc<Item>,
+    id: Option<usize>,
+    template: usize,
+    /// All its type arguments are real types (it's compiled).
+    concrete: bool,
+    name: String,
+    /// Where it was first needed.
+    used_at: Span,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -246,6 +283,10 @@ enum Global {
     Struct(usize),
     Enum(usize),
     Iface(usize),
+    /// A generic declaration (index into the templates).
+    GenericFn(usize),
+    GenericStruct(usize),
+    GenericEnum(usize),
     Fn(usize),
     View(usize),
     App,
@@ -328,6 +369,19 @@ struct Checker<'a> {
     loops: usize,
     /// Loops outside the closures being checked (which `break` can't leave).
     outer_loops: usize,
+    templates: Vec<Template>,
+    type_params: Vec<TypeParam>,
+    /// Specialized copies made so far, by template and type arguments.
+    specialized: HashMap<String, String>,
+    /// Each copy's template and type arguments, by the copy's name.
+    instance_of: HashMap<String, (usize, Vec<Ty>)>,
+    pending: std::collections::VecDeque<Pending>,
+    instances: Vec<Rc<Item>>,
+    /// Functions to compile: the program's, and specialized copies.
+    fn_items: Vec<(String, usize)>,
+    /// Set while a generic declaration is registered for checking on its own.
+    template_copy: bool,
+    next_id: ExprId,
 }
 
 impl Checker<'_> {
@@ -362,6 +416,7 @@ impl Checker<'_> {
             Ty::Struct(id) => self.structs[*id].name.clone(),
             Ty::Enum(id) => self.enums[*id].name.clone(),
             Ty::Iface(id) => self.ifaces[*id].name.clone(),
+            Ty::Generic(k) => self.type_params[*k].name.clone(),
         }
     }
 
@@ -448,10 +503,10 @@ impl Checker<'_> {
 
     // ===== pass 1: collect global names =====
 
-    fn collect(&mut self, program: &Program, require_entry: bool) -> Vec<Option<usize>> {
+    fn collect(&mut self, items: &[Item], require_entry: bool) -> Vec<Option<usize>> {
         let mut ids = Vec::new();
         let mut app: Option<Span> = None;
-        for item in &program.items {
+        for item in items {
             let name = item.name();
             let builtin = PRIMITIVES.contains(&name.name.as_str())
                 || builtins::VIEW_NAMES.contains(&name.name.as_str())
@@ -468,6 +523,26 @@ impl Checker<'_> {
                     .label("declared again")
                     .note_at(prev, "first declared here")
                     .help("names must be unique across all files in the program");
+                ids.push(None);
+                continue;
+            }
+            let generics = match item {
+                Item::Fn(f) => Some(&f.generics),
+                Item::Struct(d) => Some(&d.generics),
+                Item::Enum(d) => Some(&d.generics),
+                _ => None,
+            };
+            if let Some(g) = generics.filter(|g| !g.is_empty()) {
+                let t = self.templates.len();
+                self.templates.push(Template { item: Rc::new(item.clone()), params: Vec::new(), had_errors: false });
+                let _ = g;
+                let global = match item {
+                    Item::Fn(_) => Global::GenericFn(t),
+                    Item::Struct(_) => Global::GenericStruct(t),
+                    _ => Global::GenericEnum(t),
+                };
+                self.globals.insert(name.name.clone(), global);
+                self.user_spans.insert(name.name.clone(), name.span);
                 ids.push(None);
                 continue;
             }
@@ -492,8 +567,11 @@ impl Checker<'_> {
                     });
                     (Global::Iface(self.ifaces.len() - 1), Some(self.ifaces.len() - 1))
                 }
-                Item::Fn(_) => {
+                Item::Fn(f) => {
                     self.fns.push(FnSig { params: vec![], ret: Ty::Void });
+                    if !self.template_copy {
+                        self.fn_items.push((f.name.name.clone(), self.fns.len() - 1));
+                    }
                     (Global::Fn(self.fns.len() - 1), Some(self.fns.len() - 1))
                 }
                 Item::View(_) => {
@@ -514,7 +592,7 @@ impl Checker<'_> {
             self.user_spans.insert(name.name.clone(), name.span);
             ids.push(id);
         }
-        let has_main = program.items.iter().any(|i| matches!(i, Item::Fn(f) if f.name.name == "main"));
+        let has_main = items.iter().any(|i| matches!(i, Item::Fn(f) if f.name.name == "main"));
         if require_entry && app.is_none() && !has_main {
             self.error(Span::default(), "this program has no entry point")
                 .help("add an `app`, like `app Hello { Text(\"Hello\") }`, or a `fn main() { … }`");
@@ -623,7 +701,21 @@ impl Checker<'_> {
                 "Data" => Ty::Data,
                 "Range" => Ty::Range,
                 "View" => Ty::View,
+                "$error" => Ty::Error,
+                name if name.starts_with('$') => Ty::Generic(name[1..].parse().unwrap_or(0)),
                 name => match self.globals.get(name) {
+                    Some(Global::GenericStruct(t) | Global::GenericEnum(t)) => {
+                        let t = *t;
+                        let params: Vec<String> =
+                            self.templates[t].params.iter().map(|&k| self.type_params[k].name.clone()).collect();
+                        self.error(id.span, format!("`{name}` needs its type arguments, like `{name}<{}>`", params.join(", ")))
+                            .help("write the types for its parameters, like `Stack<Int>`");
+                        Ty::Error
+                    }
+                    Some(Global::GenericFn(_)) => {
+                        self.error(id.span, format!("`{name}` is not a type"));
+                        Ty::Error
+                    }
                     Some(Global::Struct(i)) => Ty::Struct(*i),
                     Some(Global::Enum(i)) => Ty::Enum(*i),
                     Some(Global::Iface(i)) => Ty::Iface(*i),
@@ -655,6 +747,7 @@ impl Checker<'_> {
                     }
                 },
             },
+            TypeExpr::Generic(id, args, span) => self.generic_name_ty(&id.name, args, *span),
             TypeExpr::List(t, _) => Ty::list(self.resolve(t)),
             TypeExpr::Dict(kt, v, _) => {
                 let k = self.resolve(kt);
@@ -726,8 +819,8 @@ impl Checker<'_> {
         out
     }
 
-    fn signatures(&mut self, program: &Program, ids: &[Option<usize>]) {
-        for (item, id) in program.items.iter().zip(ids) {
+    fn signatures(&mut self, items: &[Item], ids: &[Option<usize>]) {
+        for (item, id) in items.iter().zip(ids) {
             let Some(id) = *id else {
                 if let Item::App(_) = item {
                     // Apps have no signature.
@@ -813,16 +906,16 @@ impl Checker<'_> {
                 Item::App(_) => {}
             }
         }
-        self.propagate_mutation(program, ids);
+        self.propagate_mutation(items, ids);
     }
 
     /// A method also changes its value if it calls one of its own type's
     /// changing methods (`increment()`, `self.increment()`) or a changing
     /// method of one of its fields (`counter.increment()`), however deep.
-    fn propagate_mutation(&mut self, program: &Program, ids: &[Option<usize>]) {
+    fn propagate_mutation(&mut self, items: &[Item], ids: &[Option<usize>]) {
         // (is a struct, type id, method index, the calls it makes)
         let mut calls: Vec<(bool, usize, usize, Vec<MethodCall>)> = Vec::new();
-        for (item, id) in program.items.iter().zip(ids) {
+        for (item, id) in items.iter().zip(ids) {
             let Some(id) = *id else { continue };
             let (is_struct, decls, roots): (bool, &[FnDecl], HashSet<String>) = match item {
                 Item::Struct(d) => (true, &d.methods, self.structs[id].fields.iter().map(|f| f.name.clone()).collect()),
@@ -892,11 +985,11 @@ impl Checker<'_> {
         })
     }
 
-    fn check_main(&mut self, program: &Program, require_entry: bool) {
+    fn check_main(&mut self, items: &[Item], require_entry: bool) {
         if !require_entry {
             return;
         }
-        for item in &program.items {
+        for item in items {
             if let Item::Fn(f) = item {
                 if f.name.name == "main" && (!f.params.is_empty() || f.ret.is_some()) {
                     self.error(f.name.span, "`main` can't take parameters or return a value")
@@ -934,8 +1027,8 @@ impl Checker<'_> {
 
     // ===== pass 3: bodies =====
 
-    fn bodies(&mut self, program: &Program, ids: &[Option<usize>]) {
-        for (item, id) in program.items.iter().zip(ids) {
+    fn bodies(&mut self, items: &[Item], ids: &[Option<usize>]) {
+        for (item, id) in items.iter().zip(ids) {
             match item {
                 Item::App(app) => {
                     let params = vec![
@@ -1418,6 +1511,10 @@ impl Checker<'_> {
 
     fn expr_inner(&mut self, e: &Expr, expected: Option<&Ty>) -> Ty {
         match &e.kind {
+            ExprKind::GenericName(n, _) => {
+                self.error(e.span, format!("`{n}<…>` is a type; to create one, call it: `{n}<…>(…)`"));
+                Ty::Error
+            }
             ExprKind::Int(_) => {
                 if matches!(expected.map(strip_opt), Some(Ty::Float)) { Ty::Float } else { Ty::Int }
             }
@@ -1607,7 +1704,7 @@ impl Checker<'_> {
 
     fn showable(&mut self, t: &Ty, span: Span) {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error => {}
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => {}
             Ty::Opt(_) => {
                 self.error(span, "this might be `nil`, so it can't be shown as text directly")
                     .help("give it a default with `??`, like \"{name ?? \"none\"}\"");
@@ -1633,6 +1730,15 @@ impl Checker<'_> {
         }
         match self.globals.get(n).copied() {
             Some(Global::Fn(i)) => fn_type(&self.fns[i]),
+            Some(Global::GenericFn(_)) => {
+                self.error(span, format!("`{n}` is generic, so it can't be used as a value; call it"))
+                    .help(format!("wrap it in a block with the types you need, like `{{ x in {n}(x) }}`"));
+                Ty::Error
+            }
+            Some(Global::GenericStruct(_) | Global::GenericEnum(_)) => {
+                self.error(span, format!("`{n}` is a generic type; to create one, call it: `{n}(…)` or `{n}<Int>(…)`"));
+                Ty::Error
+            }
             Some(Global::Struct(_)) => {
                 self.error(span, format!("`{n}` is a struct; to create one, call it: `{n}(…)`"));
                 Ty::Error
@@ -2039,6 +2145,29 @@ impl Checker<'_> {
             self.complete_member(object);
             return Ty::Error;
         }
+        // `Result<Int>.none`
+        if let ExprKind::GenericName(tn, targs) = &object.kind {
+            return match self.generic_name_ty(tn, targs, object.span) {
+                Ty::Enum(id) => {
+                    self.enum_case(id, &name.name, name.span, false);
+                    Ty::Enum(id)
+                }
+                Ty::Error => Ty::Error,
+                _ => {
+                    self.error(name.span, format!("`{tn}` is a struct, so it has no cases"));
+                    Ty::Error
+                }
+            };
+        }
+        if let ExprKind::Name(tn) = &object.kind
+            && self.lookup(tn).is_none()
+            && let Some(Global::GenericEnum(t)) = self.globals.get(tn).copied()
+        {
+            let params: Vec<String> = self.templates[t].params.iter().map(|&k| self.type_params[k].name.clone()).collect();
+            self.error(object.span, format!("can't tell `{tn}`'s type arguments here"))
+                .help(format!("write them, like `{tn}<{}>.{}`, or use `.{}` where the type is known", params.join(", "), name.name, name.name));
+            return Ty::Error;
+        }
         // `Filter.all`: a case through its enum's name.
         if let ExprKind::Name(tn) = &object.kind
             && self.lookup(tn).is_none() {
@@ -2087,6 +2216,20 @@ impl Checker<'_> {
                     Ty::Error
                 }
             },
+            Ty::Generic(k) => {
+                let prop = self.type_params[*k]
+                    .constraint
+                    .and_then(|i| self.ifaces[i].props.iter().find(|(p, _)| p == n).map(|(_, t)| t.clone()));
+                match prop {
+                    Some(t) => t,
+                    None => {
+                        let pname = self.type_params[*k].name.clone();
+                        self.error(name.span, format!("`{pname}` has no property `{n}` that every type has"))
+                            .help(format!("require an interface with it, like `<{pname}: Named>` for `name: String`"));
+                        Ty::Error
+                    }
+                }
+            }
             Ty::Iface(id) => match self.ifaces[*id].props.iter().find(|(p, _)| p == n) {
                 Some((_, t)) => t.clone(),
                 None if self.ifaces[*id].methods.iter().any(|(m, _)| m == n) => {
@@ -2166,8 +2309,22 @@ impl Checker<'_> {
                 Ty::Error
             }
             ExprKind::Member { object, name, optional } => {
-                self.method_call(object, name, *optional, args, trailing, span)
+                self.method_call(object, name, *optional, args, trailing, span, expected)
             }
+            ExprKind::GenericName(n, targs) => match self.generic_name_ty(n, targs, callee.span) {
+                Ty::Struct(id) => {
+                    let name = self.structs[id].name.clone();
+                    self.call_name(&name, callee.span, args, trailing, span, expected)
+                }
+                Ty::Enum(_) => {
+                    self.error(callee.span, format!("enums can't be called; pick a case, like `{n}<…>.someCase(…)`"));
+                    Ty::Error
+                }
+                _ => {
+                    self.args_unchecked(args, trailing);
+                    Ty::Error
+                }
+            },
             _ => {
                 let t = self.expr(callee, None);
                 self.set_callee(Callee::Value);
@@ -2189,6 +2346,29 @@ impl Checker<'_> {
             self.complete_names();
             return Ty::Error;
         }
+        if self.lookup(n).is_none() {
+            match self.globals.get(n).copied() {
+                Some(Global::GenericFn(t) | Global::GenericStruct(t)) => {
+                    let (params, ret) = self.template_sig(t);
+                    let Some(targs) = self.infer(t, &params, ret.as_ref(), args, trailing, expected, span) else {
+                        self.args_unchecked(args, trailing);
+                        return Ty::Error;
+                    };
+                    return match self.specialize(t, targs, name_span) {
+                        Some(name) => self.call_name(&name, name_span, args, trailing, span, expected),
+                        None => {
+                            self.args_unchecked(args, trailing);
+                            Ty::Error
+                        }
+                    };
+                }
+                Some(Global::GenericEnum(_)) => {
+                    self.error(name_span, format!("enums can't be called; pick a case, like `{n}.someCase(…)`"));
+                    return Ty::Error;
+                }
+                _ => {}
+            }
+        }
         let what = format!("`{n}`");
         if let Some(l) = self.lookup(n).cloned() {
             return match l.kind {
@@ -2207,6 +2387,9 @@ impl Checker<'_> {
             };
         }
         match self.globals.get(n).copied() {
+            Some(Global::GenericFn(_) | Global::GenericStruct(_) | Global::GenericEnum(_)) => {
+                unreachable!("handled above")
+            }
             Some(Global::Fn(i)) => {
                 let sig = self.fns[i].clone();
                 self.set_callee(Callee::Fn(n.to_string()));
@@ -2420,7 +2603,7 @@ impl Checker<'_> {
     /// Can values of `t` be written as JSON or binary? Err says why not.
     fn saveable(&self, t: &Ty) -> Result<(), String> {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error => Ok(()),
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error | Ty::Generic(_) => Ok(()),
             Ty::List(e) | Ty::Opt(e) => self.saveable(e),
             Ty::Dict(k, v) => {
                 if !matches!(**k, Ty::Str | Ty::Int | Ty::Bool) && !matches!(**k, Ty::Enum(_)) {
@@ -2553,6 +2736,7 @@ impl Checker<'_> {
         self.args(&format!("`.{n}`"), &case.fields, args, trailing, span);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn method_call(
         &mut self,
         object: &Expr,
@@ -2561,6 +2745,7 @@ impl Checker<'_> {
         args: &[Arg],
         trailing: Option<&Expr>,
         span: Span,
+        expected: Option<&Ty>,
     ) -> Ty {
         let n = name.name.as_str();
         // `Shape.circle(radius: 1)`
@@ -2570,6 +2755,41 @@ impl Checker<'_> {
                     self.case_call(id, n, name.span, args, trailing, span);
                     return Ty::Enum(id);
                 }
+        // `Result<Int>.ok(value: 1)`
+        if let ExprKind::GenericName(tn, targs) = &object.kind {
+            return match self.generic_name_ty(tn, targs, object.span) {
+                Ty::Enum(id) => {
+                    self.case_call(id, n, name.span, args, trailing, span);
+                    Ty::Enum(id)
+                }
+                Ty::Error => Ty::Error,
+                _ => {
+                    self.error(name.span, format!("`{tn}` is a struct, so it has no cases"));
+                    Ty::Error
+                }
+            };
+        }
+        // `Result.ok(value: 1)`: the type arguments from the case's values.
+        if let ExprKind::Name(tn) = &object.kind
+            && self.lookup(tn).is_none()
+            && let Some(Global::GenericEnum(t)) = self.globals.get(tn).copied()
+        {
+            let Some((fields, ret)) = self.template_case(t, n) else {
+                self.error(name.span, format!("`{tn}` has no case `.{n}`"));
+                return Ty::Error;
+            };
+            let Some(targs) = self.infer(t, &fields, Some(&ret), args, trailing, expected, span) else {
+                self.args_unchecked(args, trailing);
+                return Ty::Error;
+            };
+            return match self.specialize(t, targs, object.span).and_then(|nm| self.globals.get(&nm).copied()) {
+                Some(Global::Enum(id)) => {
+                    self.case_call(id, n, name.span, args, trailing, span);
+                    Ty::Enum(id)
+                }
+                _ => Ty::Error,
+            };
+        }
         let ot = self.expr(object, None);
         let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, n) else { return Ty::Error };
@@ -2614,6 +2834,28 @@ impl Checker<'_> {
                     }
                 }
             }
+            // A method of `T: Shape`: one of the interface's (checked for real in each copy).
+            Ty::Generic(k) => match self.type_params[*k].constraint {
+                Some(i) => match self.ifaces[i].methods.iter().find(|(m, _)| m == n).map(|(_, s)| s.clone()) {
+                    Some(sig) => {
+                        self.set_callee(Callee::Value);
+                        self.args(&what, &sig.params, args, trailing, span);
+                        sig.ret
+                    }
+                    None => {
+                        let (pname, iname) = (self.type_params[*k].name.clone(), self.ifaces[i].name.clone());
+                        let names = self.ifaces[i].methods.iter().map(|(m, _)| m.clone()).collect();
+                        self.no_member(name, &format!("`{pname}` is a `{iname}`, which has no method `{n}`"), names);
+                        Ty::Error
+                    }
+                },
+                None => {
+                    let pname = self.type_params[*k].name.clone();
+                    self.error(name.span, format!("`{pname}` could be any type, so it has no method `{n}`"))
+                        .help(format!("require an interface that has it, like `<{pname}: Shape>`"));
+                    Ty::Error
+                }
+            },
             Ty::Iface(id) => {
                 let def = &self.ifaces[*id];
                 match def.methods.iter().position(|(m, _)| m == n) {
@@ -2962,6 +3204,387 @@ impl Checker<'_> {
 
 // ===== helpers =====
 
+// ===== generics =====
+
+impl Checker<'_> {
+    /// Gives each generic declaration its type parameters, and makes the copy
+    /// in which they stay parameters: the declaration checked on its own.
+    fn check_templates(&mut self) {
+        for t in 0..self.templates.len() {
+            let item = self.templates[t].item.clone();
+            let generics = match &*item {
+                Item::Fn(f) => &f.generics,
+                Item::Struct(d) => &d.generics,
+                Item::Enum(d) => &d.generics,
+                _ => unreachable!(),
+            };
+            let mut params = Vec::new();
+            for g in generics {
+                if params.iter().any(|&k: &usize| self.type_params[k].name == g.name.name) {
+                    self.error(g.name.span, format!("type parameter `{}` is listed twice", g.name.name));
+                }
+                let constraint = g.constraint.as_ref().and_then(|c| match self.globals.get(&c.name) {
+                    Some(Global::Iface(i)) => Some(*i),
+                    _ => {
+                        self.error(c.span, format!("`{}` isn't an interface", c.name))
+                            .help("a type parameter can be limited to types that conform to an interface: `<T: Shape>`");
+                        None
+                    }
+                });
+                params.push(self.type_params.len());
+                self.type_params.push(TypeParam { name: g.name.name.clone(), constraint });
+            }
+            self.templates[t].params = params.clone();
+            let args = params.into_iter().map(Ty::Generic).collect();
+            self.specialize(t, args, item.name().span);
+        }
+    }
+
+    fn template_name(&self, t: usize) -> String {
+        self.templates[t].item.name().name.clone()
+    }
+
+    /// A type's name, unique even for type parameters (for naming copies).
+    fn type_key(&self, t: &Ty) -> String {
+        match t {
+            Ty::Generic(k) => format!("${k}"),
+            Ty::List(e) => format!("[{}]", self.type_key(e)),
+            Ty::Dict(k, v) => format!("[{}: {}]", self.type_key(k), self.type_key(v)),
+            Ty::Opt(e) => format!("{}?", self.type_key(e)),
+            Ty::Fn(ps, r) => format!(
+                "fn({}) -> {}",
+                ps.iter().map(|p| self.type_key(p)).collect::<Vec<_>>().join(", "),
+                self.type_key(r)
+            ),
+            t => self.show(t),
+        }
+    }
+
+    /// A type written out, to put in place of a type parameter in a copy.
+    fn type_expr_of(&self, t: &Ty, span: Span) -> TypeExpr {
+        let named = |name: String| TypeExpr::Named(Ident { name, span });
+        match t {
+            Ty::List(e) => TypeExpr::List(Box::new(self.type_expr_of(e, span)), span),
+            Ty::Dict(k, v) => TypeExpr::Dict(Box::new(self.type_expr_of(k, span)), Box::new(self.type_expr_of(v, span)), span),
+            Ty::Opt(e) => TypeExpr::Optional(Box::new(self.type_expr_of(e, span)), span),
+            Ty::Fn(ps, r) => TypeExpr::Fn(
+                ps.iter().map(|p| self.type_expr_of(p, span)).collect(),
+                (**r != Ty::Void).then(|| Box::new(self.type_expr_of(r, span))),
+                span,
+            ),
+            Ty::Generic(k) => named(format!("${k}")),
+            Ty::Error | Ty::Any | Ty::Void => named("$error".into()),
+            t => named(self.show(t)),
+        }
+    }
+
+    fn contains_generic(t: &Ty) -> bool {
+        match t {
+            Ty::Generic(_) => true,
+            Ty::List(e) | Ty::Opt(e) => Self::contains_generic(e),
+            Ty::Dict(k, v) => Self::contains_generic(k) || Self::contains_generic(v),
+            Ty::Fn(ps, r) => ps.iter().any(Self::contains_generic) || Self::contains_generic(r),
+            _ => false,
+        }
+    }
+
+    /// The copy of template `t` for type arguments `args` (made, and its
+    /// signature checked, the first time): its name, which is a global.
+    fn specialize(&mut self, t: usize, args: Vec<Ty>, span: Span) -> Option<String> {
+        let tname = self.template_name(t);
+        let params = self.templates[t].params.clone();
+        if args.len() != params.len() {
+            let want = params.len();
+            let list: Vec<String> = params.iter().map(|&k| self.type_params[k].name.clone()).collect();
+            self.error(span, format!("`{tname}` takes {want} type argument{}, like `{tname}<{}>`", if want == 1 { "" } else { "s" }, list.join(", ")));
+            return None;
+        }
+        if args.iter().any(Ty::is_error) {
+            return None;
+        }
+        for (&k, a) in params.iter().zip(&args) {
+            let Some(c) = self.type_params[k].constraint else { continue };
+            let ok = match a {
+                Ty::Generic(j) => self.type_params[*j].constraint == Some(c),
+                a => *a == Ty::Iface(c) || fits_with(a, &Ty::Iface(c), &self.conforms),
+            };
+            if !ok {
+                let (pname, iname, what) = (self.type_params[k].name.clone(), self.ifaces[c].name.clone(), self.show(a));
+                self.error(span, format!("`{tname}` needs a `{iname}` for `{pname}`, but `{what}` isn't one"))
+                    .help(format!("make `{what}` conform: `struct {what}: {iname} {{ … }}`"));
+                return None;
+            }
+        }
+        let keys: Vec<String> = args.iter().map(|a| self.type_key(a)).collect();
+        let key = format!("{tname}<{}>", keys.join(", "));
+        if let Some(name) = self.specialized.get(&key) {
+            return Some(name.clone());
+        }
+        if keys.iter().map(|k| k.matches('<').count()).max().unwrap_or(0) > 6 {
+            self.error(span, format!("`{tname}` is nested too deeply here"))
+                .help("a generic type that contains itself with other type arguments never ends");
+            return None;
+        }
+        let concrete = !args.iter().any(Self::contains_generic);
+        let name = if concrete {
+            format!("{tname}<{}>", args.iter().map(|a| self.show(a)).collect::<Vec<_>>().join(", "))
+        } else {
+            key.clone()
+        };
+        self.specialized.insert(key, name.clone());
+        self.instance_of.insert(name.clone(), (t, args.clone()));
+        let subst: HashMap<String, TypeExpr> = params
+            .iter()
+            .zip(&args)
+            .map(|(&k, a)| (self.type_params[k].name.clone(), self.type_expr_of(a, span)))
+            .collect();
+        let template = self.templates[t].item.clone();
+        let copy = (self.instance_of.len() as u32).min(0xFFFF);
+        let item = Rc::new(crate::generics::specialize(&template, &name, &subst, &mut self.next_id, copy));
+        let items = std::slice::from_ref(&*item);
+        let saved = std::mem::replace(&mut self.template_copy, !concrete);
+        let ids = self.collect(items, false);
+        self.signatures(items, &ids);
+        self.template_copy = saved;
+        self.pending.push_back(Pending { item: item.clone(), id: ids[0], template: t, concrete, name: name.clone(), used_at: span });
+        if concrete {
+            self.instances.push(item);
+        }
+        Some(name)
+    }
+
+    /// Checks the bodies of the copies made so far (copies they need are
+    /// made and checked too). A declaration checked on its own comes before
+    /// its copies; if it had errors, they aren't repeated for each copy.
+    fn check_pending(&mut self) {
+        while let Some(p) = self.pending.pop_front() {
+            if p.concrete && self.templates[p.template].had_errors {
+                continue;
+            }
+            let before = self.diags.list.len();
+            self.bodies(std::slice::from_ref(&*p.item), &[p.id]);
+            let new = self.diags.list.len() - before;
+            if !p.concrete {
+                if new > 0 {
+                    self.templates[p.template].had_errors = true;
+                }
+            } else {
+                for d in &mut self.diags.list[before..] {
+                    d.message += &format!(" (in `{}`)", p.name);
+                    d.note_at(p.used_at, format!("`{}` is needed here", p.name));
+                }
+            }
+        }
+    }
+
+    /// Binds type parameters in `pattern` (of template `params`) by matching
+    /// it against an actual type.
+    fn unify(&self, pattern: &Ty, actual: &Ty, params: &[usize], binds: &mut HashMap<usize, Ty>) {
+        match (pattern, actual) {
+            (_, Ty::Error | Ty::Any) => {}
+            (Ty::Generic(k), a) if params.contains(k) => {
+                binds.entry(*k).or_insert_with(|| a.clone());
+            }
+            (Ty::List(p), Ty::List(a)) | (Ty::Opt(p), Ty::Opt(a)) => self.unify(p, a, params, binds),
+            (Ty::Opt(p), a) => self.unify(p, a, params, binds),
+            (Ty::Dict(pk, pv), Ty::Dict(ak, av)) => {
+                self.unify(pk, ak, params, binds);
+                self.unify(pv, av, params, binds);
+            }
+            (Ty::Fn(pp, pr), Ty::Fn(ap, ar)) => {
+                for (p, a) in pp.iter().zip(ap) {
+                    self.unify(p, a, params, binds);
+                }
+                self.unify(pr, ar, params, binds);
+            }
+            (Ty::Struct(_) | Ty::Enum(_), Ty::Struct(_) | Ty::Enum(_)) => {
+                let (pn, an) = (self.show(pattern), self.show(actual));
+                if let (Some((pt, pa)), Some((at, aa))) = (self.instance_of.get(&pn), self.instance_of.get(&an))
+                    && pt == at
+                {
+                    let (pa, aa) = (pa.clone(), aa.clone());
+                    for (p, a) in pa.iter().zip(&aa) {
+                        self.unify(p, a, params, binds);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `t` with the bound type parameters replaced; None if one isn't bound.
+    fn subst(&mut self, t: &Ty, binds: &HashMap<usize, Ty>, span: Span) -> Option<Ty> {
+        Some(match t {
+            Ty::Generic(k) => binds.get(k)?.clone(),
+            Ty::List(e) => Ty::list(self.subst(e, binds, span)?),
+            Ty::Opt(e) => Ty::opt(self.subst(e, binds, span)?),
+            Ty::Dict(k, v) => Ty::Dict(Box::new(self.subst(k, binds, span)?), Box::new(self.subst(v, binds, span)?)),
+            Ty::Fn(ps, r) => {
+                let ps = ps.iter().map(|p| self.subst(p, binds, span)).collect::<Option<Vec<_>>>()?;
+                Ty::Fn(ps, Box::new(self.subst(r, binds, span)?))
+            }
+            Ty::Struct(_) | Ty::Enum(_) if Self::generic_instance(self, t) => {
+                let (tpl, args) = self.instance_of[&self.show(t)].clone();
+                let args = args.iter().map(|a| self.subst(a, binds, span)).collect::<Option<Vec<_>>>()?;
+                let name = self.specialize(tpl, args, span)?;
+                match self.globals.get(&name)? {
+                    Global::Struct(i) => Ty::Struct(*i),
+                    Global::Enum(i) => Ty::Enum(*i),
+                    _ => return None,
+                }
+            }
+            t => t.clone(),
+        })
+    }
+
+    /// Is `t` a copy of a generic type whose arguments still have parameters?
+    fn generic_instance(&self, t: &Ty) -> bool {
+        self.instance_of.get(&self.show(t)).is_some_and(|(_, args)| args.iter().any(Self::contains_generic))
+    }
+
+    /// What to expect for an argument of type `pattern`: fully known types,
+    /// or a function whose result isn't known yet (its body tells).
+    fn expect_for(&mut self, pattern: &Ty, binds: &HashMap<usize, Ty>, span: Span) -> Option<Ty> {
+        if let Some(t) = self.subst(pattern, binds, span) {
+            return Some(t);
+        }
+        if let Ty::Fn(ps, _) = pattern {
+            let ps = ps.iter().map(|p| self.subst(p, binds, span)).collect::<Option<Vec<_>>>()?;
+            return Some(Ty::Fn(ps, Box::new(Ty::Any)));
+        }
+        None
+    }
+
+    /// Works out the type arguments of a call to template `t`, whose
+    /// parameters are `params` and result `ret`, from the arguments and the
+    /// expected type. Reports an error if one can't be told.
+    #[allow(clippy::too_many_arguments)]
+    fn infer(
+        &mut self,
+        t: usize,
+        params: &[ParamSig],
+        ret: Option<&Ty>,
+        args: &[Arg],
+        trailing: Option<&Expr>,
+        expected: Option<&Ty>,
+        span: Span,
+    ) -> Option<Vec<Ty>> {
+        let tparams = self.templates[t].params.clone();
+        let mut binds: HashMap<usize, Ty> = HashMap::new();
+        if let (Some(r), Some(e)) = (ret, expected) {
+            self.unify(r, e, &tparams, &mut binds);
+        }
+        // Which parameter each argument goes to.
+        let mut pairs: Vec<(usize, &Expr)> = Vec::new();
+        let mut positional = params.iter().enumerate().filter(|(_, p)| p.unlabeled).map(|(i, _)| i);
+        for a in args {
+            let i = match &a.label {
+                Some(l) => params.iter().position(|p| !p.unlabeled && p.label == l.name),
+                None => positional.next(),
+            };
+            if let Some(i) = i {
+                pairs.push((i, &a.value));
+            }
+        }
+        if let (Some(tr), Some(last)) = (trailing, params.len().checked_sub(1)) {
+            pairs.push((last, tr));
+        }
+        // Try the arguments quietly (they're checked for real once the types
+        // are known); blocks last, when their parameters' types are known.
+        let mark = self.diags.list.len();
+        for closures in [false, true] {
+            for &(i, e) in &pairs {
+                if matches!(e.kind, ExprKind::Closure { .. }) != closures {
+                    continue;
+                }
+                let exp = self.expect_for(&params[i].ty, &binds, span);
+                let found = self.expr(e, exp.as_ref());
+                self.unify(&params[i].ty, &found, &tparams, &mut binds);
+            }
+        }
+        self.diags.list.truncate(mark);
+        let mut out = Vec::new();
+        for &k in &tparams {
+            match binds.get(&k) {
+                Some(t) => out.push(t.clone()),
+                None => {
+                    let (tname, pname) = (self.template_name(t), self.type_params[k].name.clone());
+                    self.error(span, format!("can't tell what `{pname}` is in this use of `{tname}`"))
+                        .help("give the value a type, like `let items: [Int] = []`, or write it out, like `Stack<Int>()`");
+                    return None;
+                }
+            }
+        }
+        Some(out)
+    }
+
+    /// The signature of the copy of template `t` that the checker checks on
+    /// its own (in terms of its type parameters).
+    fn template_sig(&self, t: usize) -> (Vec<ParamSig>, Option<Ty>) {
+        let args: Vec<Ty> = self.templates[t].params.iter().map(|&k| Ty::Generic(k)).collect();
+        let keys: Vec<String> = args.iter().map(|a| self.type_key(a)).collect();
+        let key = format!("{}<{}>", self.template_name(t), keys.join(", "));
+        let Some(name) = self.specialized.get(&key) else { return (Vec::new(), None) };
+        match self.globals.get(name) {
+            Some(Global::Fn(i)) => (self.fns[*i].params.clone(), Some(self.fns[*i].ret.clone())),
+            Some(Global::Struct(i)) => {
+                let params = self.structs[*i]
+                    .fields
+                    .iter()
+                    .map(|f| ParamSig { has_default: f.has_default, ..ParamSig::new(&f.name, f.ty.clone()) })
+                    .collect();
+                (params, Some(Ty::Struct(*i)))
+            }
+            Some(Global::Enum(i)) => (Vec::new(), Some(Ty::Enum(*i))),
+            _ => (Vec::new(), None),
+        }
+    }
+
+    /// The case `case` of generic enum template `t`, its fields in terms of
+    /// the type parameters.
+    fn template_case(&self, t: usize, case: &str) -> Option<(Vec<ParamSig>, Ty)> {
+        let (_, ret) = self.template_sig(t);
+        let Some(Ty::Enum(id)) = ret else { return None };
+        let c = self.enums[id].case(case)?;
+        Some((c.fields.clone(), Ty::Enum(id)))
+    }
+
+    /// Checks the arguments of a call that failed before they were matched
+    /// to parameters, so errors inside them are still found.
+    fn args_unchecked(&mut self, args: &[Arg], trailing: Option<&Expr>) {
+        let mark = self.diags.list.len();
+        for a in args.iter().map(|a| &a.value).chain(trailing) {
+            self.expr(a, None);
+        }
+        // Only name errors: types can't be known without the parameters.
+        let keep: Vec<Diagnostic> =
+            self.diags.list.drain(mark..).filter(|d| d.message.starts_with("cannot find")).collect();
+        self.diags.list.extend(keep);
+    }
+
+    /// The type of a generic name with its type arguments written out:
+    /// `Stack<Int>` (a struct or enum copy).
+    fn generic_name_ty(&mut self, n: &str, targs: &[TypeExpr], span: Span) -> Ty {
+        let args: Vec<Ty> = targs.iter().map(|a| self.resolve(a)).collect();
+        let t = match self.globals.get(n).copied() {
+            Some(Global::GenericStruct(t) | Global::GenericEnum(t)) => t,
+            Some(Global::GenericFn(_)) => {
+                self.error(span, format!("`{n}` works out its types from its arguments; call it without `<…>`"));
+                return Ty::Error;
+            }
+            _ => {
+                self.error(span, format!("`{n}` isn't generic, so it takes no `<…>`"));
+                return Ty::Error;
+            }
+        };
+        match self.specialize(t, args, span).and_then(|name| self.globals.get(&name).copied()) {
+            Some(Global::Struct(i)) => Ty::Struct(i),
+            Some(Global::Enum(i)) => Ty::Enum(i),
+            _ => Ty::Error,
+        }
+    }
+}
+
 // ===== completion =====
 
 impl Checker<'_> {
@@ -3018,6 +3641,9 @@ impl Checker<'_> {
                 Global::Struct(_) => ("struct".to_string(), K::Type),
                 Global::Enum(_) => ("enum".to_string(), K::Type),
                 Global::Iface(_) => ("interface".to_string(), K::Type),
+                Global::GenericFn(_) => ("generic function".to_string(), K::Function),
+                Global::GenericStruct(_) => ("generic struct".to_string(), K::Type),
+                Global::GenericEnum(_) => ("generic enum".to_string(), K::Type),
                 Global::App => continue,
             };
             items.push(Self::item(&name, detail, kind));

@@ -61,6 +61,9 @@ impl SourceFile {
     }
 }
 
+/// The bits of `Span::file` that say which file it is.
+pub const FILE_MASK: u32 = 0xFFFF;
+
 /// All source files of one program.
 #[derive(Default)]
 pub struct SourceMap {
@@ -77,8 +80,11 @@ impl SourceMap {
         (self.files.len() - 1) as u32
     }
 
+    /// The file a span is in. (Names declared in a specialized copy of
+    /// generic code carry a copy number in the high bits, so their spans
+    /// differ from the original's; see `generics`.)
     pub fn file(&self, id: u32) -> &SourceFile {
-        &self.files[id as usize]
+        &self.files[(id & FILE_MASK) as usize]
     }
 
     pub fn files(&self) -> impl Iterator<Item = (u32, &SourceFile)> {

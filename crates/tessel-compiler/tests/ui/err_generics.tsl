@@ -1,0 +1,33 @@
+interface Shape {
+    fn area() -> Float
+}
+
+struct Stack<T> {
+    items: [T] = []
+}
+
+fn largest<T: Shape>(items: [T]) -> T? {
+    items.first
+}
+
+fn describe<T>(x: T) -> String {
+    x.name() // error: could be any type, so it has no method `name`
+}
+
+fn asInt<T>(x: T) -> Int {
+    x // error: (in `asInt<String>`)
+}
+
+fn wrong<T: Stack>(x: T) { // error: isn't an interface
+}
+
+fn main() {
+    let s = Stack() // error: can't tell what `T` is
+    let t: Stack = Stack<Int>() // error: needs its type arguments
+    let u = Stack<Int, Int>() // error: takes 1 type argument
+    let big = largest(items: [1, 2]) // error: needs a `Shape` for `T`
+    let f = largest // error: is generic, so it can't be used as a value
+    let n = asInt(x: 5)
+    let m = asInt(x: "five")
+    let v = Int<String>() // error: isn't generic
+}

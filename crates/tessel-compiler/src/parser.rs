@@ -207,12 +207,13 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        Program { items }
+        Program { items, next_id: 0 }
     }
 
     fn struct_decl(&mut self) -> PResult<StructDecl> {
         self.bump(); // struct
         let name = self.ident("a struct name")?;
+        let generics = self.generic_params()?;
         let conforms = self.conformances()?;
         self.expect(Tok::LBrace)?;
         let mut fields = Vec::new();
@@ -235,12 +236,13 @@ impl<'a> Parser<'a> {
             }
             Ok(())
         });
-        Ok(StructDecl { name, conforms, fields, methods })
+        Ok(StructDecl { name, generics, conforms, fields, methods })
     }
 
     fn enum_decl(&mut self) -> PResult<EnumDecl> {
         self.bump(); // enum
         let name = self.ident("an enum name")?;
+        let generics = self.generic_params()?;
         let conforms = self.conformances()?;
         self.expect(Tok::LBrace)?;
         let mut cases = Vec::new();
@@ -255,7 +257,61 @@ impl<'a> Parser<'a> {
             }
             Ok(())
         });
-        Ok(EnumDecl { name, conforms, cases, methods })
+        Ok(EnumDecl { name, generics, conforms, cases, methods })
+    }
+
+    /// `<T, U: Shape>` after a declaration's name (none if there's no `<`).
+    fn generic_params(&mut self) -> PResult<Vec<GenericParam>> {
+        let mut out = Vec::new();
+        if !self.eat(&Tok::Lt) {
+            return Ok(out);
+        }
+        loop {
+            let name = self.ident("a type parameter name, like `T`")?;
+            let constraint = if self.eat(&Tok::Colon) { Some(self.ident("an interface name")?) } else { None };
+            out.push(GenericParam { name, constraint });
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        self.expect(Tok::Gt)?;
+        Ok(out)
+    }
+
+    /// `<Int, [String]>` after a generic type's name.
+    fn type_args(&mut self) -> PResult<Vec<TypeExpr>> {
+        self.expect(Tok::Lt)?;
+        let mut out = Vec::new();
+        loop {
+            out.push(self.type_expr()?);
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        self.expect(Tok::Gt)?;
+        Ok(out)
+    }
+
+    /// Is the `<` at the current position the start of type arguments (a
+    /// matching `>` followed by `(` or `.`), rather than "less than"?
+    fn type_args_ahead(&self) -> bool {
+        let mut depth = 0;
+        let mut i = 0;
+        loop {
+            match self.peek_at(i) {
+                Tok::Lt => depth += 1,
+                Tok::Gt => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return matches!(self.peek_at(i + 1), Tok::LParen | Tok::Dot);
+                    }
+                }
+                Tok::Ident(_) | Tok::Comma | Tok::LBracket | Tok::RBracket | Tok::Colon | Tok::Question
+                | Tok::Fn | Tok::LParen | Tok::RParen | Tok::Arrow => {}
+                _ => return false,
+            }
+            i += 1;
+        }
     }
 
     /// `: Shape, Named` after a struct or enum name.
@@ -351,6 +407,7 @@ impl<'a> Parser<'a> {
     fn fn_decl(&mut self) -> PResult<FnDecl> {
         self.bump(); // fn
         let name = self.ident("a function name")?;
+        let generics = self.generic_params()?;
         if !self.at(&Tok::LParen) {
             let span = self.span();
             self.error(span, format!("function `{}` needs a parameter list", name.name))
@@ -360,7 +417,7 @@ impl<'a> Parser<'a> {
         let params = self.params()?;
         let ret = if self.eat(&Tok::Arrow) { Some(self.type_expr()?) } else { None };
         let body = self.block()?;
-        Ok(FnDecl { name, params, ret, body })
+        Ok(FnDecl { name, generics, params, ret, body })
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {
@@ -416,7 +473,15 @@ impl<'a> Parser<'a> {
     fn type_expr(&mut self) -> PResult<TypeExpr> {
         let lo = self.span();
         let mut ty = match self.peek() {
-            Tok::Ident(_) => TypeExpr::Named(self.ident("a type")?),
+            Tok::Ident(_) => {
+                let name = self.ident("a type")?;
+                if self.at(&Tok::Lt) {
+                    let args = self.type_args()?;
+                    TypeExpr::Generic(name, args, lo.to(self.prev_span()))
+                } else {
+                    TypeExpr::Named(name)
+                }
+            }
             Tok::LBracket => {
                 self.bump();
                 let inner = self.type_expr()?;
@@ -899,6 +964,11 @@ impl<'a> Parser<'a> {
             }
             Tok::Ident(name) => {
                 self.bump();
+                // `Stack<Int>(…)`, `Result<Int>.ok(…)`
+                if self.at(&Tok::Lt) && name.starts_with(char::is_uppercase) && self.type_args_ahead() {
+                    let args = self.type_args()?;
+                    return Ok(self.new_expr(ExprKind::GenericName(name, args), span.to(self.prev_span())));
+                }
                 ExprKind::Name(name)
             }
             Tok::Dot => {

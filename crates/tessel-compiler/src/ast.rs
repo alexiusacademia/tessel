@@ -8,12 +8,22 @@ pub struct Ident {
     pub span: Span,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Program {
     pub items: Vec<Item>,
+    /// The next unused expression id (generic code is copied with new ids).
+    pub next_id: ExprId,
 }
 
-#[derive(Debug)]
+/// A type parameter of a generic declaration: `T`, or `T: Shape`.
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub name: Ident,
+    /// An interface the type must conform to.
+    pub constraint: Option<Ident>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Item {
     Struct(StructDecl),
     Enum(EnumDecl),
@@ -36,32 +46,34 @@ impl Item {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructDecl {
     pub name: Ident,
+    pub generics: Vec<GenericParam>,
     /// Interfaces it conforms to (`struct Circle: Shape`).
     pub conforms: Vec<Ident>,
     pub fields: Vec<FieldDecl>,
     pub methods: Vec<FnDecl>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldDecl {
     pub name: Ident,
     pub ty: TypeExpr,
     pub default: Option<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnumDecl {
     pub name: Ident,
+    pub generics: Vec<GenericParam>,
     pub conforms: Vec<Ident>,
     pub cases: Vec<CaseDecl>,
     pub methods: Vec<FnDecl>,
 }
 
 /// `interface Shape { fn area() -> Float }`: methods a type must have.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InterfaceDecl {
     pub name: Ident,
     pub methods: Vec<MethodReq>,
@@ -70,7 +82,7 @@ pub struct InterfaceDecl {
 }
 
 /// A method an interface requires: its signature, without a body.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MethodReq {
     pub name: Ident,
     pub params: Vec<Param>,
@@ -78,21 +90,22 @@ pub struct MethodReq {
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CaseDecl {
     pub name: Ident,
     pub fields: Vec<Param>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FnDecl {
     pub name: Ident,
+    pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub body: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Param {
     /// Declared as `_ name: T`: the argument is passed without a label.
     pub unlabeled: bool,
@@ -104,14 +117,14 @@ pub struct Param {
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ViewDecl {
     pub name: Ident,
     pub params: Vec<Param>,
     pub body: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppDecl {
     pub name: Ident,
     pub args: Vec<Arg>,
@@ -126,24 +139,30 @@ pub enum TypeExpr {
     Dict(Box<TypeExpr>, Box<TypeExpr>, Span),
     Optional(Box<TypeExpr>, Span),
     Fn(Vec<TypeExpr>, Option<Box<TypeExpr>>, Span),
+    /// A generic type with its type arguments: `Stack<Int>`.
+    Generic(Ident, Vec<TypeExpr>, Span),
 }
 
 impl TypeExpr {
     pub fn span(&self) -> Span {
         match self {
             TypeExpr::Named(id) => id.span,
-            TypeExpr::List(_, s) | TypeExpr::Dict(_, _, s) | TypeExpr::Optional(_, s) | TypeExpr::Fn(_, _, s) => *s,
+            TypeExpr::List(_, s)
+            | TypeExpr::Dict(_, _, s)
+            | TypeExpr::Optional(_, s)
+            | TypeExpr::Fn(_, _, s)
+            | TypeExpr::Generic(_, _, s) => *s,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Let(LocalDecl),
     Var(LocalDecl),
@@ -159,7 +178,7 @@ pub enum Stmt {
     Expr(Expr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LocalDecl {
     pub name: Ident,
     pub ty: Option<TypeExpr>,
@@ -178,14 +197,14 @@ pub enum AssignOp {
 
 pub type ExprId = u32;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expr {
     pub id: ExprId,
     pub kind: ExprKind,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExprKind {
     Int(i64),
     Float(f64),
@@ -193,6 +212,9 @@ pub enum ExprKind {
     Nil,
     Str(Vec<StrPart>),
     Name(String),
+    /// A generic type with type arguments, as a value: `Stack<Int>` in
+    /// `Stack<Int>()` or `Result<Int>.ok(value: 1)`.
+    GenericName(String, Vec<TypeExpr>),
     /// `.name` with the type taken from context: `.bold`, `.active`.
     DotName(String),
     List(Vec<Expr>),
@@ -355,39 +377,39 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StrPart {
     Text(String),
     Expr(Expr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arg {
     pub label: Option<Ident>,
     pub value: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Cond {
     Expr(Box<Expr>),
     /// `if let name = value`, or `if let name: Type = value`
     Let(Ident, Option<TypeExpr>, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Else {
     Block(Block),
     If(Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arm {
     pub pattern: Pattern,
     pub body: Expr,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Pattern {
     /// `.name` or `.name(a, b)`
     Case { name: Ident, bindings: Vec<Ident>, span: Span },

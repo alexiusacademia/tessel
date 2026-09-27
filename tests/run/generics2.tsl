@@ -1,0 +1,87 @@
+// Constraints (T: Shape), generic types that contain themselves, several type
+// parameters, and generic functions that call themselves.
+
+interface Shape {
+    fn area() -> Float
+}
+
+struct Circle: Shape {
+    radius: Float
+    fn area() -> Float { pi * radius * radius }
+}
+
+struct Square: Shape {
+    side: Float
+    fn area() -> Float { side * side }
+}
+
+fn largest<T: Shape>(items: [T]) -> T? {
+    var best: T? = nil
+    for s in items {
+        if s.area() > (best?.area() ?? -1.0) {
+            best = s
+        }
+    }
+    best
+}
+
+struct Pair<A, B> {
+    first: A
+    second: B
+
+    fn swapped() -> Pair<B, A> {
+        Pair<B, A>(first: second, second: first)
+    }
+}
+
+struct Tree<T> {
+    value: T
+    children: [Tree<T>] = []
+
+    fn count() -> Int {
+        var n = 1
+        for c in children {
+            n += c.count()
+        }
+        n
+    }
+}
+
+fn sum<T>(items: [T], zero: T, add: fn(T, T) -> T) -> T {
+    var total = zero
+    for x in items {
+        total = add(total, x)
+    }
+    total
+}
+
+fn reversedAll<T>(items: [T]) -> [T] {
+    if items.count <= 1 {
+        return items
+    }
+    var rest = reversedAll(items: items.dropFirst(1))
+    rest.append(items[0])
+    rest
+}
+
+fn main() {
+    let big = largest(items: [Circle(radius: 1.0), Circle(radius: 3.0)])
+    print(big?.radius ?? 0.0)
+    let sq = largest(items: [Square(side: 2.0)])
+    print(sq?.side ?? 0.0)
+    let shapes: [Shape] = [Circle(radius: 1.0), Square(side: 5.0)]
+    print(largest(items: shapes)?.area() ?? 0.0)
+
+    let p = Pair(first: 1, second: "one")
+    let q = p.swapped()
+    print("{q.first} {q.second}")
+
+    let t = Tree(value: "root", children: [Tree(value: "a"), Tree(value: "b", children: [Tree(value: "c")])])
+    print(t.count())
+
+    print(sum(items: [1, 2, 3], zero: 0, add: { a, b in a + b }))
+    print(sum(items: ["a", "b"], zero: "", add: { a, b in a + b }))
+    print(reversedAll(items: [1, 2, 3]).map { x in "{x}" }.joined(separator: ","))
+    let nested: [[Int]] = [[1], [2, 3]]
+    print(reversedAll(items: nested).count)
+}

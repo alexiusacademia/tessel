@@ -332,7 +332,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn program(&mut self) {
         let program = self.program;
-        for item in &program.items {
+        let checked = self.checked;
+        // The program's items, and the specialized copies of generic ones.
+        let items: Vec<&'a Item> = program
+            .items
+            .iter()
+            .filter(|i| !is_generic(i))
+            .chain(checked.instances.iter().map(|r| &**r))
+            .collect();
+        for &item in &items {
             match item {
                 Item::Struct(d) => {
                     let id = self.checked.structs.iter().position(|s| s.name == d.name.name).unwrap();
@@ -522,7 +530,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
             }
             Ty::Struct(id) => self.struct_ty(*id).into(),
-            Ty::Error | Ty::Any => unreachable!("unresolved type in codegen"),
+            Ty::Error | Ty::Any | Ty::Generic(_) => unreachable!("unresolved type in codegen"),
         })
     }
 
@@ -577,7 +585,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Struct(id) => format!("S{}{}", self.checked.structs[*id].name.len(), self.checked.structs[*id].name),
             Ty::Enum(id) => format!("E{}{}", self.checked.enums[*id].name.len(), self.checked.enums[*id].name),
             Ty::Iface(id) => format!("I{}{}", self.checked.ifaces[*id].name.len(), self.checked.ifaces[*id].name),
-            Ty::Error | Ty::Any => "x".into(),
+            Ty::Error | Ty::Any | Ty::Generic(_) => "x".into(),
         }
     }
 
@@ -1925,6 +1933,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn expr(&mut self, e: &Expr) -> Option<Val<'ctx>> {
         let t = self.ty(e);
         match &e.kind {
+            ExprKind::GenericName(..) => unreachable!("checked: a generic type isn't a value"),
             ExprKind::Int(n) => Some(if t == Ty::Float {
                 self.ctx.f64_type().const_float(*n as f64).into()
             } else {
@@ -2329,6 +2338,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn member(&mut self, e: &Expr, object: &Expr, name: &Ident, optional: bool) -> Option<Val<'ctx>> {
         let t = self.ty(e);
+        // `Result<Int>.none`
+        if let (ExprKind::GenericName(..), Ty::Enum(id)) = (&object.kind, &t) {
+            return Some(self.enum_value(*id, &name.name));
+        }
         // `Filter.all`
         if let ExprKind::Name(tn) = &object.kind {
             if self.lookup(tn).is_none() && !self.fns.contains_key(tn) {
@@ -4705,6 +4718,16 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
             }
         }
         _ => for_each_child(e, &mut |c| walk_expr(c, f)),
+    }
+}
+
+/// A generic declaration (compiled only through its specialized copies).
+fn is_generic(item: &Item) -> bool {
+    match item {
+        Item::Fn(f) => !f.generics.is_empty(),
+        Item::Struct(d) => !d.generics.is_empty(),
+        Item::Enum(d) => !d.generics.is_empty(),
+        _ => false,
     }
 }
 

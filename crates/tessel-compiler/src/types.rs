@@ -24,6 +24,10 @@ pub enum Ty {
     Enum(usize),
     /// A value of any type that conforms to the interface.
     Iface(usize),
+    /// A type parameter (`T`) while a generic declaration is checked on its
+    /// own. Accepted everywhere like `Error`: the real checking happens in
+    /// each specialized copy, where `T` is a real type.
+    Generic(usize),
     /// Only in built-in signatures: accepts any value (checked specially).
     Any,
 }
@@ -49,13 +53,13 @@ impl Ty {
     }
 
     pub fn is_numeric(&self) -> bool {
-        matches!(self, Ty::Int | Ty::Float | Ty::Error)
+        matches!(self, Ty::Int | Ty::Float | Ty::Error | Ty::Generic(_))
     }
 
     /// Does this type contain an error anywhere (so mismatches aren't reported)?
     pub fn has_error(&self) -> bool {
         match self {
-            Ty::Error => true,
+            Ty::Error | Ty::Generic(_) => true,
             Ty::List(t) | Ty::Opt(t) => t.has_error(),
             Ty::Dict(k, v) => k.has_error() || v.has_error(),
             Ty::Fn(ps, r) => ps.iter().any(Ty::has_error) || r.has_error(),

@@ -1,0 +1,88 @@
+// Generic functions, structs and enums: inferred and written-out type arguments.
+
+fn lastOr<T>(items: [T], fallback: T) -> T {
+    items.last ?? fallback
+}
+
+fn pair<A, B>(a: A, b: B) -> String {
+    "{a} & {b}"
+}
+
+struct Stack<T> {
+    items: [T] = []
+
+    fn push(item: T) {
+        items.append(item)
+    }
+
+    fn pop() -> T? {
+        let top = items.last
+        if items.count > 0 {
+            items.removeLast()
+        }
+        top
+    }
+
+    fn size() -> Int {
+        items.count
+    }
+}
+
+enum Result<T> {
+    ok(value: T)
+    failure(message: String)
+
+    fn describe() -> String {
+        match self {
+            .ok -> "ok"
+            .failure(m) -> "failed: {m}"
+        }
+    }
+}
+
+fn parse(text: String) -> Result<Int> {
+    if let n = Int(text) {
+        return .ok(value: n)
+    }
+    Result.failure(message: "not a number: {text}")
+}
+
+fn mapAll<T, U>(items: [T], f: fn(T) -> U) -> [U] {
+    var out: [U] = []
+    for x in items {
+        out.append(f(x))
+    }
+    out
+}
+
+fn main() {
+    print(lastOr(items: [1, 2, 3], fallback: 0))
+    let none: [String] = []
+    print(lastOr(items: none, fallback: "empty"))
+    print(pair(a: 1, b: "two"))
+
+    var s = Stack<Int>()
+    s.push(item: 1)
+    s.push(item: 2)
+    print("size {s.size()}, pop {s.pop() ?? -1}, size {s.size()}")
+
+    var words: Stack<String> = Stack()
+    words.push(item: "hello")
+    print(words.pop() ?? "none")
+
+    let inferred = Stack(items: [1.5, 2.5])
+    print(inferred.size())
+
+    for t in ["12", "x"] {
+        let r = parse(text: t)
+        match r {
+            .ok(v) -> print("parsed {v}")
+            .failure(m) -> print(m)
+        }
+        print(r.describe())
+    }
+    let e = Result<String>.ok(value: "fine")
+    print(e.describe())
+    print(mapAll(items: [1, 2, 3], f: { x in x * 10 }).count)
+    print(mapAll(items: ["a", "bb"], f: { s in s.count })[1])
+}

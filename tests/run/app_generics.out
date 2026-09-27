@@ -1,0 +1,7 @@
+Root
+  View
+    VStack
+      Text "4"
+      Button "Add"
+      View
+        Text "#2, #3, #4"
