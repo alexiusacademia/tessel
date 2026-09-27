@@ -108,15 +108,19 @@ struct CallFrame {
 /// Checks a whole program. With `require_entry`, it must have an `app` or a `fn main()`.
 pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: bool) -> Checked {
     let enums = builtins::enums();
+    let structs = builtins::structs();
     let mut globals = HashMap::new();
     for (i, e) in enums.iter().enumerate() {
         globals.insert(e.name.clone(), Global::Enum(i));
+    }
+    for (i, s) in structs.iter().enumerate() {
+        globals.insert(s.name.clone(), Global::Struct(i));
     }
     let builtins = Builtins::standard();
     let mut c = Checker {
         diags,
         builtins,
-        structs: Vec::new(),
+        structs,
         enums,
         fns: Vec::new(),
         views: Vec::new(),
@@ -1535,8 +1539,16 @@ impl Checker<'_> {
             Cond::Expr(e) => {
                 self.expect(e, &Ty::Bool);
             }
-            Cond::Let(name, value) => {
-                let t = self.expr(value, None);
+            Cond::Let(name, ty, value) => {
+                // `if let x: T = value`: value is a `T?`.
+                let declared = ty.as_ref().map(|t| self.resolve(t));
+                let t = match &declared {
+                    Some(d) => {
+                        let want = Ty::opt(d.clone());
+                        self.expect(value, &want)
+                    }
+                    None => self.expr(value, None),
+                };
                 let inner = match t {
                     Ty::Opt(inner) => *inner,
                     Ty::Error => Ty::Error,
@@ -2648,7 +2660,7 @@ fn expr_mutates(e: &Expr, roots: &HashSet<String>) -> bool {
         ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_mutates(body, roots),
         ExprKind::If { cond, then, otherwise } => {
             let c = match cond {
-                Cond::Expr(x) | Cond::Let(_, x) => m(x),
+                Cond::Expr(x) | Cond::Let(_, _, x) => m(x),
             };
             let o = match otherwise {
                 Some(Else::Block(b)) => block_mutates(b, roots),

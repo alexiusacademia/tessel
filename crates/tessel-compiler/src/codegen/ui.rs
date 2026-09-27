@@ -357,7 +357,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         self.b.build_conditional_branch(c, then_bb, else_bb).unwrap();
                         self.b.position_at_end(then_bb);
                     }
-                    Cond::Let(name, value) => {
+                    Cond::Let(name, _, value) => {
                         let ov = self.expr(value).unwrap().into_struct_value();
                         let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
                         self.b.build_conditional_branch(flag, then_bb, else_bb).unwrap();

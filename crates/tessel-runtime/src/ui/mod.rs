@@ -32,7 +32,7 @@ pub struct Callback {
 
 impl Callback {
     /// Takes ownership of one reference to `env`.
-    fn new(f: *const c_void, env: *mut Header) -> Callback {
+    pub(crate) fn new(f: *const c_void, env: *mut Header) -> Callback {
         Callback { f, env }
     }
 
@@ -45,6 +45,12 @@ impl Callback {
     /// Runs a closure taking one pointer argument: `void fn(env, ptr)`.
     pub fn call_with(&self, arg: *mut u8) {
         let f: extern "C" fn(*mut Header, *mut u8) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, arg);
+    }
+
+    /// Runs a closure taking one `Float`: `void fn(env, f64)`.
+    pub fn call_with_float(&self, arg: f64) {
+        let f: extern "C" fn(*mut Header, f64) = unsafe { std::mem::transmute(self.f) };
         f(self.env, arg);
     }
 

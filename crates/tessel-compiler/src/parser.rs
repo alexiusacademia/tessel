@@ -900,8 +900,9 @@ impl<'a> Parser<'a> {
         let cond = self.with_trailing(false, |p| -> PResult<Cond> {
             if p.eat(&Tok::Let) {
                 let name = p.ident("a name")?;
+                let ty = if p.eat(&Tok::Colon) { Some(p.type_expr()?) } else { None };
                 p.expect(Tok::Eq)?;
-                Ok(Cond::Let(name, Box::new(p.expr()?)))
+                Ok(Cond::Let(name, ty, Box::new(p.expr()?)))
             } else {
                 Ok(Cond::Expr(Box::new(p.expr()?)))
             }

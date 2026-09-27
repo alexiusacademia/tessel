@@ -27,6 +27,8 @@
 //! tree                  print the view tree without positions
 //! ```
 
+mod net;
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -139,6 +141,11 @@ enum Event {
     Fetched(u64, Option<String>),
     Line(u64, String),
     Exited(u64, i32),
+    Responded(u64, net::HttpResult),
+    Progress(u64, f64),
+    Downloaded(u64, bool),
+    Message(u64, String),
+    Closed(u64, String),
 }
 
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -291,6 +298,7 @@ fn deliver_background() -> bool {
                     on_exit.call_with_int(code as i64);
                 }
             }
+            other => net::deliver(other),
         }
     }
     ran
@@ -377,7 +385,7 @@ pub fn run_until_idle() {
 
 /// Is background work still going (loads or commands)?
 fn background_busy() -> bool {
-    WAITING.with(|w| !w.borrow().is_empty()) || COMMANDS.with(|c| !c.borrow().is_empty())
+    WAITING.with(|w| !w.borrow().is_empty()) || COMMANDS.with(|c| !c.borrow().is_empty()) || net::busy()
 }
 
 // ===== the app model =====

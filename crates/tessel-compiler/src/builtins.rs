@@ -1,6 +1,7 @@
 //! Signatures of the built-in views, modifiers, functions and methods.
 
-use crate::types::{CaseDef, EnumDef, FnSig, ParamSig as P, Ty};
+use crate::source::Span;
+use crate::types::{CaseDef, EnumDef, FieldDef, FnSig, ParamSig as P, StructDef, Ty};
 
 pub const COLORS: &[&str] = &[
     "primary", "secondary", "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink", "white", "black",
@@ -28,6 +29,27 @@ pub fn enums() -> Vec<EnumDef> {
     let icons: Vec<&str> = ICON_NAMES.lines().map(str::trim).filter(|n| !n.is_empty()).collect();
     vec![simple("Color", COLORS), simple("Weight", WEIGHTS), simple("Alignment", ALIGNMENTS), simple("IconName", &icons)]
 }
+
+/// Built-in structs, registered before user types: `HttpResponse` is struct 0.
+pub fn structs() -> Vec<StructDef> {
+    let field = |name: &str, ty: Ty| FieldDef { name: name.into(), ty, has_default: false, span: Span::default() };
+    vec![StructDef {
+        name: "HttpResponse".into(),
+        span: Span::default(),
+        fields: vec![
+            field("status", Ty::Int),
+            field("ok", Ty::Bool),
+            field("text", Ty::Str),
+            field("data", Ty::Data),
+            field("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))),
+            field("error", Ty::Str),
+        ],
+        methods: Vec::new(),
+    }]
+}
+
+/// The `HttpResponse` struct (see `structs`).
+pub const HTTP_RESPONSE: Ty = Ty::Struct(0);
 
 pub struct Builtins {
     pub color: Ty,
@@ -216,6 +238,35 @@ impl Builtins {
             "copyToClipboard" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::Bool },
             "clipboardText" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
             "decodeBase64" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::opt(Ty::Data) },
+            "request" => FnSig {
+                params: vec![
+                    P::new("url", Ty::Str),
+                    P::new("method", Ty::Str).default(),
+                    P::new("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))).default(),
+                    P::new("body", Ty::Str).default(),
+                    P::new("done", Ty::func(vec![HTTP_RESPONSE], Ty::Void)),
+                ],
+                ret: Ty::Void,
+            },
+            "download" => FnSig {
+                params: vec![
+                    P::new("url", Ty::Str),
+                    P::new("to", Ty::Str),
+                    P::new("progress", Ty::opt(Ty::func(vec![Ty::Float], Ty::Void))).default(),
+                    P::new("done", Ty::func(vec![Ty::Bool], Ty::Void)),
+                ],
+                ret: Ty::Void,
+            },
+            "openWebSocket" => FnSig {
+                params: vec![
+                    P::new("url", Ty::Str),
+                    P::new("onMessage", Ty::func(vec![Ty::Str], Ty::Void)),
+                    P::new("onClose", Ty::func(vec![Ty::Str], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "sendWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("text", Ty::Str)], ret: Ty::Bool },
+            "closeWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
             "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
@@ -243,7 +294,8 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
-    "copyToClipboard", "clipboardText", "decodeBase64",
+    "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
+    "closeWebSocket",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -459,6 +511,8 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "copyToClipboard" => rt("tsl_copy_to_clipboard"),
         "clipboardText" => rt("tsl_clipboard_text"),
         "decodeBase64" => rt("tsl_decode_base64"),
+        "sendWebSocket" => rt("tsl_send_web_socket"),
+        "closeWebSocket" => rt("tsl_close_web_socket"),
         "readData" => rt("tsl_read_data"),
         "writeData" => rt("tsl_write_data"),
         _ => return None,

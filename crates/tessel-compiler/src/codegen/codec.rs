@@ -563,9 +563,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn decode_struct(&mut self, id: usize, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {
         let fields: Vec<(String, Ty)> = self.checked.structs[id].fields.iter().map(|f| (f.name.clone(), f.ty.clone())).collect();
-        let decl = self.struct_decls[&id];
+        let decl = self.struct_decls.get(&id).copied();
         let (ok, temps) = self.decode_fields(h, &fields, &mut |g, i| {
-            let default = decl.fields[i].default.as_ref()?;
+            let default = decl?.fields[i].default.as_ref()?;
             let ft = g.checked.structs[id].fields[i].ty.clone();
             g.expr_as(default, &ft)
         });

@@ -1,0 +1,18 @@
+// Networking without the internet: file:// requests, and a refused connection.
+// (HTTP methods, headers, status codes, downloads and WebSockets are tested
+// against real servers by hand.)
+
+fn main() {
+    request(url: "file://tests/run/fetch_data.txt") { r in
+        print("file: {r.status} {r.ok} {r.text.lines().count > 0} {r.data.count == r.text.count}")
+        request(url: "http://127.0.0.1:1/nothing", method: "POST", headers: ["X-A": "1"], body: "x") { r in
+            print("refused: {r.status} {r.ok} {r.error != ""}")
+            download(url: "http://127.0.0.1:1/file", to: joinPath(tempFolder(), "tessel-none.bin")) { ok in
+                print("download: {ok}")
+            }
+        }
+    }
+    if let parsed: [Int] = fromJson("[1, 2, 3]") {
+        print("typed if let: {parsed.sum()}")
+    }
+}

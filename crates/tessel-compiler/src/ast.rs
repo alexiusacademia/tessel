@@ -286,7 +286,7 @@ fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
         ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_exprs(body, f),
         ExprKind::If { cond, then, otherwise } => {
             match cond {
-                Cond::Expr(c) | Cond::Let(_, c) => expr_tree(c, f),
+                Cond::Expr(c) | Cond::Let(_, _, c) => expr_tree(c, f),
             }
             block_exprs(then, f);
             match otherwise {
@@ -333,8 +333,8 @@ pub struct Arg {
 #[derive(Debug)]
 pub enum Cond {
     Expr(Box<Expr>),
-    /// `if let name = value`
-    Let(Ident, Box<Expr>),
+    /// `if let name = value`, or `if let name: Type = value`
+    Let(Ident, Option<TypeExpr>, Box<Expr>),
 }
 
 #[derive(Debug)]
