@@ -1,0 +1,36 @@
+// An early return, break or continue in the middle of an expression releases
+// the values already computed for it (the leak check verifies this).
+
+fn a() -> String {
+    "leaked? {42}"
+}
+
+fn pick(x: String, n: Int) -> Int {
+    n
+}
+
+fn f(c: Bool) -> Int {
+    pick(x: a(), n: if c { return 1 } else { 2 })
+}
+
+fn g(items: [String]) -> Int {
+    var total = 0
+    for s in items {
+        let parts = [s, "x{s}", if s == "skip" { continue } else { s }]
+        let text = "{parts.count} {if s == "stop" { break } else { s }}"
+        total += text.count
+        if a() == (if s == "end" { return -1 } else { "no" }) {
+            total += 100
+        }
+    }
+    total
+}
+
+fn main() {
+    print(f(c: true))
+    print(f(c: false))
+    print(g(items: ["one", "skip", "two", "stop", "three"]))
+    print(g(items: ["one", "end"]))
+    let d = ["k": a(), "j": if f(c: true) == 1 { "one" } else { "other" }]
+    print(d.count)
+}

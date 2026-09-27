@@ -937,7 +937,7 @@ impl Checker<'_> {
                 }
             }
             if let Some(t) = expected {
-                let ends_ok = matches!(b.stmts.last(), Some(Stmt::Expr(_) | Stmt::Return { .. }));
+                let ends_ok = matches!(b.stmts.last(), Some(Stmt::Expr(_))) || diverges(b);
                 if *t != Ty::Void && !t.has_error() && !ends_ok {
                     let brace = Span { lo: b.span.hi.saturating_sub(1), ..b.span };
                     let what = c.a(t);
@@ -1662,6 +1662,17 @@ impl Checker<'_> {
     }
 
     fn if_expr(&mut self, cond: &Cond, then: &Block, otherwise: Option<&Else>, expected: Option<&Ty>) -> Ty {
+        // `if c { continue } else { value }`: the value's type comes from `else`.
+        if let (None, true, Some(Else::Block(b))) = (expected, diverges(then), otherwise)
+            && !diverges(b)
+        {
+            let t = self.block(b, None);
+            self.with_scope(|c| {
+                c.cond(cond);
+                c.block(then, Some(&t))
+            });
+            return t;
+        }
         let then_t = self.with_scope(|c| {
             c.cond(cond);
             c.block(then, expected)
@@ -2864,6 +2875,11 @@ impl Checker<'_> {
                 .collect(),
         }
     }
+}
+
+/// Does `b` always leave early (its last statement is `return`, `break` or `continue`)?
+fn diverges(b: &Block) -> bool {
+    matches!(b.stmts.last(), Some(Stmt::Return { .. } | Stmt::Break(_) | Stmt::Continue(_)))
 }
 
 fn fn_type(sig: &FnSig) -> Ty {

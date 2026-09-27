@@ -210,6 +210,21 @@ struct LoopTarget<'ctx> {
     next: BasicBlock<'ctx>,
     done: BasicBlock<'ctx>,
     depth: usize,
+    /// How many values were held when the loop started (those stay).
+    held: usize,
+}
+
+/// A value held while the rest of an expression is evaluated (see `held`).
+struct Held<'ctx> {
+    func: FunctionValue<'ctx>,
+    ty: Ty,
+    value: HeldValue<'ctx>,
+}
+
+enum HeldValue<'ctx> {
+    Value(Val<'ctx>),
+    /// A value being built in a slot (a list literal).
+    Slot(PointerValue<'ctx>),
 }
 
 /// A view's persistent state: the data of a box holding a struct of its
@@ -244,6 +259,10 @@ struct Gen<'ctx, 'a> {
     closures: usize,
     /// Loops being emitted, innermost last: where `break` and `continue` go.
     loops: Vec<LoopTarget<'ctx>>,
+    /// Owned values computed but not yet used, while the rest of an
+    /// expression is evaluated (`f(a(), if c { return 1 } else { 2 })`): an
+    /// early `return`, `break` or `continue` in between releases them.
+    held: Vec<Held<'ctx>>,
     stack: Vec<FnCtx<'ctx>>,
 
     /// Views by name (the `app` included), and what's compiled for them.
@@ -293,6 +312,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             locs: HashMap::new(),
             closures: 0,
             loops: Vec::new(),
+            held: Vec::new(),
             stack: Vec::new(),
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
@@ -1241,6 +1261,40 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.ctx_mut().scopes.push(Vec::new());
     }
 
+    /// Holds an owned value while the rest of an expression is evaluated.
+    fn hold(&mut self, v: Val<'ctx>, ty: &Ty) {
+        let func = self.func();
+        self.held.push(Held { func, ty: ty.clone(), value: HeldValue::Value(v) });
+    }
+
+    /// Holds a value being built in `slot`.
+    fn hold_slot(&mut self, slot: PointerValue<'ctx>, ty: &Ty) {
+        let func = self.func();
+        self.held.push(Held { func, ty: ty.clone(), value: HeldValue::Slot(slot) });
+    }
+
+    /// Stops holding the last `n` values (they're used now).
+    fn unhold(&mut self, n: usize) {
+        self.held.truncate(self.held.len() - n);
+    }
+
+    /// Before an early exit: releases this function's held values, from index `from` on.
+    fn release_held(&mut self, from: usize) {
+        let func = self.func();
+        let items: Vec<(Ty, HeldValue<'ctx>)> = self.held[from..]
+            .iter()
+            .filter(|h| h.func == func)
+            .map(|h| (h.ty.clone(), match h.value { HeldValue::Value(v) => HeldValue::Value(v), HeldValue::Slot(p) => HeldValue::Slot(p) }))
+            .collect();
+        for (ty, v) in items.into_iter().rev() {
+            let v = match v {
+                HeldValue::Value(v) => v,
+                HeldValue::Slot(p) => self.load(&ty, p),
+            };
+            self.release(v, &ty);
+        }
+    }
+
     fn pop_scope(&mut self) {
         let scope = self.ctx_mut().scopes.pop().unwrap();
         if !self.terminated() {
@@ -1468,6 +1522,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Stmt::Return { value, .. } => {
                 let ret = self.stack.last().unwrap().ret.clone();
                 let v = value.as_ref().and_then(|v| self.expr_as(v, &ret));
+                self.release_held(0);
                 self.release_all_scopes();
                 match v {
                     Some(v) => self.b.build_return(Some(&v)).unwrap(),
@@ -1483,6 +1538,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     unreachable!("checked: `break` is inside a loop")
                 };
                 let (to, depth) = (if matches!(s, Stmt::Break(_)) { target.done } else { target.next }, target.depth);
+                let held = target.held;
+                self.release_held(held);
                 // Leaving the body: release its variables, as `return` does.
                 let vars: Vec<Var> = self.stack.last().unwrap().scopes[depth..].iter().flatten().cloned().collect();
                 for v in vars.iter().rev() {
@@ -1584,7 +1641,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.br(cond_bb);
         self.b.position_at_end(cond_bb);
         let depth = self.stack.last().unwrap().scopes.len();
-        self.loops.push(LoopTarget { func: self.func(), next: cond_bb, done, depth });
+        self.loops.push(LoopTarget { func: self.func(), next: cond_bb, done, depth, held: self.held.len() });
         self.push_scope();
         match cond {
             Cond::Expr(c) => {
@@ -1651,7 +1708,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.b.build_conditional_branch(more, body_bb, done).unwrap();
             self.b.position_at_end(body_bb);
             let depth = self.stack.last().unwrap().scopes.len();
-            self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth });
+            self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth, held: self.held.len() });
             self.push_scope();
             self.declare_value(&var.name, &Ty::Int, Some(cur.into()));
             body(self);
@@ -1673,9 +1730,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         // Either iterate the live list in place, or a snapshot of it. The
         // snapshot is a hidden variable, so an early `return` releases it.
         self.push_scope();
+        // A list reached through an index (`outer[i].items`) moves when the
+        // outer list grows, so the loop finds it again each round.
+        let movable = place && through_index(iter);
         // A closure capturing the loop variable must find the element again
         // later; if the list's storage may move, keep a locator for it.
-        let relocate = if place && !self.in_state(iter) {
+        let relocate = if place && (!self.in_state(iter) || movable) {
             let loc = self.make_closure(Body::Locator(iter), &Ty::View);
             let lt = self.llty(&Ty::View).unwrap();
             let slot = self.alloca(lt, "list_locator");
@@ -1685,7 +1745,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         } else {
             None
         };
-        let slot = if place {
+        let slot = if movable {
+            // Not used: the locator finds the list each time.
+            self.ptr_ty().const_null()
+        } else if place {
             self.write_ptr(iter)
         } else {
             let list = self.expr(iter).unwrap();
@@ -1698,16 +1761,26 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             (self.block_named("for"), self.block_named("body"), self.block_named("next"), self.block_named("done"));
         self.b.build_unconditional_branch(cond_bb).unwrap();
         self.b.position_at_end(cond_bb);
-        let list = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
+        let current = match relocate.filter(|_| movable) {
+            Some(loc_slot) => {
+                let t = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(t, loc_slot, "").unwrap();
+                self.call_locator(loc)
+            }
+            None => slot,
+        };
+        let list = self.b.build_load(self.ptr_ty(), current, "").unwrap();
         let len = self.call_rt("tsl_list_len", &[list]).unwrap().into_int_value();
         let cur = self.b.build_load(self.i64(), idx, "").unwrap().into_int_value();
         let more = self.b.build_int_compare(IntPredicate::SLT, cur, len, "").unwrap();
         self.b.build_conditional_branch(more, body_bb, done).unwrap();
         self.b.position_at_end(body_bb);
         let depth = self.stack.last().unwrap().scopes.len();
-        self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth });
+        self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth, held: self.held.len() });
         self.push_scope();
-        if place {
+        if let (true, Some(locator)) = (movable, relocate) {
+            self.push_var(Var { name: var.name.clone(), ty: (*elem).clone(), store: Store::ListElemVia { locator, idx } });
+        } else if place {
             let stable = self.in_state(iter);
             self.push_var(Var { name: var.name.clone(), ty: (*elem).clone(), store: Store::ListElem { slot, idx, stable, relocate } });
         } else {
@@ -1788,11 +1861,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let n = self.i64().const_int(items.len() as u64, false);
                 let list = self.call_rt("tsl_list_new", &[info.into(), n.into()]).unwrap();
                 let slot = self.spill(&t, list);
+                self.hold_slot(slot, &t);
                 for item in items {
                     let v = self.expr_as(item, elem).unwrap();
                     let p = self.spill(elem, v);
                     self.call_rt("tsl_list_push", &[slot.into(), p.into()]);
                 }
+                self.unhold(1);
                 Some(self.load(&t, slot))
             }
             ExprKind::Dict(pairs) => {
@@ -1800,12 +1875,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let (ki, vi) = (self.type_info(kt), self.type_info(vt));
                 let d = self.call_rt("tsl_dict_new", &[ki.into(), vi.into()]).unwrap();
                 let slot = self.spill(&t, d);
+                self.hold_slot(slot, &t);
                 for (k, v) in pairs {
                     let kv = self.expr_as(k, kt).unwrap();
+                    self.hold(kv, kt);
                     let vv = self.expr_as(v, vt).unwrap();
+                    self.unhold(1);
                     let (kp, vp) = (self.spill(kt, kv), self.spill(vt, vv));
                     self.call_rt("tsl_dict_set", &[slot.into(), kp.into(), vp.into()]);
                 }
+                self.unhold(1);
                 Some(self.load(&t, slot))
             }
             ExprKind::Unary(UnaryOp::Not, x) => {
@@ -1943,6 +2022,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     let t = self.ty(x);
                     let v = self.expr(x).unwrap();
                     let s = self.stringify(v, &t);
+                    self.hold(s, &Ty::Str);
                     owned.push(s);
                     s
                 }
@@ -1955,6 +2035,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.b.build_store(slot, s).unwrap();
         }
         let count = self.i64().const_int(n as u64, false);
+        self.unhold(owned.len());
         let r = self.call_rt("tsl_str_concat", &[arr.into(), count.into()]).unwrap();
         for s in owned {
             self.release(s, &Ty::Str);
@@ -2001,7 +2082,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 // Compare as the optional type if only one side is optional.
                 let common = if matches!(lt, Ty::Opt(_)) { lt.clone() } else { rt.clone() };
                 let lv = self.expr_as(l, &common).unwrap();
+                self.hold(lv, &common);
                 let rv = self.expr_as(r, &common).unwrap();
+                self.unhold(1);
                 let mut res = self.eq(lv, rv, &common);
                 if op == BinOp::Ne {
                     res = self.b.build_not(res, "").unwrap();
@@ -2013,7 +2096,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let ot = self.ty(l);
                 let lv = self.expr(l).unwrap();
+                self.hold(lv, &ot);
                 let rv = self.expr(r).unwrap();
+                self.unhold(1);
                 let res = self.compare(op, lv, rv, &ot);
                 self.release(lv, &ot);
                 self.release(rv, &ot);
@@ -3037,8 +3122,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.expr_as(default, &p.ty)
                 }
             };
-            vals.push(v.unwrap());
+            let v = v.unwrap();
+            self.hold(v, &p.ty);
+            vals.push(v);
         }
+        self.unhold(vals.len());
         vals
     }
 
@@ -3172,7 +3260,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             _ => {
                 let v = self.expr(object).unwrap();
+                self.hold(v, recv);
                 let r = self.builtin_on_value(recv, name, v, info, arg, span);
+                self.unhold(1);
                 self.release(v, recv);
                 r
             }
@@ -4144,8 +4234,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         Some(r) => self.expr_as(arg(r), &p.ty).unwrap(),
                         None => self.default_value(call.defaults.get(i).copied().unwrap_or(builtins::Dflt::Req), &p.ty),
                     };
+                    self.hold(v, &p.ty);
                     vals.push((v, p.ty.clone()));
                 }
+                self.unhold(vals.len());
                 let r = self.call_rt_generic(call.rt, &vals, t);
                 for (v, ty) in vals {
                     self.release(v, &ty);
@@ -4217,6 +4309,17 @@ fn boxed_vars(body: &Block) -> HashSet<String> {
             let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
             free_block(body, &mut bound, &mut captured);
         }
+        // A loop over `outer[i].items` finds its list through a locator,
+        // which must share the variable rather than copy it.
+        Node::S(Stmt::For { iter, .. }) if through_index(iter) => {
+            let mut root = iter;
+            while let ExprKind::Member { object: o, .. } | ExprKind::Index(o, _) = &root.kind {
+                root = o;
+            }
+            if let ExprKind::Name(n) = &root.kind {
+                captured.insert(n.clone());
+            }
+        }
         _ => {}
     });
     vars.into_iter().filter(|v| captured.contains(v)).collect()
@@ -4285,6 +4388,15 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
             }
         }
         _ => for_each_child(e, &mut |c| walk_expr(c, f)),
+    }
+}
+
+/// Is `e` a place reached through an index, like `outer[i].items`?
+fn through_index(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Index(..) => true,
+        ExprKind::Member { object, .. } => through_index(object),
+        _ => false,
     }
 }
 

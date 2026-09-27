@@ -1,0 +1,19 @@
+// Looping over a list inside another list's item while the outer list grows:
+// the loop finds its list again each round, and changes to the loop
+// variable still reach the list.
+
+struct Group {
+    items: [String]
+}
+
+fn main() {
+    var outer = [Group(items: ["a", "b", "c"])]
+    for x in outer[0].items {
+        outer.append(Group(items: ["new {x}"]))
+        outer.append(Group(items: ["more"]))
+        x = x.uppercase()
+    }
+    print(outer.count)
+    print(outer[0].items.joined(separator: ","))
+    print(outer[1].items[0])
+}

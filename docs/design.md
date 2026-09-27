@@ -496,11 +496,13 @@ Every expression produces an owned value; storing it moves it, and each
 variable is released when its scope ends (including on early `return`).
 `cargo test` runs every program in `tests/run/` under the macOS `leaks` tool.
 
-Known gaps (M2): an early `return` from inside a larger expression (for
-example `f(a(), if c { return 1 } else { 2 })`) can leak the already-evaluated
-`a()`. Iterating a changeable list that is itself nested in another list's
-element (`for x in outer[i].items`) while appending to `outer` in the loop
-body is not safe yet.
+An early `return`, `break` or `continue` in the middle of an expression
+(`f(a(), if c { return 1 } else { 2 })`) releases the values already computed
+for it: while the rest of an expression is evaluated, codegen keeps them on a
+"held" list, and early exits release what's on it. A `for` loop over a list
+reached through an index (`for x in outer[i].items`) finds the list again each
+round through a locator (so the outer list may grow in the loop), and the
+variable at its root is boxed so the locator shares it.
 
 ### 10.3 Runtime interface
 
