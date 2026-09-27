@@ -1,6 +1,7 @@
 # Benchmarks
 
-The same seven programs in Tessel (`tsl/`), C (`c/`) and Go (`go/`):
+The same seven programs in Tessel (`tsl/`), C (`c/`), Go (`go/`), Swift
+(`swift/`) and Python (`py/`):
 
 | Program | Measures |
 |---|---|
@@ -17,7 +18,7 @@ python3 bench/run.py              # the tessel on PATH
 python3 bench/run.py target/release/tessel
 ```
 
-Each program prints a result, and the runner checks that all three agree.
-(`mandel` differs by 2 points out of 1.44 million: clang and Go fuse `x*y + z`
-into one multiply-add instruction, which rounds differently; Tessel rounds
-each operation separately, like C with `-ffp-contract=off`.)
+Each program prints a result, and the runner checks that all agree.
+(`mandel` differs by 2 points out of 1.44 million in C and Go: clang and Go
+fuse `x*y + z` into one multiply-add instruction, which rounds differently;
+Tessel, Swift and Python round each operation separately.)
