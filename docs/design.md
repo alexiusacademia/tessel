@@ -400,10 +400,23 @@ example a text field being edited) follows its item when the list reorders.
 
 - A **program** is a folder. Every `.tsl` file in it shares one namespace, so
   there are no imports. Names must be unique across the folder.
-- **Standard library (v1):** `print`, `String` methods (`count`, `contains`,
-  `split`, `trim`, `uppercase`, …), `List` methods (`append`, `remove(at:)`,
-  `count`, `filter`, `map`, `sorted`, `contains`, …), `Dictionary` methods,
-  and `Int`/`Float` math.
+- **Standard library:** `print`, `String` methods (`count`, `contains`,
+  `split`, `trim`, `uppercase`, `padStart`, `words`, `urlEncoded`, path parts,
+  …), `List` methods (`append`, `remove(at:)`, `filter`, `map`, `sorted`,
+  `index(of:)`, `sum`, `min`/`max`, `slice`, `unique`, `shuffled`, …),
+  `Dictionary` methods, `Int`/`Float` math and random numbers, files and
+  folders (`readFile`, `appendFile`, `readData`, `appDataFolder`, `joinPath`,
+  …), dates (`now`, `date`, `formatDate`, `parseDate`), the system
+  (`arguments`, `exit`, `platform`, `openURL`, the clipboard), and file
+  dialogs. The full list is on the website's standard library reference.
+- **Encoding:** `toJson(value, pretty:)` / `fromJson(text)` and
+  `toBinary(value)` / `fromBinary(data)` (MessagePack) work on any struct,
+  enum, list, dictionary, optional, range, `Data` or basic value; the
+  compiler generates the encoder and decoder for each type. The decoders take
+  their type from where the result goes (`let p: Project? = fromJson(text)`,
+  or `if let p: Project = fromJson(text)`) and give `nil` if it doesn't fit.
+  Structs are objects by field name: missing fields take their defaults,
+  unknown ones are ignored. `Data` holds raw bytes.
 - **Runtime errors** (out-of-range index, integer overflow, division by zero)
   stop the program with the source location and a message.
 - **Slow work** (network, timers, large files) runs in the background through
@@ -418,6 +431,24 @@ example a text field being edited) follows its item when the list reorders.
   }
   after(seconds: 2) { showHint = true }
   ```
+
+  The built-ins: `fetch` (text), `request` (any HTTP method, headers and
+  body; the block gets an `HttpResponse` with `status`, `ok`, `text`,
+  `data`, `headers` and `error`), `download` (to a file, with progress),
+  WebSockets (`openWebSocket`, `sendWebSocket`, `closeWebSocket`), timers
+  (`after`, `every`/`stopTimer`) and `runCommand`. In a program with only
+  `fn main`, the program keeps running after `main` returns until all of
+  them are done.
+- **Heavy work** runs on another thread with
+  `background(work: { … }) { result in … }`. Nothing is shared between
+  threads: the work block gets encoded *copies* of the values it uses (the
+  same encoding as `toBinary`), and its result is decoded again for the
+  trailing block, which runs on the UI thread and may change `state`. So the
+  checker rejects `state`, bindings, `self` and its fields, and the app's or
+  view's own functions inside the work block (top-level `fn`s are fine), as
+  well as values or results that can't be encoded; the fix is to copy what
+  the work needs into a `let` first. `fn main` programs and the headless
+  test `wait` command wait for background work like they do for timers.
 
 ## 10. Implementation architecture
 
@@ -514,8 +545,8 @@ Still open, not blocking v1:
 | **Tessel IDE** | ✅ (`ide/`, opened by `tessel`): explorer with a folder tree, new / rename / delete, tabbed editor, undo, problems and console panels, restart on save | Launching Tessel opens its own IDE. It edits `.tsl` files and runs the `tessel` commands for you: check (errors as you type, like `tessel lsp`), run, debug, build and package. No terminal needed. |
 | Hot reload | partly | The IDE restarts the running app when you save ("Restart on save"). True hot reload, keeping the app's state, is still planned |
 | App polish | planned | Dark mode, animations, real images, Tab between fields, IME input, accessibility |
-| Standard library | planned | Files, JSON, dates, math, richer `fetch` (POST, headers, status codes) |
-| Language gaps | planned | Error reasons (not just `nil`), generics for user types, more collection methods |
+| Standard library | ✅ first version | Files and folders, JSON and binary encoding (`toJson`/`fromJson`, `toBinary`/`fromBinary`), `Data`, dates, random numbers, the clipboard, many `String`/`List`/number methods; networking with `request`, `download` and WebSockets; repeating timers; `background` work on another thread. Still to do: time zones, cancelling requests, binary WebSocket messages |
+| Language gaps | planned | Error reasons (not just `nil`), generics for user types |
 
 **Tessel IDE — first thoughts.** Ideally the IDE is itself a Tessel app, built
 with the language it edits. That needs a few things Tessel doesn't have yet:

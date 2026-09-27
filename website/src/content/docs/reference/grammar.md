@@ -359,13 +359,15 @@ Text("Hi")
 ```text
 if_expr     = "if" condition block (NL? "else" (if_expr | block))? ;
 condition   = header_expr
-            | "let" IDENT "=" header_expr ;
+            | "let" IDENT (":" type)? "=" header_expr ;
 header_expr = expr ;    (in which a "{" never starts a block after a call)
 ```
 
 `if let name = value { … }` runs the block when `value` (an optional) isn't
-`nil`, with `name` set to the unwrapped value. There is no `? :` operator;
-`if` is an expression, so `let size = if big { 24 } else { 14 }` works.
+`nil`, with `name` set to the unwrapped value. `if let name: T = value`
+also gives the unwrapped type, which `fromJson` and `fromBinary` need.
+There is no `? :` operator; `if` is an expression, so
+`let size = if big { 24 } else { 14 }` works.
 
 ### match
 

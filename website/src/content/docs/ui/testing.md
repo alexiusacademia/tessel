@@ -138,24 +138,32 @@ macOS, Ctrl on Windows). `alt` is Option on macOS. So scripts behave the same on
 both systems.
 
 The clipboard in a headless run is private to the script: `cmd+c` and `cmd+v`
-work, but never touch your real clipboard.
+work, but never touch your real clipboard. `copyToClipboard` and
+`clipboardText` use a private clipboard too, though a separate one from the
+text fields' `cmd+c` and `cmd+v`. `openURL` doesn't open anything; it prints
+`(open …)` instead.
 
 ### Time and background work
 
 In a headless run, the clock stands still unless you move it. `wait 2` moves it
-forward by two seconds and runs every `after` timer that comes due, in order
-(including timers those timers start). So a test of a 10-second countdown
-finishes instantly.
+forward by two seconds and runs every `after` and `every` timer that comes
+due, in order (including timers those timers start). So a test of a
+10-second countdown finishes instantly.
 
-`wait` also first lets any running `fetch` and `runCommand` calls finish and
-delivers their callbacks. Use `wait 0` after starting one to wait for its
-result, without moving the clock:
+`wait` also first lets any running `fetch`, `request`, `download`,
+`runCommand` and `background` calls finish and delivers their callbacks. Use
+`wait 0` after starting one to wait for its result, without moving the
+clock:
 
 ```text
 click "Check"
 wait 0
 tree
 ```
+
+An open WebSocket doesn't finish by itself, so `wait` doesn't wait for it to
+close. Instead, while one is open, `wait` gives its messages real time to
+arrive: half a second, or the wait's length if that's longer.
 
 ### File dialogs
 

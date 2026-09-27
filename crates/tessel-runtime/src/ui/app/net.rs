@@ -50,9 +50,13 @@ thread_local! {
 
 /// Is any request, download or WebSocket still going?
 pub fn busy() -> bool {
-    REQUESTS.with(|r| !r.borrow().is_empty())
-        || DOWNLOADS.with(|d| !d.borrow().is_empty())
-        || SOCKETS.with(|s| !s.borrow().is_empty())
+    working() || SOCKETS.with(|s| !s.borrow().is_empty())
+}
+
+/// Is any request or download still going? (Open WebSockets don't finish
+/// by themselves, so a headless `wait` doesn't wait for them to close.)
+pub fn working() -> bool {
+    REQUESTS.with(|r| !r.borrow().is_empty()) || DOWNLOADS.with(|d| !d.borrow().is_empty())
 }
 
 fn agent() -> ureq::Agent {

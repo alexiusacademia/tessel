@@ -65,6 +65,12 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Guides',
+					items: [
+						{ label: 'Saving data as JSON', slug: 'guides/json' },
+					],
+				},
+				{
 					label: 'Reference',
 					items: [
 						{ label: 'Views', slug: 'reference/views' },

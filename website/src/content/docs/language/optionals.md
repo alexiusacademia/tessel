@@ -64,6 +64,16 @@ if let nickname = nickname {
 }
 ```
 
+The new name can have a type, written after a colon: `if let age: Int =
+ages["ada"]`. It must be the type inside the optional. This is how you tell
+[`fromJson`](/reference/stdlib/#fromjson) what to read:
+
+```tessel
+if let tags: [String] = fromJson("[\"red\", \"green\"]") {
+    print(tags.count)
+}
+```
+
 ## ?? for a default
 
 `a ?? b` is the value inside `a` if there is one, and `b` otherwise:

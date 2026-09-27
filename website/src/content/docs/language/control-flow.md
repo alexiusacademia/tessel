@@ -69,6 +69,23 @@ Inside the first block, `number` is a plain `Int`. It only exists there. You
 can chain `else if let` and `else if` as usual. See
 [Optionals](/language/optionals/) for more.
 
+You can also write the type of the new name, after a colon. Usually that's
+not needed, but it is for [`fromJson`](/reference/stdlib/#fromjson) and
+[`fromBinary`](/reference/stdlib/#frombinary), which find out what to read
+from the type they're given:
+
+```tessel
+if let scores: [Int] = fromJson("[90, 75, 82]") {
+    print("Best score: {scores.max() ?? 0}")
+}
+```
+
+```text
+Best score: 90
+```
+
+The type is the unwrapped type (`[Int]`, not `[Int]?`).
+
 ## for loops
 
 `for` runs its body once for each item of a list, or each number in a range:

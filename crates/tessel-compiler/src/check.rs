@@ -1988,8 +1988,12 @@ impl Checker<'_> {
                 _ => None,
             };
             if let Some(problem) = problem {
-                self.error(work.value.span, format!("background work can't use `{name}`: {problem}"))
-                    .help(format!("copy what it needs first, like `let input = {name}`, and use that"));
+                let help = if matches!(local.kind, Kind::Fn(..)) {
+                    "move the function out of the `app` or `view` to the top level, and pass it what it needs".to_string()
+                } else {
+                    format!("copy what it needs first, like `let input = {name}`, and use that")
+                };
+                self.error(work.value.span, format!("background work can't use `{name}`: {problem}")).help(help);
             } else if let Err(why) = self.saveable(&local.ty) {
                 let what = self.a(&local.ty);
                 self.error(work.value.span, format!("background work can't use `{name}`, which is {what}")).help(why);

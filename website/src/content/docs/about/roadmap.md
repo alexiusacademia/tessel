@@ -25,9 +25,13 @@ language may still change. This page is an honest list of where things stand.
   modifiers.
 - **Text editing:** selecting with the mouse and keyboard, word and line
   movement, copy, cut, paste, and undo and redo.
-- **Background work:** timers (`after`), `fetch`, files, and running other
-  programs, all with completion blocks that run on the UI thread. They work in
-  programs with only `fn main` too.
+- **Background work:** timers (`after` and `every`), HTTP requests,
+  downloads and WebSockets, running other programs, and heavy computations on
+  another thread (`background`), all with completion blocks that run on the
+  UI thread. They work in programs with only `fn main` too.
+- **Standard library:** files and folders, JSON and binary encoding of your
+  own types, `Data` for raw bytes, dates and times, random numbers, the
+  clipboard, and many methods for strings, numbers and lists.
 - **Tools:** the `tessel` command, the Tessel IDE, a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
@@ -54,9 +58,9 @@ These are the main gaps you may run into today.
   (screen readers) yet.
 - **Errors:** a function that fails returns `nil`, which says that it failed
   but not why.
-- **Network:** `fetch` makes a simple GET request (or reads a `file://` URL)
-  and gives you the text, or `nil`. There are no POST requests, headers or
-  status codes yet.
+- **Network:** WebSocket messages are text only (a binary message arrives
+  as text), and there's no way to cancel a request or download once
+  started.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS, but apps
   have no custom icon and aren't code signed.
 - **Editor support:** the language server reports errors and shows types on
@@ -74,8 +78,8 @@ These are the next areas of work. None of them has a date.
 |---|---|
 | Hot reload | Keep the running app's state when its code changes. |
 | App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
-| Standard library | More for files, JSON, dates and math, and a richer `fetch` (POST, headers, status codes). |
-| Language | Errors that carry a reason, generics for your own types, more collection methods. |
+| Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
+| Language | Errors that carry a reason, and generics for your own types. |
 | Packaging | App icons, code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 

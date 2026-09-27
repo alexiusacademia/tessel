@@ -1,12 +1,14 @@
 ---
 title: Standard library
-description: Every built-in Tessel function, including math and file dialogs, and every property and method of Float, String, lists and dictionaries.
+description: Every built-in Tessel function (math, random numbers, files, JSON and binary encoding, dates, the network, timers and background work) and every property and method of Int, Float, String, Data, lists and dictionaries.
 ---
 
 This page lists everything built into Tessel that isn't a view or a
-modifier: functions like `print` and `readFile`, conversions, math, file
-dialogs, and the properties and methods of `Float`, `String`, lists (`[T]`)
-and dictionaries (`[K: V]`). The outputs shown in comments come from running the examples.
+modifier: functions like `print` and `readFile`, conversions, math, random
+numbers, files and folders, JSON and binary encoding, dates, the system,
+networking, timers and background work, and the properties and methods of
+`Int`, `Float`, `String`, `Data`, lists (`[T]`) and dictionaries (`[K: V]`).
+The outputs shown in comments come from running the examples.
 
 ## Calling built-in functions
 
@@ -157,6 +159,46 @@ Math functions take their arguments **without labels**, in the order shown.
 - The results follow the usual floating-point rules and never stop the
   program: `sqrt(-1.0)` is `NaN` ("not a number") and `log(0.0)` is `-inf`.
 
+## Random numbers
+
+### random
+
+```text
+random(_ range: Range) -> Int
+```
+
+A random `Int` from the range's start up to, but not including, its end.
+
+```tessel
+let die = random(1..7)          // 1, 2, 3, 4, 5 or 6
+let index = random(0..names.count)
+```
+
+If the range is empty (like `3..3`), the result is its start.
+
+### randomFloat
+
+```text
+randomFloat() -> Float
+```
+
+A random `Float` from `0.0` up to, but not including, `1.0`.
+
+```tessel
+if randomFloat() < 0.1 {
+    print("a one-in-ten chance")
+}
+let angle = randomFloat() * 2.0 * pi
+```
+
+To pick or mix up list items, use [`randomElement`](#randomelement-and-shuffled)
+and [`shuffled`](#randomelement-and-shuffled).
+
+:::caution
+The numbers are good enough for games, simulations and picking things at
+random, but they're not safe for secrets such as passwords or keys.
+:::
+
 ## Files
 
 Paths are ordinary strings. A relative path like `"notes.txt"` is relative to
@@ -292,6 +334,138 @@ from. Relative paths are relative to this folder.
 print(currentFolder())          // for example /Users/ada/Projects/notes
 ```
 
+### appendFile
+
+```text
+appendFile(path: String, text: String) -> Bool
+```
+
+Adds `text` to the end of a file, creating the file if it doesn't exist.
+Returns whether it worked. Handy for logs.
+
+```tessel
+writeFile(path: "log.txt", text: "started\n")
+appendFile(path: "log.txt", text: "saved\n")
+print((readFile("log.txt") ?? "").lines().count)   // 2
+```
+
+### copyFile
+
+```text
+copyFile(from: String, to: String) -> Bool
+```
+
+Copies a file. Returns whether it worked. An existing file at `to` is
+replaced. It doesn't copy folders.
+
+```tessel
+print(copyFile(from: "log.txt", to: "log-backup.txt"))   // true
+```
+
+### fileSize
+
+```text
+fileSize(_ path: String) -> Int?
+```
+
+The size of a file in bytes, or `nil` if it doesn't exist.
+
+```tessel
+print(fileSize("log.txt") ?? 0)         // 14
+print(fileSize("missing.txt") ?? -1)    // -1
+```
+
+### modifiedTime
+
+```text
+modifiedTime(_ path: String) -> Float?
+```
+
+When the file last changed, as a [time](#dates-and-time) (seconds since
+1970), or `nil` if it doesn't exist.
+
+```tessel
+if let time = modifiedTime("log.txt") {
+    print("Last changed {formatDate(time)}")
+}
+```
+
+### readData
+
+```text
+readData(_ path: String) -> Data?
+```
+
+The whole file as raw bytes ([`Data`](#data)), or `nil` if it can't be read.
+Use it for files that aren't text, such as images or files written with
+[`toBinary`](#tobinary).
+
+```tessel
+if let data = readData("header.bin") {
+    print(data.count)
+}
+```
+
+### writeData
+
+```text
+writeData(path: String, data: Data) -> Bool
+```
+
+Writes bytes to a file, replacing the file if it exists. Returns whether it
+worked.
+
+```tessel
+let bytes = Data(bytes: [137, 80, 78, 71])
+print(writeData(path: "header.bin", data: bytes))   // true
+```
+
+## Folders and paths
+
+These functions give you the usual places to keep files, and build paths
+that work on every system. To take a path apart, use the `String` properties
+[`fileName`, `fileExtension` and `folder`](#paths).
+
+| Function | Returns |
+|---|---|
+| `homeFolder()` | The user's home folder, like `/Users/ada` (or `C:\Users\ada` on Windows). |
+| `documentsFolder()` | The user's Documents folder. |
+| `tempFolder()` | A folder for temporary files. |
+| `appDataFolder(_ name: String)` | A folder for your app's own files (settings, caches), created if needed. |
+| `joinPath(_ folder: String, _ name: String)` | `folder` and `name` joined with the system's separator. |
+
+### appDataFolder
+
+```text
+appDataFolder(_ name: String) -> String
+```
+
+The folder where an app keeps its own files, like settings, with `name`
+added. It's created if it doesn't exist yet.
+
+- On macOS: `~/Library/Application Support/<name>`.
+- On Windows: `%APPDATA%\<name>`.
+
+```tessel
+let settings = joinPath(appDataFolder("Notes"), "settings.json")
+```
+
+Use your app's name for `name`, so apps don't mix up their files.
+
+### joinPath
+
+```text
+joinPath(_ folder: String, _ name: String) -> String
+```
+
+Joins a folder and a name with `/` (`\` on Windows). Extra separators where
+they meet are removed. If `folder` is `""`, the result is just `name`.
+
+```tessel
+print(joinPath("/Users/ada/", "notes.txt"))     // /Users/ada/notes.txt
+let notes = joinPath(documentsFolder(), "Notes")
+```
+
 ## File dialogs
 
 `openFile` and `saveFile` show the system's standard dialog for choosing a
@@ -353,7 +527,332 @@ In a [headless test run](/ui/testing/) no dialog opens. The script's
 returns; without one, it returns `nil`, as if the user cancelled.
 :::
 
-## The environment and other programs
+## JSON and binary
+
+These four functions turn your values into text or bytes, to save in a file
+or send over the network, and read them back. They work with structs, enums,
+lists, dictionaries, optionals, ranges, `Data` and the basic types, nested
+as deeply as you like. See [Saving data as JSON](/guides/json/) for a
+complete example.
+
+```tessel
+enum Priority { low, high }
+
+struct Task {
+    title: String
+    done: Bool = false
+    priority: Priority = Priority.low
+}
+
+fn main() {
+    let task = Task(title: "Write docs", priority: Priority.high)
+    let text = toJson(task)
+    print(text)     // {"title":"Write docs","done":false,"priority":"high"}
+
+    let back: Task? = fromJson(text)
+    print(back == task)     // true
+}
+```
+
+### toJson
+
+```text
+toJson(_ value, pretty: Bool = false) -> String
+```
+
+The value as [JSON](https://www.json.org) text. With `pretty: true`, the
+text is spread over several lines and indented, which is easier to read:
+
+```tessel
+print(toJson(task, pretty: true))
+```
+
+```text
+{
+  "title": "Write docs",
+  "done": false,
+  "priority": "high"
+}
+```
+
+### fromJson
+
+```text
+fromJson(_ text: String) -> T?
+```
+
+Reads a value from JSON text. It gives `nil` if the text isn't valid JSON or
+doesn't fit the type.
+
+`fromJson` finds out which type to read from where its result goes, so give
+the result a type:
+
+```tessel
+let loaded: Task? = fromJson(text)
+let ages: [String: Int] = fromJson(text) ?? [:]
+if let numbers: [Int] = fromJson("[4, 8, 15]") {
+    print(numbers.sum())        // 27
+}
+```
+
+Without a type, `tessel check` asks for one:
+
+```text
+error: can't tell what type `fromJson` should read
+ --> main.tsl:2:16
+  |
+2 |     let data = fromJson(text)
+  |                ^^^^^^^^^^^^^^
+  |
+  = help: give the result a type, like `let project: Project? = fromJson(…)`
+```
+
+### toBinary
+
+```text
+toBinary(_ value) -> Data
+```
+
+The value as compact bytes ([MessagePack](https://msgpack.org)), smaller
+and faster to read than JSON, but not readable by people. Save it with
+[`writeData`](#writedata).
+
+```tessel
+let data = toBinary(task)
+print(data.count)               // 38
+```
+
+### fromBinary
+
+```text
+fromBinary(_ data: Data) -> T?
+```
+
+Reads a value back from bytes made by `toBinary`, or `nil` if they don't fit
+the type. Like `fromJson`, it needs to know the type:
+
+```tessel
+if let data = readData("task.bin") {
+    let task: Task? = fromBinary(data)
+}
+```
+
+### How values are written
+
+| Value | JSON | Example |
+|---|---|---|
+| `Int`, `Float`, `Bool`, `String` | The same value | `42`, `1.5`, `true`, `"hi"` |
+| A struct | An object with a key for each field | `{"x":1.0,"y":2.0}` |
+| An enum case without values | Its name, as a string | `"high"` |
+| An enum case with values | An object with the case's name as key | `{"custom":{"name":"feet","factor":0.3048}}` |
+| A list | An array | `[1,2,3]` |
+| A dictionary | An object; `Int` and `Bool` keys become strings | `{"ada":36}` |
+| An optional | The value, or `null` for `nil` | `null` |
+| A range | An array with its start and end | `[0,5]` |
+| `Data` | A base64 string | `"aGk="` |
+
+`toBinary` writes the same structure in MessagePack.
+
+When reading:
+
+- Fields that are missing take their default value (or `nil` for an
+  optional field); a missing field without a default makes the result
+  `nil`. This lets you add fields with defaults to a struct and still read
+  files saved before.
+- Keys that the struct doesn't have are ignored.
+- A value of the wrong kind (like a number where a string belongs), an
+  unknown enum case, or text that isn't valid JSON makes the whole result
+  `nil`.
+- An `Int` also accepts a whole number written with a decimal point, like
+  `2.0`.
+- `Float` values that aren't numbers (`NaN`, infinity) have no JSON form;
+  they're written as `null`.
+
+Functions and views can't be saved. `tessel check` points out the field that
+is the problem:
+
+```tessel
+struct Counter {
+    count: Int
+    onChange: fn(Int)
+}
+```
+
+```text
+error: `Counter` can't be saved with `toJson`
+ --> main.tsl:8:23
+  |
+8 |     let text = toJson(c)
+  |                       ^
+  |
+  = help: field `onChange`: functions can't be saved
+```
+
+Dictionary keys must be `String`, `Int`, `Bool` or an enum.
+
+## Data
+
+`Data` holds raw bytes: the contents of a file that isn't text, the result of
+[`toBinary`](#tobinary), or a download.
+
+```tessel
+let empty = Data()
+let bytes = Data(bytes: [72, 105, 33])
+let text = Data(text: "héllo")
+print(bytes.text ?? "not text")         // Hi!
+print(text.count)                       // 6
+print(text[1])                          // 195
+print(bytes == Data(text: "Hi!"))       // true
+```
+
+| Creating | |
+|---|---|
+| `Data()` | No bytes. |
+| `Data(bytes: [Int])` | The given bytes. Each `Int` should be from 0 to 255; other values are wrapped into that range. |
+| `Data(text: String)` | The text's bytes in UTF-8. |
+
+| Member | Returns | |
+|---|---|---|
+| `count` | `Int` | Number of bytes. |
+| `isEmpty` | `Bool` | Whether there are no bytes. |
+| `bytes` | `[Int]` | The bytes, each from 0 to 255. |
+| `text` | `String?` | The bytes read as UTF-8 text, or `nil` if they aren't valid UTF-8. |
+| `base64` | `String` | The bytes as [base64](#base64) text. |
+
+- `data[i]` is the byte at index `i` (from 0), as an `Int`. An index outside
+  the data stops the program with an error. `Data` can't be changed in place;
+  make a new one instead.
+- `==` and `!=` compare the bytes.
+- Read and write files of bytes with [`readData`](#readdata) and
+  [`writeData`](#writedata).
+
+### base64
+
+Base64 turns bytes into plain text, for places that only take text (like a
+JSON field or a URL).
+
+```text
+data.base64 -> String
+decodeBase64(_ text: String) -> Data?
+```
+
+```tessel
+print(Data(text: "Hi!").base64)         // SGkh
+if let decoded = decodeBase64("SGkh") {
+    print(decoded.text ?? "")           // Hi!
+}
+```
+
+`decodeBase64` returns `nil` if the text isn't base64. Spaces and line
+breaks around it are ignored.
+
+## Dates and time
+
+A point in time is a `Float`: the number of seconds since 1 January 1970
+(UTC). That makes times easy to store and compare, and to do arithmetic with:
+add `60.0` for a minute later, or `86400.0` for a day.
+
+```tessel
+let start = now()
+let deadline = date(year: 2026, month: 12, day: 31, hour: 17)
+print(formatDate(deadline, format: "EEEE, d MMMM yyyy"))   // Thursday, 31 December 2026
+let days = Int((deadline - start) / 86400.0)
+```
+
+Dates are shown and read in the computer's time zone.
+
+### now
+
+```text
+now() -> Float
+```
+
+The current time. Use it to time something, too:
+
+```tessel
+let started = now()
+doWork()
+print("took {(now() - started).formatted(decimals: 2)} seconds")
+```
+
+### date
+
+```text
+date(year: Int, month: Int, day: Int,
+     hour: Int = 0, minute: Int = 0, second: Int = 0) -> Float
+```
+
+The time of a calendar date, in the computer's time zone. Months and days
+count from 1. A date that doesn't exist, like 30 February, gives `NaN` (see
+[`isNaN`](#float)).
+
+```tessel
+let t = date(year: 2026, month: 3, day: 7, hour: 9, minute: 5)
+print(formatDate(t))            // 2026-03-07 09:05
+```
+
+### formatDate
+
+```text
+formatDate(_ time: Float, format: String = "yyyy-MM-dd HH:mm") -> String
+```
+
+A time as text. `format` is a pattern where these letters are replaced;
+anything else is copied as it is:
+
+| Pattern | Means | Example |
+|---|---|---|
+| `yyyy` | Year | `2026` |
+| `yy` | Year, two digits | `26` |
+| `MMMM` | Month name | `March` |
+| `MMM` | Short month name | `Mar` |
+| `MM` | Month, two digits | `03` |
+| `M` | Month | `3` |
+| `dd` | Day of the month, two digits | `07` |
+| `d` | Day of the month | `7` |
+| `EEEE` | Weekday | `Saturday` |
+| `EEE` | Short weekday | `Sat` |
+| `HH` | Hour (0–23), two digits | `09` |
+| `H` | Hour (0–23) | `9` |
+| `hh` | Hour (1–12), two digits | `09` |
+| `h` | Hour (1–12) | `9` |
+| `mm` | Minute, two digits | `05` |
+| `ss` | Second, two digits | `30` |
+| `a` | AM or PM | `AM` |
+
+```tessel
+let t = date(year: 2026, month: 3, day: 7, hour: 9, minute: 5, second: 30)
+print(formatDate(t, format: "yyyy-MM-dd HH:mm:ss"))   // 2026-03-07 09:05:30
+print(formatDate(t, format: "d MMM yy"))              // 7 Mar 26
+print(formatDate(t, format: "EEE, MMMM d"))           // Sat, March 7
+print(formatDate(t, format: "h:mm a"))                // 9:05 AM
+print(formatDate(t, format: "dd/MM/yyyy"))            // 07/03/2026
+```
+
+Month and weekday names are in English. There's no way to quote words in a
+pattern, and letters like `a` and `d` are always replaced, so add words
+around the result instead: `"at " + formatDate(t, format: "HH:mm")`.
+
+### parseDate
+
+```text
+parseDate(_ text: String, format: String = "yyyy-MM-dd") -> Float?
+```
+
+Reads a time from text written in `format` (the same patterns as
+[`formatDate`](#formatdate)), or `nil` if the text doesn't match. Without an
+hour, the time is midnight.
+
+```tessel
+let day = parseDate("2026-03-07")
+let meeting = parseDate("07/03/2026 09:05", format: "dd/MM/yyyy HH:mm")
+print(parseDate("tomorrow") == nil)     // true
+```
+
+The whole text must match: `parseDate("2026-03-07 09:05")` is `nil`, because
+the default format has no time.
+
+## The system and other programs
 
 ### environment
 
@@ -366,6 +865,95 @@ The value of an environment variable, or `nil` if it isn't set.
 ```tessel
 let home = environment("HOME") ?? "unknown"
 ```
+
+### arguments
+
+```text
+arguments() -> [String]
+```
+
+The arguments the program was started with, without the program's own name.
+
+```tessel
+fn main() {
+    let args = arguments()
+    if args.isEmpty {
+        print("usage: greet <name>")
+        exit(1)
+    }
+    print("Hello, {args[0]}!")
+}
+```
+
+Run with `tessel run greet.tsl Ada` (or `./greet Ada` once built), this
+prints `Hello, Ada!`.
+
+### exit
+
+```text
+exit(_ code: Int = 0)
+```
+
+Ends the program right away, with an exit code: `0` means success, anything
+else a failure. Timers, downloads and other work still waiting are dropped.
+
+### platform
+
+```text
+platform() -> String
+```
+
+The system the program is running on: `"macos"` or `"windows"`.
+
+```tessel
+let shortcut = if platform() == "macos" { "Cmd+S" } else { "Ctrl+S" }
+```
+
+### openURL
+
+```text
+openURL(_ url: String) -> Bool
+```
+
+Opens a web page in the browser, or a file or folder with its usual app.
+Returns whether it worked.
+
+```tessel
+Button("Help") { openURL("https://tessel-lang.netlify.app") }
+Button("Show folder") { openURL(appDataFolder("Notes")) }
+```
+
+In a [headless test run](/ui/testing/), nothing opens: it prints
+`(open …)` instead.
+
+### copyToClipboard
+
+```text
+copyToClipboard(_ text: String) -> Bool
+```
+
+Puts text on the system clipboard, as if the user had copied it. Returns
+whether it worked.
+
+```tessel
+Button("Copy link") { copyToClipboard(link) }
+```
+
+### clipboardText
+
+```text
+clipboardText() -> String?
+```
+
+The text on the clipboard, or `nil` if it has none (for example, when an
+image was copied).
+
+```tessel
+Button("Paste") { text += clipboardText() ?? "" }
+```
+
+A [headless test run](/ui/testing/) uses a clipboard of its own, so tests
+never touch yours.
 
 ### runCommand
 
@@ -431,13 +1019,17 @@ app Watcher {
 }
 ```
 
-## Background work and timers
+## Callbacks
 
-The blocks of `fetch`, `after` and `runCommand` run later, on the UI thread in
-an app. They work in a program with only `fn main()` too: after `main`
-returns, the program keeps running until no timers or background work are
-left, then exits. See
+The functions below finish their work later: the network, timers and
+background work. They take a block (a *callback*) that Tessel runs when the
+work is done. Callbacks run on the UI thread in an app, so they can change
+`state` directly. They work in a program with only `fn main()` too: after
+`main` returns, the program keeps running until no timers, requests,
+WebSockets or background work are left, then exits. See
 [Files, commands and timers](/ui/async/#callbacks-in-a-program-without-an-app).
+
+## Networking
 
 ### fetch
 
@@ -446,8 +1038,7 @@ fetch(url: String, done: fn(String?))
 ```
 
 Loads a URL in the background, then calls `done` with the text, or `nil` if
-loading failed. `done` runs on the UI thread, so it can change `state`
-directly.
+loading failed.
 
 ```tessel
 app Weather {
@@ -465,6 +1056,176 @@ app Weather {
   status (like 404) counts as failure.
 - `file://` URLs read a local file: `file:///Users/ada/notes.txt`.
 - The response is read as text.
+
+For other methods (like POST), headers, or the status code, use
+[`request`](#request).
+
+### request
+
+```text
+request(url: String, method: String = "GET", headers: [String: String] = [:],
+        body: String = "", done: fn(HttpResponse))
+```
+
+Sends an HTTP request in the background, then calls `done` with the
+response.
+
+```tessel
+struct Todo {
+    title: String
+    done: Bool = false
+}
+
+app Todos {
+    state status = ""
+
+    Button("Add") {
+        request(url: "https://example.com/api/todos", method: "POST",
+                headers: ["Content-Type": "application/json"],
+                body: toJson(Todo(title: "Buy milk"))) { response in
+            if response.ok {
+                status = "Added"
+            } else if response.status == 0 {
+                status = "Couldn't connect: {response.error}"
+            } else {
+                status = "The server said {response.status}"
+            }
+        }
+    }
+    Text(status)
+}
+```
+
+- `method` can be any HTTP method: `"GET"`, `"POST"`, `"PUT"`, `"PATCH"`,
+  `"DELETE"`, and so on.
+- `headers` are sent with the request. `body` is sent as it is; use
+  [`toJson`](#tojson) to send a struct as JSON.
+- A response with an error status (like 404 or 500) is still a response:
+  `done` gets it, with its status and body. Check `ok` or `status`.
+- `file://` URLs read a local file, with status 200.
+
+### HttpResponse
+
+What `request` gives its block. It's a built-in struct with these fields:
+
+| Field | Type | |
+|---|---|---|
+| `status` | `Int` | The HTTP status code, like `200` or `404`. `0` if there was no response at all. |
+| `ok` | `Bool` | Whether the status is from 200 to 299: the request worked. |
+| `text` | `String` | The body as text. |
+| `data` | `Data` | The body as bytes, for images and other files that aren't text. |
+| `headers` | `[String: String]` | The response's headers. The names are in lower case: `response.headers["content-type"]`. |
+| `error` | `String` | Why there was no response (the server couldn't be reached, the URL is invalid, …), or `""`. |
+
+To read a JSON answer, pass `text` to [`fromJson`](#fromjson):
+
+```tessel
+request(url: "https://example.com/api/todos") { response in
+    if let todos: [Todo] = fromJson(response.text) {
+        items = todos
+    }
+}
+```
+
+### download
+
+```text
+download(url: String, to: String, progress: fn(Float)? = nil, done: fn(Bool))
+```
+
+Downloads a URL straight into a file, which suits large files. `progress`,
+if given, is called now and then with how much has arrived, from `0.0` to
+`1.0`. `done` is called at the end with whether it worked.
+
+```tessel
+app Downloader {
+    state progress = 0.0
+    state status = ""
+
+    Button("Download") {
+        let file = joinPath(tempFolder(), "big.zip")
+        download(url: "https://example.com/big.zip", to: file, progress: { fraction in
+            progress = fraction
+        }) { ok in
+            status = if ok { "Done" } else { "Download failed" }
+        }
+    }
+    Text("{Int(progress * 100.0)}%  {status}")
+}
+```
+
+- An error status (like 404) counts as failure.
+- While downloading, the data goes to a file with `.part` added to the name;
+  it's renamed to `to` only once everything has arrived. So a failed download
+  leaves no half-written file behind. An existing file at `to` is replaced.
+- `progress` gets its fractions only if the server says how big the file
+  is. Either way, it's called with `1.0` once everything has arrived.
+- Only `http://` and `https://` URLs can be downloaded.
+
+### openWebSocket
+
+```text
+openWebSocket(url: String, onMessage: fn(String), onClose: fn(String)) -> Int
+```
+
+Connects to a WebSocket server (`ws://` or `wss://`) and returns an id for
+[`sendWebSocket`](#sendwebsocket) and [`closeWebSocket`](#closewebsocket).
+The connection stays open, and messages can go both ways:
+
+- `onMessage` is called with each message the server sends.
+- `onClose` is called once, when the connection ends, with the reason:
+  `"closed"` if you closed it, the server's reason (or
+  `"closed by the server"`), or what went wrong, like
+  `"couldn't connect: …"`.
+
+```tessel
+app Chat {
+    state socket = -1
+    state messages: [String] = []
+    state draft = ""
+
+    VStack {
+        for message in messages {
+            Text(message)
+        }
+        TextField("Message", text: draft).onSubmit {
+            sendWebSocket(socket, text: draft)
+            draft = ""
+        }
+    }
+    .onAppear {
+        socket = openWebSocket(url: "wss://example.com/chat", onMessage: { text in
+            messages.append(text)
+        }) { reason in
+            messages.append("Disconnected: {reason}")
+            socket = -1
+        }
+    }
+}
+```
+
+Messages are text. A binary message from the server arrives as text too.
+
+### sendWebSocket
+
+```text
+sendWebSocket(_ id: Int, text: String) -> Bool
+```
+
+Sends a text message. Returns `false` if the WebSocket isn't open (it was
+closed, or `id` is wrong). Messages sent before the connection is ready are
+sent once it is.
+
+### closeWebSocket
+
+```text
+closeWebSocket(_ id: Int)
+```
+
+Closes a WebSocket. Its `onClose` block still runs, with `"closed"`. Closing
+one that is already closed does nothing.
+
+## Timers
 
 ### after
 
@@ -486,7 +1247,116 @@ app Reminder {
 ```
 
 A delay of `0` (or less) runs `action` as soon as possible, after the current
-code finishes. To repeat, call `after` again from inside `action`.
+code finishes. An `after` timer can't be cancelled; to repeat, use
+[`every`](#every).
+
+### every
+
+```text
+every(seconds: Float, action: fn()) -> Int
+```
+
+Runs `action` again and again, every `seconds`, until it's stopped with
+[`stopTimer`](#stoptimer). The first run is one interval from now. Returns an
+id for `stopTimer`.
+
+```tessel
+app Clock {
+    state time = ""
+
+    Text(time).font(size: 32).onAppear {
+        every(seconds: 1) {
+            time = formatDate(now(), format: "HH:mm:ss")
+        }
+    }
+}
+```
+
+### stopTimer
+
+```text
+stopTimer(_ id: Int)
+```
+
+Stops a timer started with `every`. The timer can stop itself:
+
+```tessel
+fn main() {
+    var ticks = 0
+    var id = 0
+    id = every(seconds: 0.5) {
+        ticks += 1
+        print("tick {ticks}")
+        if ticks == 3 {
+            stopTimer(id)
+        }
+    }
+}
+```
+
+This prints `tick 1`, `tick 2` and `tick 3`, then the program ends, since
+nothing is left to wait for. Stopping a timer that has already stopped does
+nothing.
+
+## Background work
+
+### background
+
+```text
+background(work: fn() -> T, done: fn(T))
+```
+
+Runs `work` on another thread, so a long computation doesn't freeze the app,
+then calls `done` with its result on the UI thread. It's usually written with
+`done` as a trailing block:
+
+```tessel
+let n = limit
+background(work: { primesBelow(limit: n) }) { primes in
+    status = "{primes.count} primes"
+}
+```
+
+The two threads share nothing: `work` gets its own copies of the values it
+uses, and `done` gets a copy of the result. That's what makes it safe, and
+it leads to a few rules, which `tessel check` enforces:
+
+- `work` can use local values, and call top-level functions (`fn`s outside
+  any app, view or struct) and methods of the values it has.
+- It can't use `state`, bindings, `self` or its fields, or the functions of
+  the app or view: they belong to the UI thread. Copy what it needs into a
+  `let` first, as with `n` above.
+- The values it uses and its result must be values [`toBinary`](#tobinary)
+  can save: not functions or views.
+- `work` must end with a value. `return` works inside it too.
+
+Values are copied when `background` is called, so changes made afterwards
+don't reach `work`. See [Heavy work in the background](/ui/async/#heavy-work-in-the-background)
+for a complete app.
+
+A runtime error in `work` (like an index out of range) stops the program,
+as it would anywhere else.
+
+## Int
+
+An `Int` is a whole number. The arithmetic operators work on it, and
+[`abs`, `min` and `max`](#math) take `Int`s too.
+
+| Member | Returns | |
+|---|---|---|
+| `isEven` | `Bool` | Whether the number is even. |
+| `isOdd` | `Bool` | Whether the number is odd. |
+| `clamped(min: Int, max: Int)` | `Int` | The number, moved into the range from `min` to `max`. |
+
+```tessel
+print((4).isEven)                       // true
+print((-3).isOdd)                       // true
+print((15).clamped(min: 0, max: 10))    // 10
+let row = 7
+let shade = if row.isEven { Color.lightGray } else { Color.white }
+```
+
+Write a number literal in parentheses to use a member on it: `(4).isEven`.
 
 ## Float
 
@@ -496,6 +1366,19 @@ A `Float` is a decimal number. The arithmetic operators work on it, and the
 | Member | Returns | |
 |---|---|---|
 | `formatted(decimals: Int)` | `String` | The number as text, with exactly `decimals` digits after the point. |
+| `clamped(min: Float, max: Float)` | `Float` | The number, moved into the range from `min` to `max`. |
+| `isNaN` | `Bool` | Whether the value is `NaN`, "not a number" (like `0.0 / 0.0` or `sqrt(-1.0)`). |
+| `isFinite` | `Bool` | Whether the value is an ordinary number: not infinite and not `NaN`. |
+
+```tessel
+let volume = 1.4
+print(volume.clamped(min: 0.0, max: 1.0))   // 1.0
+print(sqrt(-1.0).isNaN)                     // true
+print((1.0 / 0.0).isFinite)                 // false
+```
+
+`NaN` is never equal to anything, not even itself, so `x == x` is `false`
+for a `NaN`: use `isNaN` to check for it.
 
 ### formatted
 
@@ -543,8 +1426,26 @@ a `String` variable. `==`, `!=`, `<`, `<=`, `>` and `>=` compare strings;
 | `replace(_ text: String, with: String)` | `String` | With every `text` replaced. |
 | `substring(from: Int, to: Int)` | `String` | The characters from index `from` up to `to`. |
 | `find(_ text: String)` | `Int?` | The index where `text` first appears. |
+| `findLast(_ text: String)` | `Int?` | The index where `text` last appears. |
+| `character(at: Int)` | `String?` | The character at an index, or `nil`. |
+| `characters` | `[String]` | Each character, as a list. |
+| `words()` | `[String]` | The words: the parts between spaces, tabs and line breaks. |
+| `occurrences(of: String)` | `Int` | How many times a text appears. |
+| `trimStart()` | `String` | Without spaces and line breaks at the start. |
+| `trimEnd()` | `String` | Without spaces and line breaks at the end. |
+| `capitalized()` | `String` | With the first letter of each word in capitals. |
+| `reversed()` | `String` | The characters in reverse order. |
+| `repeated(_ times: Int)` | `String` | The text repeated `times` times. |
+| `padStart(_ length: Int, with: String = " ")` | `String` | Filled at the start up to `length` characters. |
+| `padEnd(_ length: Int, with: String = " ")` | `String` | Filled at the end up to `length` characters. |
+| `urlEncoded` | `String` | Made safe to put in a URL. |
+| `urlDecoded` | `String?` | A `urlEncoded` text turned back. |
+| `fileName` | `String` | For a path: the last part. |
+| `fileExtension` | `String` | For a path: the file's extension, without the dot. |
+| `folder` | `String` | For a path: the folder it's in. |
 
-Strings can't be indexed with `[…]`; use `substring`, `split` or `find`.
+Strings can't be indexed with `[…]`; use `character(at:)`, `substring`,
+`split` or `find`.
 
 ### count and isEmpty
 
@@ -646,6 +1547,130 @@ if let i = line.find(": ") {
 The character index (from 0) of the first place `text` appears, or `nil` if
 it doesn't. The index works with `substring`.
 
+### findLast
+
+```tessel
+let path = "docs/guide/intro.md"
+print(path.findLast("/") ?? -1)         // 10
+print("a-b-a".findLast("a") ?? -1)      // 4
+```
+
+Like `find`, but the index of the **last** place `text` appears.
+
+### character(at:) and characters
+
+```tessel
+let word = "héllo"
+print(word.character(at: 1) ?? "?")     // é
+print(word.character(at: 9) ?? "none")  // none
+print(word.characters.count)            // 5
+for letter in "abc".characters {
+    print(letter)
+}
+```
+
+`character(at:)` is `nil` for an index outside the text. `characters` is a
+property (no parentheses): a list with each character as a one-character
+string.
+
+### words
+
+```tessel
+let words = "  one two\tthree\n".words()
+print(words.count)                      // 3
+print(words.joined(separator: ","))     // one,two,three
+```
+
+Splits at runs of spaces, tabs and line breaks, and leaves out empty parts,
+unlike [`split`](#split).
+
+### occurrences
+
+```tessel
+print("a,b,,c".occurrences(of: ","))    // 3
+print("banana".occurrences(of: "ana"))  // 1
+```
+
+Counts from left to right without overlapping, so `"ana"` is found once in
+`"banana"`. Counting `""` gives `0`.
+
+### trimStart and trimEnd
+
+```tessel
+print("[" + "  hi  ".trimStart() + "]")     // [hi  ]
+print("[" + "  hi  ".trimEnd() + "]")       // [  hi]
+```
+
+Like [`trim`](#trim), but at one end only.
+
+### capitalized
+
+```tessel
+print("hello big world".capitalized())      // Hello Big World
+```
+
+Makes the first letter of each word a capital. The other letters are left as
+they are.
+
+### reversed and repeated
+
+```tessel
+print("héllo".reversed())               // olléh
+print("ab".repeated(3))                 // ababab
+print("=".repeated(10))                 // ==========
+```
+
+`repeated` with `0` or less gives `""`.
+
+### padStart and padEnd
+
+```tessel
+print("7".padStart(3, with: "0"))       // 007
+print("[" + "ab".padEnd(5) + "]")       // [ab   ]
+print("12345".padStart(3))              // 12345
+```
+
+They add `with` (a space unless you say otherwise) until the text is
+`length` characters long, which lines up columns of text and numbers. Text
+that is already long enough is left as it is.
+
+### urlEncoded and urlDecoded
+
+```tessel
+let query = "fish & chips"
+let url = "https://example.com/search?q={query.urlEncoded}"
+print(url)          // https://example.com/search?q=fish%20%26%20chips
+print("fish%20%26%20chips".urlDecoded ?? "")    // fish & chips
+print("%zz".urlDecoded ?? "invalid")            // invalid
+```
+
+- `urlEncoded` keeps letters, digits and `- _ . ~`, and writes every other
+  character as `%` and a code. Use it for a single part of a URL, like a
+  query value or a path segment, not a whole URL.
+- `urlDecoded` also reads `+` as a space. It's `nil` if the text has a `%`
+  that isn't followed by a valid code.
+
+### Paths
+
+Three properties take a file path apart:
+
+```tessel
+let path = "/Users/ada/notes/todo.txt"
+print(path.fileName)            // todo.txt
+print(path.fileExtension)       // txt
+print(path.folder)              // /Users/ada/notes
+```
+
+- `fileName` is the part after the last `/` (or `\`), the whole text if
+  there's none.
+- `fileExtension` is the part of the file name after its last dot:
+  `"archive.tar.gz"` gives `"gz"`. It's `""` if there's no dot, and for names
+  that start with a dot, like `".profile"`.
+- `folder` is the part before the last `/` (or `\`), or `""` if there's
+  none.
+
+To put paths together, use [`joinPath`](#joinpath).
+
 ## List
 
 A list `[T]` holds values of one type in order. Write one as `[1, 2, 3]`; an
@@ -669,6 +1694,27 @@ empty list needs its type from context: `var names: [String] = []`.
 | `map(_ transform: fn(T) -> U)` | `[U]` | Each item transformed by the block. |
 | `sorted(by: fn(T, T) -> Bool = …)` | `[T]` | The items in order. |
 | `joined(separator: String = "")` | `String` | Only for `[String]`: the items joined into one string. |
+| `indices` | `Range` | The valid indexes, `0..count`. |
+| `index(of: T)` | `Int?` | The index of the first item equal to the value. |
+| `lastIndex(of: T)` | `Int?` | The index of the last item equal to the value. |
+| `firstIndex(where: fn(T) -> Bool)` | `Int?` | The index of the first item for which the block is `true`. |
+| `count(where: fn(T) -> Bool)` | `Int` | How many items the block is `true` for. |
+| `any(where: fn(T) -> Bool)` | `Bool` | Whether the block is `true` for at least one item. |
+| `all(where: fn(T) -> Bool)` | `Bool` | Whether the block is `true` for every item. |
+| `sum()` | `T` | Only for `[Int]` and `[Float]`: the items added up. |
+| `min()` | `T?` | Only for `[Int]`, `[Float]` and `[String]`: the smallest item. |
+| `max()` | `T?` | Only for `[Int]`, `[Float]` and `[String]`: the largest item. |
+| `prefix(_ count: Int)` | `[T]` | The first `count` items. |
+| `suffix(_ count: Int)` | `[T]` | The last `count` items. |
+| `dropFirst(_ count: Int = 1)` | `[T]` | Without the first `count` items. |
+| `dropLast(_ count: Int = 1)` | `[T]` | Without the last `count` items. |
+| `slice(from: Int, to: Int)` | `[T]` | The items from index `from` up to `to`. |
+| `unique()` | `[T]` | Without repeated items. |
+| `shuffled()` | `[T]` | The items in random order. |
+| `randomElement()` | `T?` | A random item, or `nil` if empty. |
+| `appendAll(_ items: [T])` | | Adds all of `items` at the end. Changes the list. |
+| `removeFirst()` | `T` | Removes and returns the first item. Changes the list. |
+| `removeLast()` | `T` | Removes and returns the last item. Changes the list. |
 
 Other list operations:
 
@@ -680,8 +1726,8 @@ Other list operations:
 - `for item in list { … }` loops over the items. See
   [Collections](/language/collections/).
 
-Methods that change the list (`append`, `insert`, `remove`, `removeAll`)
-need a list you can change: a `var`, a `state`, or a `bind` parameter, or a
+Methods that change the list (`append`, `appendAll`, `insert`, `remove`,
+`removeFirst`, `removeLast`, `removeAll`) need a list you can change: a `var`, a `state`, or a `bind` parameter, or a
 field of one. The others return a new list and leave the original alone.
 
 ### first and last
@@ -782,6 +1828,124 @@ print(words.joined())                   // onetwothree
 Only lists of `String` have `joined`. To join other values, `map` them to
 strings first.
 
+### indices
+
+```tessel
+let names = ["Ada", "Grace", "Linus"]
+print(names.indices)                    // 0..3
+for i in names.indices {
+    print("{i + 1}. {names[i]}")
+}
+```
+
+A range of every valid index, for when you need the index as well as the
+item.
+
+### index(of:) and lastIndex(of:)
+
+```tessel
+let nums = [4, 8, 15, 8]
+print(nums.index(of: 8) ?? -1)          // 1
+print(nums.lastIndex(of: 8) ?? -1)      // 3
+print(nums.index(of: 99) ?? -1)         // -1
+```
+
+`nil` if no item is equal to the value. They work for any list whose items
+can be compared with `==`, structs included.
+
+### firstIndex(where:)
+
+```tessel
+let nums = [4, 8, 15, 16]
+print(nums.firstIndex(where: { n in n > 10 }) ?? -1)    // 2
+```
+
+### count(where:), any(where:) and all(where:)
+
+```tessel
+let nums = [4, 8, 15, 16, 23]
+print(nums.count(where: { n in n.isEven }))     // 3
+print(nums.any(where: { n in n > 20 }))         // true
+print(nums.all(where: { n in n > 5 }))          // false
+```
+
+For an empty list, `any` is `false` and `all` is `true`.
+
+### sum, min and max
+
+```tessel
+let nums = [4, 8, 15]
+print(nums.sum())                       // 27
+print(nums.min() ?? 0)                  // 4
+print(nums.max() ?? 0)                  // 15
+print(["pear", "apple"].min() ?? "")    // apple
+```
+
+- `sum` is for lists of `Int` or `Float`; it's `0` for an empty list.
+- `min` and `max` are for lists of `Int`, `Float` or `String`, and are `nil`
+  for an empty list. Strings are compared as with `<`.
+- For other lists, `map` to numbers first, or use `sorted(by:)`.
+
+### prefix, suffix, dropFirst and dropLast
+
+```tessel
+let nums = [1, 2, 3, 4, 5]
+print(nums.prefix(2).sum())             // 3   (1 + 2)
+print(nums.suffix(2).sum())             // 9   (4 + 5)
+print(nums.dropFirst().count)           // 4
+print(nums.dropLast(2).sum())           // 6   (1 + 2 + 3)
+print(nums.prefix(100).count)           // 5
+```
+
+A count bigger than the list is fine: you get the whole list (or an empty
+one). None of them stop the program.
+
+### slice
+
+```tessel
+let letters = ["a", "b", "c", "d", "e"]
+print(letters.slice(from: 1, to: 3).joined())   // bc
+print(letters.slice(from: 3, to: 99).joined())  // de
+```
+
+The items from index `from` (included) up to `to` (not included), like
+[`substring`](#substring) for strings. Indexes outside the list are clamped
+to it, and if `to` isn't after `from`, the result is empty.
+
+### unique
+
+```tessel
+let tags = ["red", "blue", "red", "green", "blue"]
+print(tags.unique().joined(separator: ","))     // red,blue,green
+```
+
+Keeps the first of each group of equal items, in their order.
+
+### randomElement and shuffled
+
+```tessel
+let names = ["Ada", "Grace", "Linus"]
+let winner = names.randomElement() ?? "nobody"
+let order = names.shuffled()
+```
+
+`randomElement` is `nil` for an empty list. See also
+[Random numbers](#random-numbers).
+
+### appendAll, removeFirst and removeLast
+
+```tessel
+var queue = ["a", "b"]
+queue.appendAll(["c", "d"])
+print(queue.removeFirst())              // a
+print(queue.removeLast())               // d
+print(queue.joined(separator: ","))     // b,c
+```
+
+`queue.appendAll(other)` does the same as `queue += other`. `removeFirst`
+and `removeLast` need a list with at least one item; on an empty list they
+stop the program with an error, like `remove(at:)`.
+
 ## Dictionary
 
 A dictionary `[K: V]` maps keys to values. Write one as `["a": 1, "b": 2]`;
@@ -841,7 +2005,7 @@ error: index 5 is out of range for a list of 3 items
 
 | Error | Caused by |
 |---|---|
-| `index … is out of range` | `list[i]`, `remove(at:)` or `insert(at:)` with an index outside the list. |
+| `index … is out of range` | `list[i]`, `remove(at:)` or `insert(at:)` with an index outside the list, `removeFirst()` or `removeLast()` on an empty list, or `data[i]` outside the data. |
 | `integer overflow` | `Int` arithmetic whose result is too big for an `Int`. |
 | `division by zero` | `Int` division or remainder (`/`, `%`) by `0`. |
 

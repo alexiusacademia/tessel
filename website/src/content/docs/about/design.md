@@ -195,6 +195,13 @@ Slow work, such as network requests, timers and running other programs,
 is done by built-in functions that take a completion block. The block always
 runs on the UI thread, so it can change `state` directly, and the view
 updates. There are no threads, locks or `async` keywords to learn.
+
+Heavy computations use the same shape: `background(work: { … }) { result in … }`
+runs the work on another thread and hands the result to a block on the UI
+thread. The work gets *copies* of the values it uses, the same way values
+are saved with `toBinary`, so the two threads never share anything and
+nothing needs a lock. The compiler checks that the work doesn't touch
+`state` or the app's own functions.
 See [Files, commands and the network](/ui/async/).
 
 ## Still open

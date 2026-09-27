@@ -1,6 +1,6 @@
 ---
 title: Types
-description: Tessel's built-in types (Int, Float, Bool, String, lists, dictionaries, optionals and functions), type inference, and converting between types.
+description: Tessel's built-in types (Int, Float, Bool, String, Data, lists, dictionaries, optionals and functions), type inference, and converting between types.
 ---
 
 Every value in Tessel has a type, and the type of every variable is known
@@ -20,6 +20,7 @@ fields, and empty lists or dictionaries.
 | `Bool` | `true`, `false` | A truth value |
 | `String` | `"hi"`, `"Hello, {name}"` | Text |
 | `Range` | `0..3`, `1..n` | A range of whole numbers |
+| `Data` | `Data(text: "hi")` | Raw bytes, such as a file's contents |
 | `[T]` | `[1, 2, 3]` | A list of values of type `T` |
 | `[K: V]` | `["ada": 36]` | A dictionary from keys `K` to values `V` |
 | `T?` | `nil`, `5` | An optional: a `T`, or `nil` |
@@ -137,6 +138,21 @@ for page in intro.pages {
 }
 print(intro.pages)           // 1..4
 ```
+
+## Data
+
+`Data` is a sequence of bytes: the contents of a file that isn't text, or
+values encoded with `toBinary`. Make one with `Data()`,
+`Data(bytes: [72, 105])` or `Data(text: "Hi")`; `data.count` is its size and
+`data[i]` a byte, as an `Int` from 0 to 255.
+
+```tessel
+let greeting = Data(text: "Hi")
+print(greeting.count)       // 2
+print(greeting[0])          // 72
+```
+
+See [Data](/reference/stdlib/#data) in the standard library reference.
 
 ## Lists
 

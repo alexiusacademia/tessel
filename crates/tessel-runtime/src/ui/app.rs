@@ -20,7 +20,8 @@
 //! answer "/tmp/a.och"   what the next openFile/saveFile dialog returns
 //!                       (`answer cancel` for cancelling it)
 //! scroll 0 120          scroll the view under the pointer by (dx, dy) points
-//! wait 1.5              let 1.5 seconds pass (fires timers)
+//! wait 1.5              let 1.5 seconds pass (fires timers); first waits
+//!                       for loads, commands and background work to finish
 //! repeat 20 key down    run a command several times
 //! snapshot out.png      render to a PNG (at 2x)
 //! dump                  print the laid-out view tree, with positions
@@ -414,10 +415,15 @@ pub fn run_until_idle() {
 
 /// Is background work still going (loads or commands)?
 fn background_busy() -> bool {
+    jobs_busy() || net::busy()
+}
+
+/// Background work that finishes by itself (not open WebSockets).
+fn jobs_busy() -> bool {
     WAITING.with(|w| !w.borrow().is_empty())
         || COMMANDS.with(|c| !c.borrow().is_empty())
         || COMPUTING.with(|c| !c.borrow().is_empty())
-        || net::busy()
+        || net::working()
 }
 
 // ===== the app model =====
@@ -1237,7 +1243,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             "wait" => {
                 // Loads and commands in progress finish first (tests shouldn't depend on timing).
                 let started = Instant::now();
-                while background_busy() && started.elapsed() < Duration::from_secs(60) {
+                while jobs_busy() && started.elapsed() < Duration::from_secs(60) {
                     if deliver_background() {
                         app.dirty = true;
                         app.update();
@@ -1246,6 +1252,19 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
                 let secs: f64 = rest.parse().unwrap_or(0.0);
+                // Open WebSockets: let their messages arrive for a moment
+                // (at least half a second, or as long as the wait).
+                if net::busy() {
+                    let until = Instant::now() + Duration::from_secs_f64(secs.max(0.5));
+                    while Instant::now() < until {
+                        if deliver_background() {
+                            app.dirty = true;
+                            app.update();
+                        } else {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                    }
+                }
                 let end = now() + secs;
                 // Step through timers in order, so ones they add also fire.
                 while let Some(t) = next_timer().filter(|t| *t <= end) {

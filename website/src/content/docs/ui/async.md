@@ -1,11 +1,11 @@
 ---
 title: Files, commands and timers
-description: Read and write files, let the user choose files with open and save dialogs, run other programs, download text and run code later. Callbacks run on the UI thread and may change state.
+description: Read and write files, let the user choose files with open and save dialogs, run other programs, talk to web servers, run code later or on a timer, and do heavy work in the background. Callbacks run on the UI thread and may change state.
 ---
 
 Apps need to do more than draw: save files, run tools, load data from the
-network, do something a few seconds from now. This page covers the built-in
-functions for that.
+network, do something a few seconds from now, or crunch numbers without
+freezing the window. This page covers the built-in functions for that.
 
 Some of them finish right away (the file functions). The others take a
 *callback*, a block Tessel runs later, when the work is done. Callbacks always
@@ -43,9 +43,23 @@ The file functions work immediately and return a result you can check:
 | `renameFile(from:to:)` | `Bool` | Renames or moves a file or folder. |
 | `deleteFile(path)` | `Bool` | Deletes a file. It doesn't delete folders. |
 | `currentFolder()` | `String` | The folder the program was started from. |
+| `appendFile(path:text:)` | `Bool` | Adds `text` to the end of the file. |
+| `copyFile(from:to:)` | `Bool` | Copies a file. |
+| `fileSize(path)` | `Int?` | The file's size in bytes. |
+| `modifiedTime(path)` | `Float?` | When the file last changed. |
+| `readData(path)` | `Data?` | The file's raw bytes, for files that aren't text. |
+| `writeData(path:data:)` | `Bool` | Writes raw bytes to the file. |
 
 Relative paths are relative to `currentFolder()`, the folder the program was
-started from.
+started from. That's fine for tools, but an app started from the Finder or
+the Start menu can't count on it: keep its files in
+[`appDataFolder("YourApp")`](/reference/stdlib/#appdatafolder) or
+[`documentsFolder()`](/reference/stdlib/#folders-and-paths), and build paths
+with [`joinPath`](/reference/stdlib/#joinpath).
+
+To save structs, lists and other values rather than plain text, turn them
+into JSON with `toJson` and read them back with `fromJson`; see
+[Saving data as JSON](/guides/json/).
 
 A simple notes app that loads its text when it starts and saves on request:
 
@@ -276,10 +290,158 @@ fetch(url: "https://example.com/data.txt") { text in
 It supports `http://` and `https://` URLs, and `file://` for a local file.
 
 :::note
-`fetch` is simple for now: it only makes GET requests, can't send headers,
-and gives you just the text of the response: any failure, including an error
-status from the server, gives `nil`.
+`fetch` is the simple way to load text: it makes a GET request and gives you
+the text, or `nil` for any failure, including an error status from the
+server. To send data, set headers, or see the status code, use
+[`request`](#talking-to-a-web-server-with-request).
 :::
+
+## Talking to a web server with `request`
+
+`request(url:method:headers:body:done:)` sends any HTTP request and gives
+its block the whole response, an
+[`HttpResponse`](/reference/stdlib/#httpresponse):
+
+```tessel
+struct Todo {
+    title: String
+    done: Bool = false
+}
+
+app Todos(width: 360, height: 300) {
+    state todos: [Todo] = []
+    state status = ""
+
+    VStack(spacing: 8, alignment: .leading) {
+        Button("Load") { load() }
+        Button("Add") { add("Buy milk") }
+        Text(status).color(.secondary)
+        for todo in todos {
+            Text(todo.title)
+        }
+    }
+    .padding(16)
+
+    fn load() {
+        request(url: "https://example.com/api/todos") { response in
+            if !response.ok {
+                status = "Couldn't load (status {response.status})"
+            } else if let loaded: [Todo] = fromJson(response.text) {
+                todos = loaded
+            } else {
+                status = "The server sent something unexpected"
+            }
+        }
+    }
+
+    fn add(_ title: String) {
+        request(url: "https://example.com/api/todos", method: "POST",
+                headers: ["Content-Type": "application/json"],
+                body: toJson(Todo(title: title))) { response in
+            status = if response.ok { "Added" } else { "Couldn't add: {response.status} {response.error}" }
+        }
+    }
+}
+```
+
+Everything but `url` and the block is optional: `method` is `"GET"` unless
+you say otherwise, and there are no extra headers and no body. The response
+has:
+
+- `status`: the HTTP status code, like `200` or `404`, and `ok`: whether it's
+  a success (200 to 299). An error status is still a response, so its body
+  is there too, for the server's explanation.
+- `text` and `data`: the body as text, and as bytes.
+- `headers`: the response headers, with lower-case names.
+- `error`: if the server couldn't be reached at all, why. Then `status` is
+  `0`.
+
+[`toJson`](/reference/stdlib/#tojson) and [`fromJson`](/reference/stdlib/#fromjson)
+turn your structs into the JSON that most web APIs use, and back.
+
+## Downloading files
+
+`download(url:to:progress:done:)` saves a URL straight to a file, and can
+report how far it has got:
+
+```tessel
+app Downloader(width: 360, height: 160) {
+    state progress = 0.0
+    state status = "Ready"
+
+    VStack(spacing: 8) {
+        Text(status)
+        Text("{Int(progress * 100.0)}%").font(size: 24)
+        Button("Download") {
+            status = "Downloading…"
+            let file = joinPath(documentsFolder(), "tessel.zip")
+            download(url: "https://example.com/tessel.zip", to: file, progress: { fraction in
+                progress = fraction
+            }) { ok in
+                status = if ok { "Saved to {file}" } else { "Download failed" }
+            }
+        }
+    }
+    .padding(16)
+}
+```
+
+`progress` is optional. It gets a fraction from `0.0` to `1.0` as the file
+arrives (when the server says how big the file is). `done` gets whether it
+worked. A failed download leaves no partial file behind.
+
+## WebSockets
+
+A WebSocket is a connection that stays open, so the server can send messages
+at any time: for chat, live prices, or notifications.
+`openWebSocket(url:onMessage:onClose:)` connects and returns an id;
+`sendWebSocket(id, text:)` sends a message, and `closeWebSocket(id)` hangs
+up:
+
+```tessel
+app Chat(width: 360, height: 400) {
+    state socket: Int? = nil
+    state messages: [String] = []
+    state draft = ""
+
+    VStack(spacing: 8, alignment: .leading) {
+        HStack {
+            Button("Connect") { connect() }.disabled(socket != nil)
+            Button("Disconnect") { disconnect() }.disabled(socket == nil)
+        }
+        for message in messages {
+            Text(message)
+        }
+        TextField("Message", text: draft).onSubmit {
+            if let id = socket {
+                sendWebSocket(id, text: draft)
+                draft = ""
+            }
+        }
+    }
+    .padding(16)
+
+    fn connect() {
+        socket = openWebSocket(url: "wss://example.com/chat", onMessage: { text in
+            messages.append(text)
+        }) { reason in
+            messages.append("Disconnected: {reason}")
+            socket = nil
+        }
+    }
+
+    fn disconnect() {
+        if let id = socket {
+            closeWebSocket(id)
+        }
+    }
+}
+```
+
+`onMessage` runs for each message from the server. `onClose` runs once when
+the connection ends, for whatever reason: you closed it, the server did, or
+it couldn't connect in the first place. Messages are text; send JSON with
+`toJson` to exchange structured data.
 
 ## Running code later with `after`
 
@@ -293,36 +455,154 @@ Button("Save") {
 }
 ```
 
-The delay is a `Float`, so `after(seconds: 0.5) { … }` works. To repeat
-something, start the next timer from inside the block:
+The delay is a `Float`, so `after(seconds: 0.5) { … }` works. A timer made
+with `after` can't be cancelled once started. If it might no longer be wanted
+when it fires, have the block check a `state` value first.
+
+## Repeating with `every`
+
+`every(seconds:action:)` runs a block again and again, and returns an id
+that `stopTimer` takes to stop it. A stopwatch:
 
 ```tessel
-app Countdown(width: 300, height: 180) {
-    state seconds = 10
+app Stopwatch(width: 300, height: 180) {
+    state tenths = 0
+    state timer: Int? = nil
 
-    Text("{seconds}").font(size: 40, weight: .bold)
-    Button("Start") { tick() }
+    VStack(spacing: 12) {
+        Text("{tenths / 10}.{tenths % 10}").font(size: 40, weight: .bold)
+        HStack {
+            Button("Start") { start() }.disabled(timer != nil)
+            Button("Stop") { stop() }.disabled(timer == nil)
+            Button("Reset") { tenths = 0 }
+        }
+    }
+    .padding(16)
 
-    fn tick() {
-        after(seconds: 1) {
-            seconds -= 1
-            if seconds > 0 {
-                tick()
-            }
+    fn start() {
+        timer = every(seconds: 0.1) {
+            tenths += 1
+        }
+    }
+
+    fn stop() {
+        if let id = timer {
+            stopTimer(id)
+            timer = nil
         }
     }
 }
 ```
 
-A timer can't be cancelled once started. If it might no longer be wanted when
-it fires, have the block check a `state` value first.
+The first run is one interval after `every` is called. The block can also
+stop its own timer, once it has done its job.
+
+## Heavy work in the background
+
+Everything in an app's blocks runs on the UI thread, the one that draws the
+window. Something that takes a long time there, like a big calculation,
+freezes the window until it's done. `background(work:done:)` runs it on
+another thread instead, and hands the result to a block back on the UI
+thread:
+
+```tessel
+fn primesBelow(limit: Int) -> [Int] {
+    var sieve: [Bool] = []
+    for _ in 0..limit {
+        sieve.append(true)
+    }
+    var primes: [Int] = []
+    for i in 2..limit {
+        if sieve[i] {
+            primes.append(i)
+            for k in i..(limit - 1) / i + 1 {
+                sieve[i * k] = false
+            }
+        }
+    }
+    primes
+}
+
+app Primes(width: 360, height: 200) {
+    state limit = 200000
+    state status = "Idle"
+    state busy = false
+
+    VStack(spacing: 12) {
+        Text(status)
+        Button("Count") {
+            busy = true
+            status = "Counting…"
+            let n = limit
+            background(work: { primesBelow(limit: n) }) { primes in
+                status = "{primes.count} primes below {n}"
+                busy = false
+            }
+        }
+        .disabled(busy)
+    }
+    .padding(24)
+}
+```
+
+While the primes are counted, the window stays responsive. Then the block
+after `background` gets the list, and like every callback, it can change
+`state`: the window shows `17984 primes below 200000`.
+
+The `work:` block runs at the same time as the rest of the app, so it
+mustn't touch anything the app might be changing. Tessel makes this safe by
+**copying**: `work` gets its own copies of the values it uses, and the block
+after it gets a copy of the result. For that to work:
+
+- `work` can't use `state`, bindings, fields of the app or view, or its
+  functions (`fn`s declared inside the `app` or `view`). Top-level functions
+  like `primesBelow` are fine, and so are local values.
+- The values it uses, and its result, must be plain data that
+  [`toBinary`](/reference/stdlib/#tobinary) could save: numbers, strings,
+  lists, dictionaries, your structs and enums, and so on, but not functions.
+
+That's why the example copies `limit` into `let n` first. Using `limit`
+directly is an error:
+
+```text
+error: background work can't use `limit`: `limit` is `state`, which the app keeps changing
+  --> main.tsl:28:30
+   |
+28 |             background(work: { primesBelow(limit: limit) }) { primes in
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: copy what it needs first, like `let input = limit`, and use that
+```
+
+The copy is made when `background` is called, so changing `limit` afterwards
+doesn't affect work that has already started.
+
+The `work:` block ends with its result, like a function. It can be several
+lines long, and `return` works in it too:
+
+```tessel
+let points = shape.points
+background(work: {
+    if points.isEmpty {
+        return 0.0
+    }
+    var total = 0.0
+    for p in points {
+        total += p.x * p.y
+    }
+    total
+}) { area in
+    result = area
+}
+```
 
 ## Callbacks in a program without an app
 
-`fetch`, `runCommand` and `after` also work in a program with `fn main()` and
-no `app`. When `main` returns, the program doesn't end right away: it keeps
-running until no timers, downloads or commands are left, running their
-callbacks as they come in, and then exits.
+`fetch`, `request`, `download`, WebSockets, `runCommand`, `after`, `every`
+and `background` also work in a program with `fn main()` and no `app`. When
+`main` returns, the program doesn't end right away: it keeps running until no
+timers, requests, downloads, open WebSockets, commands or background work
+are left, running their callbacks as they come in, and then exits.
 
 ```tessel
 fn main() {
@@ -347,9 +627,14 @@ echo finished with 0
 one second later
 ```
 
+A timer started with `every` keeps the program running until it's stopped
+with `stopTimer`, and an open WebSocket until it's closed. To end the program
+right away, call [`exit`](/reference/stdlib/#exit).
+
 ## Testing code that waits
 
 When you test an app with a [headless script](/ui/testing/), time doesn't pass
 by itself: the `wait` command moves the clock forward and fires the timers
-that are due. `wait` also first lets running `fetch` and `runCommand` calls
-finish, so tests don't depend on how fast the machine is.
+that are due, including `every` timers. `wait` also first lets running
+`fetch`, `request`, `download`, `runCommand` and `background` calls finish,
+so tests don't depend on how fast the machine is.

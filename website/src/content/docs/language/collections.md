@@ -152,6 +152,12 @@ Grace, Ada
 Strings sort by their character codes, so all uppercase letters come before
 lowercase ones: `["b", "Z", "a"].sorted()` is `["Z", "a", "b"]`.
 
+There are more: `index(of:)`, `count(where:)`, `any(where:)` and
+`all(where:)`, `sum()`, `min()` and `max()`, `prefix`, `suffix` and `slice`,
+`unique()`, `shuffled()`, `removeFirst()`, `appendAll` and others. See
+[List](/reference/stdlib/#list) in the standard library reference for all of
+them.
+
 The blocks you pass to these methods are
 [closures](/language/closures/). Most are given as a trailing block
 (`filter { … }`); for the ones with a label, like `sorted(by:)` and
@@ -279,10 +285,10 @@ work with accented letters and other non-English text. `substring` never
 stops the program: positions past the end are clamped to the end of the
 text.
 
-To go through a string character by character, split it into a list first:
+To go through a string character by character, loop over its `characters`:
 
 ```tessel
-for letter in "abc".split("") {
+for letter in "abc".characters {
     print(letter)
 }
 ```
@@ -292,6 +298,10 @@ a
 b
 c
 ```
+
+Strings have more methods, such as `words()`, `padStart`, `capitalized()`
+and `urlEncoded`; see [String](/reference/stdlib/#string) in the standard
+library reference.
 
 `+` joins strings, and `+=` adds to a string variable. Strings compare with
 `==` and, in dictionary order, with `<` and `>`.
