@@ -16,6 +16,12 @@ generated from `crates/tessel-runtime/icons/` at build time.
 
 ## Deploying to Netlify
 
-`netlify.toml` at the repository root has the settings: base directory
-`website`, build command `npm run build`, publish directory `dist`. Connect the
-repository in Netlify and deploy; no other configuration is needed.
+The site is live at https://tessel-lang.netlify.app (Netlify project
+`tessel-lang`, team syncster.dev). `netlify.toml` in this folder has the build
+settings; the base directory is `website`.
+
+To deploy by hand from this folder (it's linked with `netlify link`):
+
+```sh
+npx netlify deploy --build --prod
+```
