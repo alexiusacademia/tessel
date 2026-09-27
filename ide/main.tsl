@@ -1,127 +1,303 @@
 // The Tessel IDE, written in Tessel.
 
-app Tessel(title: "Tessel", width: 1100, height: 720) {
+app Tessel(title: "Tessel", width: 1200, height: 780) {
     state project = environment("TESSEL_PROJECT") ?? currentFolder()
-    state files: [String] = []
+    state tree: [Entry] = []
+    state expanded: [String] = []
+    state selected = ""
+    state docs: [Doc] = []
     state current = ""
-    state source = ""
-    state saved = ""
-    state line = 1
     state problems: [Problem] = []
     state console: [String] = []
+    state panel = Panel.problems
     state running: Int? = nil
+    state restartOnSave = true
+    state restartPending = false
     state status = "Ready"
+    state prompt = Prompt.none
+    state promptText = ""
 
     VStack(spacing: 0) {
         // Toolbar
         HStack(spacing: 8) {
-            Text("Tessel").font(size: 16, weight: .bold)
+            Text("Tessel").font(size: 15, weight: .bold)
             Text(fileName(project)).color(.secondary)
             Spacer()
             Text(status).color(.secondary)
+            Toggle("Restart on save", isOn: restartOnSave)
+            Button("Save") { save() }.shortcut("s") { save() }
             Button("Check") { check() }.shortcut("k") { check() }
             Button(if running == nil { "Run" } else { "Stop" }) { runOrStop() }.shortcut("r") { runOrStop() }
             Button("Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
             Button("Package") { build(bundle: true) }
         }
-        .padding(10)
+        .padding(8)
+        Divider()
 
         HStack(spacing: 0, alignment: .leading) {
-            // Files
-            Scroll {
-                VStack(spacing: 2, alignment: .leading) {
-                    for name in files {
-                        if name == current {
-                            Text(name).color(.white).padding(6).background(.blue, radius: 6)
-                        } else {
-                            Text(name).padding(6).onTap { open(name) }
-                        }
-                    }
+            // Explorer
+            VStack(spacing: 0, alignment: .leading) {
+                HStack(spacing: 2) {
+                    Text("EXPLORER").font(size: 11, weight: .semibold).color(.secondary)
+                    Spacer()
+                    Text("+ File").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.newFile) }
+                    Text("+ Folder").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.newFolder) }
+                    Text("Rename…").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.rename) }
+                    Text("Delete…").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.delete) }
                 }
                 .padding(8)
-            }
-            .frame(width: 200)
+                Text(fileName(project).uppercase()).font(size: 11, weight: .bold).padding(8)
 
-            // Editor
-            VStack(spacing: 6) {
-                HStack {
-                    Text(if current == "" { "No file open" } else { current }).font(weight: .semibold)
-                    if source != saved {
-                        Text("edited").color(.orange)
+                match prompt {
+                    .none -> Spacer().frame(height: 0)
+                    .delete -> HStack(spacing: 6) {
+                        Text("Delete {fileName(selected)}?").font(size: 12)
+                        Spacer()
+                        Button("Delete") { confirm() }
+                        Button("Cancel") { prompt = Prompt.none }
                     }
-                    Spacer()
-                    Text("Line {line}").color(.secondary)
+                    .padding(6)
+                    _ -> TextField(promptLabel(), text: promptText).autofocus().onSubmit { confirm() }.padding(6)
                 }
-                CodeEditor(text: source, errorLines: errorLines(), line: line).shortcut("s") { save() }
+
+                Scroll {
+                    VStack(spacing: 0, alignment: .leading) {
+                        for e in tree {
+                            HStack(spacing: 5) {
+                                Spacer().frame(width: Float(e.depth) * 14)
+                                Text(if !e.folder { " " } else if expanded.contains(e.path) { "▾" } else { "▸" })
+                                    .font(size: 11)
+                                    .color(.secondary)
+                                    .frame(width: 10)
+                                if e.folder {
+                                    Text(e.name).font(size: 13)
+                                } else if e.name.hasSuffix(".tsl") {
+                                    Text("T").font(size: 9, weight: .bold).color(.white).padding(2).background(.blue, radius: 3)
+                                    Text(e.name).font(size: 13)
+                                } else {
+                                    Text("•").font(size: 13).color(.gray)
+                                    Text(e.name).font(size: 13).color(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(4)
+                            .background(if e.path == selected { .highlight } else { .clear })
+                            .hoverBackground(.lightGray)
+                            .onTap { choose(e) }
+                        }
+                    }
+                }
             }
-            .padding(8)
+            .frame(width: 250)
+            .background(.sidebar)
+            Divider()
+
+            // Editor tabs
+            if docs.isEmpty {
+                VStack {
+                    Text("Open a file from the explorer").color(.secondary)
+                }
+            } else {
+                TabView(selection: current, onClose: { path in closeDoc(path: path) }) {
+                    for doc in docs {
+                        CodeEditor(text: doc.text, errorLines: errorLines(path: doc.path), line: doc.line)
+                            .id(doc.path)
+                            .tabItem(if doc.text != doc.saved { "• {fileName(doc.path)}" } else { fileName(doc.path) })
+                            .tag(doc.path)
+                    }
+                }
+            }
         }
 
+        Divider()
         // Problems and console
-        HStack(spacing: 0, alignment: .leading) {
-            VStack(spacing: 4, alignment: .leading) {
-                Text("Problems ({problems.count})").font(weight: .semibold)
-                Scroll {
-                    VStack(spacing: 2, alignment: .leading) {
-                        for p in problems {
-                            Text("{fileName(p.file)}:{p.line}  {p.message}").color(.red).onTap { jump(p) }
+        TabView(selection: panel) {
+            Scroll {
+                VStack(spacing: 2, alignment: .leading) {
+                    for p in problems {
+                        HStack(spacing: 6) {
+                            Text("{fileName(p.file)}:{p.line}").font(size: 12).color(.secondary)
+                            Text(p.message).font(size: 12).color(.red)
+                            Spacer()
                         }
+                        .padding(3)
+                        .hoverBackground(.lightGray)
+                        .onTap { jump(p: p) }
                     }
                 }
+                .padding(6)
             }
-            .padding(8)
-            VStack(spacing: 4, alignment: .leading) {
-                HStack {
-                    Text("Console").font(weight: .semibold)
-                    Spacer()
-                    Button("Clear") { console = [] }
-                }
-                Scroll {
-                    VStack(spacing: 1, alignment: .leading) {
-                        for text in console {
-                            Text(text).font(size: 12).onTap { jumpTo(text) }
-                        }
+            .tabItem("Problems ({problems.count})")
+            .tag(Panel.problems)
+
+            Scroll {
+                VStack(spacing: 1, alignment: .leading) {
+                    for text in console {
+                        Text(text).font(size: 12).onTap { jumpTo(text: text) }
                     }
                 }
+                .padding(6)
             }
-            .padding(8)
+            .tabItem("Console")
+            .tag(Panel.console)
         }
-        .frame(height: 210)
+        .frame(height: 220)
     }
     .onAppear { reload() }
 
+    // ----- files -----
+
     fn reload() {
-        files = sourceFiles(folder: project)
-        if current == "" {
-            if let first = files.first {
-                open(first)
+        tree = entries(folder: project, depth: 0, expanded: expanded)
+        if docs.isEmpty {
+            if let first = tree.first(where: { e in !e.folder && e.name.hasSuffix(".tsl") }) {
+                open(path: first.path)
             }
         }
         check()
     }
 
-    fn open(name: String) {
-        if current != "" && source != saved {
-            save()
+    fn choose(e: Entry) {
+        selected = e.path
+        if e.folder {
+            if expanded.contains(e.path) {
+                expanded.removeAll(where: { p in p == e.path })
+            } else {
+                expanded.append(e.path)
+            }
+            tree = entries(folder: project, depth: 0, expanded: expanded)
+        } else {
+            open(path: e.path)
         }
-        current = name
-        source = readFile(join(folder: project, name: name)) ?? ""
-        saved = source
-        line = 1
+    }
+
+    fn open(path: String) {
+        if docs.first(where: { d in d.path == path }) == nil {
+            let text = readFile(path) ?? ""
+            docs.append(Doc(path: path, text: text, saved: text))
+        }
+        current = path
+        selected = path
+    }
+
+    fn closeDoc(path: String) {
+        save()
+        docs.removeAll(where: { d in d.path == path })
+        if current == path {
+            current = docs.last?.path ?? ""
+        }
     }
 
     fn save() {
-        if current == "" {
-            return
+        var any = false
+        for doc in docs {
+            if doc.text != doc.saved {
+                if writeFile(path: doc.path, text: doc.text) {
+                    doc.saved = doc.text
+                    any = true
+                } else {
+                    status = "Couldn't save {fileName(doc.path)}"
+                }
+            }
         }
-        if writeFile(path: join(folder: project, name: current), text: source) {
-            saved = source
-            status = "Saved {current}"
-        } else {
-            status = "Couldn't save {current}"
+        if any {
+            status = "Saved"
+            check()
+            if restartOnSave && running != nil {
+                restart()
+            }
         }
-        check()
     }
+
+    // ----- new, rename, delete -----
+
+    fn ask(kind: Prompt) {
+        prompt = kind
+        promptText = if kind == Prompt.rename { fileName(selected) } else { "" }
+    }
+
+    fn promptLabel() -> String {
+        match prompt {
+            .newFile -> "New file name"
+            .newFolder -> "New folder name"
+            .rename -> "New name"
+            _ -> ""
+        }
+    }
+
+    // The folder new files go in: the selected folder, or the selected file's folder.
+    fn targetFolder() -> String {
+        if selected == "" {
+            return project
+        }
+        if isFolder(selected) { selected } else { parentOf(path: selected) }
+    }
+
+    fn confirm() {
+        let name = promptText.trim()
+        match prompt {
+            .newFile -> {
+                if name != "" {
+                    let file = if name.contains(".") { name } else { "{name}.tsl" }
+                    let path = join(folder: targetFolder(), name: file)
+                    if writeFile(path: path, text: "") {
+                        refreshTree(showing: parentOf(path: path))
+                        open(path: path)
+                    }
+                }
+            }
+            .newFolder -> {
+                if name != "" {
+                    let path = join(folder: targetFolder(), name: name)
+                    if createFolder(path) {
+                        refreshTree(showing: path)
+                        selected = path
+                    }
+                }
+            }
+            .rename -> {
+                if name != "" && selected != "" {
+                    let path = join(folder: parentOf(path: selected), name: name)
+                    if renameFile(from: selected, to: path) {
+                        for doc in docs {
+                            if doc.path == selected {
+                                doc.path = path
+                            }
+                        }
+                        if current == selected {
+                            current = path
+                        }
+                        selected = path
+                        refreshTree(showing: parentOf(path: path))
+                    }
+                }
+            }
+            .delete -> {
+                if deleteFile(selected) {
+                    docs.removeAll(where: { d in d.path == selected })
+                    if current == selected {
+                        current = docs.last?.path ?? ""
+                    }
+                    selected = ""
+                    refreshTree(showing: project)
+                } else {
+                    status = "Only files can be deleted"
+                }
+            }
+            .none -> {}
+        }
+        prompt = Prompt.none
+        promptText = ""
+    }
+
+    fn refreshTree(showing: String) {
+        if showing != project && !expanded.contains(showing) {
+            expanded.append(showing)
+        }
+        tree = entries(folder: project, depth: 0, expanded: expanded)
+    }
+
+    // ----- check, run, build -----
 
     fn check() {
         problems = []
@@ -143,6 +319,7 @@ app Tessel(title: "Tessel", width: 1100, height: 720) {
         }
         save()
         console = []
+        panel = Panel.console
         status = "Building…"
         let exe = join(folder: project, name: ".tessel-run")
         runCommand(path: tesselCommand(), args: ["build", project, "-o", exe], onOutput: { text in
@@ -158,13 +335,27 @@ app Tessel(title: "Tessel", width: 1100, height: 720) {
                 console.append("— exited with code {exitCode}")
                 running = nil
                 status = "Ready"
+                if restartPending {
+                    restartPending = false
+                    runOrStop()
+                }
             }
+        }
+    }
+
+    // Saving while the program runs: stop it, and run it again once it has exited.
+    fn restart() {
+        if let id = running {
+            restartPending = true
+            status = "Restarting…"
+            stopCommand(id)
         }
     }
 
     fn build(bundle: Bool) {
         save()
         console = []
+        panel = Panel.console
         var args = ["build", project, "-o", join(folder: project, name: fileName(project))]
         if bundle {
             args.append("--bundle")
@@ -175,12 +366,15 @@ app Tessel(title: "Tessel", width: 1100, height: 720) {
         }
     }
 
+    // ----- errors -----
+
     fn jump(p: Problem) {
-        let name = fileName(p.file)
-        if name != current {
-            open(name)
+        open(path: p.file)
+        for doc in docs {
+            if doc.path == p.file {
+                doc.line = p.line
+            }
         }
-        line = p.line
     }
 
     fn jumpTo(text: String) {
@@ -189,7 +383,7 @@ app Tessel(title: "Tessel", width: 1100, height: 720) {
         }
     }
 
-    fn errorLines() -> [Int] {
-        problems.filter { p in fileName(p.file) == current }.map { p in p.line }
+    fn errorLines(path: String) -> [Int] {
+        problems.filter { p in p.file == path }.map { p in p.line }
     }
 }

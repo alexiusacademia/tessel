@@ -4,7 +4,7 @@ use crate::types::{CaseDef, EnumDef, FnSig, ParamSig as P, Ty};
 
 pub const COLORS: &[&str] = &[
     "primary", "secondary", "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink", "white", "black",
-    "clear",
+    "clear", "lightGray", "sidebar", "highlight", "separator",
 ];
 
 pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
@@ -29,7 +29,10 @@ pub struct Builtins {
 }
 
 pub const VIEW_NAMES: &[&str] =
-    &["Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image", "CodeEditor"];
+    &[
+        "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
+        "CodeEditor", "TabView", "Divider",
+    ];
 
 impl Builtins {
     pub fn view(&self, name: &str) -> Option<Vec<P>> {
@@ -49,6 +52,15 @@ impl Builtins {
                 selection.sets_tag = true;
                 vec![selection, content()]
             }
+            "TabView" => {
+                let mut selection = P::new("selection", Ty::Any).bind();
+                selection.sets_tag = true;
+                // `onClose: fn(T)`, where T is the selection's type.
+                let mut on_close = P::new("onClose", Ty::Any).default();
+                on_close.tag_fn = true;
+                vec![selection, on_close, content()]
+            }
+            "Divider" => vec![],
             "VStack" | "HStack" => vec![
                 P::new("spacing", Ty::Float).default(),
                 P::new("alignment", self.alignment.clone()).default(),
@@ -82,7 +94,10 @@ impl Builtins {
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
             "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
-            "onAppear" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
+            "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
+            "tabItem" => vec![P::unlabeled("title", Ty::Str)],
+            "autofocus" => vec![],
+            "hoverBackground" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
             _ => return None,
         })
     }
@@ -101,7 +116,10 @@ impl Builtins {
             "readFile" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::opt(Ty::Str) },
             "writeFile" => FnSig { params: vec![P::new("path", Ty::Str), P::new("text", Ty::Str)], ret: Ty::Bool },
             "listFolder" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::opt(Ty::list(Ty::Str)) },
-            "fileExists" | "isFolder" | "deleteFile" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::Bool },
+            "fileExists" | "isFolder" | "deleteFile" | "createFolder" => {
+                FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::Bool }
+            }
+            "renameFile" => FnSig { params: vec![P::new("from", Ty::Str), P::new("to", Ty::Str)], ret: Ty::Bool },
             "currentFolder" => FnSig { params: vec![], ret: Ty::Str },
             "environment" => FnSig { params: vec![P::new("name", Ty::Str)], ret: Ty::opt(Ty::Str) },
             "runCommand" => FnSig {
@@ -121,7 +139,8 @@ impl Builtins {
 
 pub const FUNCTION_NAMES: &[&str] = &[
     "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
-    "isFolder", "deleteFile", "currentFolder", "environment", "runCommand", "stopCommand",
+    "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
+    "stopCommand",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -207,7 +226,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
-            "id", "tag", "shortcut", "onAppear",
+            "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
         ],
         _ => &[],
     }

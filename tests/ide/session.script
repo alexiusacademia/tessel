@@ -1,0 +1,27 @@
+wait 0
+click "+ File"
+type helpers
+key enter
+click editor 1
+type fn twice(n: Int) -> Int {
+key enter
+type n * 2
+key enter
+type }
+type oops
+key cmd+z
+tree
+key cmd+s
+wait 0
+click "Rename…"
+key cmd+a
+type math.tsl
+key enter
+click "main.tsl"
+close "main.tsl"
+tree
+click "math.tsl"
+click "Delete…"
+click "Delete"
+wait 0
+tree

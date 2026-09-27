@@ -49,6 +49,8 @@ pub struct Box {
     pub empty: bool,
     /// For code editors: the width of the line-number gutter.
     pub gutter: f64,
+    /// For tab views: each tab's title, rectangle and close button.
+    pub tabs: Vec<Tab>,
     /// For scroll views: the height of the content.
     pub content_h: f64,
     /// For pickers: the rectangle of each option.
@@ -56,6 +58,14 @@ pub struct Box {
     /// Inherited style, resolved for this node.
     pub style: Style,
 }
+
+pub struct Tab {
+    pub title: parley::Layout<Paint>,
+    pub rect: Rect,
+    pub close: Option<Rect>,
+}
+
+pub const TAB_BAR: f64 = 34.0;
 
 /// Styles inherited down the tree (like SwiftUI's environment).
 #[derive(Clone, Copy, Debug)]
@@ -182,6 +192,27 @@ impl Layouter<'_> {
                 let h = if avail.h.is_finite() { avail.h } else { 320.0 };
                 Size { w: w.max(160.0), h: h.max(80.0) }
             }
+            Kind::TabView { close, .. } => {
+                let closable = close.is_some();
+                let titles: Vec<String> =
+                    n.children.iter().map(|c| c.mods.tab_title.clone().unwrap_or_else(|| "Untitled".into())).collect();
+                let mut tabs = Vec::new();
+                for title in titles {
+                    let t = self.text_layout(&title, style, None);
+                    tabs.push(Tab { title: t, rect: Rect::default(), close: closable.then(Rect::default) });
+                }
+                n.layout.tabs = tabs;
+                let selected = n.selected_tab();
+                let page = Size { w: avail.w, h: (avail.h - TAB_BAR).max(0.0) };
+                if let Some(c) = n.children.get_mut(selected) {
+                    self.measure(c, page, style);
+                }
+                Size {
+                    w: if avail.w.is_finite() { avail.w } else { 480.0 },
+                    h: if avail.h.is_finite() { avail.h } else { 320.0 },
+                }
+            }
+            Kind::Divider => Size { w: 1.0, h: 1.0 },
             Kind::Spacer => Size::default(),
             Kind::Image(_) => Size { w: 64.0, h: 64.0 },
             Kind::Picker { .. } => {
@@ -313,6 +344,22 @@ impl Layouter<'_> {
                 }
                 n.layout.segments = segments;
             }
+            Kind::TabView { .. } => {
+                let mut x = content.x;
+                for tab in &mut n.layout.tabs {
+                    let w = (tab.title.width() as f64 + 28.0 + if tab.close.is_some() { 18.0 } else { 0.0 }).max(90.0);
+                    tab.rect = Rect { x, y: content.y, w, h: TAB_BAR };
+                    if let Some(close) = &mut tab.close {
+                        *close = Rect { x: x + w - 24.0, y: content.y + (TAB_BAR - 16.0) / 2.0, w: 16.0, h: 16.0 };
+                    }
+                    x += w;
+                }
+                let selected = n.selected_tab();
+                let page = Rect { x: content.x, y: content.y + TAB_BAR, w: content.w, h: (content.h - TAB_BAR).max(0.0) };
+                if let Some(c) = n.children.get_mut(selected) {
+                    self.place(c, page);
+                }
+            }
             Kind::TextField { .. } => {
                 // Re-wrap nothing; the field just takes the width it was given.
             }
@@ -380,7 +427,9 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } => axis == Axis::X,
-        Kind::Scroll | Kind::CodeEditor { .. } => true,
+        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } => true,
+        // A divider spans across its stack.
+        Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
         Kind::HStack(..) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
         Kind::ZStack | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),

@@ -416,6 +416,18 @@ pub unsafe extern "C" fn tsl_is_folder(path: *const Str) -> bool {
     std::path::Path::new(unsafe { str_text(path) }).is_dir()
 }
 
+/// Creates a folder (and any missing parents). Returns whether it worked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_create_folder(path: *const Str) -> bool {
+    std::fs::create_dir_all(unsafe { str_text(path) }).is_ok()
+}
+
+/// Renames or moves a file or folder. Returns whether it worked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_rename_file(from: *const Str, to: *const Str) -> bool {
+    std::fs::rename(unsafe { str_text(from) }, unsafe { str_text(to) }).is_ok()
+}
+
 /// Deletes a file (not a folder). Returns whether it worked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_delete_file(path: *const Str) -> bool {

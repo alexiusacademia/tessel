@@ -69,11 +69,13 @@ pub struct ParamSig {
     pub bind: bool,
     /// Picker's `selection`: its type becomes the type `.tag(…)` expects.
     pub sets_tag: bool,
+    /// A `fn(T)` whose `T` is that tag type (TabView's `onClose`).
+    pub tag_fn: bool,
 }
 
 impl ParamSig {
     pub fn new(label: &str, ty: Ty) -> ParamSig {
-        ParamSig { label: label.into(), unlabeled: false, ty, has_default: false, bind: false, sets_tag: false }
+        ParamSig { label: label.into(), unlabeled: false, ty, has_default: false, bind: false, sets_tag: false, tag_fn: false }
     }
 
     /// `_ label: T`

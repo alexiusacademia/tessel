@@ -75,7 +75,7 @@ impl Drop for Callback {
 
 /// A copy of a value of any type (a Picker option's tag).
 pub struct Value {
-    bytes: Vec<u8>,
+    pub bytes: Vec<u8>,
     ty: *const TslType,
 }
 
@@ -90,7 +90,7 @@ impl Value {
         Value { bytes, ty }
     }
 
-    fn equals(&self, p: *const u8) -> bool {
+    pub(crate) fn equals(&self, p: *const u8) -> bool {
         match unsafe { (*self.ty).eq } {
             Some(eq) => unsafe { eq(self.bytes.as_ptr(), p) },
             None => false,
@@ -98,7 +98,7 @@ impl Value {
     }
 
     /// Replaces the value stored at `p` with a copy of this one.
-    unsafe fn store_to(&self, p: *mut u8) {
+    pub(crate) unsafe fn store_to(&self, p: *mut u8) {
         let ty = self.ty;
         unsafe {
             if let Some(release) = (*ty).release {
@@ -126,7 +126,7 @@ impl Drop for Value {
 pub struct Rgba(pub [u8; 4]);
 
 /// Colors in the order of the `Color` enum.
-pub const COLORS: [Rgba; 13] = [
+pub const COLORS: [Rgba; 17] = [
     Rgba([29, 29, 31, 255]),    // primary
     Rgba([110, 110, 115, 255]), // secondary
     Rgba([142, 142, 147, 255]), // gray
@@ -140,6 +140,10 @@ pub const COLORS: [Rgba; 13] = [
     Rgba([255, 255, 255, 255]), // white
     Rgba([0, 0, 0, 255]),       // black
     Rgba([0, 0, 0, 0]),         // clear
+    Rgba([229, 229, 234, 255]), // lightGray
+    Rgba([243, 243, 246, 255]), // sidebar
+    Rgba([214, 228, 252, 255]), // highlight
+    Rgba([216, 216, 222, 255]), // separator
 ];
 
 /// Font weights in the order of the `Weight` enum.
@@ -155,6 +159,10 @@ pub enum Kind {
     Toggle { label: String, is_on: Callback },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
     CodeEditor { text: Callback, error_lines: Vec<i64>, line: Option<Callback> },
+    /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
+    TabView { selection: Callback, close: Option<Callback> },
+    /// A hairline separator across its stack.
+    Divider,
     Picker { selection: Callback },
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
@@ -184,6 +192,14 @@ pub struct Mods {
     pub shortcut: Option<(String, Callback)>,
     /// `.onAppear { … }`: runs when the view first appears.
     pub on_appear: Option<Callback>,
+    /// `.onSubmit { … }`: runs when Enter is pressed in a text field.
+    pub on_submit: Option<Callback>,
+    /// `.autofocus()`: a text field or code editor that starts editing when it appears.
+    pub autofocus: bool,
+    /// `.tabItem("Title")`: the title of a TabView page.
+    pub tab_title: Option<String>,
+    /// `.hoverBackground(color, radius:)`: drawn while the mouse is over the view.
+    pub hover_background: Option<(Rgba, f64)>,
 }
 
 pub struct Node {
@@ -197,8 +213,26 @@ pub struct Node {
 }
 
 impl Node {
+    /// For a TabView: the index of the page whose tag equals the selection.
+    pub fn selected_tab(&self) -> usize {
+        let Kind::TabView { selection, .. } = &self.kind else { return 0 };
+        let current = selection.locate();
+        self.children.iter().position(|c| c.mods.tag.as_ref().is_some_and(|t| t.equals(current))).unwrap_or(0)
+    }
+
     fn new(kind: Kind, key: u64) -> Node {
         Node { kind, children: Vec::new(), mods: Mods::default(), key, layout: layout::Box::default() }
+    }
+
+    /// Children that are showing: a tab view shows only its selected page.
+    pub fn visible_children(&self) -> &[Node] {
+        match self.kind {
+            Kind::TabView { .. } => {
+                let i = self.selected_tab();
+                self.children.get(i..=i).unwrap_or(&[])
+            }
+            _ => &self.children,
+        }
     }
 
     /// Finds a node by key.
@@ -207,6 +241,29 @@ impl Node {
             return Some(self);
         }
         self.children.iter().find_map(|c| c.find(key))
+    }
+}
+
+/// Part of a view's identity: a different kind of view in the same position
+/// is a different view (it doesn't inherit focus, undo history, …).
+fn kind_salt(kind: &Kind) -> u64 {
+    match kind {
+        Kind::Root => 1,
+        Kind::Group => 2,
+        Kind::Text(_) => 3,
+        Kind::Button { .. } => 4,
+        Kind::TextField { .. } => 5,
+        Kind::Toggle { .. } => 6,
+        Kind::CodeEditor { .. } => 7,
+        Kind::TabView { .. } => 8,
+        Kind::Divider => 9,
+        Kind::Picker { .. } => 10,
+        Kind::VStack(..) => 11,
+        Kind::HStack(..) => 12,
+        Kind::ZStack => 13,
+        Kind::Scroll => 14,
+        Kind::Spacer => 15,
+        Kind::Image(_) => 16,
     }
 }
 
@@ -241,12 +298,12 @@ impl Builder {
     }
 
     fn leaf(&mut self, kind: Kind) {
-        let key = self.next_key(0);
+        let key = self.next_key(kind_salt(&kind));
         self.parent().children.push(Node::new(kind, key));
     }
 
     fn begin(&mut self, kind: Kind, salt: u64) {
-        let key = self.next_key(salt);
+        let key = self.next_key(salt ^ kind_salt(&kind));
         self.stack.push(Node::new(kind, key));
     }
 
@@ -395,6 +452,25 @@ pub unsafe extern "C" fn tsl_ui_begin_picker(f: *const c_void, env: *mut Header)
     with_builder(|b| b.begin(Kind::Picker { selection }, 0));
 }
 
+/// Opens a TabView. `close_f` is null when tabs can't be closed; otherwise
+/// it's called as `close_f(close_env, pointer to the closed tab's tag)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_tabs(f: *const c_void, env: *mut Header, close_f: *const c_void, close_env: *mut Header) {
+    let selection = Callback::new(f, env);
+    let close = (!close_f.is_null()).then(|| Callback::new(close_f, close_env));
+    with_builder(|b| b.begin(Kind::TabView { selection, close }, 0));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_autofocus() {
+    modify(|m| m.autofocus = true);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_divider() {
+    with_builder(|b| b.leaf(Kind::Divider));
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_end() {
     with_builder(|b| b.end());
@@ -528,6 +604,23 @@ pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env:
     let key = unsafe { text_of(key) }.to_lowercase();
     let cb = Callback::new(f, env);
     modify(|m| m.shortcut = Some((key, cb)));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_submit(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_submit = Some(cb));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_tab_item(title: *const Str) {
+    let title = unsafe { text_of(title) };
+    modify(|m| m.tab_title = Some(title));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_hover_background(color: i32, radius: f64) {
+    modify(|m| m.hover_background = Some((COLORS[color as usize], radius)));
 }
 
 #[unsafe(no_mangle)]

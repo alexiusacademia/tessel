@@ -507,6 +507,7 @@ impl Checker<'_> {
                 has_default: p.default.is_some(),
                 bind: p.bind && allow_bind,
                 sets_tag: false,
+                tag_fn: false,
             });
         }
         out
@@ -2224,6 +2225,11 @@ impl Checker<'_> {
     fn arg_value(&mut self, what: &str, p: &ParamSig, v: &Expr) {
         if p.ty == Ty::View {
             self.content_closure(v);
+            return;
+        }
+        if p.tag_fn {
+            let t = self.tag_ty.clone().unwrap_or(Ty::Error);
+            self.expect(v, &Ty::func(vec![t], Ty::Void));
             return;
         }
         let t = if p.ty == Ty::Any {

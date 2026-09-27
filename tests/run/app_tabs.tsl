@@ -1,0 +1,55 @@
+// TabView with closable tabs, onSubmit, undo/redo, Divider, hoverBackground,
+// and the file functions renameFile and createFolder.
+
+struct Doc {
+    name: String
+    text: String
+}
+
+app Tabs(width: 560, height: 400) {
+    state docs = [Doc(name: "one.tsl", text: "first"), Doc(name: "two.tsl", text: "second")]
+    state current = "one.tsl"
+    state newName = ""
+    state log: [String] = []
+
+    VStack(spacing: 8) {
+        TextField("New tab name", text: newName).onSubmit { add() }
+        Divider()
+        TabView(selection: current, onClose: { name in close(name) }) {
+            for doc in docs {
+                TextField("Text", text: doc.text).tabItem(doc.name).tag(doc.name)
+            }
+        }
+        HStack {
+            Text("files").onTap { files() }.hoverBackground(.lightGray, radius: 4)
+            for line in log {
+                Text(line)
+            }
+        }
+    }
+    .padding(12)
+
+    fn add() {
+        if newName != "" {
+            docs.append(Doc(name: newName, text: ""))
+            current = newName
+            newName = ""
+        }
+    }
+
+    fn close(name: String) {
+        docs.removeAll(where: { d in d.name == name })
+        if current == name {
+            current = docs.first?.name ?? ""
+        }
+    }
+
+    fn files() {
+        let dir = "tests/run/tabs_scratch"
+        log.append("mkdir {createFolder(dir)}")
+        log.append("write {writeFile(path: "{dir}/a.txt", text: "x")}")
+        log.append("rename {renameFile(from: "{dir}/a.txt", to: "{dir}/b.txt")}")
+        log.append("moved {fileExists("{dir}/b.txt") && !fileExists("{dir}/a.txt")}")
+        log.append("cleanup {deleteFile("{dir}/b.txt")}")
+    }
+}

@@ -7,6 +7,7 @@
 //! size 320 200          window size in points
 //! click "Add"           click the button / toggle / text / field with this label
 //! click 40 60           click at a point
+//! close "main.tsl"      click the close button of the tab with this title
 //! click toggle 2        click the 2nd view of a kind (toggle, button, field,
 //!                       text, editor)
 //! type hello world      type into the text field or code editor being edited
@@ -271,6 +272,8 @@ fn background_busy() -> bool {
 
 /// What a click landed on.
 enum Hit {
+    Tab(u64, usize),
+    TabClose(u64, usize),
     Button(u64),
     Toggle(u64),
     Field(u64),
@@ -282,6 +285,7 @@ impl Hit {
     fn key(&self) -> u64 {
         match *self {
             Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) => k,
+            Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
     }
 }
@@ -372,21 +376,30 @@ impl App {
 
     /// Runs `.onAppear` for views that weren't in the previous tree.
     fn run_on_appear(&mut self) {
-        fn visit(n: &Node, keys: &mut std::collections::HashSet<u64>, old: &std::collections::HashSet<u64>, out: &mut Vec<Callback>) {
+        type Keys = std::collections::HashSet<u64>;
+        fn visit(n: &Node, keys: &mut Keys, old: &Keys, out: &mut Vec<Callback>, focus: &mut Option<(u64, String)>) {
             keys.insert(n.key);
-            if let (Some(cb), false) = (&n.mods.on_appear, old.contains(&n.key)) {
+            let new = !old.contains(&n.key);
+            if let (Some(cb), true) = (&n.mods.on_appear, new) {
                 out.push(cb.clone());
             }
+            if let (true, true, Some(text)) = (n.mods.autofocus, new, editable_text(n)) {
+                *focus = Some((n.key, read_string(text)));
+            }
             for c in &n.children {
-                visit(c, keys, old, out);
+                visit(c, keys, old, out, focus);
             }
         }
         let mut keys = std::collections::HashSet::new();
         let mut appeared = Vec::new();
+        let mut focus = None;
         if let Some(t) = &self.tree {
-            visit(t, &mut keys, &self.keys, &mut appeared);
+            visit(t, &mut keys, &self.keys, &mut appeared, &mut focus);
         }
         self.keys = keys;
+        if let Some((key, text)) = focus {
+            self.ui.editing = Some(Editing::new(key, &text));
+        }
         for cb in appeared {
             cb.call();
             self.dirty = true;
@@ -514,6 +527,17 @@ impl App {
                     return None;
                 }
             }
+            if let Kind::TabView { .. } = n.kind {
+                for (i, tab) in n.layout.tabs.iter().enumerate() {
+                    if tab.close.is_some_and(|c| c.contains(x, y)) {
+                        return Some(Hit::TabClose(n.key, i));
+                    }
+                    if tab.rect.contains(x, y) {
+                        return Some(Hit::Tab(n.key, i));
+                    }
+                }
+                return n.children.get(n.selected_tab()).and_then(|c| visit(c, x, y));
+            }
             if let Kind::Picker { .. } = n.kind {
                 if let Some(i) = n.layout.segments.iter().position(|s| s.contains(x, y)) {
                     return Some(Hit::Segment(n.key, i));
@@ -565,6 +589,19 @@ impl App {
                     self.ui.editing = Some(Editing::new(*key, &read_string(text)));
                 }
             }
+            (Hit::Tab(_, i), Kind::TabView { selection, .. }) => {
+                if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
+                    unsafe { tag.store_to(selection.locate()) };
+                }
+            }
+            (Hit::TabClose(_, i), Kind::TabView { close: Some(close), .. }) => {
+                if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
+                    // The adapter copies (and retains) the value it's given.
+                    let mut bytes = tag.bytes.clone();
+                    let close = close.clone();
+                    close.call_with(bytes.as_mut_ptr());
+                }
+            }
             (Hit::Segment(_, i), Kind::Picker { selection }) => {
                 if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
                     unsafe { tag.store_to(selection.locate()) };
@@ -586,6 +623,8 @@ impl App {
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(e.key)) else { return };
         let (Some(text), Some(layout)) = (editable_text(node), &node.layout.text) else { return };
         let current = read_string(text);
+        let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
+        let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
         if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard) {
             let slot = text.locate() as *mut *mut Str;
             unsafe {
@@ -593,6 +632,19 @@ impl App {
                 *slot = crate::str_new(&new);
                 crate::tsl_release(old as *mut Header);
             }
+            let h = self.ui.history.entry(e.key).or_default();
+            if h.last_text != current {
+                // Changed from outside since our last edit: old steps don't apply.
+                h.undo.clear();
+                h.redo.clear();
+                h.typing = false;
+            }
+            if !(typing && h.typing) {
+                h.undo.push(before);
+            }
+            h.typing = typing;
+            h.redo.clear();
+            h.last_text = new;
             self.dirty = true;
         }
         self.ui.editing = Some(e);
@@ -601,6 +653,34 @@ impl App {
         if !self.dirty {
             self.follow_caret();
         }
+    }
+
+    /// Undo (or redo) the last change in the view being edited.
+    fn undo(&mut self, redo: bool) {
+        let Some(mut e) = self.ui.editing.clone() else { return };
+        let Some(text) = self.node(e.key).and_then(editable_text).cloned() else { return };
+        let current = read_string(&text);
+        let h = self.ui.history.entry(e.key).or_default();
+        if h.last_text != current {
+            h.undo.clear();
+            h.redo.clear();
+            return;
+        }
+        let (from, to) = if redo { (&mut h.redo, &mut h.undo) } else { (&mut h.undo, &mut h.redo) };
+        let Some(step) = from.pop() else { return };
+        to.push(edit::Snapshot { text: current, anchor: e.anchor, focus: e.focus });
+        h.last_text = step.text.clone();
+        h.typing = false;
+        let slot = text.locate() as *mut *mut Str;
+        unsafe {
+            let old = *slot;
+            *slot = crate::str_new(&step.text);
+            crate::tsl_release(old as *mut Header);
+        }
+        e.anchor = step.anchor;
+        e.focus = step.focus;
+        self.ui.editing = Some(e);
+        self.dirty = true;
     }
 
     /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view has one.
@@ -614,7 +694,7 @@ impl App {
                     return Some(cb.clone());
                 }
             }
-            n.children.iter().find_map(|c| find(c, key))
+            n.visible_children().iter().find_map(|c| find(c, key))
         }
         let Some(cb) = self.tree.as_ref().and_then(|t| find(t, key)) else { return false };
         cb.call();
@@ -624,8 +704,8 @@ impl App {
 
     /// A key press, by name (see the script commands).
     fn key(&mut self, name: &str, mods: Mods) {
-        // Text editing keeps Cmd+A/C/X/V while a field is being edited.
-        let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v");
+        // Text editing keeps Cmd+A/C/X/V/Z while a field is being edited.
+        let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v" | "z");
         if mods.primary && !editing_key && self.run_shortcut(name) {
             return;
         }
@@ -658,9 +738,19 @@ impl App {
             "c" if mods.primary => Edit::Copy,
             "x" if mods.primary => Edit::Cut,
             "v" if mods.primary => Edit::Paste,
+            "z" if mods.primary => {
+                self.undo(mods.shift);
+                return;
+            }
             "enter" | "escape" => {
+                let submit = (name == "enter")
+                    .then(|| self.ui.editing.as_ref().and_then(|e| self.node(e.key)).and_then(|n| n.mods.on_submit.clone()))
+                    .flatten();
                 self.ui.editing = None;
                 self.dirty = true;
+                if let Some(cb) = submit {
+                    cb.call();
+                }
                 return;
             }
             _ => return,
@@ -708,6 +798,15 @@ impl App {
     /// Center of the first view labelled `label`.
     fn find_label(&self, label: &str) -> Option<(f64, f64)> {
         fn visit(n: &Node, label: &str) -> Option<(f64, f64)> {
+            if let Kind::TabView { .. } = n.kind {
+                for (i, tab) in n.layout.tabs.iter().enumerate() {
+                    if n.children.get(i).and_then(|c| c.mods.tab_title.as_deref()) == Some(label) {
+                        let r = tab.rect;
+                        return Some((r.x + r.w / 2.0 - 10.0, r.y + r.h / 2.0));
+                    }
+                }
+                return n.children.get(n.selected_tab()).and_then(|c| visit(c, label));
+            }
             let matches = match &n.kind {
                 Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } => s == label,
                 Kind::TextField { placeholder, .. } => placeholder == label,
@@ -717,9 +816,25 @@ impl App {
                 let r = n.layout.rect;
                 return Some((r.x + r.w / 2.0, r.y + r.h / 2.0));
             }
-            n.children.iter().find_map(|c| visit(c, label))
+            n.visible_children().iter().find_map(|c| visit(c, label))
         }
         visit(self.tree.as_ref()?, label)
+    }
+
+    /// Center of the close button of the tab titled `title`.
+    fn find_tab_close(&self, title: &str) -> Option<(f64, f64)> {
+        fn visit(n: &Node, title: &str) -> Option<(f64, f64)> {
+            if let Kind::TabView { .. } = n.kind {
+                for (i, tab) in n.layout.tabs.iter().enumerate() {
+                    if n.children.get(i).and_then(|c| c.mods.tab_title.as_deref()) == Some(title) {
+                        let c = tab.close?;
+                        return Some((c.x + c.w / 2.0, c.y + c.h / 2.0));
+                    }
+                }
+            }
+            n.visible_children().iter().find_map(|c| visit(c, title))
+        }
+        visit(self.tree.as_ref()?, title)
     }
 
     /// Center of the `n`th (from 1) view of a kind, in tree order.
@@ -733,7 +848,7 @@ impl App {
             if matches && !node.mods.hidden {
                 out.push(node);
             }
-            for c in &node.children {
+            for c in node.visible_children() {
                 visit(c, kind, out);
             }
         }
@@ -762,6 +877,11 @@ impl App {
                 Kind::Scroll => "Scroll".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
                 Kind::Image(p) => format!("Image {p:?}"),
+                Kind::TabView { .. } => {
+                    let titles: Vec<&str> = n.children.iter().map(|c| c.mods.tab_title.as_deref().unwrap_or("")).collect();
+                    format!("TabView {titles:?} selected {}", n.selected_tab())
+                }
+                Kind::Divider => "Divider".to_string(),
                 Kind::CodeEditor { text, error_lines, .. } => {
                     format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
                 }
@@ -773,6 +893,13 @@ impl App {
                 .collect::<String>();
             let place = if positions { format!(" [{:.0},{:.0} {:.0}x{:.0}]", r.x, r.y, r.w, r.h) } else { String::new() };
             out.push_str(&format!("{}{what}{place}{flags}\n", "  ".repeat(depth)));
+            // A tab view shows only its selected page.
+            if let Kind::TabView { .. } = n.kind {
+                if let Some(c) = n.children.get(n.selected_tab()) {
+                    visit(c, depth + 1, out, positions);
+                }
+                return;
+            }
             for c in &n.children {
                 visit(c, depth + 1, out, positions);
             }
@@ -873,6 +1000,13 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
             }
+            "close" => match app.find_tab_close(rest.trim_matches('"')) {
+                Some((x, y)) => app.click(x, y),
+                None => {
+                    eprintln!("script: no closable tab `{rest}`");
+                    return 2;
+                }
+            },
             "type" => {
                 let text = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')).unwrap_or(rest);
                 app.type_text(text);
@@ -1090,13 +1224,15 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                 }
                 let hovered = self.app.hit(self.cursor.0, self.cursor.1).map(|h| h.key());
-                if hovered != self.app.ui.hovered {
+                self.app.ui.pointer = Some(self.cursor);
+                if hovered != self.app.ui.hovered || hovered.is_some() {
                     self.app.ui.hovered = hovered;
                     self.request_redraw();
                 }
             }
             WindowEvent::CursorLeft { .. } => {
                 self.app.ui.hovered = None;
+                self.app.ui.pointer = None;
                 self.request_redraw();
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {

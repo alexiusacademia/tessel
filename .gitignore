@@ -1,3 +1,4 @@
 /target
 .tessel-run
 .tessel-run.exe
+tests/ide/session.actual

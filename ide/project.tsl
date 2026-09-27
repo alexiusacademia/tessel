@@ -1,4 +1,4 @@
-// Files, paths, and reading the output of the `tessel` command.
+// Files, paths, the folder tree, and reading the output of `tessel`.
 
 struct Problem {
     file: String
@@ -6,6 +6,26 @@ struct Problem {
     column: Int
     message: String
 }
+
+// A row in the explorer.
+struct Entry {
+    path: String
+    name: String
+    depth: Int
+    folder: Bool
+}
+
+// An open file (a tab in the editor).
+struct Doc {
+    path: String
+    text: String
+    saved: String
+    line: Int = 1
+}
+
+enum Panel { problems, console }
+
+enum Prompt { none, newFile, newFolder, rename, delete }
 
 // The `tessel` command. `tessel` sets TESSEL_EXE when it starts the IDE.
 fn tesselCommand() -> String {
@@ -16,12 +36,36 @@ fn fileName(path: String) -> String {
     path.replace("\\", with: "/").split("/").last ?? path
 }
 
+fn parentOf(path: String) -> String {
+    var parts = path.replace("\\", with: "/").split("/")
+    if parts.count > 1 {
+        parts.remove(at: parts.count - 1)
+    }
+    parts.joined(separator: "/")
+}
+
 fn join(folder: String, name: String) -> String {
     "{folder}/{name}"
 }
 
-fn sourceFiles(folder: String) -> [String] {
-    (listFolder(folder) ?? []).filter { name in name.hasSuffix(".tsl") }
+// The explorer's visible rows: folders first, then files; expanded folders
+// show their contents indented. Hidden files (starting with ".") are skipped.
+fn entries(folder: String, depth: Int, expanded: [String]) -> [Entry] {
+    let names = (listFolder(folder) ?? []).filter { n in !n.hasPrefix(".") }
+    var folders: [Entry] = []
+    var files: [Entry] = []
+    for name in names {
+        let path = join(folder: folder, name: name)
+        if isFolder(path) {
+            folders.append(Entry(path: path, name: name, depth: depth, folder: true))
+            if expanded.contains(path) {
+                folders = folders + entries(folder: path, depth: depth + 1, expanded: expanded)
+            }
+        } else {
+            files.append(Entry(path: path, name: name, depth: depth, folder: false))
+        }
+    }
+    folders + files
 }
 
 // A line of `tessel check --format lines`:

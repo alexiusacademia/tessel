@@ -631,7 +631,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_find" => (vec![p, p], Some(i)),
             "tsl_ui_shortcut" => (vec![p, p, p], None),
             "tsl_ui_code_editor" => (vec![p, p, p, p, p], None),
-            "tsl_ui_on_appear" => (vec![p, p], None),
+            "tsl_ui_on_appear" | "tsl_ui_on_submit" => (vec![p, p], None),
+            "tsl_ui_begin_tabs" => (vec![p, p, p, p], None),
+            "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),
+            "tsl_ui_tab_item" => (vec![p], None),
+            "tsl_ui_hover_background" => (vec![i32t, f64t], None),
+            "tsl_create_folder" => (vec![p], Some(i8t)),
+            "tsl_rename_file" => (vec![p, p], Some(i8t)),
             "tsl_fetch" => (vec![p, p, p], None),
             "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
             "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),
@@ -3228,7 +3234,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(s, &Ty::Str);
                 Some(self.opt_from_ptr(p, t))
             }
-            "writeFile" | "fileExists" | "isFolder" | "deleteFile" => {
+            "writeFile" | "fileExists" | "isFolder" | "deleteFile" | "createFolder" | "renameFile" => {
                 let mut vals = Vec::new();
                 for r in info.args.iter().flatten() {
                     vals.push(self.expr_as(arg(*r), &Ty::Str).unwrap());
@@ -3237,6 +3243,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     "writeFile" => "tsl_write_file",
                     "fileExists" => "tsl_file_exists",
                     "deleteFile" => "tsl_delete_file",
+                    "createFolder" => "tsl_create_folder",
+                    "renameFile" => "tsl_rename_file",
                     _ => "tsl_is_folder",
                 };
                 let r = self.call_rt(f, &vals);

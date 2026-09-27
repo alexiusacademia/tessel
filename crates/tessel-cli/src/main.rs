@@ -194,7 +194,6 @@ fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
 }
 
 fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, ExitCode> {
-    let sources = sources;
     let analysis = tessel_compiler::analyze(sources, true);
     if !analysis.diags.is_empty() {
         report(&analysis.diags.list, sources);

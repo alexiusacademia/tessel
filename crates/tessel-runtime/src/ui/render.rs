@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use parley::{FontContext, GenericFamily, LayoutContext, PositionedLayoutItem, StyleProperty};
-use vello::kurbo::{Affine, Circle, RoundedRect, Stroke};
+use vello::kurbo::{Affine, Circle, Line, RoundedRect, Stroke};
 use vello::peniko::{Color, Fill, Mix};
 use vello::util::RenderContext;
 use vello::{wgpu, AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
@@ -79,6 +79,10 @@ pub struct Interaction {
     pub scroll_x: HashMap<u64, f64>,
     /// The caret line each code editor last reported to its `line:` binding.
     pub editor_line: HashMap<u64, i64>,
+    /// Where the mouse is (for hover effects inside views, like tabs).
+    pub pointer: Option<(f64, f64)>,
+    /// Undo and redo history of text fields and code editors, by key.
+    pub history: HashMap<u64, super::edit::History>,
 }
 
 const ACCENT: Rgba = Rgba([0, 122, 255, 255]);
@@ -162,6 +166,9 @@ impl Painter<'_> {
             self.scene.push_layer(Fill::NonZero, Mix::Normal, alpha as f32, t, &rounded(r, 0.0));
         }
         if let Some((c, radius)) = n.mods.background {
+            self.fill(r, radius, c);
+        }
+        if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hovered == Some(n.key)) {
             self.fill(r, radius, c);
         }
         let content = r.inset(n.mods.padding.unwrap_or(0.0));
@@ -296,6 +303,43 @@ impl Painter<'_> {
                     self.stroke(content, 6.0, 1.0, FIELD_BORDER);
                 }
             }
+            Kind::TabView { .. } => {
+                let bar = Rect { x: content.x, y: content.y, w: content.w, h: super::layout::TAB_BAR };
+                self.fill(bar, 0.0, super::COLORS[14]);
+                self.fill(Rect { x: bar.x, y: bar.y + bar.h - 1.0, w: bar.w, h: 1.0 }, 0.0, super::COLORS[16]);
+                let selected = n.selected_tab();
+                for (i, tab) in n.layout.tabs.iter().enumerate() {
+                    let r = tab.rect;
+                    let hovered = self.ui.pointer.is_some_and(|(x, y)| r.contains(x, y));
+                    if i == selected {
+                        self.fill(r, 0.0, WHITE);
+                        self.fill(Rect { x: r.x, y: r.y, w: r.w, h: 2.0 }, 0.0, ACCENT);
+                    } else if hovered {
+                        self.fill(r, 0.0, super::COLORS[13]);
+                    }
+                    self.fill(Rect { x: r.x + r.w - 1.0, y: r.y, w: 1.0, h: r.h }, 0.0, super::COLORS[16]);
+                    let tint = if i == selected { None } else { Some(super::COLORS[1]) };
+                    let ty = r.y + (r.h - tab.title.height() as f64) / 2.0;
+                    self.text(&tab.title, r.x + 14.0, ty, tint);
+                    if let (Some(c), true) = (tab.close, i == selected || hovered) {
+                        let over = self.ui.pointer.is_some_and(|(x, y)| c.contains(x, y));
+                        if over {
+                            self.fill(c, 4.0, super::COLORS[13]);
+                        }
+                        let t = self.t();
+                        let color_x = color(super::COLORS[1]);
+                        let (cx, cy, d) = (c.x + c.w / 2.0, c.y + c.h / 2.0, 3.5);
+                        self.scene.stroke(&Stroke::new(1.3), t, color_x, None, &Line::new((cx - d, cy - d), (cx + d, cy + d)));
+                        self.scene.stroke(&Stroke::new(1.3), t, color_x, None, &Line::new((cx - d, cy + d), (cx + d, cy - d)));
+                    }
+                }
+                if let Some(c) = n.children.get(selected) {
+                    self.paint(c);
+                }
+            }
+            Kind::Divider => {
+                self.fill(r, 0.0, super::COLORS[16]);
+            }
             Kind::Image(_) => {
                 self.fill(content, 8.0, CONTROL);
                 self.stroke(content, 8.0, 1.0, FIELD_BORDER);
@@ -310,7 +354,7 @@ impl Painter<'_> {
             }
             _ => {}
         }
-        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll) {
+        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. }) {
             for c in &n.children {
                 self.paint(c);
             }

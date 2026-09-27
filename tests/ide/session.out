@@ -1,0 +1,136 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        Button "Save"
+        Button "Check"
+        Button "Run"
+        Button "Build"
+        Button "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            Text "+ File"
+            Text "+ Folder"
+            Text "Rename…"
+            Text "Delete…"
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Text " "
+                Text "T"
+                Text "helpers.tsl"
+                Spacer
+              HStack
+                Spacer
+                Text " "
+                Text "T"
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["main.tsl", "• helpers.tsl"] selected 1
+          CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        Button "Save"
+        Button "Check"
+        Button "Run"
+        Button "Build"
+        Button "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            Text "+ File"
+            Text "+ Folder"
+            Text "Rename…"
+            Text "Delete…"
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Text " "
+                Text "T"
+                Text "main.tsl"
+                Spacer
+              HStack
+                Spacer
+                Text " "
+                Text "T"
+                Text "math.tsl"
+                Spacer
+        Divider
+        TabView ["math.tsl"] selected 0
+          CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        Button "Save"
+        Button "Check"
+        Button "Run"
+        Button "Build"
+        Button "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            Text "+ File"
+            Text "+ Folder"
+            Text "Rename…"
+            Text "Delete…"
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Text " "
+                Text "T"
+                Text "main.tsl"
+                Spacer
+        Divider
+        VStack
+          Text "Open a file from the explorer"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+--- files: main.tsl

@@ -83,3 +83,44 @@ fn run_programs() {
     }
     assert!(failures.is_empty(), "\n{}\n", failures.join("\n\n"));
 }
+
+/// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
+/// on a copy of `tests/ide/project`, then compares its output and the
+/// project's files with what's expected.
+#[test]
+fn ide_session() {
+    let root = repo();
+    let exe = std::env::temp_dir().join(format!("tessel-test-ide-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
+    let built = Command::new(env!("CARGO_BIN_EXE_tessel")).arg("build").arg(root.join("ide")).arg("-o").arg(&exe).output().unwrap();
+    assert!(built.status.success(), "IDE build failed:\n{}{}", String::from_utf8_lossy(&built.stdout), String::from_utf8_lossy(&built.stderr));
+
+    let base = std::env::temp_dir().join(format!("tessel-ide-test-{}", std::process::id()));
+    let project = base.join("project");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&project).unwrap();
+    for entry in std::fs::read_dir(root.join("tests/ide/project")).unwrap() {
+        let entry = entry.unwrap();
+        std::fs::copy(entry.path(), project.join(entry.file_name())).unwrap();
+    }
+    let script = std::fs::read_to_string(root.join("tests/ide/session.script")).unwrap();
+    let out = Command::new(&exe)
+        .env("TESSEL_SCRIPT", script)
+        .env("TESSEL_PROJECT", &project)
+        .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    // Paths in the output depend on where the project was copied.
+    let stdout = String::from_utf8_lossy(&out.stdout).replace(&project.display().to_string(), "PROJECT");
+    let mut files: Vec<String> =
+        std::fs::read_dir(&project).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+    files.sort();
+    let got = format!("{stdout}--- files: {}\n", files.join(", "));
+    let expected = std::fs::read_to_string(root.join("tests/ide/session.out")).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_file(&exe);
+    if got != expected {
+        std::fs::write(root.join("tests/ide/session.actual"), &got).unwrap();
+        panic!("IDE session differs; see tests/ide/session.actual");
+    }
+}

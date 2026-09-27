@@ -494,6 +494,39 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.content_inline(a(1).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
+            "TabView" => {
+                let loc = self.locator(a(0).unwrap()).into_struct_value();
+                let mut vals = vec![
+                    self.b.build_extract_value(loc, 0, "").unwrap(),
+                    self.b.build_extract_value(loc, 1, "").unwrap(),
+                ];
+                match a(1) {
+                    Some(x) => {
+                        // The runtime calls `adapter(box, ptr to tag)`; the box holds the closure.
+                        let ft = self.ty(x);
+                        let Ty::Fn(ps, _) = &ft else { unreachable!() };
+                        let tag_t = ps[0].clone();
+                        let closure = self.expr(x).unwrap();
+                        let ti = self.type_info(&ft);
+                        let bx = self.call_rt("tsl_box_new", &[ti.into()]).unwrap().into_pointer_value();
+                        let data = self.box_data(bx);
+                        self.b.build_store(data, closure).unwrap();
+                        let adapter = self.tag_adapter(&tag_t);
+                        vals.push(adapter.into());
+                        vals.push(bx.into());
+                    }
+                    None => {
+                        vals.push(self.ptr_ty().const_null().into());
+                        vals.push(self.ptr_ty().const_null().into());
+                    }
+                }
+                self.call_rt("tsl_ui_begin_tabs", &vals);
+                self.content_inline(a(2).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "Divider" => {
+                self.call_rt("tsl_ui_divider", &[]);
+            }
             "VStack" | "HStack" | "ZStack" | "Scroll" => {
                 let (kind, content) = match name {
                     "VStack" => (0, 2),
@@ -600,9 +633,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_shortcut", &[key], action);
                 self.release(key, &Ty::Str);
             }
-            "onAppear" => {
+            "onAppear" | "onSubmit" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
-                self.pass_closure("tsl_ui_on_appear", &[], action);
+                let f = if name == "onAppear" { "tsl_ui_on_appear" } else { "tsl_ui_on_submit" };
+                self.pass_closure(f, &[], action);
+            }
+            "autofocus" => {
+                self.call_rt("tsl_ui_autofocus", &[]);
+            }
+            "tabItem" => {
+                let title = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
+                self.call_rt("tsl_ui_tab_item", &[title]);
+                self.release(title, &Ty::Str);
+            }
+            "hoverBackground" => {
+                let c = int(self, a(0).unwrap());
+                let r = float(self, a(1), 0.0);
+                self.call_rt("tsl_ui_hover_background", &[c, r]);
             }
             "onTap" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
@@ -619,6 +666,32 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             _ => unreachable!("modifier {name}"),
         }
+    }
+}
+
+impl<'ctx> Gen<'ctx, '_> {
+    /// `void adapter(ptr box, ptr value)`: calls the `fn(T)` closure held in
+    /// `box` with a copy of the `T` at `value`.
+    fn tag_adapter(&mut self, t: &Ty) -> PointerValue<'ctx> {
+        let name = format!("tsl_h_tagcall_{}", self.key(t));
+        if let Some(f) = self.helpers.get(&name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(&name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name, f);
+        let ft = Ty::func(vec![t.clone()], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let vp = f.get_nth_param(1).unwrap().into_pointer_value();
+            let data = g.box_data(bx);
+            let closure = g.load(&ft, data);
+            let v = g.load(t, vp);
+            g.retain(v, t);
+            g.call_fn_value(closure, &ft, &[v]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
     }
 }
 

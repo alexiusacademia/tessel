@@ -1,0 +1,50 @@
+Root
+  View
+    VStack
+      TextField "New tab name" = ""
+      Divider
+      TabView ["one.tsl", "two.tsl"] selected 0
+        TextField "Text" = "first"
+      HStack
+        Text "files"
+Root
+  View
+    VStack
+      TextField "New tab name" = ""
+      Divider
+      TabView ["one.tsl", "two.tsl"] selected 1
+        TextField "Text" = "second line"
+      HStack
+        Text "files"
+Root
+  View
+    VStack
+      TextField "New tab name" = ""
+      Divider
+      TabView ["one.tsl", "two.tsl", "three.tsl"] selected 2
+        TextField "Text" = ""
+      HStack
+        Text "files"
+Root
+  View
+    VStack
+      TextField "New tab name" = ""
+      Divider
+      TabView ["two.tsl"] selected 0
+        TextField "Text" = "second line"
+      HStack
+        Text "files"
+Root
+  View
+    VStack
+      TextField "New tab name" = ""
+      Divider
+      TabView ["two.tsl"] selected 0
+        TextField "Text" = "second line"
+      HStack
+        Text "files"
+        Text "mkdir true"
+        Text "write true"
+        Text "rename true"
+        Text "moved true"
+        Text "cleanup true"

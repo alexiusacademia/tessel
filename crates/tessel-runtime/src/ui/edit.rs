@@ -7,6 +7,26 @@ use parley::{Affinity, Cursor, Layout, Selection};
 
 use super::render::Paint;
 
+/// One undo step: the text and selection before a change.
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    pub text: String,
+    pub anchor: usize,
+    pub focus: usize,
+}
+
+/// Undo and redo for one text field or code editor.
+#[derive(Default, Debug)]
+pub struct History {
+    pub undo: Vec<Snapshot>,
+    pub redo: Vec<Snapshot>,
+    /// The text after the last change we made; if the program changes the
+    /// text some other way (e.g. opens another file), the history is dropped.
+    pub last_text: String,
+    /// Consecutive typing of word characters is undone in one step.
+    pub typing: bool,
+}
+
 /// The text field being edited and its selection.
 #[derive(Clone, Debug, Default)]
 pub struct Editing {

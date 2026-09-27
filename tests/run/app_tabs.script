@@ -1,0 +1,18 @@
+tree
+click "two.tsl"
+click "Text"
+type " line"
+type " more"
+key cmd+z
+tree
+key cmd+z
+key cmd+shift+z
+click "New tab name"
+type three.tsl
+key enter
+tree
+close "one.tsl"
+close "three.tsl"
+tree
+click "files"
+tree
