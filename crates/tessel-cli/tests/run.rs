@@ -32,7 +32,12 @@ fn run_programs() {
             .output()
             .unwrap();
         if !built.status.success() {
-            failures.push(format!("{name}: build failed:\n{}", String::from_utf8_lossy(&built.stderr)));
+            failures.push(format!(
+                "{name}: build failed ({}):\n{}{}",
+                built.status,
+                String::from_utf8_lossy(&built.stdout),
+                String::from_utf8_lossy(&built.stderr)
+            ));
             continue;
         }
         let mut cmd = Command::new(&exe);

@@ -155,13 +155,15 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
         report(&diags, &sources);
         return Err(ExitCode::FAILURE);
     }
-    let status = linker(&obj, &runtime, out)
+    let output = linker(&obj, &runtime, out)
         .map_err(fail)?
-        .status()
+        .output()
         .map_err(|e| fail(format!("can't run the system linker: {e}")))?;
     let _ = std::fs::remove_file(&obj);
-    if !status.success() {
-        return Err(fail("linking failed".into()));
+    if !output.status.success() {
+        // MSVC's link.exe reports errors on stdout.
+        let details = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return Err(fail(format!("linking failed ({}):\n{}", output.status, details.trim())));
     }
     Ok(())
 }
