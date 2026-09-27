@@ -30,6 +30,7 @@ commands:
 const IDE_SOURCES: &[(&str, &str)] = &[
     ("main.tsl", include_str!("../../../ide/main.tsl")),
     ("project.tsl", include_str!("../../../ide/project.tsl")),
+    ("widgets.tsl", include_str!("../../../ide/widgets.tsl")),
 ];
 
 fn main() -> ExitCode {
@@ -166,10 +167,20 @@ fn check(path: &Path, lines: bool) -> ExitCode {
     }
 }
 
+/// `todos/` or `todos.tsl` → `todos` in the current folder. If that's a
+/// folder (building `todos/` from its parent), `todos-app` instead.
 fn default_output(path: &Path) -> PathBuf {
+    // `tessel build .` is named after the folder, not `.`.
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let stem = if path.is_dir() { path.file_name() } else { path.file_stem() };
-    let mut name = stem.unwrap_or_else(|| "app".as_ref()).to_os_string();
+    let stem = stem.unwrap_or_else(|| "app".as_ref()).to_os_string();
+    let mut name = stem.clone();
     name.push(std::env::consts::EXE_SUFFIX);
+    if Path::new(&name).is_dir() {
+        name = stem;
+        name.push("-app");
+        name.push(std::env::consts::EXE_SUFFIX);
+    }
     PathBuf::from(name)
 }
 
@@ -179,6 +190,8 @@ const RUNTIME_LIB: &str = if cfg!(target_env = "msvc") { "tessel_runtime.lib" } 
 /// The runtime library, found next to the `tessel` executable.
 fn runtime_lib() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // `tessel` may be a symlink (e.g. in /usr/local/bin) to the real one.
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
     let lib = exe.with_file_name(RUNTIME_LIB);
     if lib.exists() {
         Ok(lib)
@@ -190,6 +203,12 @@ fn runtime_lib() -> Result<PathBuf, String> {
 /// Compiles and links a program. Returns the `app`'s name, if it has one.
 fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
     let (sources, _) = load(path)?;
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("tessel: can't create `{}`: {e}", parent.display());
+            return Err(ExitCode::FAILURE);
+        }
+    }
     build_sources(&sources, out)
 }
 
@@ -376,5 +395,32 @@ fn run(path: &Path, program_args: &[String]) -> ExitCode {
             eprintln!("tessel: can't start the program: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every file of the IDE is built into `tessel`, and together they check.
+    #[test]
+    fn ide_sources_are_complete() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ide");
+        let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tsl"))
+            .collect();
+        on_disk.sort();
+        let mut embedded: Vec<String> = IDE_SOURCES.iter().map(|(n, _)| n.to_string()).collect();
+        embedded.sort();
+        assert_eq!(embedded, on_disk, "add new ide/ files to IDE_SOURCES");
+
+        let mut sources = SourceMap::new();
+        for (name, text) in IDE_SOURCES {
+            sources.add(format!("ide/{name}"), *text);
+        }
+        let analysis = tessel_compiler::analyze(&sources, true);
+        assert!(analysis.diags.is_empty(), "the IDE doesn't check: {:?}", analysis.diags.list);
     }
 }

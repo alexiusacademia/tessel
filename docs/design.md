@@ -315,7 +315,7 @@ separate edges; the most specific value wins, and edges not named get 0:
 | `ZStack` | `ZStack(alignment: Alignment = .center, content: View)` |
 | `Spacer` | `Spacer()` — takes the remaining space in a stack |
 | `Scroll` | `Scroll(content: View)` |
-| `Image` | `Image(_ path: String)` — PNG, JPEG or SVG files |
+| `Image` | `Image(_ path: String)` — SVG files (PNG and JPEG show a placeholder for now) |
 | `Icon` | `Icon(_ name: IconName)` — a built-in icon, e.g. `Icon(.folder)` |
 | `Svg` | `Svg(_ source: String)` — SVG markup written inline |
 | `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int)` |
@@ -502,7 +502,7 @@ Still open, not blocking v1:
 | M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. ✅ |
 | M3 | First window | `examples/counter` runs on macOS: window, text, stacks, buttons, state. ✅ |
 | M4 | Real app | `examples/todos` runs on macOS: text fields, toggles, pickers, loops, bindings. ✅ |
-| M5 | Windows | Both examples run on Windows from the same source. |
+| M5 | Windows | Both examples run on Windows from the same source. ✅ (built and tested headlessly in CI; not yet tried on a Windows desktop) |
 
 ### 12.1 Roadmap after M5
 
@@ -541,5 +541,5 @@ Option for words, Cmd for line start and end), Home/End, Backspace/Delete
 (also by word or line), select all, copy, cut and paste. The field scrolls
 to keep the caret visible.
 
-Not yet: IME input (e.g. Chinese, Japanese); undo; keyboard focus with Tab;
+Not yet: IME input (e.g. Chinese, Japanese); keyboard focus with Tab;
 loading real images; accessibility; dark mode; animations.
