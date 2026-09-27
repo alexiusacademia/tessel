@@ -1893,6 +1893,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(phi.as_basic_value())
             }
             BinOp::Eq | BinOp::Ne => {
+                // `x == nil`: only whether there's a value matters.
+                let other = match (&l.kind, &r.kind) {
+                    (_, ExprKind::Nil) => Some(l),
+                    (ExprKind::Nil, _) => Some(r),
+                    _ => None,
+                };
+                if let Some(x) = other {
+                    let xt = self.ty(x);
+                    let v = self.expr(x).unwrap();
+                    let present = self.b.build_extract_value(v.into_struct_value(), 0, "").unwrap().into_int_value();
+                    self.release(v, &xt);
+                    let res = if op == BinOp::Eq { self.b.build_not(present, "").unwrap() } else { present };
+                    return Some(res.into());
+                }
                 let (lt, rt) = (self.ty(l), self.ty(r));
                 // Compare as the optional type if only one side is optional.
                 let common = if matches!(lt, Ty::Opt(_)) { lt.clone() } else { rt.clone() };

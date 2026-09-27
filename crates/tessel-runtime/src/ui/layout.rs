@@ -314,11 +314,17 @@ impl Layouter<'_> {
                 size
             }
             Kind::Scroll => {
+                // Several children are stacked downwards, like a VStack.
                 let mut content_h: f64 = 0.0;
                 let mut w: f64 = 0.0;
+                let mut first = true;
                 for c in &mut n.children {
                     let s = self.measure(c, Size { w: avail.w, h: f64::INFINITY }, style);
-                    content_h = content_h.max(s.h);
+                    if c.mods.hidden {
+                        continue;
+                    }
+                    content_h += s.h + if first { 0.0 } else { GROUP_SPACING };
+                    first = false;
                     w = w.max(s.w);
                 }
                 n.layout.content_h = content_h;
@@ -417,10 +423,16 @@ impl Layouter<'_> {
                 let max = (n.layout.content_h - content.h).max(0.0);
                 let offset = offset.clamp(0.0, max);
                 // Scrolling content starts at the top left (lists read that way).
+                let mut y = content.y - offset;
                 for c in &mut n.children {
+                    if c.mods.hidden {
+                        self.place(c, Rect { x: content.x, y, w: 0.0, h: 0.0 });
+                        continue;
+                    }
                     let w = if flex(c, Axis::X, Some(Axis::Y)) { content.w } else { c.layout.size.w.min(content.w) };
-                    let r = Rect { x: content.x, y: content.y - offset, w, h: c.layout.size.h };
+                    let r = Rect { x: content.x, y, w, h: c.layout.size.h };
                     self.place(c, r);
+                    y += c.layout.size.h + GROUP_SPACING;
                 }
             }
             Kind::Picker { .. } => {

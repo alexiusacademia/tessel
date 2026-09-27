@@ -1427,7 +1427,8 @@ impl Checker<'_> {
                     let (a, b) = (self.a(&lt), self.a(&rt));
                     self.error(l.span.to(r.span), format!("can't compare {a} with {b}"))
                         .help("both sides of `==` must have the same type");
-                } else if !equatable(&lt) {
+                } else if !equatable(&lt) && !is_nil(l) && !is_nil(r) {
+                    // (Anything optional can be compared with `nil`.)
                     let a = self.a(&lt);
                     self.error(l.span, format!("{a} values can't be compared with `{}`", op.symbol()));
                 }
@@ -1461,6 +1462,9 @@ impl Checker<'_> {
                 }
                 let (a, b) = (self.a(&lt), self.a(&rt));
                 let help = match (&lt, &rt) {
+                    (Ty::Opt(_), _) | (_, Ty::Opt(_)) => {
+                        "one side might be `nil`: give it a default with `??` (like `count ?? 0`), or unwrap it with `if let`"
+                    }
                     (Ty::Str, _) | (_, Ty::Str) => "to put a value into text, use \"{…}\", like \"Total: {total}\"",
                     (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => "convert one side with `Float(…)` or `Int(…)`",
                     _ => "arithmetic works on two numbers of the same type",
@@ -2130,7 +2134,7 @@ impl Checker<'_> {
                     }
                     None => {
                         self.expr(value, None);
-                        self.error(name.span, "`.tag(…)` only works on the options inside a `Picker`");
+                        self.error(name.span, "`.tag(…)` only works on the options inside a `Picker` or the pages of a `TabView`");
                     }
                 }
             } else {
@@ -2146,6 +2150,9 @@ impl Checker<'_> {
         match self.builtins.modifier(n) {
             Some(params) => {
                 self.args(&format!("`.{n}`"), &params, args, trailing, span);
+                if n == "shortcut" {
+                    self.shortcut_key(args);
+                }
                 Ty::View
             }
             None => {
@@ -2154,6 +2161,29 @@ impl Checker<'_> {
                 Ty::Error
             }
         }
+    }
+
+    /// `.shortcut("s")`: the key must be one the runtime can match (it
+    /// adds Cmd, or Ctrl on Windows, itself).
+    fn shortcut_key(&mut self, args: &[Arg]) {
+        let Some(arg) = args.first() else { return };
+        let ExprKind::Str(parts) = &arg.value.kind else { return };
+        let [StrPart::Text(key)] = parts.as_slice() else { return };
+        const NAMED: &[&str] =
+            &["enter", "escape", "tab", "backspace", "delete", "left", "right", "up", "down", "home", "end"];
+        let mut chars = key.chars();
+        let single = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_whitespace() && !c.is_uppercase());
+        if single || NAMED.contains(&key.as_str()) {
+            return;
+        }
+        let help = if let Some(rest) = key.strip_prefix("cmd+").or_else(|| key.strip_prefix("ctrl+")) {
+            format!("Cmd (Ctrl on Windows) is added for you: write `.shortcut(\"{rest}\")`")
+        } else if key.chars().count() == 1 {
+            format!("use the lowercase letter: `.shortcut(\"{}\")`", key.to_lowercase())
+        } else {
+            "use one character, like \"s\", or one of: enter, escape, tab, backspace, delete, left, right, up, down, home, end".to_string()
+        };
+        self.error(arg.value.span, format!("`{key}` isn't a key a shortcut can use")).help(help);
     }
 
     /// Matches arguments to parameters by label and checks each value.
@@ -2364,6 +2394,10 @@ fn equatable(t: &Ty) -> bool {
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,
     }
+}
+
+fn is_nil(e: &Expr) -> bool {
+    matches!(e.kind, ExprKind::Nil)
 }
 
 /// Expressions whose type comes from context.

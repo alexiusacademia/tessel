@@ -451,7 +451,13 @@ impl<'a> Parser<'a> {
             }
             Tok::For => {
                 self.bump();
-                let var = self.ident("a loop variable name")?;
+                // `for _ in 0..3`: a loop variable that isn't used.
+                let var = if self.at(&Tok::Underscore) {
+                    let span = self.bump().span;
+                    Ident { name: "_".into(), span }
+                } else {
+                    self.ident("a loop variable name")?
+                };
                 self.expect(Tok::In)?;
                 let iter = self.with_trailing(false, |p| p.expr())?;
                 let body = self.block()?;

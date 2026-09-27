@@ -41,3 +41,23 @@ struct Tree {
 fn keys() {
     let d: [[Int]: String] = [:] // error: can't be used as a dictionary key
 }
+
+fn optionalArithmetic() {
+    let a: Int? = 3
+    print(a + 1) // error: can't use `+` on `Int?` and `Int`
+    var f: fn()? = nil
+    print(f == nil)
+    for _ in 0..2 {
+        print("unused loop variable")
+    }
+}
+
+app Shortcuts {
+    VStack {
+        Button("A") {}.shortcut("s") {}
+        Button("B") {}.shortcut("enter") {}
+        Button("C") {}.shortcut("F5") {} // error: `F5` isn't a key a shortcut can use
+        Button("D") {}.shortcut("cmd+k") {} // error: `cmd+k` isn't a key a shortcut can use
+        Button("E") {}.shortcut("S") {} // error: `S` isn't a key a shortcut can use
+    }
+}
