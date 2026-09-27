@@ -1,8 +1,12 @@
 # Builds standalone Tessel packages and publishes them to Google Cloud Storage
 # (gs://tessel-releases) when a version tag like v0.1.0 is pushed.
 #
-# The packages contain `tessel` with LLVM linked in, and the runtime library.
-# They need no Rust, LLVM or Homebrew; building apps uses the system linker.
+# The packages contain `tessel` with LLVM and its linker built in, the runtime
+# library and sdk/. They need nothing else installed.
+#
+# The macOS job runs on a self-hosted runner (the maintainer's Mac: no Actions
+# minutes, and it signs there); the Windows job on GitHub's runners. A manual
+# run builds only macOS unless `windows` is ticked.
 name: Release
 
 on:
@@ -12,6 +16,10 @@ on:
     inputs:
       publish:
         description: "Upload to the bucket (otherwise only build and test)"
+        type: boolean
+        default: false
+      windows:
+        description: "Also build the Windows package"
         type: boolean
         default: false
 
@@ -26,14 +34,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: macos-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-          - name: windows-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
+        include: ${{ fromJSON((github.ref_type == 'tag' || inputs.windows) && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +49,9 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
+      # The self-hosted Mac already has Rust; don't change its toolchains.
       - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Windows'
         with:
           # On Windows, apps use the MinGW-w64 runtime (x86_64-pc-windows-gnullvm)
           # so the package can include everything linking them needs.
@@ -55,27 +59,26 @@ jobs:
 
       # ---- macOS: LLVM's official static build, linked with its own lld ----
 
-      - name: Cache LLVM (macOS)
-        if: runner.os == 'macOS'
-        id: llvm-cache-mac
-        uses: actions/cache@v4
-        with:
-          path: ~/llvm
-          key: llvm-${{ env.LLVM_VERSION }}-macos-arm64-static-v2
-
+      # On the self-hosted Mac, downloads stay in the runner's tool folder
+      # between runs (not in the home folder).
       - name: Install LLVM (macOS)
-        if: runner.os == 'macOS' && steps.llvm-cache-mac.outputs.cache-hit != 'true'
+        if: runner.os == 'macOS'
         run: |
+          if [[ -x "$RUNNER_TOOL_CACHE/llvm/$LLVM_VERSION/bin/llvm-config" ]]; then
+            echo "LLVM $LLVM_VERSION already installed"
+            exit 0
+          fi
           name="LLVM-$LLVM_VERSION-macOS-ARM64"
           curl -sSfL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz"
-          mkdir -p ~/llvm
+          mkdir -p "$RUNNER_TOOL_CACHE/llvm"
           # Only what building Tessel needs (the full release is 7 GB).
-          tar -xf llvm.tar.xz -C ~/llvm \
+          tar -xf llvm.tar.xz -C "$RUNNER_TOOL_CACHE/llvm" \
             "$name/bin/llvm-config" "$name/bin/clang" "$name/bin/clang-*" "$name/bin/lld" "$name/bin/ld64.lld" \
             "$name/lib/clang" "$name/include/llvm" "$name/include/llvm-c" "$name/include/lld" \
             "$name/lib/libLLVM*.a" "$name/lib/libPolly*.a" "$name/lib/liblld*.a"
           rm llvm.tar.xz
-          mv ~/llvm/"$name" ~/llvm/current
+          rm -rf "$RUNNER_TOOL_CACHE/llvm/$LLVM_VERSION"
+          mv "$RUNNER_TOOL_CACHE/llvm/$name" "$RUNNER_TOOL_CACHE/llvm/$LLVM_VERSION"
 
       - name: Configure the build (macOS)
         if: runner.os == 'macOS'
@@ -84,16 +87,20 @@ jobs:
           # runner's macOS) and link it statically: a folder with only the
           # static library comes first, and so does the SDK's libc++ (not
           # LLVM's), so `tessel` depends on nothing outside macOS.
-          curl -sSfL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz | tar -xz
-          MACOSX_DEPLOYMENT_TARGET=11.0 make -C zstd-1.5.7/lib libzstd.a -j4 > /dev/null
-          mkdir -p ~/staticlibs
-          cp zstd-1.5.7/lib/libzstd.a ~/staticlibs/
+          libs="$RUNNER_TOOL_CACHE/tessel-staticlibs"
+          if [[ ! -f "$libs/libzstd.a" ]]; then
+            curl -sSfL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz | tar -xz
+            MACOSX_DEPLOYMENT_TARGET=11.0 make -C zstd-1.5.7/lib libzstd.a -j4 > /dev/null
+            mkdir -p "$libs"
+            cp zstd-1.5.7/lib/libzstd.a "$libs/"
+          fi
+          llvm="$RUNNER_TOOL_CACHE/llvm/$LLVM_VERSION"
           sdk="$(xcrun --show-sdk-path)"
           {
-            echo "LLVM_SYS_221_PREFIX=$HOME/llvm/current"
+            echo "LLVM_SYS_221_PREFIX=$llvm"
             # LLVM's libraries are LLVM 22 bitcode, which only its own lld can link.
-            echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$HOME/llvm/current/bin/clang"
-            echo "RUSTFLAGS=-L native=$HOME/staticlibs -L native=$sdk/usr/lib -C link-arg=-fuse-ld=lld -C link-arg=-isysroot -C link-arg=$sdk"
+            echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$llvm/bin/clang"
+            echo "RUSTFLAGS=-L native=$libs -L native=$sdk/usr/lib -C link-arg=-fuse-ld=lld -C link-arg=-isysroot -C link-arg=$sdk"
           } >> "$GITHUB_ENV"
 
       # ---- Windows: LLVM's official build is already static ----
@@ -215,7 +222,10 @@ jobs:
           echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # Remember the keychain search list, to restore it afterwards (on a
+          # self-hosted Mac it's the maintainer's own).
+          security list-keychains -d user | tr -d '"' | xargs > "$RUNNER_TEMP/keychains.txt"
+          security list-keychains -d user -s "$keychain" $(cat "$RUNNER_TEMP/keychains.txt")
           rm "$RUNNER_TEMP/cert.p12"
 
           codesign --force --timestamp --options runtime --sign "Developer ID Application" dist/pkg/tessel
@@ -237,7 +247,16 @@ jobs:
             | tee "$RUNNER_TEMP/notary.txt"
           rm -f "$RUNNER_TEMP/key.p8"
           grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"
-          security delete-keychain "$keychain"
+
+      - name: Remove the signing keychain (macOS)
+        if: always() && runner.os == 'macOS'
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          if [[ -f "$RUNNER_TEMP/keychains.txt" ]]; then
+            security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains.txt")
+          fi
+          [[ -f "$keychain" ]] && security delete-keychain "$keychain" || true
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/key.p8"
 
       - name: Check the package is standalone (macOS)
         if: runner.os == 'macOS'

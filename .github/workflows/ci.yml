@@ -1,9 +1,11 @@
 name: CI
 
+# Tests run locally before each push; this runs them on macOS and Windows
+# when started by hand (Actions tab), and once a week as a safety net.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
 
 env:
   CARGO_TERM_COLOR: always
