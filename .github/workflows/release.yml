@@ -181,9 +181,11 @@ jobs:
 
       # Signs tessel with the Developer ID certificate and has Apple notarize
       # it, so macOS runs it even when it's downloaded with a browser. Needs
-      # the secrets MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
-      # NOTARY_KEY_P8 (base64 App Store Connect API key), NOTARY_KEY_ID and,
-      # for a team key only, NOTARY_ISSUER_ID. Releases (tags) require them.
+      # the secrets MACOS_CERT_P12 (base64 .p12) and MACOS_CERT_PASSWORD, and
+      # for notarizing either NOTARY_APPLE_ID + NOTARY_PASSWORD (an
+      # app-specific password) or an App Store Connect API key: NOTARY_KEY_P8
+      # (base64), NOTARY_KEY_ID and, for a team key, NOTARY_ISSUER_ID.
+      # Releases (tags) require them.
       - name: Sign and notarize (macOS)
         if: runner.os == 'macOS'
         env:
@@ -192,8 +194,11 @@ jobs:
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: MGUT6927DK
         run: |
-          if [[ -z "$MACOS_CERT_P12" || -z "$NOTARY_KEY_P8" ]]; then
+          if [[ -z "$MACOS_CERT_P12" || ( -z "$NOTARY_APPLE_ID" && -z "$NOTARY_KEY_P8" ) ]]; then
             if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
               echo "::error::signing secrets are missing; a release must be signed"
               exit 1
@@ -217,18 +222,20 @@ jobs:
           codesign --verify --strict --verbose=2 dist/pkg/tessel
 
           # Notarize (a bare executable can't be stapled; macOS checks online).
-          # Pasted IDs may carry stray whitespace.
-          NOTARY_KEY_ID="$(printf '%s' "$NOTARY_KEY_ID" | tr -d '[:space:]')"
-          NOTARY_ISSUER_ID="$(printf '%s' "$NOTARY_ISSUER_ID" | tr -d '[:space:]')"
-          echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+          # Pasted values may carry stray whitespace.
+          trim() { printf '%s' "$1" | tr -d '[:space:]'; }
+          if [[ -n "$NOTARY_APPLE_ID" ]]; then
+            auth=(--apple-id "$(trim "$NOTARY_APPLE_ID")" --password "$(trim "$NOTARY_PASSWORD")" --team-id "$NOTARY_TEAM_ID")
+          else
+            echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+            auth=(--key "$RUNNER_TEMP/key.p8" --key-id "$(trim "$NOTARY_KEY_ID")")
+            # A team API key has an issuer ID; an individual key doesn't.
+            [[ -n "$NOTARY_ISSUER_ID" ]] && auth+=(--issuer "$(trim "$NOTARY_ISSUER_ID")")
+          fi
           ditto -c -k --keepParent dist/pkg/tessel "$RUNNER_TEMP/tessel.zip"
-          # A team API key has an issuer ID; an individual key doesn't.
-          issuer=()
-          [[ -n "$NOTARY_ISSUER_ID" ]] && issuer=(--issuer "$NOTARY_ISSUER_ID")
-          xcrun notarytool submit "$RUNNER_TEMP/tessel.zip" --wait --timeout 30m \
-            --key "$RUNNER_TEMP/key.p8" --key-id "$NOTARY_KEY_ID" "${issuer[@]}" \
+          xcrun notarytool submit "$RUNNER_TEMP/tessel.zip" --wait --timeout 30m "${auth[@]}" \
             | tee "$RUNNER_TEMP/notary.txt"
-          rm "$RUNNER_TEMP/key.p8"
+          rm -f "$RUNNER_TEMP/key.p8"
           grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"
           security delete-keychain "$keychain"
 
