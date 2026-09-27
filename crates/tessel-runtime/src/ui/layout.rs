@@ -78,11 +78,13 @@ pub struct Style {
     pub weight: f32,
     pub color: Rgba,
     pub disabled: bool,
+    /// How lines of text line up: 0 leading, 1 center, 2 trailing.
+    pub text_align: u8,
 }
 
 impl Default for Style {
     fn default() -> Style {
-        Style { size: 14.0, weight: 400.0, color: COLORS[0], disabled: false }
+        Style { size: 14.0, weight: 400.0, color: COLORS[0], disabled: false, text_align: 0 }
     }
 }
 
@@ -115,11 +117,28 @@ impl Layouter<'_> {
             weight: n.mods.weight.unwrap_or(parent.weight),
             color: n.mods.color.unwrap_or(parent.color),
             disabled: parent.disabled || n.mods.disabled,
+            text_align: n.mods.text_align.unwrap_or(parent.text_align),
         }
     }
 
     fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> parley::Layout<Paint> {
         self.text.layout(s, style.size, style.weight, style.color, max_w)
+    }
+
+    /// A `Text`'s layout: like `text_layout`, with its lines aligned.
+    fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> parley::Layout<Paint> {
+        let mut t = self.text_layout(s, style, max_w);
+        let align = match style.text_align {
+            1 => parley::Alignment::Center,
+            2 => parley::Alignment::End,
+            _ => return t,
+        };
+        // Parley aligns within the width lines were broken at; use the widest
+        // line's, so the lines line up inside the text's own box.
+        let w = t.width();
+        t.break_all_lines(Some(w + 0.5));
+        t.align(align, parley::AlignmentOptions::default());
+        t
     }
 
     fn measure(&mut self, n: &mut Node, avail: Size, parent: &Style) -> Size {
@@ -157,7 +176,7 @@ impl Layouter<'_> {
         match &n.kind {
             Kind::Text(s) => {
                 let s = s.clone();
-                let t = self.text_layout(&s, style, finite(avail.w));
+                let t = self.text_block(&s, style, finite(avail.w));
                 let size = Size { w: t.width() as f64, h: t.height() as f64 };
                 n.layout.text = Some(t);
                 size
@@ -451,7 +470,7 @@ impl Layouter<'_> {
                     let style = c.layout.style;
                     let s = s.clone();
                     let pad = c.mods.padding.unwrap_or(0.0);
-                    let t = self.text_layout(&s, &style, Some((r.w - 2.0 * pad).max(0.0)));
+                    let t = self.text_block(&s, &style, Some((r.w - 2.0 * pad).max(0.0)));
                     c.layout.natural = Size { w: t.width() as f64, h: t.height() as f64 };
                     c.layout.text = Some(t);
                 }

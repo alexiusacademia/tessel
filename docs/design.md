@@ -334,7 +334,7 @@ HStack(spacing: 4) {
 In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
 Common modifiers: `padding`, `frame(width:height:maxWidth:maxHeight:alignment:)`, `font`, `color`,
-`background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
+`textAlignment`, `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
 
 ### 8.6 Alignment
 
@@ -356,6 +356,15 @@ Common modifiers: `padding`, `frame(width:height:maxWidth:maxHeight:alignment:)`
 ```tessel
 Text("Subheading").frame(maxWidth: .infinity, alignment: .trailing)
 Button("Continue") { next() }.frame(maxWidth: .infinity)
+```
+
+- `.textAlignment(.leading | .center | .trailing)` lines up the lines of
+  multi-line text within the text's box. Like `.font`, it applies to every
+  text inside a stack it's set on. (Where the box itself goes is up to the
+  stack's `alignment:` or the frame's.)
+
+```tessel
+Text("Welcome to Tessel.\nLet's build something.").textAlignment(.center)
 ```
 
 - `ZStack(alignment:)` places each layer, e.g. a badge in a corner:

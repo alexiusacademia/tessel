@@ -185,6 +185,8 @@ pub struct Mods {
     /// `.frame(maxWidth:maxHeight:)`: grow to the space offered, up to this (may be infinite).
     pub max_width: Option<f64>,
     pub max_height: Option<f64>,
+    /// `.textAlignment(…)`: how lines of text line up (0 leading, 1 center, 2 trailing); inherited.
+    pub text_align: Option<u8>,
     /// `.frame(alignment:)`: where the content sits in the frame (an `Alignment` tag).
     pub frame_align: Option<u8>,
     pub font_size: Option<f64>,
@@ -508,6 +510,13 @@ pub unsafe extern "C" fn tsl_ui_begin_tabs(f: *const c_void, env: *mut Header, c
     let selection = Callback::new(f, env);
     let close = (!close_f.is_null()).then(|| Callback::new(close_f, close_env));
     with_builder(|b| b.begin(Kind::TabView { selection, close }, 0));
+}
+
+/// `.textAlignment(…)`: only the horizontal part of the `Alignment` counts.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_text_alignment(align: i32) {
+    let (h, _) = align_2d(align.clamp(0, 8) as u8);
+    modify(|m| m.text_align = Some(h));
 }
 
 #[unsafe(no_mangle)]

@@ -1,0 +1,10 @@
+Root
+  View
+    VStack
+      Text "Leading (the default)\nshort line"
+      Text "Centered lines\nshort"
+      Text "Trailing lines\nshort"
+      Text "A long paragraph that wraps onto several lines, centered inside the whole width of the window."
+      VStack
+        Text "Inherited\nfrom the stack"
+        Text "both lines\nright"

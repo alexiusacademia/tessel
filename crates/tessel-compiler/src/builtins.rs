@@ -114,6 +114,7 @@ impl Builtins {
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "tabItem" => vec![P::unlabeled("title", Ty::Str)],
             "autofocus" => vec![],
+            "textAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
             "hoverBackground" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
             _ => return None,
         })
@@ -244,6 +245,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
+            "textAlignment",
         ],
         _ => &[],
     }

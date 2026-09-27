@@ -1,0 +1,21 @@
+// .textAlignment: how the lines of multi-line text line up.
+app TextAlign(width: 420, height: 460) {
+    VStack(spacing: 12) {
+        Text("Leading (the default)\nshort line").background(.lightGray)
+        Text("Centered lines\nshort").textAlignment(.center).background(.lightGray)
+        Text("Trailing lines\nshort").textAlignment(.trailing).background(.lightGray)
+        Text("A long paragraph that wraps onto several lines, centered inside the whole width of the window.")
+            .textAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .background(.yellow)
+        // Inherited, like .font
+        VStack(spacing: 6) {
+            Text("Inherited\nfrom the stack")
+            Text("both lines\nright")
+        }
+        .textAlignment(.trailing)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .background(.lightGray)
+    }
+    .padding(20)
+}

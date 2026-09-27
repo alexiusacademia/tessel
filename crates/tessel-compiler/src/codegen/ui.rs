@@ -659,6 +659,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let f = if name == "onAppear" { "tsl_ui_on_appear" } else { "tsl_ui_on_submit" };
                 self.pass_closure(f, &[], action);
             }
+            "textAlignment" => {
+                let a = int(self, a(0).unwrap());
+                self.call_rt("tsl_ui_text_alignment", &[a]);
+            }
             "autofocus" => {
                 self.call_rt("tsl_ui_autofocus", &[]);
             }
