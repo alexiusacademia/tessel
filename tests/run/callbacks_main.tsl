@@ -1,0 +1,17 @@
+// Programs with only `fn main` still run `after`, `fetch` and `runCommand`
+// blocks: the program ends when nothing is left to wait for.
+
+fn main() {
+    print("main starts")
+    fetch(url: "file://tests/run/fetch_data.txt") { text in
+        print("fetched {(text ?? "").count > 0}")
+        let tessel = environment("TESSEL_EXE") ?? "tessel"
+        runCommand(path: tessel, args: ["check", "tests/fixtures/typo.tsl"], onOutput: { line in }) { code in
+            print("command exited with {code}")
+            after(seconds: 0.05) {
+                print("timer fired")
+            }
+        }
+    }
+    print("main returns")
+}

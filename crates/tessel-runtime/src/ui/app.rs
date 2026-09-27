@@ -16,6 +16,7 @@
 //!                       `key alt+backspace`, `key cmd+a` (cmd means Ctrl on
 //!                       Windows). Keys: backspace delete left right up down
 //!                       home end enter tab escape, and letters for shortcuts
+//! hover "Add"           move the pointer over a labelled view (or `hover 40 60`)
 //! scroll 0 120          scroll the view under the pointer by (dx, dy) points
 //! wait 1.5              let 1.5 seconds pass (fires timers)
 //! repeat 20 key down    run a command several times
@@ -261,6 +262,21 @@ fn deliver_background() -> bool {
         }
     }
     ran
+}
+
+/// For programs without an `app` (only `fn main`): after `main` returns,
+/// runs `after` timers and the blocks of `fetch` and `runCommand` until none
+/// are left, as an app's event loop would.
+pub fn run_until_idle() {
+    loop {
+        let ran = fire_timers() | deliver_background();
+        if !ran && next_timer().is_none() && !background_busy() {
+            return;
+        }
+        // Sleep until the next timer, but check for background results often.
+        let wait = next_timer().map_or(0.005, |t| (t - now()).clamp(0.0, 0.005));
+        std::thread::sleep(Duration::from_secs_f64(wait));
+    }
 }
 
 /// Is background work still going (loads or commands)?
@@ -559,6 +575,31 @@ impl App {
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
             }
+        }
+        visit(self.tree.as_ref()?, x, y)
+    }
+
+    /// Moves the pointer to a point (as the window does on mouse moves).
+    pub fn hover(&mut self, x: f64, y: f64) {
+        self.ui.pointer = Some((x, y));
+        self.ui.hovered = self.hit(x, y).map(|h| h.key());
+        self.ui.hover_background = self.hover_background_at(x, y);
+    }
+
+    /// The innermost visible view with `.hoverBackground` containing the point.
+    pub fn hover_background_at(&self, x: f64, y: f64) -> Option<u64> {
+        fn visit(n: &Node, x: f64, y: f64) -> Option<u64> {
+            if n.mods.hidden {
+                return None;
+            }
+            let children: Vec<&Node> = match n.kind {
+                Kind::TabView { .. } => n.children.get(n.selected_tab()).into_iter().collect(),
+                _ => n.children.iter().collect(),
+            };
+            if let Some(k) = children.iter().rev().find_map(|c| visit(c, x, y)) {
+                return Some(k);
+            }
+            (n.mods.hover_background.is_some() && n.layout.rect.contains(x, y)).then_some(n.key)
         }
         visit(self.tree.as_ref()?, x, y)
     }
@@ -1004,6 +1045,22 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
             }
+            "hover" => {
+                app.update();
+                let point = if rest.starts_with('"') {
+                    app.find_label(rest.trim_matches('"'))
+                } else {
+                    let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                    (n.len() == 2).then(|| (n[0], n[1]))
+                };
+                match point {
+                    Some((x, y)) => app.hover(x, y),
+                    None => {
+                        eprintln!("script: nothing to hover over for `{rest}`");
+                        return 2;
+                    }
+                }
+            }
             "close" => match app.find_tab_close(rest.trim_matches('"')) {
                 Some((x, y)) => app.click(x, y),
                 None => {
@@ -1228,14 +1285,17 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                 }
                 let hovered = self.app.hit(self.cursor.0, self.cursor.1).map(|h| h.key());
+                let hover_bg = self.app.hover_background_at(self.cursor.0, self.cursor.1);
                 self.app.ui.pointer = Some(self.cursor);
-                if hovered != self.app.ui.hovered || hovered.is_some() {
+                if hovered != self.app.ui.hovered || hovered.is_some() || hover_bg != self.app.ui.hover_background {
                     self.app.ui.hovered = hovered;
+                    self.app.ui.hover_background = hover_bg;
                     self.request_redraw();
                 }
             }
             WindowEvent::CursorLeft { .. } => {
                 self.app.ui.hovered = None;
+                self.app.ui.hover_background = None;
                 self.app.ui.pointer = None;
                 self.request_redraw();
             }

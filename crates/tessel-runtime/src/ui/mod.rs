@@ -20,7 +20,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::{tsl_release, tsl_retain, Header, Str, TslType};
 
-pub use app::tsl_ui_run;
+pub use app::{run_until_idle, tsl_ui_run};
 
 // ===== callbacks =====
 

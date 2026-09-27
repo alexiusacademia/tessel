@@ -70,7 +70,10 @@ impl TextEngine {
 /// What the user is doing right now, which changes how views are drawn.
 #[derive(Default)]
 pub struct Interaction {
+    /// The control (button, field, tappable view, …) under the pointer.
     pub hovered: Option<u64>,
+    /// The innermost view with `.hoverBackground` under the pointer.
+    pub hover_background: Option<u64>,
     pub pressed: Option<u64>,
     /// The text field being edited.
     pub editing: Option<super::edit::Editing>,
@@ -184,7 +187,7 @@ impl Painter<'_> {
         if let Some((c, radius)) = n.mods.background {
             self.fill(r, radius, c);
         }
-        if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hovered == Some(n.key)) {
+        if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hover_background == Some(n.key)) {
             self.fill(r, radius, c);
         }
         let content = r.inset_by(n.mods.padding);

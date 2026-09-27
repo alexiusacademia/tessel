@@ -946,6 +946,9 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     unsafe { tsl_main() };
+    // Apps never get here (their event loop ends the process); a program
+    // with only `fn main` still runs its timers and background callbacks.
+    ui::run_until_idle();
     let _ = std::io::stdout().flush();
     0
 }
