@@ -1309,7 +1309,12 @@ impl Checker<'_> {
                 self.enum_case(id, n, span, called);
                 Ty::Enum(id)
             }
+            Some(Ty::Float) if n == "infinity" => Ty::Float,
             Some(t) if t.has_error() => Ty::Error,
+            Some(Ty::Float) => {
+                self.error(span, format!("`Float` has no `.{n}`")).help("the only `Float` shorthand is `.infinity`");
+                Ty::Error
+            }
             Some(t) if *t != Ty::Any && *t != Ty::Void => {
                 let what = self.a(t);
                 self.error(span, format!("`.{n}` is an enum case, but {what} is expected here"));

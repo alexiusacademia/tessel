@@ -1,0 +1,12 @@
+Root
+  View
+    VStack
+      Text "Hello, World!"
+      Text "Subheading"
+      Text "leading"
+      Button "Wide button"
+      Text "at most 200"
+      HStack
+        Text "name"
+        Text "fixed"
+      Text "fills the rest"

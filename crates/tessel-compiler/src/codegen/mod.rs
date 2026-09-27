@@ -652,7 +652,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_color" => (vec![i32t], None),
             "tsl_ui_background" => (vec![i32t, f64t], None),
             "tsl_ui_border" => (vec![i32t, f64t, f64t], None),
-            "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t, i8t, i32t], None),
+            "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, i32t], None),
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, p, p], None),
@@ -1624,6 +1624,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ExprKind::Nil => Some(self.none(&t)),
             ExprKind::Str(parts) => Some(self.interpolate(parts)),
             ExprKind::Name(n) => self.name(n, &t, e.span),
+            ExprKind::DotName(_) if t == Ty::Float => Some(self.ctx.f64_type().const_float(f64::INFINITY).into()),
             ExprKind::DotName(n) => {
                 let Ty::Enum(id) = t else { unreachable!() };
                 Some(self.enum_value(id, n))

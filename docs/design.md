@@ -333,7 +333,7 @@ HStack(spacing: 4) {
 
 In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
-Common modifiers: `padding`, `frame(width:height:alignment:)`, `font`, `color`,
+Common modifiers: `padding`, `frame(width:height:maxWidth:maxHeight:alignment:)`, `font`, `color`,
 `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
 
 ### 8.6 Alignment
@@ -349,6 +349,15 @@ Common modifiers: `padding`, `frame(width:height:alignment:)`, `font`, `color`,
 - `.frame(width:height:alignment:)` places the view's content inside a
   larger frame. Text and SVGs are centered unless told otherwise; a stack
   with a frame spreads over the whole frame unless an alignment is given.
+- `.frame(maxWidth: .infinity)` makes a view take all the width it's
+  offered (a finite value caps it), so it can line up with the edges of its
+  container. `.infinity` is the one shorthand for a `Float`:
+
+```tessel
+Text("Subheading").frame(maxWidth: .infinity, alignment: .trailing)
+Button("Continue") { next() }.frame(maxWidth: .infinity)
+```
+
 - `ZStack(alignment:)` places each layer, e.g. a badge in a corner:
 
 ```tessel

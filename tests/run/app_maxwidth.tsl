@@ -1,0 +1,18 @@
+// .frame(maxWidth:maxHeight:): views that grow to the space offered.
+app MaxWidth(width: 400, height: 360) {
+    VStack(spacing: 8) {
+        Text("Hello, World!").font(size: 24, weight: .bold)
+        Text("Subheading").frame(maxWidth: .infinity, alignment: .trailing).background(.lightGray)
+        Text("leading").frame(maxWidth: .infinity, alignment: .leading).background(.lightGray)
+        Button("Wide button") {}.frame(maxWidth: .infinity)
+        Text("at most 200").frame(maxWidth: 200).background(.yellow)
+        HStack {
+            Text("name").frame(maxWidth: .infinity, alignment: .leading).background(.lightGray)
+            Text("fixed")
+        }
+        Text("fills the rest")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .background(.lightGray)
+    }
+    .padding(20)
+}

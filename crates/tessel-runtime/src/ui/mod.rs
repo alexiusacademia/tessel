@@ -182,6 +182,9 @@ pub struct Mods {
     pub padding: Option<f64>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    /// `.frame(maxWidth:maxHeight:)`: grow to the space offered, up to this (may be infinite).
+    pub max_width: Option<f64>,
+    pub max_height: Option<f64>,
     /// `.frame(alignment:)`: where the content sits in the frame (an `Alignment` tag).
     pub frame_align: Option<u8>,
     pub font_size: Option<f64>,
@@ -613,8 +616,26 @@ pub extern "C" fn tsl_ui_border(color: i32, width: f64, radius: f64) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_frame(has_width: u8, width: f64, has_height: u8, height: f64, has_align: u8, align: i32) {
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn tsl_ui_frame(
+    has_width: u8,
+    width: f64,
+    has_height: u8,
+    height: f64,
+    has_max_width: u8,
+    max_width: f64,
+    has_max_height: u8,
+    max_height: f64,
+    has_align: u8,
+    align: i32,
+) {
     modify(|m| {
+        if has_max_width != 0 {
+            m.max_width = Some(max_width.max(0.0));
+        }
+        if has_max_height != 0 {
+            m.max_height = Some(max_height.max(0.0));
+        }
         if has_align != 0 {
             m.frame_align = Some(align.clamp(0, 8) as u8);
         }

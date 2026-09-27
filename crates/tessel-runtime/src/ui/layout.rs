@@ -130,15 +130,24 @@ impl Layouter<'_> {
             return n.layout.size;
         }
         let pad = n.mods.padding.unwrap_or(0.0);
-        let inner_avail = Size {
-            w: (n.mods.width.unwrap_or(avail.w) - 2.0 * pad).max(0.0),
-            h: (n.mods.height.unwrap_or(avail.h) - 2.0 * pad).max(0.0),
+        let offered = Size {
+            w: n.mods.width.unwrap_or(avail.w.min(n.mods.max_width.unwrap_or(f64::INFINITY))),
+            h: n.mods.height.unwrap_or(avail.h.min(n.mods.max_height.unwrap_or(f64::INFINITY))),
         };
+        let inner_avail = Size { w: (offered.w - 2.0 * pad).max(0.0), h: (offered.h - 2.0 * pad).max(0.0) };
         let inner = self.measure_inner(n, inner_avail, &style);
         n.layout.natural = inner;
+        // With a max size, take all the space offered (up to the max), but
+        // never less than the content.
+        let grow = |fixed: Option<f64>, max: Option<f64>, offered: f64, content: f64| match (fixed, max) {
+            (Some(v), _) => v,
+            (None, Some(_)) if offered.is_finite() => offered.max(content),
+            (None, Some(m)) => content.min(m),
+            (None, None) => content,
+        };
         n.layout.size = Size {
-            w: n.mods.width.unwrap_or(inner.w + 2.0 * pad),
-            h: n.mods.height.unwrap_or(inner.h + 2.0 * pad),
+            w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + 2.0 * pad),
+            h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + 2.0 * pad),
         };
         n.layout.size
     }
@@ -317,7 +326,12 @@ impl Layouter<'_> {
         }
     }
 
-    fn place(&mut self, n: &mut Node, rect: Rect) {
+    fn place(&mut self, n: &mut Node, mut rect: Rect) {
+        // A stack may offer a flexible view more than its max size.
+        let (max_w, max_h) = (n.mods.max_width.unwrap_or(f64::INFINITY), n.mods.max_height.unwrap_or(f64::INFINITY));
+        if rect.w > max_w || rect.h > max_h {
+            rect = aligned(rect, Size { w: rect.w.min(max_w), h: rect.h.min(max_h) }, 1);
+        }
         n.layout.rect = rect;
         if n.mods.hidden {
             return;
@@ -459,6 +473,13 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     };
     if fixed {
         return false;
+    }
+    let grows = match axis {
+        Axis::X => n.mods.max_width.is_some(),
+        Axis::Y => n.mods.max_height.is_some(),
+    };
+    if grows {
+        return true;
     }
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
