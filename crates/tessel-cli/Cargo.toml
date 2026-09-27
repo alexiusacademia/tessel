@@ -8,6 +8,14 @@ license.workspace = true
 name = "tessel"
 path = "src/main.rs"
 
+[features]
+# Build LLVM's linker (lld) into `tessel` (release packages), so building apps
+# doesn't need Apple's Command Line Tools or Visual Studio's linker.
+bundled-linker = []
+
+[build-dependencies]
+cc = "1.5.1"
+
 [dependencies]
 cc = "1.5.1"
 lsp-server = "0.10"

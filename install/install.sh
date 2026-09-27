@@ -39,13 +39,6 @@ case ":$PATH:" in
     ;;
 esac
 
-# Building apps uses the system linker from Apple's Command Line Tools.
-if ! xcode-select -p >/dev/null 2>&1; then
-  echo
-  echo "Note: building apps needs Apple's Command Line Tools. Install them with:"
-  echo "  xcode-select --install"
-fi
-
 echo
 "$DIR/bin/tessel" --version
 echo "Done. Try: tessel run hello.tsl, or just 'tessel' in a folder to open the IDE."

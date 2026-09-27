@@ -232,17 +232,116 @@ fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, Exit
         tessel_compiler::ast::Item::App(a) => Some(a.name.name.clone()),
         _ => None,
     });
-    let output = linker(&obj, &runtime, out, app_name.is_some())
-        .map_err(fail)?
-        .output()
-        .map_err(|e| fail(format!("can't run the system linker: {e}")))?;
+    let linked = link(&obj, &runtime, out, app_name.is_some());
     let _ = std::fs::remove_file(&obj);
+    linked.map_err(fail)?;
+    Ok(app_name)
+}
+
+/// Links a compiled program with the runtime: with the built-in linker when
+/// this `tessel` has one, otherwise with the system's.
+fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<(), String> {
+    if let Some(sdk) = bundled_sdk() {
+        return bundled::link(obj, runtime, out, &sdk);
+    }
+    let output = linker(obj, runtime, out, gui)?.output().map_err(|e| format!("can't run the system linker: {e}"))?;
     if !output.status.success() {
         // MSVC's link.exe reports errors on stdout.
         let details = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        return Err(fail(format!("linking failed ({}):\n{}", output.status, details.trim())));
+        return Err(format!("linking failed ({}):\n{}", output.status, details.trim()));
     }
-    Ok(app_name)
+    Ok(())
+}
+
+/// The system library stubs the built-in linker links against (`sdk/`, next
+/// to `tessel` in release packages). `None` if this `tessel` has no built-in
+/// linker, the stubs are missing, or TESSEL_LINKER=system asks for the system's.
+fn bundled_sdk() -> Option<PathBuf> {
+    if !cfg!(feature = "bundled-linker") || std::env::var_os("TESSEL_LINKER").is_some_and(|v| v == "system") {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let sdk = exe.with_file_name("sdk");
+    sdk.is_dir().then_some(sdk)
+}
+
+#[cfg(not(feature = "bundled-linker"))]
+mod bundled {
+    use std::path::Path;
+
+    pub fn link(_: &Path, _: &Path, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!("bundled_sdk() is None without the bundled-linker feature")
+    }
+}
+
+/// LLVM's linker, lld, built into `tessel` (see build.rs and lld.cpp).
+#[cfg(feature = "bundled-linker")]
+mod bundled {
+    use std::ffi::{CStr, CString, c_char, c_int};
+    use std::path::Path;
+
+    unsafe extern "C" {
+        fn tessel_lld_link(args: *const *const c_char, count: c_int, output: *mut *mut c_char) -> c_int;
+        fn tessel_lld_free(output: *mut c_char);
+    }
+
+    pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path) -> Result<(), String> {
+        let args = args(obj, runtime, out, sdk)?;
+        let args: Vec<CString> = args.into_iter().map(|a| CString::new(a).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
+        let ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
+        let mut output: *mut c_char = std::ptr::null_mut();
+        let code = unsafe { tessel_lld_link(ptrs.as_ptr(), ptrs.len() as c_int, &mut output) };
+        let messages = if output.is_null() {
+            String::new()
+        } else {
+            let text = unsafe { CStr::from_ptr(output) }.to_string_lossy().into_owned();
+            unsafe { tessel_lld_free(output) };
+            text
+        };
+        if code != 0 {
+            return Err(format!("linking failed:\n{}", messages.trim()));
+        }
+        Ok(())
+    }
+
+    /// ld64.lld arguments: the program, the runtime, and every system
+    /// library in the stub SDK (their stubs list only what Tessel apps use).
+    #[cfg(target_os = "macos")]
+    fn args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path) -> Result<Vec<String>, String> {
+        let path = |p: &Path| p.to_string_lossy().into_owned();
+        let sdk_version = std::fs::read_to_string(sdk.join("SDKVersion")).unwrap_or_else(|_| "11.0".into());
+        let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" };
+        let mut args: Vec<String> = ["ld64.lld", "-arch", arch, "-platform_version", "macos", "11.0", sdk_version.trim()]
+            .map(String::from)
+            .to_vec();
+        args.extend(["-syslibroot".into(), path(sdk), "-o".into(), path(out), path(obj), path(runtime)]);
+        args.push("-dead_strip".into());
+        let list = |dir: &Path| -> Result<Vec<String>, String> {
+            let mut names: Vec<String> = std::fs::read_dir(dir)
+                .map_err(|e| format!("can't read the linker stubs in `{}`: {e}", dir.display()))?
+                .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                .collect();
+            names.sort();
+            Ok(names)
+        };
+        for lib in list(&sdk.join("usr/lib"))? {
+            if let Some(name) = lib.strip_prefix("lib").and_then(|l| l.strip_suffix(".tbd")) {
+                args.push(format!("-l{name}"));
+            }
+        }
+        for framework in list(&sdk.join("System/Library/Frameworks"))? {
+            if let Some(name) = framework.strip_suffix(".framework") {
+                args.extend(["-framework".into(), name.into()]);
+            }
+        }
+        Ok(args)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn args(_: &Path, _: &Path, _: &Path, _: &Path) -> Result<Vec<String>, String> {
+        Err("the built-in linker isn't supported on this platform yet".into())
+    }
 }
 
 /// Wraps a built app in a platform app bundle. On macOS: `Name.app`, next

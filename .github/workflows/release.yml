@@ -58,7 +58,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/llvm
-          key: llvm-${{ env.LLVM_VERSION }}-macos-arm64-static
+          key: llvm-${{ env.LLVM_VERSION }}-macos-arm64-static-v2
 
       - name: Install LLVM (macOS)
         if: runner.os == 'macOS' && steps.llvm-cache-mac.outputs.cache-hit != 'true'
@@ -69,19 +69,22 @@ jobs:
           # Only what building Tessel needs (the full release is 7 GB).
           tar -xf llvm.tar.xz -C ~/llvm \
             "$name/bin/llvm-config" "$name/bin/clang" "$name/bin/clang-*" "$name/bin/lld" "$name/bin/ld64.lld" \
-            "$name/lib/clang" "$name/include/llvm" "$name/include/llvm-c" "$name/lib/libLLVM*.a"
+            "$name/lib/clang" "$name/include/llvm" "$name/include/llvm-c" "$name/include/lld" \
+            "$name/lib/libLLVM*.a" "$name/lib/libPolly*.a" "$name/lib/liblld*.a"
           rm llvm.tar.xz
           mv ~/llvm/"$name" ~/llvm/current
 
       - name: Configure the build (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew list zstd >/dev/null 2>&1 || brew install zstd
-          # Link zstd statically: a folder with only the static library comes
-          # first, and so does the SDK's libc++ (not LLVM's), so `tessel`
-          # depends on nothing outside macOS.
+          # LLVM needs zstd. Build it for macOS 11 (Homebrew's is for the
+          # runner's macOS) and link it statically: a folder with only the
+          # static library comes first, and so does the SDK's libc++ (not
+          # LLVM's), so `tessel` depends on nothing outside macOS.
+          curl -sSfL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz | tar -xz
+          MACOSX_DEPLOYMENT_TARGET=11.0 make -C zstd-1.5.7/lib libzstd.a -j4 > /dev/null
           mkdir -p ~/staticlibs
-          cp "$(brew --prefix zstd)/lib/libzstd.a" ~/staticlibs/
+          cp zstd-1.5.7/lib/libzstd.a ~/staticlibs/
           sdk="$(xcrun --show-sdk-path)"
           {
             echo "LLVM_SYS_221_PREFIX=$HOME/llvm/current"
@@ -126,7 +129,11 @@ jobs:
       # ---- Build, check and package ----
 
       - name: Build
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          # On macOS, LLVM's linker is built into tessel (see crates/tessel-cli/build.rs).
+          features="${{ runner.os == 'macOS' && '--features tessel-cli/bundled-linker' || '' }}"
+          cargo build --release --workspace --target ${{ matrix.target }} $features
 
       - name: Package
         shell: bash
@@ -137,6 +144,9 @@ jobs:
             cp "$out/tessel.exe" "$out/tessel_runtime.lib" dist/pkg/
           else
             cp "$out/tessel" "$out/libtessel_runtime.a" dist/pkg/
+            strip -x dist/pkg/tessel
+            # Stubs of the system libraries apps link with, for the built-in linker.
+            python3 install/macos-stubs.py "$out/libtessel_runtime.a" dist/pkg/sdk
           fi
           cp install/PACKAGE-README.txt dist/pkg/README.txt
 
@@ -152,12 +162,14 @@ jobs:
       - name: Smoke test the package
         shell: bash
         run: |
-          # Run from the package only, without the build's LLVM on PATH.
+          # Run from the package only, without the build's LLVM on PATH. On
+          # macOS, without /usr/bin either, to prove no system linker is used.
           t="dist/pkg/tessel${{ runner.os == 'Windows' && '.exe' || '' }}"
-          "$t" --version
-          "$t" check examples/todos
-          "$t" run tests/run/hello.tsl
-          "$t" build examples/todos -o dist/smoke/todos
+          run() { if [[ "$RUNNER_OS" == "macOS" ]]; then env -i HOME="$HOME" PATH=/bin "$@"; else "$@"; fi; }
+          run "$t" --version
+          run "$t" check examples/todos
+          run "$t" run tests/run/hello.tsl
+          run "$t" build examples/todos -o dist/smoke/todos
           TESSEL_SCRIPT='click field 1; type "hello"; click "Add"; tree' dist/smoke/todos${{ runner.os == 'Windows' && '.exe' || '' }}
 
       - name: Archive
