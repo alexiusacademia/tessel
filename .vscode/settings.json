@@ -1,0 +1,3 @@
+{
+  "tessel.path": "${workspaceFolder}/target/debug/tessel"
+}

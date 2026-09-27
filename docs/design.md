@@ -42,7 +42,7 @@ app Counter(width: 320, height: 200) {
 anything that reads `count` is redrawn. That is the whole reactivity model.
 
 A larger example using structs, enums, loops and bindings is in
-[`examples/todos.tsl`](../examples/todos.tsl).
+[`examples/todos/todos.tsl`](../examples/todos/todos.tsl).
 
 ## 3. Lexical structure
 
@@ -420,8 +420,8 @@ Still open, not blocking v1:
 | M0 | This design doc | Syntax approved (see §11). ✅ |
 | M1 | Front end | `tessel check` parses and type-checks both examples, with clear errors for bad programs. ✅ |
 | M2 | Native code, no UI | `tessel run` compiles functions, structs, lists and strings through LLVM and prints output. ✅ |
-| M3 | First window | `examples/counter.tsl` runs on macOS: window, text, stacks, buttons, state. ✅ |
-| M4 | Real app | `examples/todos.tsl` runs on macOS: text fields, toggles, pickers, loops, bindings. ✅ |
+| M3 | First window | `examples/counter` runs on macOS: window, text, stacks, buttons, state. ✅ |
+| M4 | Real app | `examples/todos` runs on macOS: text fields, toggles, pickers, loops, bindings. ✅ |
 | M5 | Windows | Both examples run on Windows from the same source. |
 
 ### 12.1 UI status after M4

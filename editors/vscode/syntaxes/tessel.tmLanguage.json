@@ -1,0 +1,96 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Tessel",
+  "scopeName": "source.tessel",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#declaration" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#constant" },
+    { "include": "#type" },
+    { "include": "#dot-name" },
+    { "include": "#call" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.tessel",
+      "match": "//.*$"
+    },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "\\b(app|view|struct|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.tessel" },
+            "2": { "name": "entity.name.type.tessel" }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.tessel" },
+            "2": { "name": "entity.name.function.tessel" }
+          }
+        },
+        {
+          "match": "\\b(let|var|state)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.tessel" },
+            "2": { "name": "variable.other.tessel" }
+          }
+        }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.tessel",
+      "begin": "\"",
+      "end": "\"|$",
+      "patterns": [
+        { "name": "constant.character.escape.tessel", "match": "\\\\[nt\"\\\\{}]" },
+        {
+          "name": "meta.interpolation.tessel",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.tessel" } },
+          "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.tessel" } },
+          "contentName": "source.tessel.embedded",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        { "name": "keyword.control.tessel", "match": "\\b(if|else|for|in|match|return)\\b" },
+        { "name": "storage.modifier.tessel", "match": "\\b(bind)\\b" },
+        { "name": "storage.type.tessel", "match": "\\b(app|view|struct|enum|fn|let|var|state)\\b" }
+      ]
+    },
+    "constant": {
+      "patterns": [
+        { "name": "constant.language.tessel", "match": "\\b(true|false|nil)\\b" },
+        { "name": "constant.numeric.float.tessel", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b" },
+        { "name": "constant.numeric.integer.tessel", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "type": {
+      "name": "entity.name.type.tessel",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "dot-name": {
+      "match": "(?<![A-Za-z0-9_)\\]])\\.([a-z_][A-Za-z0-9_]*)",
+      "captures": { "1": { "name": "variable.other.enummember.tessel" } }
+    },
+    "call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": { "1": { "name": "entity.name.function.tessel" } }
+    },
+    "operator": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.tessel", "match": "->" },
+        { "name": "keyword.operator.tessel", "match": "\\?\\?|\\?\\.|\\.\\.|&&|\\|\\||==|!=|<=|>=|\\+=|-=|\\*=|/=|[+\\-*/%<>=!?]" }
+      ]
+    }
+  }
+}

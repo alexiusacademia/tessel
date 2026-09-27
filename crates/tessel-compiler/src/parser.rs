@@ -1033,7 +1033,7 @@ mod tests {
 
     #[test]
     fn examples_parse() {
-        for path in ["counter.tsl", "todos.tsl"] {
+        for path in ["counter/counter.tsl", "todos/todos.tsl"] {
             let full = format!("{}/../../examples/{path}", env!("CARGO_MANIFEST_DIR"));
             let src = std::fs::read_to_string(&full).unwrap();
             parse_ok(&src);

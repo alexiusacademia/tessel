@@ -1,3 +1,5 @@
+mod lsp;
+
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -12,6 +14,7 @@ commands:
   check <path>   check a program for errors; <path> is a .tsl file or a folder
   build <path> [-o <output>]   compile a program to a native executable
   run <path>     build and run a program
+  lsp            start the language server (used by editors)
   version        print the compiler version";
 
 fn main() -> ExitCode {
@@ -37,6 +40,13 @@ fn main() -> ExitCode {
             }
         }
         (Some("run"), Some(path)) => run(Path::new(path), &args[2..]),
+        (Some("lsp"), _) => match lsp::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("tessel lsp: {e}");
+                ExitCode::FAILURE
+            }
+        },
         _ => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE

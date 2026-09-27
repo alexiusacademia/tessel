@@ -1,0 +1,69 @@
+{
+  "name": "tessel",
+  "displayName": "Tessel",
+  "description": "Syntax highlighting and error checking for the Tessel language",
+  "version": "0.1.0",
+  "publisher": "tessel",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "tessel",
+        "aliases": [
+          "Tessel",
+          "tessel"
+        ],
+        "extensions": [
+          ".tsl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tessel",
+        "scopeName": "source.tessel",
+        "path": "./syntaxes/tessel.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Tessel",
+      "properties": {
+        "tessel.path": {
+          "type": "string",
+          "default": "tessel",
+          "description": "Path to the `tessel` command (used for error checking as you type)."
+        }
+      }
+    }
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:tessel"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexiusacademia/tessel"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "scripts": {
+    "package": "npx --yes @vscode/vsce package --allow-missing-repository"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Highlighting works everywhere. Error checking runs the `tessel` command, and a folder's `tessel.path` setting is only used once the folder is trusted.",
+      "restrictedConfigurations": [
+        "tessel.path"
+      ]
+    }
+  }
+}
