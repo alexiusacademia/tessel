@@ -133,8 +133,16 @@ impl Clipboard {
     }
 }
 
-/// Applies `edit` to `text` (laid out as `layout`). Returns the new text if it changed.
-pub fn apply(text: &str, layout: &Layout<Paint>, e: &mut Editing, edit: Edit, clip: &mut Clipboard) -> Option<String> {
+/// Applies `edit` to `text` (laid out as `layout`). Returns the new text if it
+/// changed. `multiline` is true for code editors, false for one-line fields.
+pub fn apply(
+    text: &str,
+    layout: &Layout<Paint>,
+    e: &mut Editing,
+    edit: Edit,
+    clip: &mut Clipboard,
+    multiline: bool,
+) -> Option<String> {
     e.clamp(text);
     let replace = |e: &mut Editing, with: &str| {
         let r = e.range();
@@ -149,9 +157,9 @@ pub fn apply(text: &str, layout: &Layout<Paint>, e: &mut Editing, edit: Edit, cl
     match edit {
         Edit::Insert(s) => replace(e, &s),
         Edit::Paste => {
-            let s = clip.get();
+            let s = clip.get().replace("\r\n", "\n");
             // A single-line field: newlines become spaces.
-            let s = s.replace(['\n', '\r'], " ");
+            let s = if multiline { s.replace('\r', "\n") } else { s.replace(['\n', '\r'], " ") };
             replace(e, &s)
         }
         Edit::Copy | Edit::Cut => {
@@ -255,7 +263,7 @@ mod tests {
         let mut clip = Clipboard::Memory(String::new());
         for edit in edits {
             let layout = engine.layout(&text, 14.0, 400.0, COLORS[0], None);
-            if let Some(t) = apply(&text, &layout, e, edit, &mut clip) {
+            if let Some(t) = apply(&text, &layout, e, edit, &mut clip, false) {
                 text = t;
             }
         }
@@ -287,6 +295,17 @@ mod tests {
             Edit::Insert(" ".into()),
         ]);
         assert_eq!(t, "two one ");
+    }
+
+    #[test]
+    fn paste_keeps_lines_only_when_multiline() {
+        let mut engine = TextEngine::new();
+        let layout = engine.layout("", 14.0, 400.0, COLORS[0], None);
+        let mut clip = Clipboard::Memory("a\r\nb\nc".into());
+        let one = apply("", &layout, &mut Editing::new(1, ""), Edit::Paste, &mut clip, false);
+        let many = apply("", &layout, &mut Editing::new(1, ""), Edit::Paste, &mut clip, true);
+        assert_eq!(one.as_deref(), Some("a b c"));
+        assert_eq!(many.as_deref(), Some("a\nb\nc"));
     }
 
     #[test]

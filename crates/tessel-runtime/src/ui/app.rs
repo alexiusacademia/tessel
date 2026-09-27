@@ -625,7 +625,8 @@ impl App {
         let current = read_string(text);
         let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
         let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
-        if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard) {
+        let multiline = matches!(node.kind, Kind::CodeEditor { .. });
+        if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard, multiline) {
             let slot = text.locate() as *mut *mut Str;
             unsafe {
                 let old = *slot;

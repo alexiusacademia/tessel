@@ -288,7 +288,7 @@ impl Lexer<'_> {
                 Ok(n) => self.push(Tok::Int(n), lo),
                 Err(_) => {
                     self.error(lo, self.pos, "this number is too large for an `Int`").help(
-                        "the largest `Int` is 9_223_372_036_854_775_807; use a `Float` like `1.0e20` for bigger values",
+                        "the largest `Int` is 9_223_372_036_854_775_807; write it as a `Float` (add `.0`) for bigger values",
                     );
                     self.push(Tok::Int(0), lo);
                 }

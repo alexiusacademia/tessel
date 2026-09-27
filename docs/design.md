@@ -318,7 +318,7 @@ separate edges; the most specific value wins, and edges not named get 0:
 | `Image` | `Image(_ path: String)` — SVG files (PNG and JPEG show a placeholder for now) |
 | `Icon` | `Icon(_ name: IconName)` — a built-in icon, e.g. `Icon(.folder)` |
 | `Svg` | `Svg(_ source: String)` — SVG markup written inline |
-| `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int)` |
+| `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …)` (`line:` is optional) |
 | `TabView` | `TabView(selection: bind T, onClose: fn(T)?, content: View)` with `.tabItem(title)` and `.tag(value)` on pages |
 | `Divider` | `Divider()` — a thin separator line |
 
@@ -355,7 +355,7 @@ Common modifiers: `padding`, `frame(width:height:minWidth:maxWidth:minHeight:max
   `VStack` uses left/center/right (`.leading`, `.center`, `.trailing`), an
   `HStack` top/center/bottom (`.top`, `.center`, `.bottom`).
 - Along the stack, children are packed in the middle. Push them to one end
-  with a `Spacer()`: `HStack { Spacer(); Text("Right") }`.
+  with a `Spacer()` before or after them.
 - `.frame(width:height:alignment:)` places the view's content inside a
   larger frame. Text and SVGs are centered unless told otherwise; a stack
   with a frame spreads over the whole frame unless an alignment is given.
