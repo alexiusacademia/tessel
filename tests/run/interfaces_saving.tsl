@@ -1,0 +1,45 @@
+// Interface values saved as JSON and binary, and copied into background work.
+
+interface Shape {
+    label: String
+    fn area() -> Float
+}
+
+struct Circle: Shape {
+    label: String
+    radius: Float
+    fn area() -> Float { pi * radius * radius }
+}
+
+struct Rect: Shape {
+    label: String
+    width: Float
+    height: Float
+    fn area() -> Float { width * height }
+}
+
+struct Drawing {
+    title: String
+    shapes: [Shape]
+    selected: Shape? = nil
+}
+
+fn main() {
+    let d = Drawing(title: "plan", shapes: [Circle(label: "pond", radius: 1.0), Rect(label: "house", width: 2.0, height: 3.0)], selected: Rect(label: "door", width: 1.0, height: 2.0))
+    let json = toJson(d)
+    print(json)
+    if let back: Drawing = fromJson(json) {
+        print("{back.title}: {back.shapes.map { s in "{s.label} {s.area()}" }.joined(separator: ", ")}; selected {back.selected?.label ?? "none"}")
+        print("same as before: {back.shapes == d.shapes}")
+    }
+    let bin = toBinary(d)
+    if let back: Drawing = fromBinary(bin) {
+        print("binary: {back.shapes.count} shapes")
+    }
+    let bad: Drawing? = fromJson("\{\"title\": \"x\", \"shapes\": [\{\"type\": \"Hexagon\", \"value\": \{}}]}")
+    print("unknown type: {bad == nil}")
+    let s: Shape = Circle(label: "c", radius: 2.0)
+    background(work: { s.area() * 2.0 }) { r in
+        print("background: {r.formatted(decimals: 2)}")
+    }
+}

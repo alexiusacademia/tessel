@@ -145,6 +145,46 @@ pub unsafe extern "C" fn tsl_box_eq(a: *mut Header, b: *mut Header) -> bool {
     }
 }
 
+/// Makes the box in `slot` uniquely owned before a change (copy-on-write):
+/// a box shared with other values is replaced by a copy of it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_box_unique(slot: *mut *mut Header) -> *mut Header {
+    unsafe {
+        let b = *slot;
+        if (*b).rc == 1 {
+            return b;
+        }
+        let ty = (*(b as *mut BoxObj)).ty;
+        let copy = tsl_box_new(ty);
+        let (from, to) = ((b as *mut u8).add(BOX_DATA), (copy as *mut u8).add(BOX_DATA));
+        std::ptr::copy_nonoverlapping(from, to, (*ty).size as usize);
+        if let Some(retain) = (*ty).retain {
+            retain(to);
+        }
+        tsl_release(b);
+        *slot = copy;
+        copy
+    }
+}
+
+/// `==` on interface values (method table, box): the same type, and equal
+/// values. A type that can't be compared (it holds functions) is only equal
+/// to the very same copy.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_iface_eq(ta: *const u8, a: *mut Header, tb: *const u8, b: *mut Header) -> bool {
+    if ta != tb {
+        return false;
+    }
+    if a == b {
+        return true;
+    }
+    let ty = unsafe { (*(a as *mut BoxObj)).ty };
+    match unsafe { (*ty).eq } {
+        Some(eq) => unsafe { eq((a as *mut u8).add(BOX_DATA), (b as *mut u8).add(BOX_DATA)) },
+        None => false,
+    }
+}
+
 // ===== source locations and runtime errors =====
 
 #[repr(C)]

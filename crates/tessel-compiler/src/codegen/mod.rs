@@ -664,6 +664,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_retain" | "tsl_release" | "tsl_print" => (vec![p], None),
             "tsl_box_new" => (vec![p], Some(p)),
             "tsl_box_eq" => (vec![p, p], Some(i8t)),
+            "tsl_box_unique" => (vec![p], Some(p)),
+            "tsl_iface_eq" => (vec![p, p, p, p], Some(i8t)),
             "tsl_panic" => (vec![p, p], None),
             "tsl_str_concat" => (vec![p, i], Some(p)),
             "tsl_str_from_int" => (vec![i], Some(p)),
@@ -1192,6 +1194,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let r = self.b.build_call(f, &[pa.into(), pb.into()], "").unwrap().try_as_basic_value().basic();
                 self.truthy(r)
             }
+            // Interface values: the same type (method table), and equal values.
+            Ty::Iface(_) => {
+                let (sa, sb) = (a.into_struct_value(), b.into_struct_value());
+                let parts: Vec<Val> = [sa, sb]
+                    .iter()
+                    .flat_map(|s| [0, 1].map(|i| self.b.build_extract_value(*s, i, "").unwrap()))
+                    .collect();
+                let r = self.call_rt("tsl_iface_eq", &parts);
+                self.truthy(r)
+            }
             _ => unreachable!("values of this type can't be compared"),
         }
     }
@@ -1431,6 +1443,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let v = self.lookup(n)?;
                 Some(self.var_read_ptr(&v, e.span))
             }
+            ExprKind::Member { object, name, optional: false } if matches!(self.ty(object), Ty::Iface(_)) => {
+                let Ty::Iface(i) = self.ty(object) else { unreachable!() };
+                let base = self.read_ptr(object)?;
+                let lt = self.llty(&Ty::Iface(i)).unwrap().into_struct_type();
+                let s = self.b.build_load(lt, base, "").unwrap().into_struct_value();
+                let vt = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+                let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+                let recv = self.box_data(bx);
+                Some(self.iface_prop_ptr(i, &name.name, vt, recv))
+            }
             ExprKind::Member { object, name, optional: false } => {
                 let Ty::Struct(id) = self.ty(object) else { return None };
                 let base = self.read_ptr(object)?;
@@ -1456,6 +1478,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let v = self.lookup(n).expect("assignable name");
                 self.var_write_ptr(&v, e.span)
             }
+            ExprKind::Member { object, name, .. } if matches!(self.ty(object), Ty::Iface(_)) => {
+                let Ty::Iface(i) = self.ty(object) else { unreachable!() };
+                let slot = self.write_ptr(object);
+                let (vt, recv) = self.iface_unique(i, slot);
+                self.iface_prop_ptr(i, &name.name, vt, recv)
+            }
             ExprKind::Member { object, name, .. } => {
                 let Ty::Struct(id) = self.ty(object) else { unreachable!() };
                 let base = self.write_ptr(object);
@@ -1478,7 +1506,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         match &e.kind {
             ExprKind::Name(n) => self.lookup(n).is_some_and(|v| !matches!(v.store, Store::EnvValue(_) | Store::ViewFn)),
             ExprKind::Member { object, optional: false, .. } => {
-                matches!(self.ty(object), Ty::Struct(_)) && self.is_place(object)
+                matches!(self.ty(object), Ty::Struct(_) | Ty::Iface(_)) && self.is_place(object)
             }
             ExprKind::Index(object, _) => matches!(self.ty(object), Ty::List(_)) && self.is_place(object),
             _ => false,
@@ -1826,6 +1854,47 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let inner_v = self.coerce(v, from, inner);
                 self.some(to, inner_v)
             }
+            // `Circle?` as `Shape?`
+            Ty::Opt(inner) if matches!(from, Ty::Opt(_)) && from != to => {
+                let Ty::Opt(from_inner) = from else { unreachable!() };
+                let lt = self.llty(to).unwrap();
+                let slot = self.alloca(lt, "converted");
+                let none = self.none(to);
+                self.b.build_store(slot, none).unwrap();
+                let s = v.into_struct_value();
+                let flag = self.b.build_extract_value(s, 0, "").unwrap().into_int_value();
+                let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+                self.b.build_conditional_branch(flag, some_bb, done).unwrap();
+                self.b.position_at_end(some_bb);
+                let iv = self.b.build_extract_value(s, 1, "").unwrap();
+                let (fi, ti) = ((**from_inner).clone(), (**inner).clone());
+                let c = self.coerce(iv, &fi, &ti);
+                let some = self.some(to, c);
+                self.b.build_store(slot, some).unwrap();
+                self.br(done);
+                self.b.position_at_end(done);
+                self.load(to, slot)
+            }
+            // `[Circle]` as `[Shape]`: a new list of converted items.
+            Ty::List(to_elem) if matches!(from, Ty::List(_)) && from != to => {
+                let Ty::List(from_elem) = from else { unreachable!() };
+                let (fe, te) = ((**from_elem).clone(), (**to_elem).clone());
+                let n = self.call_rt("tsl_list_len", &[v]).unwrap().into_int_value();
+                let info = self.type_info(&te);
+                let out = self.call_rt("tsl_list_new", &[info.into(), n.into()]).unwrap();
+                let slot = self.spill(to, out);
+                let null = self.ptr_ty().const_null();
+                self.counted_loop(n, &mut |g, i| {
+                    let p = g.call_rt("tsl_list_get", &[v, i.into(), null.into()]).unwrap().into_pointer_value();
+                    let item = g.load(&fe, p);
+                    g.retain(item, &fe);
+                    let c = g.coerce(item, &fe, &te);
+                    let cp = g.spill(&te, c);
+                    g.call_rt("tsl_list_push", &[slot.into(), cp.into()]);
+                });
+                self.release(v, from);
+                self.load(to, slot)
+            }
             // A struct or enum where an interface is wanted: box it with its method table.
             Ty::Iface(i) if matches!(from, Ty::Struct(_) | Ty::Enum(_)) => {
                 let info = self.type_info(from);
@@ -1901,6 +1970,36 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.call_rt("tsl_dict_set", &[slot.into(), kp.into(), vp.into()]);
                 }
                 self.unhold(1);
+                Some(self.load(&t, slot))
+            }
+            ExprKind::Cast { value, test, .. } => {
+                let Ty::Iface(i) = self.ty(value) else { unreachable!("checked: an interface value") };
+                let target = self.checked.cast_targets[&e.id].clone();
+                let v = self.expr(value).unwrap();
+                let s = v.into_struct_value();
+                let vt = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+                let table = self.vtable(&target, i);
+                let is = self.b.build_int_compare(IntPredicate::EQ, vt, table, "").unwrap();
+                if *test {
+                    self.release(v, &Ty::Iface(i));
+                    return Some(is.into());
+                }
+                let lt = self.llty(&t).unwrap();
+                let slot = self.alloca(lt, "cast");
+                let none = self.none(&t);
+                self.b.build_store(slot, none).unwrap();
+                let (yes, done) = (self.block_named("is"), self.block_named("done"));
+                self.b.build_conditional_branch(is, yes, done).unwrap();
+                self.b.position_at_end(yes);
+                let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+                let data = self.box_data(bx);
+                let c = self.load(&target, data);
+                self.retain(c, &target);
+                let some = self.some(&t, c);
+                self.b.build_store(slot, some).unwrap();
+                self.br(done);
+                self.b.position_at_end(done);
+                self.release(v, &Ty::Iface(i));
                 Some(self.load(&t, slot))
             }
             ExprKind::Unary(UnaryOp::Not, x) => {
@@ -2268,6 +2367,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let ft = self.checked.structs[*id].fields[idx as usize].ty.clone();
                 let f = self.b.build_extract_value(v.into_struct_value(), idx, "").unwrap();
                 self.retain(f, &ft);
+                f
+            }
+            Ty::Iface(i) => {
+                let (i, pt) = (*i, self.iface_prop_ty(*i, name));
+                let s = v.into_struct_value();
+                let vt = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+                let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+                let recv = self.box_data(bx);
+                let p = self.iface_prop_ptr(i, name, vt, recv);
+                let f = self.load(&pt, p);
+                self.retain(f, &pt);
                 f
             }
             Ty::Str => match name {
@@ -3016,6 +3126,31 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
                 let ot = self.ty(object);
                 let it = Ty::Iface(iface);
+                if self.checked.ifaces[iface].mutating[index] {
+                    // A method that changes the value: work on its storage, with a box of its own.
+                    if let Ty::Opt(_) = ot {
+                        let info2 = info.clone();
+                        return self.chain_mutate(object, &ot, &t, |g, slot| {
+                            let (vt, recv) = g.iface_unique(iface, slot);
+                            g.iface_invoke(iface, index, vt, recv, &info2, &arg)
+                        });
+                    }
+                    if self.is_place(object) {
+                        let slot = self.write_ptr(object);
+                        let (vt, recv) = self.iface_unique(iface, slot);
+                        return self.iface_invoke(iface, index, vt, recv, &info, &arg);
+                    }
+                    // A temporary: change a copy, then let it go.
+                    let v = self.expr(object).unwrap();
+                    let slot = self.spill(&it, v);
+                    let (vt, recv) = self.iface_unique(iface, slot);
+                    self.hold_slot(slot, &it);
+                    let r = self.iface_invoke(iface, index, vt, recv, &info, &arg);
+                    self.unhold(1);
+                    let cur = self.load(&it, slot);
+                    self.release(cur, &it);
+                    return r;
+                }
                 let ov = self.expr(object).unwrap();
                 if let Ty::Opt(_) = ot {
                     // `shape?.area()`
@@ -3726,11 +3861,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Enum(id) => self.checked.enums[*id].name.clone(),
             _ => unreachable!("only structs and enums conform"),
         };
-        let fns: Vec<PointerValue> = self.checked.ifaces[iface]
+        let mut fns: Vec<PointerValue> = self.checked.ifaces[iface]
             .methods
             .iter()
             .map(|(m, _)| self.methods[&(owner.clone(), m.clone())].as_global_value().as_pointer_value())
             .collect();
+        // Then, for each required property, a function giving the field's address.
+        let props: Vec<String> = self.checked.ifaces[iface].props.iter().map(|(p, _)| p.clone()).collect();
+        for p in props {
+            let Ty::Struct(id) = ty else { unreachable!("checked: only structs have properties") };
+            let f = self.field_thunk(*id, &p);
+            fns.push(f.as_global_value().as_pointer_value());
+        }
         let arr_ty = self.ptr_ty().array_type(fns.len() as u32);
         let g = self.module.add_global(arr_ty, None, &name);
         g.set_linkage(Linkage::Internal);
@@ -3750,11 +3892,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         info: &CallInfo,
         arg: &dyn Fn(ArgRef) -> &'e Expr,
     ) -> Option<Val<'ctx>> {
-        let sig = self.checked.ifaces[iface].methods[index].1.clone();
         let s = v.into_struct_value();
         let vt = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
         let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
         let recv = self.box_data(bx);
+        self.iface_invoke(iface, index, vt, recv, info, arg)
+    }
+
+    /// Calls method `index` with receiver `recv` (the boxed value), found in method table `vt`.
+    fn iface_invoke<'e>(
+        &mut self,
+        iface: usize,
+        index: usize,
+        vt: PointerValue<'ctx>,
+        recv: PointerValue<'ctx>,
+        info: &CallInfo,
+        arg: &dyn Fn(ArgRef) -> &'e Expr,
+    ) -> Option<Val<'ctx>> {
+        let sig = self.checked.ifaces[iface].methods[index].1.clone();
         let mut vals = Vec::new();
         for (i, p) in sig.params.iter().enumerate() {
             let v = self.expr_as(arg(info.args[i].expect("interface methods have no defaults")), &p.ty).unwrap();
@@ -3764,18 +3919,59 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.unhold(vals.len());
         let ptys: Vec<Ty> = sig.params.iter().map(|p| p.ty.clone()).collect();
         let fn_ty = self.fn_type(&ptys, &sig.ret, true);
-        let slot = unsafe {
-            self.b
-                .build_gep(self.ptr_ty().array_type(self.checked.ifaces[iface].methods.len() as u32), vt, &[
-                    self.i64().const_zero(),
-                    self.i64().const_int(index as u64, false),
-                ], "")
-                .unwrap()
-        };
-        let fp = self.b.build_load(self.ptr_ty(), slot, "method").unwrap().into_pointer_value();
+        let fp = self.table_entry(vt, index);
         let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), recv.into()];
         all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
         self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic()
+    }
+
+    /// Entry `index` of a method table.
+    fn table_entry(&mut self, vt: PointerValue<'ctx>, index: usize) -> PointerValue<'ctx> {
+        let slot = unsafe { self.b.build_gep(self.ptr_ty(), vt, &[self.i64().const_int(index as u64, false)], "").unwrap() };
+        self.b.build_load(self.ptr_ty(), slot, "entry").unwrap().into_pointer_value()
+    }
+
+    fn iface_prop_ty(&self, iface: usize, name: &str) -> Ty {
+        self.checked.ifaces[iface].props.iter().find(|(p, _)| p == name).unwrap().1.clone()
+    }
+
+    /// The address of required property `name` inside the boxed value `recv`.
+    fn iface_prop_ptr(&mut self, iface: usize, name: &str, vt: PointerValue<'ctx>, recv: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        let def = &self.checked.ifaces[iface];
+        let index = def.methods.len() + def.props.iter().position(|(p, _)| p == name).unwrap();
+        let f = self.table_entry(vt, index);
+        let fn_ty = self.ptr_ty().fn_type(&[self.ptr_ty().into()], false);
+        let r = self.b.build_indirect_call(fn_ty, f, &[recv.into()], "field").unwrap();
+        r.try_as_basic_value().basic().unwrap().into_pointer_value()
+    }
+
+    /// `ptr field(ptr value)`: the address of struct `id`'s field `name`.
+    fn field_thunk(&mut self, id: usize, name: &str) -> FunctionValue<'ctx> {
+        let fname = format!("tsl_field_{}_{name}", self.key(&Ty::Struct(id)));
+        if let Some(f) = self.module.get_function(&fname) {
+            return f;
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(&fname, p.fn_type(&[p.into()], false), Some(Linkage::Internal));
+        let idx = self.field_index(id, name);
+        self.in_helper(f, |g| {
+            let recv = f.get_nth_param(0).unwrap().into_pointer_value();
+            let st = g.struct_ty(id);
+            let fp = g.b.build_struct_gep(st, recv, idx, "").unwrap();
+            g.b.build_return(Some(&fp)).unwrap();
+        });
+        f
+    }
+
+    /// Before changing the interface value stored at `slot`: gives it a box
+    /// of its own (copy-on-write). Returns its method table and the boxed value.
+    fn iface_unique(&mut self, iface: usize, slot: PointerValue<'ctx>) -> (PointerValue<'ctx>, PointerValue<'ctx>) {
+        let lt = self.llty(&Ty::Iface(iface)).unwrap().into_struct_type();
+        let vt_p = self.b.build_struct_gep(lt, slot, 0, "").unwrap();
+        let bx_p = self.b.build_struct_gep(lt, slot, 1, "").unwrap();
+        let vt = self.b.build_load(self.ptr_ty(), vt_p, "").unwrap().into_pointer_value();
+        let bx = self.call_rt("tsl_box_unique", &[bx_p.into()]).unwrap().into_pointer_value();
+        (vt, self.box_data(bx))
     }
 
     /// `adapter(box, i64 flag)`: calls the `fn(Bool)` block in the box.
@@ -4401,7 +4597,7 @@ fn int_pred(op: BinOp) -> IntPredicate {
 
 fn crate_equatable(t: &Ty) -> bool {
     match t {
-        Ty::Fn(..) | Ty::View | Ty::Any | Ty::Void | Ty::Range | Ty::Iface(_) => false,
+        Ty::Fn(..) | Ty::View | Ty::Any | Ty::Void | Ty::Range => false,
         Ty::List(t) | Ty::Opt(t) => crate_equatable(t),
         Ty::Dict(k, v) => crate_equatable(k) && crate_equatable(v),
         _ => true,
@@ -4623,7 +4819,7 @@ fn for_each_child<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 f(v);
             }
         }
-        ExprKind::Unary(_, x) => f(x),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => f(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             f(l);
             f(r);

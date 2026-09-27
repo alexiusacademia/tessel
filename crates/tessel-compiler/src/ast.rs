@@ -65,6 +65,8 @@ pub struct EnumDecl {
 pub struct InterfaceDecl {
     pub name: Ident,
     pub methods: Vec<MethodReq>,
+    /// Required properties (`name: String`).
+    pub props: Vec<(Ident, TypeExpr)>,
 }
 
 /// A method an interface requires: its signature, without a body.
@@ -196,6 +198,8 @@ pub enum ExprKind {
     List(Vec<Expr>),
     Dict(Vec<(Expr, Expr)>),
     Unary(UnaryOp, Box<Expr>),
+    /// `shape is Circle` (`test` true) and `shape as? Circle`.
+    Cast { value: Box<Expr>, ty: TypeExpr, test: bool },
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Call { callee: Box<Expr>, args: Vec<Arg>, trailing: Option<Box<Expr>> },
     Member { object: Box<Expr>, name: Ident, optional: bool },
@@ -301,7 +305,7 @@ fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 expr_tree(v, f);
             }
         }
-        ExprKind::Unary(_, x) => expr_tree(x, f),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => expr_tree(x, f),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             expr_tree(l, f);
             expr_tree(r, f);

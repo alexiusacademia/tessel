@@ -1,0 +1,79 @@
+// Interface methods that change the value, properties, == and converting lists.
+
+interface Counter {
+    name: String
+    fn increment()
+    fn value() -> Int
+}
+
+struct Clicks: Counter {
+    name: String
+    count: Int = 0
+
+    fn increment() {
+        count += 1
+    }
+
+    fn value() -> Int {
+        count
+    }
+}
+
+struct Doubling: Counter {
+    name: String
+    level: Int = 1
+
+    fn increment() {
+        level *= 2
+    }
+
+    fn value() -> Int {
+        level
+    }
+}
+
+struct Board {
+    counters: [Counter]
+
+    fn bumpAll() {
+        for c in counters {
+            c.increment()
+        }
+    }
+}
+
+fn main() {
+    var a: Counter = Clicks(name: "clicks")
+    a.increment()
+    a.increment()
+    let copy = a
+    a.increment()
+    print("{a.name}: {a.value()}, copy {copy.value()}")
+    a.name = "renamed"
+    print("{a.name} / {copy.name}")
+
+    let list: [Clicks] = [Clicks(name: "x"), Clicks(name: "y", count: 5)]
+    var counters: [Counter] = list
+    counters.append(Doubling(name: "d"))
+    for c in counters {
+        c.increment()
+    }
+    counters[0].increment()
+    print(counters.map { c in "{c.name}={c.value()}" }.joined(separator: " "))
+    print("original list untouched: {list[0].count}")
+
+    var board = Board(counters: counters)
+    board.bumpAll()
+    print(board.counters.map { c in "{c.value()}" }.joined(separator: " "))
+
+    let p: Counter = Clicks(name: "same", count: 2)
+    let q: Counter = Clicks(name: "same", count: 2)
+    let r: Counter = Doubling(name: "same", level: 2)
+    print("{p == q} {p == r} {p != r}")
+    print(counters.contains(Doubling(name: "d", level: 2)))
+
+    let maybe: Clicks? = Clicks(name: "m")
+    var opt: Counter? = maybe
+    opt?.increment()
+    print(opt?.value() ?? -1)
+}

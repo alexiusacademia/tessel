@@ -208,6 +208,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 obj
             }
             Ty::Enum(id) => self.encode_enum(*id, vp),
+            Ty::Iface(i) => self.encode_iface(*i, vp),
             _ => unreachable!("the checker rejects saving {t:?}"),
         }
     }
@@ -407,6 +408,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Dict(kt, vt) => self.decode_dict(t, kt, vt, h, out),
             Ty::Struct(id) => self.decode_struct(*id, h, out),
             Ty::Enum(id) => self.decode_enum(*id, h, out),
+            Ty::Iface(i) => self.decode_iface(*i, h, out),
             _ => unreachable!("the checker rejects loading {t:?}"),
         }
     }
@@ -565,6 +567,96 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.br(done);
         self.b.position_at_end(done);
         (fine, temps)
+    }
+
+    /// The types that conform to interface `i`, with their names.
+    fn conformers(&self, i: usize) -> Vec<(Ty, String)> {
+        self.checked
+            .conforms
+            .iter()
+            .filter(|(_, j)| *j == i)
+            .map(|(t, _)| (t.clone(), self.checked.show(t)))
+            .collect()
+    }
+
+    /// An interface value as `{"type": "Circle", "value": …}`, so loading
+    /// knows which type to make.
+    fn encode_iface(&mut self, i: usize, vp: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        let v = self.load(&Ty::Iface(i), vp).into_struct_value();
+        let vt = self.b.build_extract_value(v, 0, "").unwrap().into_pointer_value();
+        let bx = self.b.build_extract_value(v, 1, "").unwrap().into_pointer_value();
+        let recv = self.box_data(bx);
+        let obj = self.tree_call("tsl_tree_object", &[], Some("ptr"), &[]).unwrap().into_pointer_value();
+        let done = self.block_named("encoded");
+        for (t, name) in self.conformers(i) {
+            let table = self.vtable(&t, i);
+            let is = self.b.build_int_compare(IntPredicate::EQ, vt, table, "").unwrap();
+            let (this, next) = (self.block_named("this"), self.block_named("next"));
+            self.b.build_conditional_branch(is, this, next).unwrap();
+            self.b.position_at_end(this);
+            let key = self.str_lit("type");
+            let n = self.str_lit(&name);
+            let nt = self.tree_call("tsl_tree_str", &["ptr"], Some("ptr"), &[n.into()]).unwrap();
+            self.tree_call("tsl_tree_set", &["ptr", "ptr", "ptr"], None, &[obj.into(), key.into(), nt]);
+            let inner = self.encode_via(&t, recv);
+            let key = self.str_lit("value");
+            self.tree_call("tsl_tree_set", &["ptr", "ptr", "ptr"], None, &[obj.into(), key.into(), inner.into()]);
+            self.br(done);
+            self.b.position_at_end(next);
+        }
+        self.br(done);
+        self.b.position_at_end(done);
+        obj
+    }
+
+    fn decode_iface(&mut self, i: usize, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {
+        let ok = self.alloca(self.ctx.bool_type().into(), "ok");
+        self.b.build_store(ok, self.i1(false)).unwrap();
+        let done = self.block_named("decoded");
+        let is_obj = self.kind_is(h, 5);
+        let obj_bb = self.block_named("object");
+        self.b.build_conditional_branch(is_obj, obj_bb, done).unwrap();
+        self.b.position_at_end(obj_bb);
+        let key = self.str_lit("type");
+        let tn = self.tree_call("tsl_tree_field", &["ptr", "ptr"], Some("ptr"), &[h.into(), key.into()]).unwrap().into_pointer_value();
+        let key = self.str_lit("value");
+        let value = self.tree_call("tsl_tree_field", &["ptr", "ptr"], Some("ptr"), &[h.into(), key.into()]).unwrap().into_pointer_value();
+        let has_tn = self.b.build_is_not_null(tn, "").unwrap();
+        let has_value = self.b.build_is_not_null(value, "").unwrap();
+        let both = self.b.build_and(has_tn, has_value, "").unwrap();
+        let named = self.block_named("named");
+        self.b.build_conditional_branch(both, named, done).unwrap();
+        self.b.position_at_end(named);
+        let s = self.tree_call("tsl_tree_as_str", &["ptr"], Some("ptr"), &[tn.into()]).unwrap().into_pointer_value();
+        let is_str = self.b.build_is_not_null(s, "").unwrap();
+        let (text_bb, after) = (self.block_named("text"), self.block_named("after"));
+        self.b.build_conditional_branch(is_str, text_bb, done).unwrap();
+        self.b.position_at_end(text_bb);
+        for (t, name) in self.conformers(i) {
+            let n = self.str_lit(&name);
+            let same = self.call_rt("tsl_str_eq", &[s.into(), n.into()]);
+            let same = self.truthy(same);
+            let (this, next) = (self.block_named("this"), self.block_named("next"));
+            self.b.build_conditional_branch(same, this, next).unwrap();
+            self.b.position_at_end(this);
+            let lt = self.llty(&t).unwrap();
+            let tmp = self.alloca(lt, "concrete");
+            let got = self.decode_via(&t, value, tmp);
+            self.b.build_store(ok, got).unwrap();
+            self.if_ok(ok, &mut |g| {
+                let v = g.load(&t, tmp);
+                let iv = g.coerce(v, &t, &Ty::Iface(i));
+                g.b.build_store(out, iv).unwrap();
+            });
+            self.br(after);
+            self.b.position_at_end(next);
+        }
+        self.br(after);
+        self.b.position_at_end(after);
+        self.call_rt("tsl_release", &[s.into()]);
+        self.br(done);
+        self.b.position_at_end(done);
+        self.b.build_load(self.ctx.bool_type(), ok, "").unwrap().into_int_value()
     }
 
     fn decode_struct(&mut self, id: usize, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {

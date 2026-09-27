@@ -3,6 +3,10 @@ interface Shape {
     fn scaled(by: Float) -> Float
 }
 
+interface Named {
+    name: String
+}
+
 interface Bad {
     fn f(x: Int = 1) // error: can't have default values
 }
@@ -18,13 +22,16 @@ struct Square: Shape {
     fn scaled(by: Float) -> Float { side * by }
 }
 
-struct Counter: Shape {
-    n: Float
-    fn area() -> Float { // error: changes `Counter`
-        n = n + 1.0
-        n
-    }
-    fn scaled(by: Float) -> Float { n }
+struct Anon: Named { // error: has no field `name`
+    x: Int
+}
+
+struct Numbered: Named {
+    name: Int // error: doesn't match what `Named` requires
+}
+
+enum Kind: Named { // error: is an enum, so it can't have the property
+    a
 }
 
 struct Plain: Circle { // error: isn't an interface
@@ -39,7 +46,9 @@ fn main() {
     let a: Shape = Square(side: 1.0)
     let b: Shape = Plain(x: 1) // error: expected `Shape`
     let s = Shape() // error: can't be created directly
-    print(a == a) // error: can't be compared
     print(a.perimeter()) // error: has no method `perimeter`
-    let t = toJson(a) // error: can't be saved
+    print(a is Plain) // error: is never a `Plain`
+    let n = 3
+    print(n is Square) // error: works on interface values
+    let c = a as Square // error: write `as?`
 }

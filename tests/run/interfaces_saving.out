@@ -1,0 +1,6 @@
+{"title":"plan","shapes":[{"type":"Circle","value":{"label":"pond","radius":1.0}},{"type":"Rect","value":{"label":"house","width":2.0,"height":3.0}}],"selected":{"type":"Rect","value":{"label":"door","width":1.0,"height":2.0}}}
+plan: pond 3.141592653589793, house 6.0; selected door
+same as before: true
+binary: 2 shapes
+unknown type: true
+background: 25.13

@@ -141,6 +141,11 @@ pub struct IfaceDef {
     pub span: Span,
     /// Required methods, in declaration order (the order of the method table).
     pub methods: Vec<(String, FnSig)>,
+    /// Whether each method changes the value in some conforming type (then
+    /// calling it through the interface changes the interface value).
+    pub mutating: Vec<bool>,
+    /// Required properties: fields every conforming struct has.
+    pub props: Vec<(String, Ty)>,
 }
 
 #[derive(Debug)]

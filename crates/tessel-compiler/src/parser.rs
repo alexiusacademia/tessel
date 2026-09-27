@@ -277,12 +277,26 @@ impl<'a> Parser<'a> {
         let name = self.ident("an interface name")?;
         self.expect(Tok::LBrace)?;
         let mut methods = Vec::new();
+        let mut props = Vec::new();
         self.members(|p| {
             if !p.at(&Tok::Fn) {
-                let span = p.span();
-                p.error(span, "an interface lists methods, like `fn area() -> Float`")
-                    .help("fields can't be required; require a method that returns the value instead");
-                return Err(Reported);
+                // A required property: `name: String`.
+                let name = p.ident("a method (`fn …`) or a property (`name: Type`)")?;
+                if !p.eat(&Tok::Colon) {
+                    let span = p.span();
+                    p.error(span, format!("property `{}` needs a type", name.name))
+                        .help(format!("write it like `{}: String`", name.name));
+                    return Err(Reported);
+                }
+                let ty = p.type_expr()?;
+                if p.at(&Tok::Eq) {
+                    let span = p.span();
+                    p.error(span, "an interface's properties have no default values")
+                        .help("give the default in each struct instead");
+                    return Err(Reported);
+                }
+                props.push((name, ty));
+                return Ok(());
             }
             let lo = p.bump().span;
             let name = p.ident("a method name")?;
@@ -303,7 +317,7 @@ impl<'a> Parser<'a> {
             methods.push(MethodReq { name, params, ret, span: lo.to(p.prev_span()) });
             Ok(())
         });
-        Ok(InterfaceDecl { name, methods })
+        Ok(InterfaceDecl { name, methods, props })
     }
 
     /// Parses `member (, | newline) member ... }` after the opening brace.
@@ -610,11 +624,11 @@ impl<'a> Parser<'a> {
                 _ => return None,
             })
         };
-        let lhs = self.range_expr()?;
+        let lhs = self.cast_expr()?;
         let Some(op) = cmp_op(self.peek()) else { return Ok(lhs) };
         self.bump();
         self.skip_newlines();
-        let rhs = self.range_expr()?;
+        let rhs = self.cast_expr()?;
         let span = lhs.span.to(rhs.span);
         if cmp_op(self.peek()).is_some() {
             let s = self.span();
@@ -623,6 +637,31 @@ impl<'a> Parser<'a> {
             return Err(Reported);
         }
         Ok(self.new_expr(ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)), span))
+    }
+
+    /// `value is Circle`, `value as? Circle` (`is` and `as` aren't reserved words).
+    fn cast_expr(&mut self) -> PResult<Expr> {
+        let mut lhs = self.range_expr()?;
+        loop {
+            let test = match self.peek() {
+                Tok::Ident(w) if w == "is" => true,
+                Tok::Ident(w) if w == "as" && *self.peek_at(1) == Tok::Question => false,
+                Tok::Ident(w) if w == "as" => {
+                    let span = self.span();
+                    self.error(span, "write `as?`: the value might be another type")
+                        .help("`if let c = shape as? Circle { … }` uses it only when it is one");
+                    return Err(Reported);
+                }
+                _ => return Ok(lhs),
+            };
+            self.bump();
+            if !test {
+                self.bump(); // ?
+            }
+            let ty = self.type_expr()?;
+            let span = lhs.span.to(self.prev_span());
+            lhs = self.new_expr(ExprKind::Cast { value: Box::new(lhs), ty, test }, span);
+        }
     }
 
     fn range_expr(&mut self) -> PResult<Expr> {
