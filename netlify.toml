@@ -1,0 +1,8 @@
+# The website (website/) is an Astro Starlight site.
+[build]
+  base = "website"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22.12.0"

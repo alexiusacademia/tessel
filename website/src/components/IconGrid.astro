@@ -1,0 +1,29 @@
+---
+// Every built-in icon, read from the runtime's icon folder at build time,
+// so this page always matches `IconName`.
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+// Builds run in website/ (locally and on Netlify).
+const dir = resolve(process.cwd(), '../crates/tessel-runtime/icons');
+const names = readFileSync(join(dir, 'names.txt'), 'utf8')
+	.split('\n')
+	.map((n) => n.trim())
+	.filter(Boolean);
+const icons = names.map((name) => ({
+	name,
+	svg: readFileSync(join(dir, `${name}.svg`), 'utf8').replace(/<!--[\s\S]*?-->/g, ''),
+}));
+---
+
+<p>{icons.length} icons.</p>
+<div class="icon-grid">
+	{
+		icons.map(({ name, svg }) => (
+			<figure>
+				<Fragment set:html={svg} />
+				<figcaption>.{name}</figcaption>
+			</figure>
+		))
+	}
+</div>

@@ -1,0 +1,475 @@
+---
+title: Views
+description: Every built-in Tessel view, with its exact parameters, defaults and layout behavior.
+---
+
+This page lists every built-in view, plus the `app` declaration. For a gentler
+introduction, see [Apps and views](/ui/apps-views/) and [Controls](/ui/controls/).
+
+## Reading the signatures
+
+Each view's signature is written the way you would declare a view's
+parameters in Tessel yourself:
+
+```text
+TextField(_ placeholder: String, text: bind String)
+```
+
+- `_` in front of a name means you pass that argument **without a label**:
+  `TextField("Name", text: name)`.
+- Every other argument is passed **with its label**, in the order shown.
+- `= value` marks a parameter with a **default**; you can leave it out.
+- `bind` means the view both reads and changes the value, so you must pass
+  something it can change: a `state`, a `var`, a `bind` parameter, or a field
+  or item of one. See [State and bindings](/ui/state/).
+- A last parameter of type `View` (named `content`) is the **block after the
+  call**: `VStack { … }`. A last parameter of function type, like a button's
+  `action`, can also be written as a block after the call:
+  `Button("Save") { save() }`.
+
+Modifiers such as `.padding()` and `.font(size:)` work on every view; they are
+listed in [Modifiers](/reference/modifiers/).
+
+## How views take up space
+
+Tessel lays views out like SwiftUI. Some views have a fixed natural size
+(text, buttons, toggles, icons) and some are **flexible**: they grow to fill
+the space they are offered.
+
+| Flexible… | Views |
+|---|---|
+| horizontally only | `TextField` |
+| in both directions | `Scroll`, `CodeEditor`, `TabView` |
+| along its stack's direction | `Spacer` |
+| across its stack | `Divider` |
+| when a child is flexible | `VStack`, `HStack`, `ZStack`, custom views |
+| when given a maximum size | any view with `.frame(maxWidth:)` or `.frame(maxHeight:)` |
+
+A fixed `.frame(width:)` or `.frame(height:)` makes a view inflexible in that
+direction. See [Layout](/ui/layout/) for how stacks share out space.
+
+## app
+
+```text
+app Name(title: String = "Name", width: Float = 640, height: Float = 480) { … }
+```
+
+Declares the program's window. The arguments are optional, but when you give
+them they need their labels and must be in this order.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `title` | the app's name | The window title. |
+| `width` | `640` | The window's starting width, in points. |
+| `height` | `480` | The window's starting height, in points. |
+
+```tessel
+app Notes(title: "My Notes", width: 400, height: 300) {
+    state text = ""
+
+    TextField("Write something", text: text)
+    Text("{text.count} characters")
+}
+```
+
+The body works like a view body: it can declare `state` and functions, and
+everything else in it must be views. The views are stacked vertically with
+8 points between them, like a `VStack`, and centered in the window. A program
+has at most one `app`, and can't have both an `app` and a `fn main()`.
+
+## Custom views
+
+A `view` you declare yourself is used like a built-in one. Its body lays out
+like a `VStack` with the default spacing (8) and centered alignment. A
+modifier on a custom view applies to that whole body. See
+[Apps and views](/ui/apps-views/).
+
+## Text
+
+```text
+Text(_ text: String)
+```
+
+Shows text. Use string interpolation to show values: `Text("Total: {total}")`.
+
+```tessel
+Text("Hello, world!")
+    .font(size: 20, weight: .semibold)
+    .color(.blue)
+```
+
+- The text size, weight and color come from [`.font`](/reference/modifiers/#font)
+  and [`.color`](/reference/modifiers/#color) (default: 14 points, regular,
+  `.primary`).
+- Text wraps onto more lines when it's wider than the space it's offered.
+  `\n` in the string starts a new line.
+- Lines line up on the leading edge; change that with
+  [`.textAlignment`](/reference/modifiers/#textalignment).
+- In a frame larger than the text, the text is centered unless the frame
+  gives an `alignment:`.
+
+## Button
+
+```text
+Button(_ label: String, action: fn())
+```
+
+A push button. Clicking it runs `action`. The action is almost always written
+as a block after the call.
+
+```tessel
+Button("Add one") {
+    count += 1
+}
+```
+
+- The label is drawn in the accent blue on a light gray rounded background.
+  `.color(…)` on the button changes the label color;
+  `.background(…)` replaces the gray background.
+- The button's size is its label plus 14 points of space on each side and 6
+  above and below. A `.frame(width:)` or `.frame(maxWidth: .infinity)` makes
+  the whole button wider.
+- A disabled button (`.disabled(true)`) is dimmed and doesn't respond to
+  clicks.
+
+## TextField
+
+```text
+TextField(_ placeholder: String, text: bind String)
+```
+
+A one-line text input. `text` is changed as the user types. The placeholder is
+shown in gray while the text is empty.
+
+```tessel
+TextField("Your name", text: name)
+    .onSubmit { save() }
+```
+
+- Click the field to start editing. **Enter** or **Escape** stops editing;
+  Enter also runs the field's [`.onSubmit`](/reference/modifiers/#onsubmit)
+  action.
+- The usual editing keys work: arrows (with Shift to select, Option/Alt for
+  words), Cmd+A, Cmd+C, Cmd+X, Cmd+V, and Cmd+Z / Shift+Cmd+Z for undo and
+  redo (Ctrl instead of Cmd on Windows).
+- A text field is flexible horizontally: it stretches to the width it's
+  offered. It's at least 120 points wide when there's room.
+- [`.autofocus()`](/reference/modifiers/#autofocus) makes it start editing as
+  soon as it appears.
+
+## Toggle
+
+```text
+Toggle(_ label: String = "", isOn: bind Bool)
+```
+
+An on/off switch. Clicking it flips `isOn`. The label is optional.
+
+```tessel
+Toggle("Dark mode", isOn: isOn)
+Toggle(isOn: isOn)
+```
+
+- The label sits on the leading side and the switch on the trailing side,
+  8 points apart. If the toggle is wider than that (for example with
+  `.frame(maxWidth: .infinity)`), the label and switch move apart.
+- Clicking anywhere on the toggle, label included, flips it.
+
+## Picker
+
+```text
+Picker(selection: bind T, content: View)
+```
+
+A segmented control for choosing one of several options. Each view in the
+block is one option; give each option a [`.tag(value)`](/reference/modifiers/#tag).
+The option whose tag equals `selection` is highlighted, and clicking an option
+sets `selection` to its tag.
+
+```tessel
+Picker(selection: mode) {
+    Text("List").tag(Mode.list)
+    Text("Grid").tag(Mode.grid)
+}
+```
+
+- `selection` is usually an enum, a `String` or an `Int`. Every tag must
+  have the same type as `selection`. When the tag type is known, you can write enum
+  cases as `.tag(.list)`.
+- Each view directly inside the block is one option, including views made by
+  a `for` loop or an `if`. A `.tag` must be on those views themselves, not on
+  something nested inside them.
+- The options sit side by side, each with 12 points of space on either side.
+
+## VStack
+
+```text
+VStack(spacing: Float = 8, alignment: Alignment = .center, content: View)
+```
+
+Arranges its views from top to bottom.
+
+```tessel
+VStack(spacing: 4, alignment: .leading) {
+    Text("Title").font(weight: .bold)
+    Text("Subtitle").color(.secondary)
+}
+```
+
+- `spacing` is the space between neighboring views. Hidden views get no
+  space.
+- `alignment` lines views up **across** the stack: `.leading`, `.center` or
+  `.trailing`. Only the horizontal part of the alignment counts, so
+  `.topLeading` acts like `.leading`, and `.top` or `.bottom` like `.center`.
+- Along the stack, the views are packed together in the middle. Use a
+  [`Spacer`](#spacer) to push them apart.
+- The stack is as tall as its views plus the spacing, and as wide as its
+  widest view. If a view inside is flexible (a `Spacer`, a `Scroll`, a
+  `TextField`, …), the stack becomes flexible in that direction too.
+
+## HStack
+
+```text
+HStack(spacing: Float = 8, alignment: Alignment = .center, content: View)
+```
+
+Arranges its views from leading to trailing (left to right).
+
+```tessel
+HStack(spacing: 12) {
+    Icon(.folder)
+    Text("Documents")
+    Spacer()
+    Text("12 files").color(.secondary)
+}
+```
+
+- `alignment` lines views up across the stack, vertically: `.top`,
+  `.center` or `.bottom`. Only the vertical part counts: `.topLeading` and
+  `.topTrailing` act like `.top`, `.bottomLeading` and `.bottomTrailing` like
+  `.bottom`.
+- `.leading` and `.trailing` aren't vertical positions; in an `HStack` they
+  mean `.top` and `.bottom`. Prefer writing `.top` and `.bottom`.
+- Otherwise it behaves like `VStack`, turned sideways. Text in an `HStack`
+  wraps if the row is too narrow.
+
+## ZStack
+
+```text
+ZStack(alignment: Alignment = .center, content: View)
+```
+
+Layers its views on top of each other. Later views are drawn on top.
+
+```tessel
+ZStack(alignment: .topTrailing) {
+    Icon(.bell).font(size: 24)
+    Text("3").font(size: 10).color(.white).padding(2).background(.red, radius: 6)
+}
+```
+
+- The stack is as big as its largest view.
+- `alignment` places each view that is smaller than the stack; all nine
+  [`Alignment`](/reference/colors/#alignment) cases work.
+- A flexible view (like a `Scroll`) fills the whole stack. A `Spacer` in a
+  `ZStack` takes no space.
+
+## Spacer
+
+```text
+Spacer()
+```
+
+Empty space that grows along its stack's direction: vertically in a `VStack`,
+horizontally in an `HStack`.
+
+```tessel
+HStack {
+    Text("Left")
+    Spacer()
+    Text("Right")
+}
+.frame(maxWidth: .infinity)
+```
+
+- Several spacers in one stack share the leftover space equally.
+- A spacer makes its stack flexible, so the stack fills the space its own
+  parent offers.
+- Outside a `VStack` or `HStack` (for example in a `ZStack`), a spacer takes
+  no space.
+
+## Scroll
+
+```text
+Scroll(content: View)
+```
+
+A vertically scrolling area. Scroll with the mouse wheel or trackpad.
+
+```tessel
+Scroll {
+    VStack(alignment: .leading) {
+        for item in items {
+            Text(item.name)
+        }
+    }
+}
+```
+
+- A scroll view is flexible in both directions: it takes all the space it's
+  offered, and its content can be as tall as it needs.
+- Content starts at the top leading corner.
+- Scrolling is vertical only. The content gets the scroll view's width, so
+  text wraps rather than scroll sideways.
+
+:::note
+Put a single view, usually a `VStack`, inside `Scroll`. If you put several
+views directly inside, they are all placed at the top and draw over each
+other.
+:::
+
+## Image
+
+```text
+Image(_ path: String)
+```
+
+Shows an image file. The path is relative to the folder the program is run
+from (see [`currentFolder()`](/reference/stdlib/#currentfolder)).
+
+```tessel
+Image("logo.svg").frame(width: 48, height: 48)
+```
+
+- SVG files (`.svg`) are drawn at the size the SVG declares. With a
+  `.frame(width:)` or `.frame(height:)`, the drawing is scaled to fit the
+  frame, keeping its proportions. `currentColor` in the SVG is drawn in the
+  view's [`.color`](/reference/modifiers/#color).
+
+:::note
+Only SVG images are drawn for now. Other files (PNG, JPEG, …), and SVG files
+that can't be found, show a 64 × 64 gray placeholder box.
+:::
+
+## Icon
+
+```text
+Icon(_ name: IconName)
+```
+
+One of Tessel's built-in icons. See [Icons](/reference/icons/) for the full
+list.
+
+```tessel
+HStack(spacing: 6) {
+    Icon(.warning).color(.orange)
+    Text("3 problems")
+}
+```
+
+- An icon is a square whose side is 1.15 times the font size, rounded (16
+  points at the default size of 14). Change it with `.font(size:)`.
+- It is drawn in the current [`.color`](/reference/modifiers/#color), so it
+  matches the text around it.
+
+## Svg
+
+```text
+Svg(_ source: String)
+```
+
+Draws SVG markup written in the program.
+
+```tessel
+Svg("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><circle cx='12' cy='12' r='10' fill='currentColor'/></svg>")
+    .color(.green)
+```
+
+- Sizing works like an SVG [`Image`](#image): the SVG's own `width` and
+  `height`, scaled to fit a `.frame` if there is one.
+- `currentColor` is drawn in the view's `.color`.
+- Markup that isn't valid SVG draws nothing (in a 16 × 16 space).
+
+## CodeEditor
+
+```text
+CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …)
+```
+
+A multi-line code editor with line numbers and Tessel syntax colors. It's
+what the [Tessel IDE](/start/ide/) uses. See [Code editor](/ui/code-editor/).
+
+```tessel
+CodeEditor(text: code, errorLines: errors, line: line)
+```
+
+| Parameter | Meaning |
+|---|---|
+| `text` | The code being edited. Changed as the user types. |
+| `errorLines` | Line numbers (starting at 1) to mark with a red band and a red bar in the margin. |
+| `line` | Optional. The line the caret is on, starting at 1. The editor updates it as the caret moves, and when your program sets it, the caret jumps to the start of that line. |
+
+- Text is drawn in a 13-point monospaced font, which `.font` doesn't change.
+- **Enter** keeps the current line's indentation, adding one level (4
+  spaces) after a line ending in `{`. **Tab** inserts 4 spaces. Typing `}` on
+  a line that is only spaces removes one level.
+- The editor is flexible in both directions. When nothing limits it, it is
+  480 × 320 points; it is never smaller than 160 × 80.
+
+## TabView
+
+```text
+TabView(selection: bind T, onClose: fn(T) = …, content: View)
+```
+
+Pages with a row of tabs at the top. Each view in the block is one page. Give
+each page a [`.tabItem("Title")`](/reference/modifiers/#tabitem) for its tab
+and a [`.tag(value)`](/reference/modifiers/#tag) to identify it.
+
+```tessel
+TabView(selection: tab) {
+    Text("Welcome!").tabItem("Home").tag("home")
+    Text("No settings yet").tabItem("Settings").tag("settings")
+}
+```
+
+- The page whose tag equals `selection` is shown; clicking a tab sets
+  `selection` to that page's tag. If no page matches, the first page is
+  shown.
+- A page without `.tabItem` gets the title "Untitled".
+- With `onClose:`, tabs get a close button (shown on the selected tab and the
+  tab under the mouse). Clicking it calls `onClose` with that page's tag.
+  The tab view doesn't remove the page itself; remove it from your data in
+  `onClose`:
+
+```tessel
+TabView(selection: current, onClose: { name in close(name) }) {
+    for doc in docs {
+        Text(doc.text).tabItem(doc.name).tag(doc.name)
+    }
+}
+```
+
+- The tab bar is 34 points tall. The tab view is flexible in both
+  directions; when nothing limits it, it is 480 × 320 points.
+
+## Divider
+
+```text
+Divider()
+```
+
+A thin gray line (the `.separator` color) that separates views.
+
+```tessel
+VStack {
+    Text("Above")
+    Divider()
+    Text("Below")
+}
+```
+
+- In a `VStack` it runs horizontally across the whole stack; in an `HStack`
+  it runs vertically. It is 1 point thick.
+- It makes its stack stretch across the space offered, so a `Divider` in an
+  `HStack` makes the row as tall as the space available.

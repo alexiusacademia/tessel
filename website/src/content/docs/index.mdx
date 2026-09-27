@@ -1,0 +1,90 @@
+---
+title: Tessel
+description: A small, declarative, compiled language for building desktop apps on macOS and Windows.
+template: splash
+hero:
+  tagline: A small, declarative language for desktop apps. Write your UI the way you think about it, and get a fast native app for macOS and Windows.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get started
+      link: /start/introduction/
+      icon: right-arrow
+    - text: Your first app
+      link: /start/first-app/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import counter from '../../assets/screens/counter.png';
+import todos from '../../assets/screens/todos.png';
+import ide from '../../assets/screens/ide.png';
+
+## A whole app in a few lines
+
+<div class="split">
+
+```tessel
+app Counter(width: 320, height: 200) {
+    state count = 0
+
+    VStack(spacing: 12) {
+        Text("Count: {count}")
+            .font(size: 32, weight: .bold)
+
+        HStack(spacing: 8) {
+            Button("-") { count -= 1 }
+            Button("+") { count += 1 }
+        }
+    }
+    .padding(24)
+}
+```
+
+<Image src={counter} alt="The Counter app, showing Count: 3 with minus and plus buttons" />
+
+</div>
+
+Run it with `tessel run counter.tsl`. No project files, no imports, no build
+configuration: a folder of `.tsl` files is a program.
+
+## Why Tessel
+
+<CardGrid>
+	<Card title="Declarative" icon="puzzle">
+		Describe what the screen shows for the current state. When state changes,
+		Tessel updates the window for you.
+	</Card>
+	<Card title="Native and fast" icon="rocket">
+		Programs compile through LLVM to small native executables. The UI is drawn
+		on the GPU by Tessel's own renderer.
+	</Card>
+	<Card title="Few rules to learn" icon="open-book">
+		One kind of block, value types only, no imports, and errors as optionals.
+		Every error message says what to do next.
+	</Card>
+	<Card title="macOS and Windows" icon="laptop">
+		The same code builds a `.app` bundle on macOS and an `.exe` on Windows.
+	</Card>
+</CardGrid>
+
+## Built for real apps
+
+<div class="split">
+
+<Image src={todos} alt="A todo list app with three items, one done, and an All / Active / Done picker" />
+
+Structs, enums, lists and dictionaries; text fields, toggles, pickers, tabs and
+a code editor; about 60 built-in icons; files, processes and the network, with
+callbacks that update your UI safely. See the [todo list tutorial](/start/first-app/).
+
+</div>
+
+## An IDE written in Tessel
+
+<Image src={ide} alt="The Tessel IDE with a file explorer, a tabbed code editor and a problems panel" />
+
+Type `tessel` in a project folder to open the Tessel IDE: a file explorer,
+tabbed editor with syntax colors and live errors, and one-click run, build and
+packaging. It's a Tessel app itself. [Read more](/start/ide/).

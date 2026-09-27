@@ -1,0 +1,345 @@
+---
+title: Basics
+description: Comments, fn main, print, constants and variables, literals, string interpolation, operators and how lines end in Tessel.
+---
+
+This page covers the pieces every Tessel program is made of: comments,
+printing, constants and variables, literal values, and operators. If you have
+written code in Swift, Kotlin, JavaScript or a similar language, most of it
+will look familiar.
+
+## A first program
+
+```tessel
+// Say hello, then do a little arithmetic.
+fn main() {
+    let name = "Tessel"
+    print("Hello, {name}!")
+
+    var total = 0
+    for i in 0..5 {
+        total += i
+    }
+    print("The sum of 0..5 is {total}")
+}
+```
+
+Run it with `tessel run hello.tsl`, and it prints:
+
+```text
+Hello, Tessel!
+The sum of 0..5 is 10
+```
+
+A program without a window starts at `fn main()`. It takes no parameters and
+returns nothing. (A program with a window starts at an `app` instead; see
+[Programs and files](/language/programs/).)
+
+`print` writes one value to the terminal, followed by a new line. It accepts
+an `Int`, `Float`, `Bool`, `String` or an enum value. To print several
+values, put them in one string with `{…}`, as shown below.
+
+## Comments
+
+A comment starts with `//` and runs to the end of the line. It can be on its
+own line or after code:
+
+```tessel
+// This whole line is a comment.
+let width = 20 // and this is a comment after some code
+```
+
+There are no block comments (`/* … */`). To comment out several lines, put
+`//` in front of each one.
+
+## Constants and variables
+
+Use `let` for a value that never changes, and `var` for one that does:
+
+```tessel
+let name = "Ada"   // a constant
+var score = 0      // a variable
+score = 10
+score += 5
+print("{name} has {score} points")
+```
+
+Every `let` and `var` needs a starting value. Tessel works out the type from
+that value, so `score` above is an `Int`. You can also write the type
+yourself after a colon:
+
+```tessel
+let ratio: Float = 3      // 3 is read as 3.0 here
+var names: [String] = []  // an empty list needs its type written out
+```
+
+Changing a `let` is an error that tells you to use `var` instead:
+
+<!-- error -->
+```tessel
+let limit = 10
+limit = 20
+```
+
+```text
+error: can't change `limit`, which is a constant
+  = help: declare it with `var` to be able to change it
+```
+
+Variables live inside functions (and `state` lives inside views). There are
+no global variables: a `let` or `var` at the top level of a file is an
+error. If you need a value that the whole program shares, write a function
+that returns it:
+
+```tessel
+fn maxPlayers() -> Int {
+    4
+}
+```
+
+Names are made of letters, digits and `_`, and can't start with a digit. The
+usual style is `lowerCamelCase` for variables and functions, and
+`UpperCamelCase` for types and views.
+
+## Literals
+
+| Kind | Examples | Type |
+|---|---|---|
+| Whole numbers | `0`, `42`, `-7`, `1_000_000` | `Int` |
+| Decimal numbers | `3.14`, `0.5`, `2.0`, `1_000.25` | `Float` |
+| Truth values | `true`, `false` | `Bool` |
+| Text | `"hello"`, `"Total: {n}"` | `String` |
+| No value | `nil` | an optional, see [Optionals](/language/optionals/) |
+| Lists | `[1, 2, 3]`, `[]` | `[Int]` |
+| Dictionaries | `["a": 1]`, `[:]` | `[String: Int]` |
+
+You can put `_` anywhere in a number to make it easier to read:
+`1_000_000` is one million.
+
+A decimal number needs digits on both sides of the point: write `0.5`, not
+`.5`, and `2.0`, not `2.`.
+
+:::note
+Scientific notation such as `1.5e3` is not supported in number literals yet.
+Write the number out (`1500.0`), or parse it from text with
+`Float("1.5e3")`, which returns an optional.
+:::
+
+A whole-number literal takes its type from where it is used. Where a `Float`
+is expected, `3` means `3.0`, so you rarely have to write `.0`:
+
+```tessel
+let width: Float = 3
+print(width)     // 3.0
+print(1 + 2.5)   // 3.5
+```
+
+This only applies to literals. A variable never changes type by itself; see
+[Types](/language/types/#converting-between-types) for converting between
+`Int` and `Float`.
+
+## Strings
+
+A string is text between double quotes. It must end on the same line it
+starts on.
+
+### Interpolation
+
+Put any expression inside `{` and `}` to insert its value into the text:
+
+```tessel
+let apples = 3
+let price = 2
+print("{apples} apples cost {apples * price} coins")
+```
+
+```text
+3 apples cost 6 coins
+```
+
+You can interpolate an `Int`, `Float`, `Bool`, `String` or enum value.
+Lists, structs and optionals can't go in directly; for example, use
+`{list.count}`, `{names.joined(separator: ", ")}` or `{nickname ?? "none"}`
+instead.
+
+### Escapes
+
+A backslash starts an escape sequence:
+
+| Escape | Means |
+|---|---|
+| `\n` | new line |
+| `\t` | tab |
+| `\r` | carriage return |
+| `\"` | a double quote |
+| `\\` | a backslash |
+| `\{` and `\}` | a literal brace, not an interpolation |
+
+```tessel
+print("Line one\nLine two")
+print("She said \"hi\"")
+print("Path: C:\\temp")
+print("Use \{name\} to insert a value")
+```
+
+```text
+Line one
+Line two
+She said "hi"
+Path: C:\temp
+Use {name} to insert a value
+```
+
+Any other character after a backslash is an error.
+
+## Operators
+
+### Arithmetic
+
+| Operator | Meaning | Example | Result |
+|---|---|---|---|
+| `+` | add | `7 + 2` | `9` |
+| `-` | subtract | `7 - 2` | `5` |
+| `*` | multiply | `7 * 2` | `14` |
+| `/` | divide | `7 / 2` | `3` |
+| `%` | remainder | `7 % 2` | `1` |
+| `-x` | negate | `-7` | `-7` |
+
+Both sides must have the same type. Dividing two `Int`s gives an `Int` and
+drops the fraction (it rounds toward zero, so `-7 / 2` is `-3`). For a
+decimal result, convert first: `Float(7) / 2` is `3.5`. `%` works on
+`Float`s too.
+
+`+` also joins two strings or two lists:
+
+```tessel
+let greeting = "Hello, " + "world"
+let numbers = [1, 2] + [3]
+```
+
+`Int` arithmetic is checked. If a result doesn't fit in an `Int`, or you
+divide an `Int` by zero, the program stops with an error; see
+[Runtime errors](/language/optionals/#runtime-errors).
+
+### Comparison
+
+| Operator | Meaning |
+|---|---|
+| `==` | equal |
+| `!=` | not equal |
+| `<` `<=` | less than, less than or equal |
+| `>` `>=` | greater than, greater than or equal |
+
+`==` and `!=` work on almost every type, including strings, lists, structs,
+enums and optionals. `<`, `<=`, `>` and `>=` work on numbers and strings
+(strings compare in dictionary order, so `"apple" < "banana"`).
+
+Comparisons can't be chained: write `a < b && b < c`, not `a < b < c`.
+
+### Logic
+
+| Operator | Meaning |
+|---|---|
+| `&&` | and: true if both sides are true |
+| <code>&#124;&#124;</code> | or: true if either side is true |
+| `!` | not: flips `true` and `false` |
+
+```tessel
+let age = 30
+let member = false
+print(age >= 18 && !member)
+```
+
+The operands must be `Bool`s. Tessel doesn't treat `0` or `""` as false.
+
+### Assignment
+
+| Operator | Same as |
+|---|---|
+| `x = v` | set `x` to `v` |
+| `x += v` | `x = x + v` (numbers, strings and lists) |
+| `x -= v` | `x = x - v` |
+| `x *= v` | `x = x * v` |
+| `x /= v` | `x = x / v` |
+
+Assignment is a statement, not an expression: you can't write
+`a = b = 0` or use `x += 1` as a value. The left side can be a variable, a
+field (`player.score += 1`) or an item (`scores[0] = 10`).
+
+### Ranges
+
+`a..b` is the range of whole numbers from `a` up to, but not including, `b`.
+You use it with `for`:
+
+```tessel
+for i in 0..3 {
+    print(i)   // prints 0, 1, 2
+}
+```
+
+If `b` is not greater than `a`, the range is empty and the loop body doesn't
+run. There is no inclusive range operator; write `1..(n + 1)` to include
+`n`.
+
+:::note
+Ranges can only be used directly in a `for` loop. Storing one in a variable
+(`let r = 0..10`) passes `tessel check` but currently fails when the program
+is built.
+:::
+
+### Other operators
+
+These are covered on their own pages:
+
+- `??` gives a default for a missing optional value, and `?.` reads a member
+  only if there is a value. See [Optionals](/language/optionals/).
+- `.` reads a field or calls a method, `()` calls a function, and `[]` reads
+  an item from a list or dictionary.
+
+### Precedence
+
+From lowest to highest. Operators on the same row are applied left to right,
+except `??`, which groups to the right.
+
+| Operators |
+|---|
+| <code>&#124;&#124;</code> |
+| `&&` |
+| `==` `!=` `<` `<=` `>` `>=` |
+| `..` |
+| `??` |
+| `+` `-` |
+| `*` `/` `%` |
+| `!` `-` (prefix) |
+| `.` `?.` `()` `[]` |
+
+Because `??` is lower than `+`, `count ?? 0 + 1` means `count ?? (0 + 1)`.
+Use parentheses when in doubt: `(count ?? 0) + 1`.
+
+## Lines and semicolons
+
+A statement ends at the end of its line. Tessel doesn't use semicolons; a
+`;` is an error. Put each statement on its own line.
+
+A statement can still span several lines:
+
+- while a `(` or `[` is open,
+- after an operator such as `+`, `&&` or `=`,
+- when the next line starts with `.`, which continues a chain of calls.
+
+```tessel
+let total = 1 +
+    2 +
+    3
+let names = [
+    "Ada",
+    "Grace",
+]
+let shout = names
+    .joined(separator: " and ")
+    .uppercase()
+print(shout)
+```
+
+A trailing comma after the last item in a list, like `"Grace",` above, is
+allowed.

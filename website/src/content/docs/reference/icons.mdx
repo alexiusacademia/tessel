@@ -1,0 +1,25 @@
+---
+title: Icons
+description: Every built-in icon you can use with Icon(.name).
+---
+
+import IconGrid from '../../../components/IconGrid.astro';
+
+Tessel comes with a set of commonly used icons. Show one with `Icon` and the
+icon's name:
+
+```tessel
+HStack(spacing: 6) {
+    Icon(.warning).color(.orange)
+    Text("3 problems")
+}
+```
+
+An icon is sized by `.font(size:)` and colored by `.color(…)`, just like text,
+so it lines up with the text next to it. See
+[Icons, SVG and images](/ui/icons/) for more, including drawing your own SVG.
+
+The icons come from [Lucide](https://lucide.dev) (ISC license), renamed to
+match Tessel's naming style.
+
+<IconGrid />
