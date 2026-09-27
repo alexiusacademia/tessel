@@ -874,7 +874,7 @@ impl App {
                 Kind::Picker { .. } => "Picker".to_string(),
                 Kind::VStack(..) => "VStack".to_string(),
                 Kind::HStack(..) => "HStack".to_string(),
-                Kind::ZStack => "ZStack".to_string(),
+                Kind::ZStack(_) => "ZStack".to_string(),
                 Kind::Scroll => "Scroll".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
                 Kind::Image(p) => format!("Image {p:?}"),

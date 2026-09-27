@@ -1,0 +1,18 @@
+Root
+  View
+    VStack
+      HStack
+        Text "topLeading"
+        Text "center"
+        Text "bottomTrailing"
+      HStack
+        Text "top"
+        Text "tall\ntext"
+        Text "top too"
+      VStack
+        Text "trailing"
+        Text "stack"
+      ZStack
+        Spacer
+        Text "corner"
+      Icon star

@@ -170,7 +170,8 @@ pub enum Kind {
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
     HStack(f64, u8),
-    ZStack,
+    /// Its `Alignment` tag.
+    ZStack(u8),
     Scroll,
     Spacer,
     Image(String),
@@ -181,6 +182,8 @@ pub struct Mods {
     pub padding: Option<f64>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    /// `.frame(alignment:)`: where the content sits in the frame (an `Alignment` tag).
+    pub frame_align: Option<u8>,
     pub font_size: Option<f64>,
     pub weight: Option<f32>,
     pub color: Option<Rgba>,
@@ -263,7 +266,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Picker { .. } => 10,
         Kind::VStack(..) => 11,
         Kind::HStack(..) => 12,
-        Kind::ZStack => 13,
+        Kind::ZStack(_) => 13,
         Kind::Scroll => 14,
         Kind::Spacer => 15,
         Kind::Image(_) => 16,
@@ -456,15 +459,34 @@ pub unsafe extern "C" fn tsl_ui_svg(source: *const Str) {
     with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: None }));
 }
 
+/// An `Alignment` tag (the compiler's `ALIGNMENTS` order) as horizontal and
+/// vertical positions: 0 start, 1 center, 2 end.
+pub fn align_2d(tag: u8) -> (u8, u8) {
+    match tag {
+        0 => (0, 1), // leading
+        2 => (2, 1), // trailing
+        3 => (1, 0), // top
+        4 => (1, 2), // bottom
+        5 => (0, 0), // topLeading
+        6 => (2, 0), // topTrailing
+        7 => (0, 2), // bottomLeading
+        8 => (2, 2), // bottomTrailing
+        _ => (1, 1), // center
+    }
+}
+
 /// Opens a container: 0 = VStack, 1 = HStack, 2 = ZStack, 3 = Scroll.
-/// `align`: 0 leading, 1 center, 2 trailing (stacks only).
+/// `align` is an `Alignment` tag.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_begin(kind: i32, spacing: f64, align: i32) {
-    let align = align.clamp(0, 2) as u8;
+    let align = align.clamp(0, 8) as u8;
+    let (h, v) = align_2d(align);
     let kind = match kind {
-        0 => Kind::VStack(spacing, align),
-        1 => Kind::HStack(spacing, align),
-        2 => Kind::ZStack,
+        // Stacks store the position across their axis: 0 start, 1 center, 2 end.
+        0 => Kind::VStack(spacing, h),
+        // In an HStack, `.leading`/`.trailing` mean top/bottom.
+        1 => Kind::HStack(spacing, if align == 0 || align == 2 { align } else { v }),
+        2 => Kind::ZStack(align),
         _ => Kind::Scroll,
     };
     with_builder(|b| b.begin(kind, 0));
@@ -591,8 +613,11 @@ pub extern "C" fn tsl_ui_border(color: i32, width: f64, radius: f64) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_frame(has_width: u8, width: f64, has_height: u8, height: f64) {
+pub extern "C" fn tsl_ui_frame(has_width: u8, width: f64, has_height: u8, height: f64, has_align: u8, align: i32) {
     modify(|m| {
+        if has_align != 0 {
+            m.frame_align = Some(align.clamp(0, 8) as u8);
+        }
         if has_width != 0 {
             m.width = Some(width);
         }

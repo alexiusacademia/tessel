@@ -301,7 +301,8 @@ Text("Hi")
 | `TextField` | `TextField(_ placeholder: String, text: bind String)` |
 | `Toggle` | `Toggle(isOn: bind Bool)` |
 | `Picker` | `Picker(selection: bind T, content: View)` with `.tag(value)` on options |
-| `VStack` / `HStack` / `ZStack` | `(spacing: Float = 8, content: View)` |
+| `VStack` / `HStack` | `(spacing: Float = 8, alignment: Alignment = .center, content: View)` |
+| `ZStack` | `ZStack(alignment: Alignment = .center, content: View)` |
 | `Spacer` | `Spacer()` — takes the remaining space in a stack |
 | `Scroll` | `Scroll(content: View)` |
 | `Image` | `Image(_ path: String)` — PNG, JPEG or SVG files |
@@ -332,10 +333,32 @@ HStack(spacing: 4) {
 
 In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
-Common modifiers: `padding`, `frame(width:height:)`, `font`, `color`,
+Common modifiers: `padding`, `frame(width:height:alignment:)`, `font`, `color`,
 `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
 
-### 8.6 Identity
+### 8.6 Alignment
+
+`Alignment` has nine cases: `leading`, `center`, `trailing`, `top`, `bottom`,
+`topLeading`, `topTrailing`, `bottomLeading`, `bottomTrailing`.
+
+- A stack's `alignment:` lines its children up **across** the stack: a
+  `VStack` uses left/center/right (`.leading`, `.center`, `.trailing`), an
+  `HStack` top/center/bottom (`.top`, `.center`, `.bottom`).
+- Along the stack, children are packed in the middle. Push them to one end
+  with a `Spacer()`: `HStack { Spacer(); Text("Right") }`.
+- `.frame(width:height:alignment:)` places the view's content inside a
+  larger frame. Text and SVGs are centered unless told otherwise; a stack
+  with a frame spreads over the whole frame unless an alignment is given.
+- `ZStack(alignment:)` places each layer, e.g. a badge in a corner:
+
+```tessel
+ZStack(alignment: .topTrailing) {
+    Icon(.bell).font(size: 24)
+    Text("3").font(size: 10).color(.white).padding(2).background(.red, radius: 6)
+}
+```
+
+### 8.7 Identity
 
 When a `for` loop's list changes, views are matched to items by position. Use
 `.id(item.id)` to match by a stable key instead, so state inside rows (for

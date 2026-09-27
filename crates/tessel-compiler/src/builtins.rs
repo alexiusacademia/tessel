@@ -9,7 +9,10 @@ pub const COLORS: &[&str] = &[
 
 pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
 
-pub const ALIGNMENTS: &[&str] = &["leading", "center", "trailing"];
+/// In this order (the runtime relies on the tags): stacks use the first three
+/// plus `top`/`bottom`; frames and ZStacks use all of them.
+pub const ALIGNMENTS: &[&str] =
+    &["leading", "center", "trailing", "top", "bottom", "topLeading", "topTrailing", "bottomLeading", "bottomTrailing"];
 
 /// Names of the built-in icons, in order (shared with the runtime).
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
@@ -73,7 +76,8 @@ impl Builtins {
                 P::new("alignment", self.alignment.clone()).default(),
                 content(),
             ],
-            "ZStack" | "Scroll" => vec![content()],
+            "ZStack" => vec![P::new("alignment", self.alignment.clone()).default(), content()],
+            "Scroll" => vec![content()],
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
             _ => return None,
@@ -93,7 +97,11 @@ impl Builtins {
                 P::new("radius", Ty::Float).default(),
             ],
             "frame" => {
-                vec![P::new("width", Ty::opt(Ty::Float)).default(), P::new("height", Ty::opt(Ty::Float)).default()]
+                vec![
+                    P::new("width", Ty::opt(Ty::Float)).default(),
+                    P::new("height", Ty::opt(Ty::Float)).default(),
+                    P::new("alignment", self.alignment.clone()).default(),
+                ]
             }
             "opacity" => vec![P::unlabeled("value", Ty::Float)],
             "hidden" => vec![P::unlabeled("isHidden", Ty::Bool).default()],

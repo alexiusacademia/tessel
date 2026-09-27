@@ -193,7 +193,8 @@ impl Painter<'_> {
         match &n.kind {
             Kind::Text(_) => {
                 if let Some(t) = &n.layout.text {
-                    self.text(t, content.x, content.y, None);
+                    let c = n.layout.content;
+                    self.text(t, c.x, c.y, None);
                 }
             }
             Kind::Button { .. } => {
@@ -354,7 +355,7 @@ impl Painter<'_> {
             }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
-                    self.draw_svg(&svg, content);
+                    self.draw_svg(&svg, n.layout.content);
                 }
             }
             Kind::Image(_) => {

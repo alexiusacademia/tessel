@@ -1,0 +1,27 @@
+// Alignment: stacks, frames and ZStacks.
+app Align(width: 480, height: 420) {
+    VStack(spacing: 10) {
+        HStack(spacing: 10) {
+            Text("topLeading").frame(width: 140, height: 50, alignment: .topLeading).background(.lightGray)
+            Text("center").frame(width: 140, height: 50).background(.lightGray)
+            Text("bottomTrailing").frame(width: 140, height: 50, alignment: .bottomTrailing).background(.lightGray)
+        }
+        HStack(spacing: 10, alignment: .top) {
+            Text("top").background(.yellow)
+            Text("tall\ntext").background(.yellow)
+            Text("top too").background(.yellow)
+        }
+        .frame(height: 60)
+        VStack(spacing: 4, alignment: .trailing) {
+            Text("trailing")
+            Text("stack")
+        }
+        .frame(width: 440, alignment: .leading)
+        .background(.lightGray)
+        ZStack(alignment: .bottomTrailing) {
+            Spacer().frame(width: 200, height: 100).background(.blue)
+            Text("corner").color(.white).padding(4)
+        }
+        Icon(.star).frame(width: 440, alignment: .trailing).background(.lightGray)
+    }
+}

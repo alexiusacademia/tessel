@@ -537,20 +537,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(s, &Ty::Str);
             }
             "VStack" | "HStack" | "ZStack" | "Scroll" => {
-                let (kind, content) = match name {
-                    "VStack" => (0, 2),
-                    "HStack" => (1, 2),
-                    "ZStack" => (2, 0),
-                    _ => (3, 0),
+                // (runtime kind, index of `alignment:`, index of the content)
+                let (kind, align_at, content) = match name {
+                    "VStack" => (0, Some(1), 2),
+                    "HStack" => (1, Some(1), 2),
+                    "ZStack" => (2, Some(0), 1),
+                    _ => (3, None, 0),
                 };
                 let spacing = match (content, a(0)) {
                     (2, Some(x)) => self.expr_as(x, &Ty::Float).unwrap(),
                     _ => self.ctx.f64_type().const_float(8.0).into(),
                 };
-                // Alignment across the stack: 0 leading, 1 center, 2 trailing.
-                let align = match (content, a(1)) {
-                    (2, Some(x)) => self.expr(x).unwrap(),
-                    _ => self.ctx.i32_type().const_int(1, false).into(),
+                // The `Alignment` case's tag; 1 is `.center`.
+                let align = match align_at.and_then(a) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_int(1, false).into(),
                 };
                 let k = self.ctx.i32_type().const_int(kind, false);
                 self.call_rt("tsl_ui_begin", &[k.into(), spacing, align]);
@@ -628,6 +629,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                             dims.push(self.i8().const_zero().into());
                             dims.push(f64t.const_zero().into());
                         }
+                    }
+                }
+                match a(2) {
+                    Some(x) => {
+                        dims.push(self.i8().const_int(1, false).into());
+                        dims.push(int(self, x));
+                    }
+                    None => {
+                        dims.push(self.i8().const_zero().into());
+                        dims.push(self.ctx.i32_type().const_zero().into());
                     }
                 }
                 self.call_rt("tsl_ui_frame", &dims);

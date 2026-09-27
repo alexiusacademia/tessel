@@ -38,7 +38,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         .padding(8)
         Divider()
 
-        HStack(spacing: 0, alignment: .leading) {
+        HStack(spacing: 0, alignment: .top) {
             // Explorer
             VStack(spacing: 0, alignment: .leading) {
                 HStack(spacing: 2) {

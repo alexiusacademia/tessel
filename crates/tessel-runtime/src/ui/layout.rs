@@ -42,6 +42,10 @@ pub struct Box {
     pub rect: Rect,
     /// Measured size.
     pub size: Size,
+    /// The content's own size (before `.frame` and padding).
+    pub natural: Size,
+    /// Where the content is drawn: `rect` less padding, placed by the frame's alignment.
+    pub content: Rect,
     /// Laid-out text (labels, text, field contents).
     pub text: Option<parley::Layout<Paint>>,
     /// A text field's placeholder, and whether the field is empty.
@@ -131,6 +135,7 @@ impl Layouter<'_> {
             h: (n.mods.height.unwrap_or(avail.h) - 2.0 * pad).max(0.0),
         };
         let inner = self.measure_inner(n, inner_avail, &style);
+        n.layout.natural = inner;
         n.layout.size = Size {
             w: n.mods.width.unwrap_or(inner.w + 2.0 * pad),
             h: n.mods.height.unwrap_or(inner.h + 2.0 * pad),
@@ -243,7 +248,7 @@ impl Layouter<'_> {
             Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
             Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
-            Kind::ZStack | Kind::Root => {
+            Kind::ZStack(_) | Kind::Root => {
                 let mut size = Size::default();
                 for c in &mut n.children {
                     let s = self.measure(c, avail, style);
@@ -317,16 +322,29 @@ impl Layouter<'_> {
         if n.mods.hidden {
             return;
         }
-        let content = rect.inset(n.mods.padding.unwrap_or(0.0));
+        let mut content = rect.inset(n.mods.padding.unwrap_or(0.0));
+        // Content with a size of its own sits in a larger frame by the frame's
+        // alignment. Text and SVGs are centered by default; stacks lay out
+        // their children across the whole frame unless an alignment is given.
+        let align = match &n.kind {
+            Kind::Text(_) | Kind::Svg { .. } => Some(n.mods.frame_align.unwrap_or(1)),
+            Kind::VStack(..) | Kind::HStack(..) | Kind::ZStack(_) => n.mods.frame_align,
+            _ => None,
+        };
+        if let Some(align) = align {
+            content = aligned(content, n.layout.natural, align);
+        }
+        n.layout.content = content;
         match &n.kind {
             Kind::VStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::Y, content),
             Kind::Group => self.place_stack(n, GROUP_SPACING, 1, Axis::Y, content),
             Kind::HStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::X, content),
-            Kind::ZStack | Kind::Root => {
+            Kind::ZStack(_) | Kind::Root => {
+                let align = if let Kind::ZStack(a) = n.kind { a } else { 1 };
                 for c in &mut n.children {
                     let w = if flex(c, Axis::X, None) { content.w } else { c.layout.size.w.min(content.w) };
                     let h = if flex(c, Axis::Y, None) { content.h } else { c.layout.size.h.min(content.h) };
-                    let r = Rect { x: content.x + (content.w - w) / 2.0, y: content.y + (content.h - h) / 2.0, w, h };
+                    let r = aligned(content, Size { w, h }, align);
                     self.place(c, r);
                 }
             }
@@ -418,7 +436,10 @@ impl Layouter<'_> {
                 if (r.w - c.layout.size.w).abs() > 0.5 {
                     let style = c.layout.style;
                     let s = s.clone();
-                    c.layout.text = Some(self.text_layout(&s, &style, Some(r.w)));
+                    let pad = c.mods.padding.unwrap_or(0.0);
+                    let t = self.text_layout(&s, &style, Some((r.w - 2.0 * pad).max(0.0)));
+                    c.layout.natural = Size { w: t.width() as f64, h: t.height() as f64 };
+                    c.layout.text = Some(t);
                 }
             }
             self.place(c, r);
@@ -447,7 +468,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
         Kind::HStack(..) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
-        Kind::ZStack | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),
+        Kind::ZStack(_) | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),
         _ => false,
     }
 }
@@ -456,4 +477,35 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
 pub fn read_string(locator: &super::Callback) -> String {
     let p = locator.locate() as *const *const crate::Str;
     unsafe { crate::str_text(*p) }.to_string()
+}
+
+/// A `size` box inside `outer`, placed by an `Alignment` tag.
+fn aligned(outer: Rect, size: Size, align: u8) -> Rect {
+    let (h, v) = super::align_2d(align);
+    let (w, hgt) = (size.w.min(outer.w), size.h.min(outer.h));
+    let frac = |p: u8| p as f64 / 2.0;
+    Rect { x: outer.x + (outer.w - w) * frac(h), y: outer.y + (outer.h - hgt) * frac(v), w, h: hgt }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aligns_boxes_in_a_frame() {
+        let outer = Rect { x: 10.0, y: 20.0, w: 100.0, h: 50.0 };
+        let size = Size { w: 40.0, h: 10.0 };
+        let at = |tag| {
+            let r = aligned(outer, size, tag);
+            (r.x, r.y)
+        };
+        assert_eq!(at(5), (10.0, 20.0)); // topLeading
+        assert_eq!(at(1), (40.0, 40.0)); // center
+        assert_eq!(at(0), (10.0, 40.0)); // leading
+        assert_eq!(at(3), (40.0, 20.0)); // top
+        assert_eq!(at(8), (70.0, 60.0)); // bottomTrailing
+        // Content larger than the frame is clipped to it.
+        let big = aligned(outer, Size { w: 500.0, h: 500.0 }, 8);
+        assert_eq!((big.x, big.y, big.w, big.h), (10.0, 20.0, 100.0, 50.0));
+    }
 }
