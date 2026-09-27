@@ -76,12 +76,8 @@ download the package for your system from the folder of the newest version
 Unpack it into a folder and add the folder to your `PATH`. Each version's
 folder also has a `SHA256SUMS` file to check the download against.
 
-:::note
-On macOS, a package downloaded with a web browser is marked as coming from
-the internet, and macOS may refuse to run `tessel` because it isn't signed
-yet. The install script doesn't have this problem. If it happens, remove the
-mark with `xattr -dr com.apple.quarantine <folder>`.
-:::
+On macOS, `tessel` is signed with a Developer ID and notarized by Apple, so
+it runs even when downloaded with a web browser.
 
 Keep `libtessel_runtime.a` (`tessel_runtime.lib` on Windows) in the same
 folder as `tessel`: every app you build is linked with it.

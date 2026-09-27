@@ -61,7 +61,9 @@ These are the main gaps you may run into today.
 - **Editor support:** the language server reports errors and shows types on
   hover, but doesn't offer completion or go-to-definition.
 - **Installation:** packages exist for Apple silicon Macs and 64-bit
-  Windows only (no Intel Macs yet), and they aren't code signed.
+  Windows only (no Intel Macs yet). The macOS package is signed and
+  notarized; the Windows one isn't signed yet, so Windows SmartScreen may
+  warn about a downloaded `tessel.exe`.
 
 ## Planned
 
