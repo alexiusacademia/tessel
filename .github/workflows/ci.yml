@@ -53,6 +53,14 @@ jobs:
           $prefix = "C:\llvm\clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
           "LLVM_SYS_221_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
           & "$prefix\bin\llvm-config.exe" --version
+          # The release build lists libxml2 (xml2s.lib) as a dependency but doesn't ship it.
+          # Only LLVM's Windows-manifest code uses it, which Tessel never calls, so an
+          # empty stand-in library satisfies the linker.
+          if (-not (Test-Path "$prefix\lib\xml2s.lib")) {
+            Set-Content -Path stub.c -Value "void tessel_xml2_stub(void) {}"
+            & "$prefix\bin\clang-cl.exe" /c stub.c /Fo:stub.obj
+            & "$prefix\bin\llvm-lib.exe" /out:"$prefix\lib\xml2s.lib" stub.obj
+          }
 
       - uses: Swatinem/rust-cache@v2
 
