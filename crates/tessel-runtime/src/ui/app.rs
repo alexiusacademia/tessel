@@ -312,19 +312,18 @@ pub unsafe extern "C" fn tsl_file_dialog(
             }
             dialog.save_file()
         };
-        path.map(|p| {
-            let mut p = p.to_string_lossy().into_owned();
-            // Saving: add the first file type's extension if it's missing.
-            if save != 0 {
-                if let Some(ext) = types.first() {
-                    if !p.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase())) {
-                        p = format!("{p}.{ext}");
-                    }
-                }
-            }
-            p
-        })
+        path.map(|p| p.to_string_lossy().into_owned())
     };
+    // Saving: add the first file type's extension if it's missing (for
+    // scripted answers too, so tests behave like the real dialog).
+    let chosen = chosen.map(|mut p| {
+        if let (true, Some(ext)) = (save != 0, types.first()) {
+            if !p.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase())) {
+                p = format!("{p}.{ext}");
+            }
+        }
+        p
+    });
     match chosen {
         Some(p) => crate::str_new(&p),
         None => std::ptr::null_mut(),

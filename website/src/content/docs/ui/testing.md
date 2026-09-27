@@ -177,9 +177,9 @@ dialog is cancelled. Each `answer` is used by one dialog, in order, so you can
 queue several before a click that opens more than one. A dialog with no
 `answer` waiting returns `nil`, like a cancelled one.
 
-The path is returned exactly as written, and a relative path is relative to
-the folder the app was started from. Unlike the real save dialog, `answer`
-doesn't add a missing extension.
+A relative path is relative to the folder the app was started from. Like the
+real save dialog, a `saveFile` answer without the file type's extension gets
+it added (`answer "report"` with `types: ["och"]` saves `report.och`).
 
 ### Output
 
