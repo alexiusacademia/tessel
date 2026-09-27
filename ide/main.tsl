@@ -102,10 +102,17 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
 
             // Editor tabs
             if docs.isEmpty {
+                // Fills the space next to the explorer, with its content in the middle.
                 VStack(spacing: 10) {
                     Icon(.fileCode).font(size: 40).color(.lightGray)
-                    Text("Open a file from the explorer").color(.secondary)
+                    if hasTesselFiles() {
+                        Text("Open a file from the explorer").color(.secondary)
+                    } else {
+                        Text("This folder has no Tessel files yet").color(.secondary)
+                        Button("Create main.tsl") { createStarter() }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 TabView(selection: current, onClose: { path in closeDoc(path: path) }) {
                     for doc in docs {
@@ -324,7 +331,30 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                 problems.append(p)
             }
         }) { code in
-            status = if code == 0 { "No problems" } else { "{problems.count} problem(s)" }
+            status = if code == 0 {
+                "No problems"
+            } else if !problems.isEmpty {
+                "{problems.count} problem(s)"
+            } else if hasTesselFiles() {
+                "Check failed"
+            } else {
+                "No Tessel files yet"
+            }
+        }
+    }
+
+    fn hasTesselFiles() -> Bool {
+        (listFolder(project) ?? []).first(where: { n in n.hasSuffix(".tsl") }) != nil
+    }
+
+    // A small app to start from, in a new folder.
+    fn createStarter() {
+        let path = join(folder: project, name: "main.tsl")
+        let starter = "app Hello(width: 400, height: 300) \{\n    state count = 0\n\n    VStack(spacing: 12) \{\n        Text(\"Count: \{count}\").font(size: 24, weight: .bold)\n        Button(\"Add one\") \{ count += 1 }\n    }\n}\n"
+        if writeFile(path: path, text: starter) {
+            refreshTree(showing: project)
+            open(path: path)
+            check()
         }
     }
 
