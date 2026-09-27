@@ -174,7 +174,8 @@ let die = random(1..7)          // 1, 2, 3, 4, 5 or 6
 let index = random(0..names.count)
 ```
 
-If the range is empty (like `3..3`), the result is its start.
+The range must have at least one number: an empty range (like `3..3`, or
+`n..n` when `n` is the same) stops the program with a runtime error.
 
 ### randomFloat
 
@@ -646,12 +647,15 @@ if let data = readData("task.bin") {
 | An enum case without values | Its name, as a string | `"high"` |
 | An enum case with values | An object with the case's name as key | `{"custom":{"name":"feet","factor":0.3048}}` |
 | A list | An array | `[1,2,3]` |
-| A dictionary | An object; `Int` and `Bool` keys become strings | `{"ada":36}` |
+| A dictionary | An object; `Int` and `Bool` keys are written as strings | `{"ada":36}` |
 | An optional | The value, or `null` for `nil` | `null` |
 | A range | An array with its start and end | `[0,5]` |
 | `Data` | A base64 string | `"aGk="` |
 
-`toBinary` writes the same structure in MessagePack.
+`toBinary` writes the same structure in MessagePack, which can hold a few
+things JSON can't, so it keeps them as they are: `Data` as raw bytes (not
+base64), `Int` and `Bool` dictionary keys as numbers and booleans, and `NaN`
+and infinity as floats. That also makes binary files smaller.
 
 When reading:
 
@@ -666,7 +670,10 @@ When reading:
 - An `Int` also accepts a whole number written with a decimal point, like
   `2.0`.
 - `Float` values that aren't numbers (`NaN`, infinity) have no JSON form;
-  they're written as `null`.
+  they're written as `null`. Reading `null` into a `Float` gives `NaN`, and
+  into a `Float?` gives `nil`. (Binary keeps them exactly.)
+- A whole document that is just `null` reads as `nil`, whatever the type:
+  `let x: Float? = fromJson("null")` is `nil`.
 
 Functions and views can't be saved. `tessel check` points out the field that
 is the problem:
@@ -817,8 +824,12 @@ anything else is copied as it is:
 | `hh` | Hour (1–12), two digits | `09` |
 | `h` | Hour (1–12) | `9` |
 | `mm` | Minute, two digits | `05` |
+| `m` | Minute | `5` |
 | `ss` | Second, two digits | `30` |
+| `s` | Second | `30` |
 | `a` | AM or PM | `AM` |
+| `'text'` | The text as it is | `at` |
+| `''` | A single quote | `'` |
 
 ```tessel
 let t = date(year: 2026, month: 3, day: 7, hour: 9, minute: 5, second: 30)
@@ -827,11 +838,11 @@ print(formatDate(t, format: "d MMM yy"))              // 7 Mar 26
 print(formatDate(t, format: "EEE, MMMM d"))           // Sat, March 7
 print(formatDate(t, format: "h:mm a"))                // 9:05 AM
 print(formatDate(t, format: "dd/MM/yyyy"))            // 07/03/2026
+print(formatDate(t, format: "d MMM 'at' HH:mm"))      // 7 Mar at 09:05
 ```
 
-Month and weekday names are in English. There's no way to quote words in a
-pattern, and letters like `a` and `d` are always replaced, so add words
-around the result instead: `"at " + formatDate(t, format: "HH:mm")`.
+Month and weekday names are in English. Put words in single quotes, like
+`'at'`, so their letters aren't replaced.
 
 ### parseDate
 
@@ -952,8 +963,8 @@ image was copied).
 Button("Paste") { text += clipboardText() ?? "" }
 ```
 
-A [headless test run](/ui/testing/) uses a clipboard of its own, so tests
-never touch yours.
+A [headless test run](/ui/testing/) uses a clipboard of its own, shared
+with its text fields' copy and paste, so tests never touch yours.
 
 ### runCommand
 
@@ -1158,9 +1169,11 @@ app Downloader {
 - While downloading, the data goes to a file with `.part` added to the name;
   it's renamed to `to` only once everything has arrived. So a failed download
   leaves no half-written file behind. An existing file at `to` is replaced.
-- `progress` gets its fractions only if the server says how big the file
-  is. Either way, it's called with `1.0` once everything has arrived.
-- Only `http://` and `https://` URLs can be downloaded.
+- `progress` gets its fractions only if the size is known (the server says
+  how big the file is, or it's a local file). Either way, it's called with
+  `1.0` exactly once, when everything has arrived.
+- `http://`, `https://` and `file://` URLs can be downloaded; `file://`
+  copies a local file.
 
 ### openWebSocket
 

@@ -1,0 +1,13 @@
+bytes 0 1 2 255
+reading is NaN: true
+missing: inf
+counts: ten
+data in binary: 6 bytes
+{"bytes":"AAEC/w==","reading":null,"missing":null,"counts":{"3":"three","10":"ten"}}
+from JSON: reading NaN true, missing true, counts three
+null as Float: true
+2.5 as Float: 2.5
+7 Mar at 09:05
+9:5:7 AM
+Today is Saturday, it's 7
+true

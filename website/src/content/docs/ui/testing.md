@@ -139,8 +139,8 @@ both systems.
 
 The clipboard in a headless run is private to the script: `cmd+c` and `cmd+v`
 work, but never touch your real clipboard. `copyToClipboard` and
-`clipboardText` use a private clipboard too, though a separate one from the
-text fields' `cmd+c` and `cmd+v`. `openURL` doesn't open anything; it prints
+`clipboardText` use that same private clipboard, so text copied with one can
+be pasted with the other. `openURL` doesn't open anything; it prints
 `(open …)` instead.
 
 ### Time and background work

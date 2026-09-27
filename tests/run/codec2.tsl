@@ -1,0 +1,41 @@
+// Binary keeps what JSON can't: bytes, NaN and infinity, and Int keys.
+
+struct Sample {
+    bytes: Data
+    reading: Float
+    missing: Float? = nil
+    counts: [Int: String] = [:]
+}
+
+fn main() {
+    let s = Sample(bytes: Data(bytes: [0, 1, 2, 255]), reading: 0.0 / 0.0, missing: 1.0 / 0.0, counts: [3: "three", 10: "ten"])
+    let bin = toBinary(s)
+    if let back: Sample = fromBinary(bin) {
+        print("bytes {back.bytes.bytes.map { b in String(b) }.joined(separator: " ")}")
+        print("reading is NaN: {back.reading.isNaN}")
+        print("missing: {back.missing ?? 0.0}")
+        print("counts: {back.counts[10] ?? "none"}")
+    }
+    // Data is stored as bytes: 4 of them, not 8 characters of base64.
+    let small = toBinary(Data(bytes: [0, 1, 2, 255]))
+    print("data in binary: {small.count} bytes")
+
+    // JSON writes what it can.
+    print(toJson(s))
+    if let j: Sample = fromJson(toJson(s)) {
+        print("from JSON: reading NaN {j.reading.isNaN}, missing {j.missing == nil}, counts {j.counts[3] ?? "none"}")
+    }
+
+    // A plain null is nil, for Float too.
+    let f: Float? = fromJson("null")
+    print("null as Float: {f == nil}")
+    let g: Float? = fromJson("2.5")
+    print("2.5 as Float: {g ?? 0.0}")
+
+    // Dates: quoted text, and single-letter minutes and seconds.
+    let t = date(year: 2026, month: 3, day: 7, hour: 9, minute: 5, second: 7)
+    print(formatDate(t, format: "d MMM 'at' HH:mm"))
+    print(formatDate(t, format: "h:m:s a"))
+    print(formatDate(t, format: "'Today is' EEEE, 'it''s' d"))
+    print(parseDate("7 Mar 2026 at 09:05", format: "d MMM yyyy 'at' HH:mm") == date(year: 2026, month: 3, day: 7, hour: 9, minute: 5))
+}

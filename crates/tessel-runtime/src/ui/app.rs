@@ -1116,7 +1116,7 @@ pub unsafe extern "C" fn tsl_ui_run(title: *const Str, width: f64, height: f64, 
         text: TextEngine::new(),
         ui: Interaction::default(),
         dirty: true,
-        clipboard: Clipboard::Memory(String::new()),
+        clipboard: Clipboard::Headless,
         keys: Default::default(),
     };
     let code = match std::env::var("TESSEL_SCRIPT") {

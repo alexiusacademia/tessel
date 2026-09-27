@@ -490,7 +490,6 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
     Some(match name {
         "now" => rt("tsl_now"),
         "randomFloat" => rt("tsl_random_float"),
-        "random" => rt("tsl_random_int"),
         "formatDate" => rt_d("tsl_format_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd HH:mm")]),
         "parseDate" => rt_d("tsl_parse_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd")]),
         "date" => rt_d("tsl_make_date", &[Dflt::Req, Dflt::Req, Dflt::Req, Dflt::Int(0), Dflt::Int(0), Dflt::Int(0)]),

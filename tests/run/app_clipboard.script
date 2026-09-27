@@ -1,0 +1,10 @@
+click "Copy greeting"
+click "Type here"
+key cmd+v
+tree
+key cmd+a
+type "typed text"
+key cmd+a
+key cmd+c
+click "Read clipboard"
+tree

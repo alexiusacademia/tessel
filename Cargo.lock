@@ -2713,6 +2713,7 @@ dependencies = [
  "pollster",
  "rfd",
  "rmp-serde",
+ "serde",
  "serde_json",
  "tungstenite",
  "ureq",

@@ -3986,6 +3986,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.background(args, arg, span);
                 None
             }
+            "random" => {
+                // An empty range stops the program, so it needs the location.
+                let r = self.expr_as(arg(info.args[0].unwrap()), &Ty::Range).unwrap().into_struct_value();
+                let lo = self.b.build_extract_value(r, 0, "").unwrap();
+                let hi = self.b.build_extract_value(r, 1, "").unwrap();
+                let l = self.loc(span);
+                let i = self.i64();
+                let f = self.declare_rt("tsl_random_int", &[i.into(), i.into(), self.ptr_ty().into()], Some(i.into()));
+                self.b.build_call(f, &[lo.into(), hi.into(), l.into()], "").unwrap().try_as_basic_value().basic()
+            }
             "toJson" | "toBinary" => {
                 let x = &args[0].value;
                 let xt = self.ty(x);
@@ -4030,10 +4040,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.position_at_end(parsed);
                 let il = self.llty(&inner).unwrap();
                 let out = self.alloca(il, "value");
+                let (good, freed) = (self.block_named("good"), self.block_named("free"));
+                // A plain `null` is nil, whatever the type (a `Float` would
+                // otherwise read it as NaN).
+                if !matches!(inner, Ty::Opt(_)) {
+                    let decode = self.block_named("decode");
+                    let is_null = self.kind_is(tree, 0);
+                    self.b.build_conditional_branch(is_null, freed, decode).unwrap();
+                    self.b.position_at_end(decode);
+                }
                 let dec = self.dec_helper(&inner);
                 let ok = self.b.build_call(dec, &[tree.into(), out.into()], "").unwrap().try_as_basic_value().basic();
                 let ok = self.truthy(ok);
-                let (good, freed) = (self.block_named("good"), self.block_named("free"));
                 self.b.build_conditional_branch(ok, good, freed).unwrap();
                 self.b.position_at_end(good);
                 let v = self.load(&inner, out);

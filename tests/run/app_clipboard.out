@@ -1,0 +1,14 @@
+Root
+  View
+    VStack
+      TextField "Type here" = "hello from code"
+      Button "Copy greeting"
+      Button "Read clipboard"
+      Text "Clipboard: nothing"
+Root
+  View
+    VStack
+      TextField "Type here" = "typed text"
+      Button "Copy greeting"
+      Button "Read clipboard"
+      Text "Clipboard: typed text"

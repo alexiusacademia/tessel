@@ -1,0 +1,15 @@
+// copyToClipboard and clipboardText share the clipboard with text fields'
+// copy and paste.
+
+app Clip(width: 360, height: 200) {
+    state text = ""
+    state pasted = "nothing"
+
+    VStack(spacing: 8) {
+        TextField("Type here", text: text)
+        Button("Copy greeting") { copyToClipboard("hello from code") }
+        Button("Read clipboard") { pasted = clipboardText() ?? "nothing" }
+        Text("Clipboard: {pasted}")
+    }
+    .padding(16)
+}

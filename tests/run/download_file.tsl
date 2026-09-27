@@ -1,0 +1,32 @@
+// `download` copies `file://` URLs too, reports progress ending at 1.0 once,
+// and leaves nothing behind when it fails.
+
+fn main() {
+    let folder = joinPath(tempFolder(), "tessel-download-test")
+    createFolder(folder)
+    let source = joinPath(folder, "source.txt")
+    var text = ""
+    for i in 0..20000 {
+        text += "line {i}\n"
+    }
+    writeFile(path: source, text: text)
+    let target = joinPath(folder, "copy.txt")
+    var ends = 0
+    download(url: "file://{source}", to: target, progress: { p in
+        if p == 1.0 {
+            ends += 1
+        }
+    }) { ok in
+        print("copied: {ok}, same: {readFile(target) == readFile(source)}, reached 1.0: {ends} time(s)")
+        let bad = joinPath(folder, "missing-folder/copy.txt")
+        download(url: "file://{source}", to: bad) { ok in
+            print("into a missing folder: {ok}, part file left: {fileExists(bad + ".part")}")
+            download(url: "file://{joinPath(folder, "nothing.txt")}", to: target) { ok in
+                print("missing source: {ok}, part file left: {fileExists(target + ".part")}")
+                deleteFile(source)
+                deleteFile(target)
+                deleteFile(folder)
+            }
+        }
+    }
+}

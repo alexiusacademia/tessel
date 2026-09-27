@@ -174,14 +174,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let (kt, vt) = ((**kt).clone(), (**vt).clone());
                 self.counted_loop(n, &mut |g, i| {
                     let kp = g.call_rt("tsl_list_get", &[keys, i.into(), null.into()]).unwrap().into_pointer_value();
-                    let k = g.load(&kt, kp);
-                    // Keys as text: Strings as they are, others as they print.
-                    let (text, owned) = if kt == Ty::Str { (k, false) } else { (g.stringify(k, &kt), kt != Ty::Str) };
                     let vp = g.call_rt("tsl_list_get", &[values, i.into(), null.into()]).unwrap().into_pointer_value();
                     let item = g.encode_via(&vt, vp);
-                    g.tree_call("tsl_tree_set", &["ptr", "ptr", "ptr"], None, &[obj.into(), text, item.into()]);
-                    if owned && matches!(kt, Ty::Int | Ty::Bool) {
-                        g.release(text, &Ty::Str);
+                    if matches!(kt, Ty::Int | Ty::Bool) {
+                        // Kept as they are (binary has such keys; JSON writes them as text).
+                        let key = g.encode_via(&kt, kp);
+                        g.tree_call("tsl_tree_set_key", &["ptr", "ptr", "ptr"], None, &[obj.into(), key.into(), item.into()]);
+                    } else {
+                        // Other keys as text: Strings as they are, others as they print.
+                        let k = g.load(&kt, kp);
+                        let text = if kt == Ty::Str { k } else { g.stringify(k, &kt) };
+                        g.tree_call("tsl_tree_set", &["ptr", "ptr", "ptr"], None, &[obj.into(), text, item.into()]);
+                        if kt != Ty::Str {
+                            g.release(text, &Ty::Str);
+                        }
                     }
                 });
                 self.release(keys, &Ty::list(kt.clone()));
@@ -288,7 +294,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.tree_call("tsl_tree_kind", &["ptr"], Some("i32"), &[h.into()]).unwrap().into_int_value()
     }
 
-    fn kind_is(&mut self, h: PointerValue<'ctx>, kind: u64) -> IntValue<'ctx> {
+    pub(super) fn kind_is(&mut self, h: PointerValue<'ctx>, kind: u64) -> IntValue<'ctx> {
         let k = self.tree_kind(h);
         self.b.build_int_compare(IntPredicate::EQ, k, self.ctx.i32_type().const_int(kind, false), "").unwrap()
     }

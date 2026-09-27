@@ -104,8 +104,11 @@ pub enum Edit {
 
 pub enum Clipboard {
     System(arboard::Clipboard),
-    /// For headless runs: never touches the user's clipboard.
+    /// For tests: never touches the user's clipboard.
     Memory(String),
+    /// Headless runs: the clipboard `copyToClipboard` and `clipboardText`
+    /// use there too, so both kinds of copying and pasting meet.
+    Headless,
 }
 
 impl Clipboard {
@@ -120,6 +123,7 @@ impl Clipboard {
         match self {
             Clipboard::System(c) => c.get_text().unwrap_or_default(),
             Clipboard::Memory(s) => s.clone(),
+            Clipboard::Headless => crate::stdlib::headless_clipboard().unwrap_or_default(),
         }
     }
 
@@ -129,6 +133,7 @@ impl Clipboard {
                 let _ = c.set_text(text.to_string());
             }
             Clipboard::Memory(s) => *s = text.to_string(),
+            Clipboard::Headless => crate::stdlib::set_headless_clipboard(text),
         }
     }
 }

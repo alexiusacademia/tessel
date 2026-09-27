@@ -186,20 +186,37 @@ pub unsafe extern "C" fn tsl_download(
 }
 
 fn run_download(id: u64, url: &str, to: &str) -> bool {
-    use std::io::Write;
-    let mut response = match agent().get(url).call() {
-        Ok(r) if r.status().is_success() => r,
-        _ => return false,
+    // A local file (`file://`), or the body of a successful GET.
+    let mut response;
+    let (reader, total): (Box<dyn Read + '_>, Option<u64>) = if let Some(path) = url.strip_prefix("file://") {
+        let Ok(file) = std::fs::File::open(path) else { return false };
+        let total = file.metadata().ok().map(|m| m.len());
+        (Box::new(file), total)
+    } else {
+        response = match agent().get(url).call() {
+            Ok(r) if r.status().is_success() => r,
+            _ => return false,
+        };
+        let total = response
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
+        (Box::new(response.body_mut().with_config().limit(u64::MAX).reader()), total)
     };
-    let total: Option<u64> = response
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse().ok());
     // Write to a temporary name, so a failed download leaves no half file.
     let partial = format!("{to}.part");
-    let Ok(mut file) = std::fs::File::create(&partial) else { return false };
-    let mut reader = response.body_mut().with_config().limit(u64::MAX).reader();
+    let ok = save(id, reader, total, &partial) && std::fs::rename(&partial, to).is_ok();
+    if !ok {
+        let _ = std::fs::remove_file(&partial);
+    }
+    ok
+}
+
+/// Copies `reader` to the file `path`, reporting progress when `total` is known.
+fn save(id: u64, mut reader: Box<dyn Read + '_>, total: Option<u64>, path: &str) -> bool {
+    use std::io::Write;
+    let Ok(mut file) = std::fs::File::create(path) else { return false };
     let mut buf = vec![0u8; 64 * 1024];
     let mut done = 0u64;
     let mut reported = -1.0f64;
@@ -212,22 +229,24 @@ fn run_download(id: u64, url: &str, to: &str) -> bool {
                 }
                 done += n as u64;
                 if let Some(total) = total.filter(|t| *t > 0) {
-                    let fraction = done as f64 / total as f64;
+                    let fraction = (done as f64 / total as f64).min(1.0);
                     if fraction - reported >= 0.01 {
                         reported = fraction;
-                        post(Event::Progress(id, fraction.min(1.0)));
+                        post(Event::Progress(id, fraction));
                     }
                 }
             }
-            Err(_) => {
-                let _ = std::fs::remove_file(&partial);
-                return false;
-            }
+            Err(_) => return false,
         }
     }
-    drop(file);
-    post(Event::Progress(id, 1.0));
-    std::fs::rename(&partial, to).is_ok()
+    if file.flush().is_err() {
+        return false;
+    }
+    // Always end at 1.0, once.
+    if reported < 1.0 {
+        post(Event::Progress(id, 1.0));
+    }
+    true
 }
 
 // ===== WebSockets =====

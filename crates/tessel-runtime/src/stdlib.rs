@@ -264,11 +264,13 @@ pub(crate) fn random_u64() -> u64 {
     })
 }
 
-/// `random(lo..hi)`: an Int from `lo` up to, not including, `hi` (`lo` if empty).
+/// `random(lo..hi)`: an Int from `lo` up to, not including, `hi`; stops
+/// the program if the range is empty.
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_random_int(lo: i64, hi: i64) -> i64 {
+pub unsafe extern "C" fn tsl_random_int(lo: i64, hi: i64, loc: *const crate::Loc) -> i64 {
     if hi <= lo {
-        return lo;
+        let msg = format!("can't pick a random number from the empty range {lo}..{hi}");
+        unsafe { crate::panic_at(loc, &msg) };
     }
     let span = (hi as i128 - lo as i128) as u128;
     (lo as i128 + (random_u64() as u128 % span) as i128) as i64
@@ -296,6 +298,36 @@ fn to_chrono(format: &str) -> String {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        // 'text' is literal, and '' is a quote (as in Unicode date patterns).
+        if c == '\'' {
+            if chars.get(i + 1) == Some(&'\'') {
+                out.push('\'');
+                i += 2;
+                continue;
+            }
+            i += 1;
+            while i < chars.len() {
+                match (chars[i], chars.get(i + 1)) {
+                    ('\'', Some('\'')) => {
+                        out.push('\'');
+                        i += 2;
+                    }
+                    ('\'', _) => {
+                        i += 1;
+                        break;
+                    }
+                    ('%', _) => {
+                        out.push_str("%%");
+                        i += 1;
+                    }
+                    (ch, _) => {
+                        out.push(ch);
+                        i += 1;
+                    }
+                }
+            }
+            continue;
+        }
         let mut n = 1;
         while i + n < chars.len() && chars[i + n] == c {
             n += 1;
@@ -314,7 +346,9 @@ fn to_chrono(format: &str) -> String {
             ('h', 2) => "%I",
             ('h', 1) => "%-I",
             ('m', 2) => "%M",
+            ('m', 1) => "%-M",
             ('s', 2) => "%S",
+            ('s', 1) => "%-S",
             ('E', 4) => "%A",
             ('E', 3) => "%a",
             ('a', 1) => "%p",
@@ -490,12 +524,20 @@ fn headless() -> bool {
     std::env::var_os("TESSEL_SCRIPT").is_some()
 }
 
+pub(crate) fn headless_clipboard() -> Option<String> {
+    TEST_CLIPBOARD.with(|c| c.borrow().clone())
+}
+
+pub(crate) fn set_headless_clipboard(text: &str) {
+    TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some(text.to_string()));
+}
+
 /// `copyToClipboard(text)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_copy_to_clipboard(s: *const Str) -> u8 {
     let t = unsafe { text(s) }.to_string();
     if headless() {
-        TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some(t));
+        set_headless_clipboard(&t);
         return 1;
     }
     arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok() as u8
@@ -505,7 +547,7 @@ pub unsafe extern "C" fn tsl_copy_to_clipboard(s: *const Str) -> u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_clipboard_text() -> *mut Str {
     if headless() {
-        return opt_str(TEST_CLIPBOARD.with(|c| c.borrow().clone()));
+        return opt_str(headless_clipboard());
     }
     opt_str(arboard::Clipboard::new().and_then(|mut c| c.get_text()).ok())
 }
@@ -568,7 +610,7 @@ mod tests {
     #[test]
     fn random_numbers_stay_in_range() {
         for _ in 0..1000 {
-            let n = tsl_random_int(-3, 4);
+            let n = unsafe { tsl_random_int(-3, 4, std::ptr::null()) };
             assert!((-3..4).contains(&n));
             let f = tsl_random_float();
             assert!((0.0..1.0).contains(&f));
