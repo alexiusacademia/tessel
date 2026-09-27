@@ -3,3 +3,12 @@
 LLVM_SYS_221_PREFIX = "/opt/homebrew/opt/llvm@22"
 # Oldest macOS that Tessel apps (and the runtime's C dependencies) support.
 MACOSX_DEPLOYMENT_TARGET = "11.0"
+
+# LLVM's official Windows build uses the static C runtime (/MT). Everything
+# linked with it must use the same one, or memory allocated by one runtime is
+# freed by the other. This also means Tessel apps need no C runtime DLLs.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
