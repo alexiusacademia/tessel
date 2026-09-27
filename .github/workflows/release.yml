@@ -179,6 +179,53 @@ jobs:
           fi
           cp install/PACKAGE-README.txt dist/pkg/README.txt
 
+      # Signs tessel with the Developer ID certificate and has Apple notarize
+      # it, so macOS runs it even when it's downloaded with a browser. Needs
+      # the secrets MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
+      # NOTARY_KEY_P8 (base64 App Store Connect API key), NOTARY_KEY_ID and
+      # NOTARY_ISSUER_ID. Releases (tags) require them.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if [[ -z "$MACOS_CERT_P12" || -z "$NOTARY_KEY_P8" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              echo "::error::signing secrets are missing; a release must be signed"
+              exit 1
+            fi
+            echo "::warning::signing secrets are missing; the package is not signed"
+            exit 0
+          fi
+          # A temporary keychain with just the signing certificate.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+          codesign --force --timestamp --options runtime --sign "Developer ID Application" dist/pkg/tessel
+          codesign --verify --strict --verbose=2 dist/pkg/tessel
+
+          # Notarize (a bare executable can't be stapled; macOS checks online).
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+          ditto -c -k --keepParent dist/pkg/tessel "$RUNNER_TEMP/tessel.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/tessel.zip" --wait --timeout 30m \
+            --key "$RUNNER_TEMP/key.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            | tee "$RUNNER_TEMP/notary.txt"
+          rm "$RUNNER_TEMP/key.p8"
+          grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"
+          security delete-keychain "$keychain"
+
       - name: Check the package is standalone (macOS)
         if: runner.os == 'macOS'
         run: |
