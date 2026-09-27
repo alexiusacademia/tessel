@@ -82,6 +82,11 @@ On Windows, use Ctrl wherever this page says Cmd.
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
 
+When a newer Tessel is available, an **Update to v…** button appears next to
+the status. It runs [`tessel update`](/start/installation/#updating) and shows
+its progress in the Console; restart Tessel afterwards to use the new
+version.
+
 Next to the buttons, a status text says what the IDE is doing ("Building…",
 "Running", "2 problem(s)", and so on).
 

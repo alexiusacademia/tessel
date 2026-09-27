@@ -1,4 +1,5 @@
 mod lsp;
+mod update;
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,9 @@ commands:
                  other .tsl files in its folder); --text reads the file's
                  current, unsaved text from <path>. Prints `start <offset>`,
                  then one suggestion per line: kind, label, detail (tab-separated)
+  update [version] [--check]
+                 update Tessel to the latest release (or to <version>, like
+                 v0.1.2); with --check, only say whether there's a newer one
   lsp            start the language server (used by editors)
   help           show this help
   version        print the compiler version";
@@ -93,6 +97,7 @@ fn main() -> ExitCode {
                 }
             }
         }
+        (Some("update"), _) => update::run(&args[1..]),
         (Some("lsp"), _) => match lsp::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {

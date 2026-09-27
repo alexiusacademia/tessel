@@ -22,6 +22,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state suggestStart = -1
     state suggestPath = ""
     state suggestRequest = 0
+    // A newer Tessel, like "v0.1.3", once the startup check finds one.
+    state newVersion = ""
+    state updating = false
 
     VStack(spacing: 0) {
         // Toolbar
@@ -30,6 +33,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             Text(fileName(project)).color(.secondary)
             Spacer()
             Text(status).color(.secondary)
+            if newVersion != "" {
+                ToolButton(icon: .download, label: "Update to {newVersion}", tint: .blue) { updateTessel() }.disabled(updating)
+            }
             Toggle("Restart on save", isOn: restartOnSave)
             ToolButton(icon: .save, label: "Save") { save() }.shortcut("s") { save() }
             ToolButton(icon: .circleCheck, label: "Check") { check() }.shortcut("k") { check() }
@@ -180,7 +186,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         }
         .frame(height: 220)
     }
-    .onAppear { reload() }
+    .onAppear {
+        reload()
+        checkForUpdate()
+    }
 
     // ----- files -----
 
@@ -424,6 +433,38 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         status = "Building…"
         runCommand(path: tesselCommand(), args: args, onOutput: { text in console.append(text) }) { code in
             status = if code == 0 { "Built" } else { "Build failed" }
+        }
+    }
+
+    // ----- updates -----
+
+    // Asks `tessel update --check` whether there's a newer Tessel.
+    fn checkForUpdate() {
+        if environment("TESSEL_NO_UPDATE_CHECK") != nil {
+            return
+        }
+        runCommand(path: tesselCommand(), args: ["update", "--check"], onOutput: { line in
+            // "Tessel v0.1.3 is available (you have v0.1.2). …"
+            if line.hasPrefix("Tessel v") && line.contains(" is available") {
+                newVersion = line.split(" ")[1]
+            }
+        }) { code in }
+    }
+
+    fn updateTessel() {
+        save()
+        updating = true
+        console = []
+        panel = Panel.console
+        status = "Updating Tessel…"
+        runCommand(path: tesselCommand(), args: ["update"], onOutput: { text in console.append(text) }) { code in
+            updating = false
+            if code == 0 {
+                status = "Updated to {newVersion}: restart Tessel to use it"
+                newVersion = ""
+            } else {
+                status = "Update failed"
+            }
         }
     }
 

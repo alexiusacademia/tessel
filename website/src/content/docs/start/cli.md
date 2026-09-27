@@ -177,6 +177,18 @@ you name. The first time, `tessel` compiles the IDE and caches it in your
 system's temporary folder; it's compiled again only when `tessel` itself
 changes.
 
+## `tessel update`
+
+```sh
+tessel update            # to the latest release
+tessel update --check    # only say whether there's a newer one
+tessel update v0.1.2     # to a specific version
+```
+
+Replaces the installation this `tessel` runs from (the folder it's in) with
+another release, after checking the download against the release's
+checksums. See [Updating](/start/installation/#updating).
+
 ## `tessel complete`
 
 ```sh
@@ -232,6 +244,8 @@ summary and exits with status 1.
 | `TESSEL_SCRIPT` | Built apps | Runs the app without a window, driven by a script of commands: click, type, press keys, wait, print the view tree, or save a screenshot. See [Testing apps](/ui/testing/). |
 | `TESSEL_EXE` | Set by `tessel run` and `tessel ide` | The path of the `tessel` command that started the program. A program can read it with `environment("TESSEL_EXE")`, which is how the IDE finds `tessel`. |
 | `TESSEL_PROJECT` | The IDE | The project folder. `tessel ide` sets it; you don't normally need it. |
+| `TESSEL_RELEASES` | `tessel update` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
+| `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |
 | `TESSEL_DEBUG_EVENTS` | Built apps | When set, an app prints every window event it receives (mouse, keyboard, resizing) to standard error. Useful when something doesn't react to input. |
 | `LLVM_SYS_221_PREFIX` | Building Tessel | Where LLVM 22 is installed; see [Installation](/start/installation/). |
 

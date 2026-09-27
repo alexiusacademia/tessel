@@ -82,6 +82,28 @@ it runs even when downloaded with a web browser.
 Keep `libtessel_runtime.a` (`tessel_runtime.lib` on Windows) in the same
 folder as `tessel`: every app you build is linked with it.
 
+## Updating
+
+```sh
+tessel update
+```
+
+Downloads the latest release and replaces your installation with it. The
+download is checked against the release's checksums before anything is
+changed, so an interrupted or damaged download leaves your installation as it
+was. Apps you've already built aren't affected; rebuild them to use the new
+version.
+
+- `tessel update --check` only says whether a newer version exists.
+- `tessel update v0.1.2` installs that version instead, newer or older, for
+  example to go back after an update.
+
+The [Tessel IDE](/start/ide/) checks for a newer version when it opens, and
+shows an **Update** button in its toolbar when there is one.
+
+`tessel update` came with Tessel 0.1.3. To get it from an older version, run
+the install command above once more.
+
 ## Installing a specific version
 
 Set `TESSEL_VERSION` before running the installer:

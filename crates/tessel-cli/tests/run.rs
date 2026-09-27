@@ -107,6 +107,7 @@ fn ide_session() {
         .env("TESSEL_SCRIPT", script)
         .env("TESSEL_PROJECT", &project)
         .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
+        .env("TESSEL_NO_UPDATE_CHECK", "1")
         .output()
         .unwrap();
     assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
