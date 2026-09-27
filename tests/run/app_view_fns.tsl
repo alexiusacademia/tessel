@@ -1,0 +1,52 @@
+// Functions declared in views and apps: passed as values (`action: save`),
+// and using the view's parameters, including `bind` ones.
+
+struct Item {
+    title: String
+    done: Bool = false
+}
+
+app ViewFns {
+    state items = [Item(title: "a"), Item(title: "b")]
+    state prefix = "Toggle"
+    state picked = ""
+    state saves = 0
+    state exitCode = -1
+
+    VStack {
+        for item in items {
+            Row(item: item, prefix: prefix, onPick: remember)
+        }
+        Text("picked {picked}, saves {saves}, exit {exitCode}")
+        Button("Save", action: save)
+        Button("Rename") { prefix = "Flip" }
+        Button("Run") {
+            let tessel = environment("TESSEL_EXE") ?? "tessel"
+            runCommand(path: tessel, args: ["check", "tests/fixtures/typo.tsl"], onOutput: remember, onExit: finished)
+        }
+    }
+
+    fn save() {
+        saves += 1
+    }
+
+    fn remember(text: String) {
+        picked = text
+    }
+
+    fn finished(code: Int) {
+        exitCode = code
+    }
+}
+
+view Row(item: bind Item, prefix: String, onPick: fn(String)) {
+    HStack {
+        Text("{item.title}: {item.done}")
+        Button("{prefix} {item.title}", action: toggle)
+    }
+
+    fn toggle() {
+        item.done = !item.done
+        onPick("{prefix} {item.title}")
+    }
+}

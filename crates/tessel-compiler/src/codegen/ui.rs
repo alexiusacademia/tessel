@@ -30,7 +30,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let names: Vec<String> = self.view_decls.keys().cloned().collect();
         for name in names {
             let src = self.view_decls[&name];
-            let fields: Vec<Ty> = src
+            // The record holds the view's `state`, then its parameters (so
+            // the view's functions can use them; `bind` ones as locators).
+            let mut fields: Vec<Ty> = src
                 .body
                 .stmts
                 .iter()
@@ -39,6 +41,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     _ => None,
                 })
                 .collect();
+            for sig in self.checked.views.get(&name).into_iter().flatten() {
+                fields.push(if sig.bind { Ty::View } else { sig.ty.clone() });
+            }
             let body: Vec<BasicTypeEnum> = fields.iter().map(|t| self.llty(t).unwrap()).collect();
             let st = self.ctx.opaque_struct_type(&format!("tsl.state.{name}"));
             st.set_body(&body, false);
@@ -99,6 +104,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
     }
 
+    /// How many `state` values a view has (its record's first fields).
+    fn state_count(&self, name: &str) -> usize {
+        self.view_decls[name].body.stmts.iter().filter(|s| matches!(s, Stmt::State(_))).count()
+    }
+
     /// Vars for a view's state values and functions.
     fn view_vars(&self, name: &str) -> Vec<Var<'ctx>> {
         let src = self.view_decls[name];
@@ -132,8 +142,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: super::boxed_vars(src.body),
             record: None,
         });
+        let mut args = Vec::new();
         for (i, (p, sig)) in src.params.iter().zip(&sigs).enumerate() {
             let v = f.get_nth_param(1 + i as u32).unwrap();
+            args.push((v, if sig.bind { Ty::View } else { sig.ty.clone() }));
             if sig.bind {
                 let lt = self.llty(&Ty::View).unwrap();
                 let slot = self.alloca(lt, &p.name.name);
@@ -153,6 +165,30 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.stack.last_mut().unwrap().record = Some(Record { data, ty: st, view: name.to_string() });
         for v in self.view_vars(name) {
             self.push_var(v);
+        }
+
+        // Keep this build's arguments in the record, for the view's functions.
+        if !args.is_empty() {
+            let states = self.state_count(name);
+            let flag = self.b.build_load(self.i8(), fresh, "").unwrap().into_int_value();
+            let is_fresh = self.b.build_int_compare(IntPredicate::NE, flag, self.i8().const_zero(), "").unwrap();
+            let (first, again, stored) = (self.block_named("args"), self.block_named("args_again"), self.block_named("args_stored"));
+            self.b.build_conditional_branch(is_fresh, first, again).unwrap();
+            for (fresh_record, bb) in [(true, first), (false, again)] {
+                self.b.position_at_end(bb);
+                for (k, (v, ty)) in args.iter().enumerate() {
+                    let p = self.b.build_struct_gep(st, data, (states + k) as u32, "").unwrap();
+                    self.retain(*v, ty);
+                    // A new record's memory holds nothing to release yet.
+                    let old = (!fresh_record).then(|| self.load(ty, p));
+                    self.b.build_store(p, *v).unwrap();
+                    if let Some(old) = old {
+                        self.release(old, ty);
+                    }
+                }
+                self.br(stored);
+            }
+            self.b.position_at_end(stored);
         }
 
         // First time this instance appears: initialize its state.
@@ -199,6 +235,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: super::boxed_vars(&fd.body),
             record: Some(Record { data, ty: st, view: view.to_string() }),
         });
+        // The view's parameters, as kept in the record by its last build.
+        let states = self.state_count(view);
+        let view_params = self.view_decls[view].params.iter().zip(self.checked.views.get(view).cloned().unwrap_or_default());
+        for (k, (p, psig)) in view_params.enumerate() {
+            let index = (states + k) as u32;
+            let store = if psig.bind {
+                let slot = self.b.build_struct_gep(st, data, index, "").unwrap();
+                Store::Binding { slot, owned: false }
+            } else {
+                Store::State(index)
+            };
+            self.push_var(Var { name: p.name.name.clone(), ty: psig.ty.clone(), store });
+        }
         for (i, (p, ps)) in fd.params.iter().zip(&sig.params).enumerate() {
             let v = f.get_nth_param(2 + i as u32).unwrap();
             self.declare_value(&p.name.name, &ps.ty, Some(v));

@@ -216,7 +216,7 @@ enum Mode {
     Content,
 }
 
-const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "View"];
+const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "Range", "View"];
 const MUTATING: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
 
 struct Checker<'a> {
@@ -436,6 +436,7 @@ impl Checker<'_> {
                 "Float" => Ty::Float,
                 "Bool" => Ty::Bool,
                 "String" => Ty::Str,
+                "Range" => Ty::Range,
                 "View" => Ty::View,
                 name => match self.globals.get(name) {
                     Some(Global::Struct(i)) => Ty::Struct(*i),
@@ -592,6 +593,66 @@ impl Checker<'_> {
                 Item::Fn(f) => self.fns[id] = self.fn_sig(f),
                 Item::View(v) => self.views[id] = self.params_sig(&v.params, true),
                 Item::App(_) => {}
+            }
+        }
+        self.propagate_mutation(program, ids);
+    }
+
+    /// A method also changes its value if it calls one of its own type's
+    /// changing methods (`increment()`, `self.increment()`) or a changing
+    /// method of one of its fields (`counter.increment()`), however deep.
+    fn propagate_mutation(&mut self, program: &Program, ids: &[Option<usize>]) {
+        // (is a struct, type id, method index, the calls it makes)
+        let mut calls: Vec<(bool, usize, usize, Vec<MethodCall>)> = Vec::new();
+        for (item, id) in program.items.iter().zip(ids) {
+            let Some(id) = *id else { continue };
+            let (is_struct, decls, roots): (bool, &[FnDecl], HashSet<String>) = match item {
+                Item::Struct(d) => (true, &d.methods, self.structs[id].fields.iter().map(|f| f.name.clone()).collect()),
+                Item::Enum(d) => (false, &d.methods, HashSet::new()),
+                _ => continue,
+            };
+            let methods = if is_struct { &self.structs[id].methods } else { &self.enums[id].methods };
+            for decl in decls {
+                // Methods rejected as duplicates have no MethodDef.
+                let Some(index) = methods.iter().position(|m| m.name == decl.name.name && m.span == decl.name.span) else {
+                    continue;
+                };
+                calls.push((is_struct, id, index, method_calls(&decl.body, &roots)));
+            }
+        }
+        loop {
+            let mut changed = false;
+            for (is_struct, id, index, made) in &calls {
+                let methods = if *is_struct { &self.structs[*id].methods } else { &self.enums[*id].methods };
+                if methods[*index].mutating {
+                    continue;
+                }
+                let mutates = made.iter().any(|c| match c {
+                    MethodCall::Own(name) => methods.iter().any(|m| m.name == *name && m.mutating),
+                    MethodCall::Field(field, name) => {
+                        let ty = self.structs[*id].fields.iter().find(|f| f.name == *field).map(|f| &f.ty);
+                        match ty {
+                            Some(Ty::Struct(s)) => self.structs[*s].methods.iter().any(|m| m.name == *name && m.mutating),
+                            Some(Ty::Enum(e)) => self.enums[*e].methods.iter().any(|m| m.name == *name && m.mutating),
+                            _ => false,
+                        }
+                    }
+                    // A method of a field's field: any changing method of that name.
+                    MethodCall::Deep(name) => self
+                        .structs
+                        .iter()
+                        .flat_map(|s| &s.methods)
+                        .chain(self.enums.iter().flat_map(|e| &e.methods))
+                        .any(|m| m.name == *name && m.mutating),
+                });
+                if mutates {
+                    let methods = if *is_struct { &mut self.structs[*id].methods } else { &mut self.enums[*id].methods };
+                    methods[*index].mutating = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
             }
         }
     }
@@ -1251,7 +1312,7 @@ impl Checker<'_> {
 
     fn showable(&mut self, t: &Ty, span: Span) {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Enum(_) | Ty::Error => {}
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error => {}
             Ty::Opt(_) => {
                 self.error(span, "this might be `nil`, so it can't be shown as text directly")
                     .help("give it a default with `??`, like \"{name ?? \"none\"}\"");
@@ -2325,6 +2386,38 @@ fn join_and(items: &[String]) -> String {
         [one] => one.clone(),
         [init @ .., last] => format!("{} and {last}", init.join(", ")),
     }
+}
+
+/// A call inside a method body that may change the method's value.
+enum MethodCall {
+    /// `name(…)` or `self.name(…)`: one of the type's own methods.
+    Own(String),
+    /// `field.name(…)`: a method of one of the struct's fields.
+    Field(String, String),
+    /// `field.a.name(…)`: a method of something inside a field.
+    Deep(String),
+}
+
+/// The calls in a method body that could change its value, for
+/// propagate_mutation. `roots` are the struct's field names.
+fn method_calls(b: &Block, roots: &HashSet<String>) -> Vec<MethodCall> {
+    let mut out = Vec::new();
+    crate::ast::block_exprs(b, &mut |e| {
+        let ExprKind::Call { callee, .. } = &e.kind else { return };
+        match &callee.kind {
+            ExprKind::Name(name) => out.push(MethodCall::Own(name.clone())),
+            ExprKind::Member { object, name, .. } => match &object.kind {
+                ExprKind::Name(n) if n == "self" => out.push(MethodCall::Own(name.name.clone())),
+                ExprKind::Name(n) if roots.contains(n) => out.push(MethodCall::Field(n.clone(), name.name.clone())),
+                _ if root_name(object).is_some_and(|n| roots.contains(n) || n == "self") => {
+                    out.push(MethodCall::Deep(name.name.clone()))
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    });
+    out
 }
 
 /// Does a method body change any of `roots` (its struct's fields or `self`)?

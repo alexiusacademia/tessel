@@ -42,3 +42,37 @@ app Main {
         draft = ""
     }
 }
+
+// Methods that change their value only by calling other changing methods.
+struct Counter {
+    n: Int = 0
+    fn increment() {
+        n += 1
+    }
+    fn incrementTwice() {
+        increment()
+        self.increment()
+    }
+    fn read() -> Int {
+        n
+    }
+}
+
+struct Holder {
+    counter: Counter = Counter()
+    fn bump() {
+        counter.increment()
+    }
+    fn look() -> Int {
+        counter.read()
+    }
+}
+
+fn constants() {
+    let c = Counter()
+    c.incrementTwice() // error: because `incrementTwice` changes it
+    print(c.read())
+    let h = Holder()
+    h.bump() // error: because `bump` changes it
+    print(h.look())
+}

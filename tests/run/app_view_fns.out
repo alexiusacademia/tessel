@@ -1,0 +1,30 @@
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "a: true"
+          Button "Toggle a"
+      View
+        HStack
+          Text "b: false"
+          Button "Toggle b"
+      Text "picked Toggle a, saves 2, exit -1"
+      Button "Save"
+      Button "Rename"
+      Button "Run"
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "a: true"
+          Button "Flip a"
+      View
+        HStack
+          Text "b: true"
+          Button "Flip b"
+      Text "picked 2 errors found, saves 2, exit 1"
+      Button "Save"
+      Button "Rename"
+      Button "Run"

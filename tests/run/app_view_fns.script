@@ -1,0 +1,9 @@
+click "Toggle a"
+click "Save"
+click "Save"
+tree
+click "Rename"
+click "Flip b"
+click "Run"
+wait 1
+tree

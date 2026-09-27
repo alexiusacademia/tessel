@@ -1,0 +1,54 @@
+// Changing values through `?.`, and methods that change their value
+// indirectly (by calling another changing method).
+
+struct Box {
+    items: [Int] = []
+    fn add() {
+        items.append(1)
+    }
+    fn addTwo() {
+        add()
+        self.add()
+    }
+    fn takeFirst() -> Int {
+        items.remove(at: 0)
+    }
+}
+
+struct Shelf {
+    box: Box = Box()
+    fn fill() {
+        box.addTwo()
+    }
+}
+
+fn main() {
+    // A changing method through `?.` changes the value in the optional.
+    var b: Box? = Box()
+    b?.add()
+    b?.addTwo()
+    print(b?.items.count ?? -1)
+    print(b?.takeFirst() ?? -1)
+    print(b?.items.count ?? -1)
+
+    // ...and does nothing when there's no value.
+    var empty: Box? = nil
+    empty?.add()
+    print(empty?.items.count ?? -1)
+
+    // Built-in changing methods on a dictionary entry.
+    var groups: [String: [Int]] = ["odd": [1]]
+    groups["odd"]?.append(3)
+    groups["odd"]?.append(5)
+    groups["even"]?.append(2)
+    print((groups["odd"] ?? []).count)
+    print(groups.count)
+    print(groups["odd"]?.remove(at: 0) ?? -1)
+    print((groups["odd"] ?? []).count)
+
+    // Changes through fields and nested methods.
+    var s = Shelf()
+    s.fill()
+    s.fill()
+    print(s.box.items.count)
+}

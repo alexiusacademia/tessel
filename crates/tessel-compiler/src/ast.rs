@@ -226,7 +226,8 @@ fn item_exprs<'a>(item: &'a Item, f: &mut dyn FnMut(&'a Expr)) {
     }
 }
 
-fn block_exprs<'a>(b: &'a Block, f: &mut dyn FnMut(&'a Expr)) {
+/// Calls `f` on every expression in `b`, nested ones included.
+pub fn block_exprs<'a>(b: &'a Block, f: &mut dyn FnMut(&'a Expr)) {
     for s in &b.stmts {
         match s {
             Stmt::Let(d) | Stmt::Var(d) | Stmt::State(d) => expr_tree(&d.value, f),

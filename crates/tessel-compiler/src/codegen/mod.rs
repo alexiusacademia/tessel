@@ -54,6 +54,9 @@ fn host_triple() -> TargetTriple {
     }
 }
 
+/// Built-in methods that change their receiver (as in the checker).
+const MUTATING_BUILTINS: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
+
 pub fn compile(
     program: &Program,
     checked: &Checked,
@@ -121,6 +124,9 @@ enum Body<'b> {
     ContentExpr(&'b Expr),
     /// A place (for `bind`); calling it returns a pointer to the storage.
     Locator(&'b Expr),
+    /// A function declared in a view or app, used as a value (`action: save`):
+    /// calling it calls the function.
+    ViewFnRef(String),
 }
 
 /// How a closure captures a variable.
@@ -1113,6 +1119,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let same_payload = self.truthy(r);
                 self.b.build_and(same_tag, same_payload, "").unwrap()
             }
+            Ty::Range => {
+                let (sa, sb) = (a.into_struct_value(), b.into_struct_value());
+                let mut same = self.ctx.bool_type().const_int(1, false);
+                for i in 0..2 {
+                    let x = self.b.build_extract_value(sa, i, "").unwrap().into_int_value();
+                    let y = self.b.build_extract_value(sb, i, "").unwrap().into_int_value();
+                    let eq = self.b.build_int_compare(IntPredicate::EQ, x, y, "").unwrap();
+                    same = self.b.build_and(same, eq, "").unwrap();
+                }
+                same
+            }
             Ty::Struct(_) | Ty::Opt(_) => {
                 let f = self.eq_helper(t);
                 let (pa, pb) = (self.spill(t, a), self.spill(t, b));
@@ -1439,10 +1456,45 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn assign(&mut self, target: &Expr, op: AssignOp, value: &Expr) {
         let tt = self.ty(target);
+        if op == AssignOp::Set || self.is_dict_entry(target) {
+            let v = self.expr_as(value, &tt).unwrap();
+            self.store_value(target, v);
+            return;
+        }
+        let v = self.expr_as(value, &tt).unwrap();
+        let p = self.write_ptr(target);
+        let old = self.load(&tt, p);
+        let bop = match op {
+            AssignOp::Add => BinOp::Add,
+            AssignOp::Sub => BinOp::Sub,
+            AssignOp::Mul => BinOp::Mul,
+            _ => BinOp::Div,
+        };
+        let new = self.arith(bop, old, v, &tt, value.span);
+        self.release(v, &tt);
+        self.b.build_store(p, new).unwrap();
+        self.release(old, &tt);
+    }
+
+    /// `dict[key]`, as an assignment target?
+    fn is_dict_entry(&self, e: &Expr) -> bool {
+        matches!(&e.kind, ExprKind::Index(object, _) if matches!(self.ty(object), Ty::Dict(..)))
+    }
+
+    /// Can a value be stored into `e` (a variable, field, list element or dictionary entry)?
+    fn writable(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Index(object, _) if self.is_dict_entry(e) => self.is_place(object),
+            _ => self.is_place(e),
+        }
+    }
+
+    /// Stores `v` (owned) into `target`, releasing what was there.
+    fn store_value(&mut self, target: &Expr, v: Val<'ctx>) {
+        let tt = self.ty(target);
         // `dict[key] = value` (or `= nil` to remove)
         if let ExprKind::Index(object, key) = &target.kind {
             if let Ty::Dict(kt, vt) = self.ty(object) {
-                let v = self.expr_as(value, &tt).unwrap();
                 let k = self.expr_as(key, &kt).unwrap();
                 let slot = self.write_ptr(object);
                 let kp = self.spill(&kt, k);
@@ -1474,24 +1526,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 return;
             }
         }
-        let v = self.expr_as(value, &tt).unwrap();
         let p = self.write_ptr(target);
         let old = self.load(&tt, p);
-        let new = match op {
-            AssignOp::Set => v,
-            _ => {
-                let bop = match op {
-                    AssignOp::Add => BinOp::Add,
-                    AssignOp::Sub => BinOp::Sub,
-                    AssignOp::Mul => BinOp::Mul,
-                    _ => BinOp::Div,
-                };
-                let r = self.arith(bop, old, v, &tt, value.span);
-                self.release(v, &tt);
-                r
-            }
-        };
-        self.b.build_store(p, new).unwrap();
+        self.b.build_store(p, v).unwrap();
         self.release(old, &tt);
     }
 
@@ -1512,9 +1549,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// A `for` loop whose body is emitted by `body`.
     fn for_each_in(&mut self, var: &Ident, iter: &Expr, body: &mut dyn FnMut(&mut Self)) {
-        if let ExprKind::Binary(BinOp::Range, lo, hi) = &iter.kind {
-            let lo = self.expr(lo).unwrap().into_int_value();
-            let hi = self.expr(hi).unwrap().into_int_value();
+        if self.ty(iter) == Ty::Range {
+            let (lo, hi) = match &iter.kind {
+                ExprKind::Binary(BinOp::Range, lo, hi) => {
+                    (self.expr(lo).unwrap().into_int_value(), self.expr(hi).unwrap().into_int_value())
+                }
+                // A range stored in a variable, returned by a function, …
+                _ => {
+                    let r = self.expr(iter).unwrap().into_struct_value();
+                    let lo = self.b.build_extract_value(r, 0, "").unwrap().into_int_value();
+                    let hi = self.b.build_extract_value(r, 1, "").unwrap().into_int_value();
+                    (lo, hi)
+                }
+            };
             let i = self.alloca(self.i64().into(), "i");
             self.b.build_store(i, lo).unwrap();
             let (cond_bb, body_bb, done) = (self.block_named("for"), self.block_named("body"), self.block_named("done"));
@@ -1701,6 +1748,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn name(&mut self, n: &str, t: &Ty, span: Span) -> Option<Val<'ctx>> {
         if let Some(v) = self.lookup(n) {
+            if matches!(v.store, Store::ViewFn) {
+                return Some(self.make_closure(Body::ViewFnRef(n.to_string()), t));
+            }
             let p = self.var_read_ptr(&v, span);
             let val = self.load(&v.ty, p);
             self.retain(val, &v.ty);
@@ -1762,6 +1812,27 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_switch(tag, done, &cases).unwrap();
                 self.b.position_at_end(done);
                 self.b.build_load(self.ptr_ty(), slot, "").unwrap()
+            }
+            // "0..3"
+            Ty::Range => {
+                let r = v.into_struct_value();
+                let lo = self.b.build_extract_value(r, 0, "").unwrap();
+                let hi = self.b.build_extract_value(r, 1, "").unwrap();
+                let lo = self.call_rt("tsl_str_from_int", &[lo]).unwrap();
+                let hi = self.call_rt("tsl_str_from_int", &[hi]).unwrap();
+                let dots = self.str_lit("..").into();
+                let arr_ty = self.ptr_ty().array_type(3);
+                let arr = self.alloca(arr_ty.into(), "range");
+                for (i, part) in [lo, dots, hi].into_iter().enumerate() {
+                    let idx = [self.i64().const_zero(), self.i64().const_int(i as u64, false)];
+                    let slot = unsafe { self.b.build_gep(arr_ty, arr, &idx, "").unwrap() };
+                    self.b.build_store(slot, part).unwrap();
+                }
+                let three = self.i64().const_int(3, false);
+                let text = self.call_rt("tsl_str_concat", &[arr.into(), three.into()]).unwrap();
+                self.release(lo, &Ty::Str);
+                self.release(hi, &Ty::Str);
+                text
             }
             _ => unreachable!("not showable"),
         }
@@ -1866,9 +1937,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.position_at_end(done);
                 Some(self.load(t, slot))
             }
+            // A range value: its start and (excluded) end.
             BinOp::Range => {
-                self.unsupported(span, "ranges outside `for` loops");
-                self.undef(t)
+                let lo = self.expr(l).unwrap();
+                let hi = self.expr(r).unwrap();
+                let st = self.llty(&Ty::Range).unwrap().into_struct_type();
+                let v = self.b.build_insert_value(st.get_undef(), lo, 0, "").unwrap();
+                Some(self.b.build_insert_value(v, hi, 1, "").unwrap().into_struct_value().into())
             }
             _ => {
                 let lv = self.expr_as(l, t).unwrap();
@@ -2067,6 +2142,49 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.load(result, slot)
     }
 
+    /// `x?.change()` where the call changes the value inside the optional:
+    /// if `object` (a place) holds a value, runs `f` on a copy of it in a
+    /// slot and stores the changed copy back. Returns `f`'s result as an
+    /// optional of `result` (or nothing, for `Void`).
+    fn chain_mutate(
+        &mut self,
+        object: &Expr,
+        opt_ty: &Ty,
+        result: &Ty,
+        f: impl FnOnce(&mut Self, PointerValue<'ctx>) -> Option<Val<'ctx>>,
+    ) -> Option<Val<'ctx>> {
+        let Ty::Opt(inner) = opt_ty else { unreachable!() };
+        let inner = (**inner).clone();
+        let out = if *result == Ty::Void {
+            None
+        } else {
+            let lt = self.llty(result).unwrap();
+            let slot = self.alloca(lt, "chain");
+            let none = self.none(result);
+            self.b.build_store(slot, none).unwrap();
+            Some(slot)
+        };
+        let ov = self.expr(object).unwrap().into_struct_value();
+        let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
+        let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+        self.b.build_conditional_branch(flag, some_bb, done).unwrap();
+        self.b.position_at_end(some_bb);
+        // The copy we own moves into the slot, is changed there, and moves back.
+        let iv = self.b.build_extract_value(ov, 1, "").unwrap();
+        let recv = self.spill(&inner, iv);
+        let r = f(self, recv);
+        if let (Some(slot), Some(r)) = (out, r) {
+            let r = if Some(r.get_type()) == self.llty(result) { r } else { self.some(result, r) };
+            self.b.build_store(slot, r).unwrap();
+        }
+        let changed = self.load(&inner, recv);
+        let changed = self.some(opt_ty, changed);
+        self.store_value(object, changed);
+        self.br(done);
+        self.b.position_at_end(done);
+        out.map(|slot| self.load(result, slot))
+    }
+
     fn index(&mut self, e: &Expr, object: &Expr, index: &Expr) -> Option<Val<'ctx>> {
         let t = self.ty(e);
         match self.ty(object) {
@@ -2262,7 +2380,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// `state` through the view's state record (whose box is kept alive).
     fn make_closure(&mut self, body: Body, t: &Ty) -> Val<'ctx> {
         let (fn_ty, ptys, ret) = match (&body, t) {
-            (Body::Fn(..), Ty::Fn(ptys, ret)) => (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone()),
+            (Body::Fn(..) | Body::ViewFnRef(_), Ty::Fn(ptys, ret)) => {
+                (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone())
+            }
             (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
             _ => (self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
         };
@@ -2277,6 +2397,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
             Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
+            Body::ViewFnRef(name) => {
+                free.insert(name.clone());
+            }
         }
         let mut captures: Vec<(Var<'ctx>, Capture)> = Vec::new();
         let mut needs_self = false;
@@ -2465,6 +2588,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let p = self.write_ptr(e);
                 self.b.build_return(Some(&p)).unwrap();
             }
+            Body::ViewFnRef(name) => {
+                // Pass the closure's arguments (which it owns) straight on.
+                let r = self.stack.last().unwrap().record.clone().expect("view function outside its view");
+                let target = self.view_fns[&(r.view.clone(), name)];
+                let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), r.data.into()];
+                for i in 0..ptys.len() {
+                    all.push(f.get_nth_param(1 + i as u32).unwrap().into());
+                }
+                let v = self.b.build_call(target, &all, "").unwrap().try_as_basic_value().basic();
+                self.finish_function(v);
+            }
         }
         self.stack.pop();
         if let Some(bb) = saved {
@@ -2606,8 +2740,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 if optional {
                     let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
                     let ot = self.ty(object);
-                    let ov = self.expr(object).unwrap();
                     let (owner, name) = (owner.clone(), name.clone());
+                    // `box?.add()`: a changing method changes the value inside the optional.
+                    if self.method_mutating(&owner, &name) && self.writable(object) {
+                        let info2 = info.clone();
+                        return self.chain_mutate(object, &ot, &t, |g, recv| g.method_call(&owner, &name, recv, &info2, &arg));
+                    }
+                    let ov = self.expr(object).unwrap();
                     if t == Ty::Void {
                         let flag = self.b.build_extract_value(ov.into_struct_value(), 0, "").unwrap().into_int_value();
                         let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
@@ -2697,15 +2836,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let ExprKind::Member { object, optional, .. } = &callee.kind else { unreachable!() };
                 if *optional || (object.in_optional_chain() && matches!(self.ty(object), Ty::Opt(_))) {
                     let ot = self.ty(object);
-                    let ov = self.expr(object).unwrap();
                     let (recv, name) = (recv.clone(), name.clone());
+                    // `list?.append(x)`: change the value inside the optional, in place.
+                    if MUTATING_BUILTINS.contains(&name.as_str()) && self.writable(object) {
+                        let info2 = info.clone();
+                        return self.chain_mutate(object, &ot, &t, |g, slot| {
+                            g.builtin_method(&recv, &name, object, &info2, &arg, args, trailing, &t, e.span, Some(slot))
+                        });
+                    }
+                    let ov = self.expr(object).unwrap();
                     let info2 = info.clone();
                     let r = self.optional_chain(ov, &ot, &t, |g, v| {
                         g.builtin_on_value(&recv, &name, v, &info2, &arg, e.span).unwrap()
                     });
                     return Some(r);
                 }
-                self.builtin_method(recv, name, object, &info, &arg, args, trailing, &t, e.span)
+                self.builtin_method(recv, name, object, &info, &arg, args, trailing, &t, e.span, None)
             }
             Callee::BuiltinFn(name) => self.builtin_fn(name, args, &info, &arg, &t, e.span),
             Callee::Value => {
@@ -2814,12 +2960,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         trailing: Option<&'e Expr>,
         t: &Ty,
         span: Span,
+        slot: Option<PointerValue<'ctx>>,
     ) -> Option<Val<'ctx>> {
-        // Methods that change the receiver work on its storage.
+        // Methods that change the receiver work on its storage (`slot`, if
+        // the caller already has it).
         match (recv, name) {
             (Ty::List(elem), "append" | "insert" | "remove" | "removeAll") => {
                 let elem = (**elem).clone();
-                let slot = self.write_ptr(object);
+                let slot = slot.unwrap_or_else(|| self.write_ptr(object));
                 let l = self.loc(span);
                 match name {
                     "append" | "insert" => {
@@ -2856,7 +3004,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             (Ty::Dict(kt, vt), "removeValue") => {
                 let (kt, vt) = ((**kt).clone(), (**vt).clone());
-                let slot = self.write_ptr(object);
+                let slot = slot.unwrap_or_else(|| self.write_ptr(object));
                 let k = self.expr_as(arg(info.args[0].unwrap()), &kt).unwrap();
                 let kp = self.spill(&kt, k);
                 let vlt = self.llty(&vt).unwrap();
