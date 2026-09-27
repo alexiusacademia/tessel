@@ -77,6 +77,8 @@ pub struct Interaction {
     pub scroll: HashMap<u64, f64>,
     /// Horizontal scroll of code editors, by key.
     pub scroll_x: HashMap<u64, f64>,
+    /// The caret line each code editor last reported to its `line:` binding.
+    pub editor_line: HashMap<u64, i64>,
 }
 
 const ACCENT: Rgba = Rgba([0, 122, 255, 255]);

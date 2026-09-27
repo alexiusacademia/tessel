@@ -296,6 +296,8 @@ struct App {
     ui: Interaction,
     dirty: bool,
     clipboard: Clipboard,
+    /// Keys of the views in the current tree, to find ones that just appeared.
+    keys: std::collections::HashSet<u64>,
 }
 
 /// Keyboard modifiers, with the platform's shortcut key as `primary`
@@ -310,9 +312,15 @@ struct Mods {
 impl App {
     /// Rebuilds the tree if state may have changed, then lays it out.
     fn update(&mut self) {
-        if self.dirty || self.tree.is_none() {
+        // `.onAppear` blocks can change state, which rebuilds again (a few times at most).
+        for _ in 0..8 {
+            if !(self.dirty || self.tree.is_none()) {
+                break;
+            }
             self.dirty = false;
             self.tree = Some(build(&self.root));
+            self.run_on_appear();
+            self.sync_editor_lines();
         }
         let tree = self.tree.as_mut().unwrap();
         Layouter { text: &mut self.text, scroll: &self.ui.scroll }.run(tree, self.width, self.height);
@@ -359,6 +367,81 @@ impl App {
                 let visible = (node.layout.rect.w - 16.0).max(1.0);
                 keep(&mut e.scroll, caret_x, caret_x, visible, layout.width() as f64);
             }
+        }
+    }
+
+    /// Runs `.onAppear` for views that weren't in the previous tree.
+    fn run_on_appear(&mut self) {
+        fn visit(n: &Node, keys: &mut std::collections::HashSet<u64>, old: &std::collections::HashSet<u64>, out: &mut Vec<Callback>) {
+            keys.insert(n.key);
+            if let (Some(cb), false) = (&n.mods.on_appear, old.contains(&n.key)) {
+                out.push(cb.clone());
+            }
+            for c in &n.children {
+                visit(c, keys, old, out);
+            }
+        }
+        let mut keys = std::collections::HashSet::new();
+        let mut appeared = Vec::new();
+        if let Some(t) = &self.tree {
+            visit(t, &mut keys, &self.keys, &mut appeared);
+        }
+        self.keys = keys;
+        for cb in appeared {
+            cb.call();
+            self.dirty = true;
+        }
+    }
+
+    /// Two-way sync of code editors' `line:` bindings: when the program sets
+    /// a new line, move the caret there.
+    fn sync_editor_lines(&mut self) {
+        fn editors(n: &Node, out: &mut Vec<(u64, Callback)>) {
+            if let Kind::CodeEditor { line: Some(line), .. } = &n.kind {
+                out.push((n.key, line.clone()));
+            }
+            n.children.iter().for_each(|c| editors(c, out));
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            editors(t, &mut found);
+        }
+        for (key, line) in found {
+            let wanted = unsafe { *(line.locate() as *const i64) };
+            match self.ui.editor_line.insert(key, wanted) {
+                Some(known) if known != wanted => self.go_to_line(key, wanted),
+                _ => {}
+            }
+        }
+    }
+
+    /// Puts the caret at the start of `line` (from 1) in a code editor.
+    fn go_to_line(&mut self, key: u64, line: i64) {
+        let Some(text) = self.node(key).and_then(editable_text).map(read_string) else { return };
+        let offset = if line <= 1 {
+            0
+        } else {
+            text.match_indices('\n').nth((line - 2) as usize).map_or(text.len(), |(i, _)| i + 1)
+        };
+        let mut e = Editing::new(key, &text);
+        e.anchor = offset;
+        e.focus = offset;
+        self.ui.editing = Some(e);
+    }
+
+    /// After the caret moved: report its line to the editor's `line:` binding.
+    fn report_line(&mut self) {
+        let Some(e) = self.ui.editing.as_ref() else { return };
+        let key = e.key;
+        let focus = e.focus;
+        let Some(Kind::CodeEditor { text, line: Some(line), .. }) = self.node(key).map(|n| &n.kind) else { return };
+        let text = read_string(text);
+        let current = text[..focus.min(text.len())].matches('\n').count() as i64 + 1;
+        let slot = line.locate() as *mut i64;
+        if unsafe { *slot } != current {
+            unsafe { *slot = current };
+            self.ui.editor_line.insert(key, current);
+            self.dirty = true;
         }
     }
 
@@ -513,6 +596,7 @@ impl App {
             self.dirty = true;
         }
         self.ui.editing = Some(e);
+        self.report_line();
         // Lay out again so the caret position is current.
         if !self.dirty {
             self.follow_caret();
@@ -672,13 +756,13 @@ impl App {
                 }
                 Kind::Toggle { label, is_on } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
                 Kind::Picker { .. } => "Picker".to_string(),
-                Kind::VStack(_) => "VStack".to_string(),
-                Kind::HStack(_) => "HStack".to_string(),
+                Kind::VStack(..) => "VStack".to_string(),
+                Kind::HStack(..) => "HStack".to_string(),
                 Kind::ZStack => "ZStack".to_string(),
                 Kind::Scroll => "Scroll".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
                 Kind::Image(p) => format!("Image {p:?}"),
-                Kind::CodeEditor { text, error_lines } => {
+                Kind::CodeEditor { text, error_lines, .. } => {
                     format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
                 }
             };
@@ -719,6 +803,7 @@ pub unsafe extern "C" fn tsl_ui_run(title: *const Str, width: f64, height: f64, 
         ui: Interaction::default(),
         dirty: true,
         clipboard: Clipboard::Memory(String::new()),
+        keys: Default::default(),
     };
     let code = match std::env::var("TESSEL_SCRIPT") {
         Ok(script) => run_script(app, &script),

@@ -194,9 +194,9 @@ impl Layouter<'_> {
                 }
                 Size { w: w + 4.0, h: h + 4.0 }
             }
-            Kind::VStack(spacing) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
+            Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
-            Kind::HStack(spacing) => self.measure_stack(n, *spacing, Axis::X, avail, style),
+            Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
             Kind::ZStack | Kind::Root => {
                 let mut size = Size::default();
                 for c in &mut n.children {
@@ -273,9 +273,9 @@ impl Layouter<'_> {
         }
         let content = rect.inset(n.mods.padding.unwrap_or(0.0));
         match &n.kind {
-            Kind::VStack(spacing) => self.place_stack(n, *spacing, Axis::Y, content),
-            Kind::Group => self.place_stack(n, GROUP_SPACING, Axis::Y, content),
-            Kind::HStack(spacing) => self.place_stack(n, *spacing, Axis::X, content),
+            Kind::VStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::Y, content),
+            Kind::Group => self.place_stack(n, GROUP_SPACING, 1, Axis::Y, content),
+            Kind::HStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::X, content),
             Kind::ZStack | Kind::Root => {
                 for c in &mut n.children {
                     let w = if flex(c, Axis::X, None) { content.w } else { c.layout.size.w.min(content.w) };
@@ -288,9 +288,10 @@ impl Layouter<'_> {
                 let offset = self.scroll.get(&n.key).copied().unwrap_or(0.0);
                 let max = (n.layout.content_h - content.h).max(0.0);
                 let offset = offset.clamp(0.0, max);
+                // Scrolling content starts at the top left (lists read that way).
                 for c in &mut n.children {
                     let w = if flex(c, Axis::X, Some(Axis::Y)) { content.w } else { c.layout.size.w.min(content.w) };
-                    let r = Rect { x: content.x + (content.w - w) / 2.0, y: content.y - offset, w, h: c.layout.size.h };
+                    let r = Rect { x: content.x, y: content.y - offset, w, h: c.layout.size.h };
                     self.place(c, r);
                 }
             }
@@ -319,7 +320,7 @@ impl Layouter<'_> {
         }
     }
 
-    fn place_stack(&mut self, n: &mut Node, spacing: f64, axis: Axis, content: Rect) {
+    fn place_stack(&mut self, n: &mut Node, spacing: f64, align: u8, axis: Axis, content: Rect) {
         let (avail_along, avail_across) = if axis == Axis::Y { (content.h, content.w) } else { (content.w, content.h) };
         let visible: Vec<usize> = (0..n.children.len()).filter(|&i| !n.children[i].mods.hidden).collect();
         let gaps = spacing * visible.len().saturating_sub(1) as f64;
@@ -340,7 +341,11 @@ impl Layouter<'_> {
             let (size_along, size_across) = if axis == Axis::Y { (c.layout.size.h, c.layout.size.w) } else { (c.layout.size.w, c.layout.size.h) };
             let along = if flex(c, axis, Some(axis)) { share } else { size_along };
             let across = if flex(c, cross_axis, Some(axis)) { avail_across } else { size_across.min(avail_across) };
-            let offset_across = (avail_across - across) / 2.0;
+            let offset_across = match align {
+                0 => 0.0,
+                2 => avail_across - across,
+                _ => (avail_across - across) / 2.0,
+            };
             let r = if axis == Axis::Y {
                 Rect { x: content.x + offset_across, y: content.y + pos, w: across, h: along }
             } else {
@@ -376,8 +381,8 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } => axis == Axis::X,
         Kind::Scroll | Kind::CodeEditor { .. } => true,
-        Kind::VStack(_) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
-        Kind::HStack(_) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
+        Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
+        Kind::HStack(..) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
         Kind::ZStack | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),
         _ => false,
     }

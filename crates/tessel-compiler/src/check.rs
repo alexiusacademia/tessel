@@ -111,7 +111,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
     for (i, e) in enums.iter().enumerate() {
         globals.insert(e.name.clone(), Global::Enum(i));
     }
-    let builtins = Builtins { color: Ty::Enum(0), weight: Ty::Enum(1) };
+    let builtins = Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2) };
     let mut c = Checker {
         diags,
         builtins,

@@ -37,7 +37,10 @@ fn main() -> ExitCode {
             let rest = &args[2..];
             let out = rest.iter().position(|a| a == "-o").and_then(|i| rest.get(i + 1)).map(PathBuf::from);
             let bundle = rest.iter().any(|a| a == "--bundle");
-            let out = out.unwrap_or_else(|| default_output(Path::new(path)));
+            let mut out = out.unwrap_or_else(|| default_output(Path::new(path)));
+            if cfg!(windows) && out.extension().is_none() {
+                out.set_extension("exe");
+            }
             match build(Path::new(path), &out) {
                 Ok(app_name) if bundle => match make_bundle(&out, app_name.as_deref()) {
                     Ok(bundle) => {

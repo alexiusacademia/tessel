@@ -1,0 +1,56 @@
+// Files, paths, and reading the output of the `tessel` command.
+
+struct Problem {
+    file: String
+    line: Int
+    column: Int
+    message: String
+}
+
+// The `tessel` command. `tessel` sets TESSEL_EXE when it starts the IDE.
+fn tesselCommand() -> String {
+    environment("TESSEL_EXE") ?? "tessel"
+}
+
+fn fileName(path: String) -> String {
+    path.replace("\\", with: "/").split("/").last ?? path
+}
+
+fn join(folder: String, name: String) -> String {
+    "{folder}/{name}"
+}
+
+fn sourceFiles(folder: String) -> [String] {
+    (listFolder(folder) ?? []).filter { name in name.hasSuffix(".tsl") }
+}
+
+// A line of `tessel check --format lines`:
+// file, line, column, end line, end column, message (tab-separated).
+fn parseProblem(text: String) -> Problem? {
+    let f = text.split("\t")
+    if f.count != 6 {
+        return nil
+    }
+    Problem(file: f[0], line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, message: f[5])
+}
+
+// ` --> file:line:column`, as printed by compile and runtime errors.
+fn parseLocation(text: String) -> Problem? {
+    let t = text.trim()
+    if !t.hasPrefix("--> ") {
+        return nil
+    }
+    let parts = t.substring(from: 4, to: t.count).split(":")
+    if parts.count < 3 {
+        return nil
+    }
+    // A Windows path has a `:` too (C:\...), so the file is everything
+    // before the last two parts.
+    var file = parts[0]
+    for i in 1..parts.count - 2 {
+        file += ":" + parts[i]
+    }
+    let line = Int(parts[parts.count - 2]) ?? 1
+    let column = Int(parts[parts.count - 1]) ?? 1
+    Problem(file: file, line: line, column: column, message: "")
+}

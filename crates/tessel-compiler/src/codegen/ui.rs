@@ -478,7 +478,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let s = loc.into_struct_value();
                 let f = self.b.build_extract_value(s, 0, "").unwrap();
                 let env = self.b.build_extract_value(s, 1, "").unwrap();
-                self.call_rt("tsl_ui_code_editor", &[f, env, lines]);
+                let (line_f, line_env) = match a(2) {
+                    Some(x) => {
+                        let l = self.locator(x).into_struct_value();
+                        (self.b.build_extract_value(l, 0, "").unwrap(), self.b.build_extract_value(l, 1, "").unwrap())
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                self.call_rt("tsl_ui_code_editor", &[f, env, lines, line_f, line_env]);
                 self.release(lines, &list_t);
             }
             "Picker" => {
@@ -489,17 +496,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "VStack" | "HStack" | "ZStack" | "Scroll" => {
                 let (kind, content) = match name {
-                    "VStack" => (0, 1),
-                    "HStack" => (1, 1),
+                    "VStack" => (0, 2),
+                    "HStack" => (1, 2),
                     "ZStack" => (2, 0),
                     _ => (3, 0),
                 };
                 let spacing = match (content, a(0)) {
-                    (1, Some(x)) => self.expr_as(x, &Ty::Float).unwrap(),
+                    (2, Some(x)) => self.expr_as(x, &Ty::Float).unwrap(),
                     _ => self.ctx.f64_type().const_float(8.0).into(),
                 };
+                // Alignment across the stack: 0 leading, 1 center, 2 trailing.
+                let align = match (content, a(1)) {
+                    (2, Some(x)) => self.expr(x).unwrap(),
+                    _ => self.ctx.i32_type().const_int(1, false).into(),
+                };
                 let k = self.ctx.i32_type().const_int(kind, false);
-                self.call_rt("tsl_ui_begin", &[k.into(), spacing]);
+                self.call_rt("tsl_ui_begin", &[k.into(), spacing, align]);
                 self.content_inline(a(content).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
@@ -587,6 +599,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let action = self.expr_as(a(1).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_shortcut", &[key], action);
                 self.release(key, &Ty::Str);
+            }
+            "onAppear" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_appear", &[], action);
             }
             "onTap" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();

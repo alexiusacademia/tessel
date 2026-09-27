@@ -154,10 +154,11 @@ pub enum Kind {
     TextField { placeholder: String, text: Callback },
     Toggle { label: String, is_on: Callback },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
-    CodeEditor { text: Callback, error_lines: Vec<i64> },
+    CodeEditor { text: Callback, error_lines: Vec<i64>, line: Option<Callback> },
     Picker { selection: Callback },
-    VStack(f64),
-    HStack(f64),
+    /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
+    VStack(f64, u8),
+    HStack(f64, u8),
     ZStack,
     Scroll,
     Spacer,
@@ -181,6 +182,8 @@ pub struct Mods {
     pub tag: Option<Value>,
     /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows).
     pub shortcut: Option<(String, Callback)>,
+    /// `.onAppear { … }`: runs when the view first appears.
+    pub on_appear: Option<Callback>,
 }
 
 pub struct Node {
@@ -343,14 +346,22 @@ pub unsafe extern "C" fn tsl_ui_toggle(label: *const Str, f: *const c_void, env:
     with_builder(|b| b.leaf(Kind::Toggle { label, is_on }));
 }
 
-/// `CodeEditor(text:errorLines:)`. `error_lines` (an `[Int]`) is borrowed.
+/// `CodeEditor(text:errorLines:line:)`. `error_lines` (an `[Int]`) is
+/// borrowed; `line_f` is null when there's no `line:` binding.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_code_editor(f: *const c_void, env: *mut Header, error_lines: *const crate::List) {
+pub unsafe extern "C" fn tsl_ui_code_editor(
+    f: *const c_void,
+    env: *mut Header,
+    error_lines: *const crate::List,
+    line_f: *const c_void,
+    line_env: *mut Header,
+) {
     let text = Callback::new(f, env);
+    let line = (!line_f.is_null()).then(|| Callback::new(line_f, line_env));
     let n = unsafe { crate::tsl_list_len(error_lines) };
     let error_lines =
         (0..n).map(|i| unsafe { *(crate::tsl_list_get(error_lines, i, std::ptr::null()) as *const i64) }).collect();
-    with_builder(|b| b.leaf(Kind::CodeEditor { text, error_lines }));
+    with_builder(|b| b.leaf(Kind::CodeEditor { text, error_lines, line }));
 }
 
 #[unsafe(no_mangle)]
@@ -365,11 +376,13 @@ pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
 }
 
 /// Opens a container: 0 = VStack, 1 = HStack, 2 = ZStack, 3 = Scroll.
+/// `align`: 0 leading, 1 center, 2 trailing (stacks only).
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_begin(kind: i32, spacing: f64) {
+pub extern "C" fn tsl_ui_begin(kind: i32, spacing: f64, align: i32) {
+    let align = align.clamp(0, 2) as u8;
     let kind = match kind {
-        0 => Kind::VStack(spacing),
-        1 => Kind::HStack(spacing),
+        0 => Kind::VStack(spacing, align),
+        1 => Kind::HStack(spacing, align),
         2 => Kind::ZStack,
         _ => Kind::Scroll,
     };
@@ -517,6 +530,12 @@ pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env:
     modify(|m| m.shortcut = Some((key, cb)));
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_appear(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_appear = Some(cb));
+}
+
 /// Tags the last view with a copy of the value at `value` (borrowed).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_tag(value: *const u8, ty: *const TslType) {
@@ -550,10 +569,10 @@ mod tests {
     extern "C" fn counter_ui(_env: *mut Header) {
         let f = nothing as *const c_void;
         unsafe {
-            tsl_ui_begin(0, 12.0);
+            tsl_ui_begin(0, 12.0, 1);
             tsl_ui_text(str_new("Count: 3"));
             tsl_ui_font(32.0, 1, 3, 1);
-            tsl_ui_begin(1, 8.0);
+            tsl_ui_begin(1, 8.0, 1);
             tsl_ui_button(str_new("-"), f, std::ptr::null_mut());
             tsl_ui_button(str_new("+"), f, std::ptr::null_mut());
             tsl_ui_end();
@@ -576,7 +595,7 @@ mod tests {
         let scroll = HashMap::new();
         layout::Layouter { text: &mut text, scroll: &scroll }.run(&mut tree, 320.0, 260.0);
         let vstack = &tree.children[0];
-        assert!(matches!(vstack.kind, Kind::VStack(_)));
+        assert!(matches!(vstack.kind, Kind::VStack(..)));
         // Centered horizontally in the window, and the text field stretches.
         let r = vstack.layout.rect;
         assert!((r.x + r.w / 2.0 - 160.0).abs() < 1.0, "{r:?}");

@@ -1,0 +1,195 @@
+// The Tessel IDE, written in Tessel.
+
+app Tessel(title: "Tessel", width: 1100, height: 720) {
+    state project = environment("TESSEL_PROJECT") ?? currentFolder()
+    state files: [String] = []
+    state current = ""
+    state source = ""
+    state saved = ""
+    state line = 1
+    state problems: [Problem] = []
+    state console: [String] = []
+    state running: Int? = nil
+    state status = "Ready"
+
+    VStack(spacing: 0) {
+        // Toolbar
+        HStack(spacing: 8) {
+            Text("Tessel").font(size: 16, weight: .bold)
+            Text(fileName(project)).color(.secondary)
+            Spacer()
+            Text(status).color(.secondary)
+            Button("Check") { check() }.shortcut("k") { check() }
+            Button(if running == nil { "Run" } else { "Stop" }) { runOrStop() }.shortcut("r") { runOrStop() }
+            Button("Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
+            Button("Package") { build(bundle: true) }
+        }
+        .padding(10)
+
+        HStack(spacing: 0, alignment: .leading) {
+            // Files
+            Scroll {
+                VStack(spacing: 2, alignment: .leading) {
+                    for name in files {
+                        if name == current {
+                            Text(name).color(.white).padding(6).background(.blue, radius: 6)
+                        } else {
+                            Text(name).padding(6).onTap { open(name) }
+                        }
+                    }
+                }
+                .padding(8)
+            }
+            .frame(width: 200)
+
+            // Editor
+            VStack(spacing: 6) {
+                HStack {
+                    Text(if current == "" { "No file open" } else { current }).font(weight: .semibold)
+                    if source != saved {
+                        Text("edited").color(.orange)
+                    }
+                    Spacer()
+                    Text("Line {line}").color(.secondary)
+                }
+                CodeEditor(text: source, errorLines: errorLines(), line: line).shortcut("s") { save() }
+            }
+            .padding(8)
+        }
+
+        // Problems and console
+        HStack(spacing: 0, alignment: .leading) {
+            VStack(spacing: 4, alignment: .leading) {
+                Text("Problems ({problems.count})").font(weight: .semibold)
+                Scroll {
+                    VStack(spacing: 2, alignment: .leading) {
+                        for p in problems {
+                            Text("{fileName(p.file)}:{p.line}  {p.message}").color(.red).onTap { jump(p) }
+                        }
+                    }
+                }
+            }
+            .padding(8)
+            VStack(spacing: 4, alignment: .leading) {
+                HStack {
+                    Text("Console").font(weight: .semibold)
+                    Spacer()
+                    Button("Clear") { console = [] }
+                }
+                Scroll {
+                    VStack(spacing: 1, alignment: .leading) {
+                        for text in console {
+                            Text(text).font(size: 12).onTap { jumpTo(text) }
+                        }
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .frame(height: 210)
+    }
+    .onAppear { reload() }
+
+    fn reload() {
+        files = sourceFiles(folder: project)
+        if current == "" {
+            if let first = files.first {
+                open(first)
+            }
+        }
+        check()
+    }
+
+    fn open(name: String) {
+        if current != "" && source != saved {
+            save()
+        }
+        current = name
+        source = readFile(join(folder: project, name: name)) ?? ""
+        saved = source
+        line = 1
+    }
+
+    fn save() {
+        if current == "" {
+            return
+        }
+        if writeFile(path: join(folder: project, name: current), text: source) {
+            saved = source
+            status = "Saved {current}"
+        } else {
+            status = "Couldn't save {current}"
+        }
+        check()
+    }
+
+    fn check() {
+        problems = []
+        runCommand(path: tesselCommand(), args: ["check", project, "--format", "lines"], onOutput: { text in
+            if let p = parseProblem(text: text) {
+                problems.append(p)
+            }
+        }) { code in
+            status = if code == 0 { "No problems" } else { "{problems.count} problem(s)" }
+        }
+    }
+
+    // Builds into the project folder and runs the program directly, so
+    // Stop can end it.
+    fn runOrStop() {
+        if let id = running {
+            stopCommand(id)
+            return
+        }
+        save()
+        console = []
+        status = "Building…"
+        let exe = join(folder: project, name: ".tessel-run")
+        runCommand(path: tesselCommand(), args: ["build", project, "-o", exe], onOutput: { text in
+            console.append(text)
+        }) { code in
+            if code != 0 {
+                status = "Build failed"
+                return
+            }
+            console = []
+            status = "Running"
+            running = runCommand(path: exe, onOutput: { text in console.append(text) }) { exitCode in
+                console.append("— exited with code {exitCode}")
+                running = nil
+                status = "Ready"
+            }
+        }
+    }
+
+    fn build(bundle: Bool) {
+        save()
+        console = []
+        var args = ["build", project, "-o", join(folder: project, name: fileName(project))]
+        if bundle {
+            args.append("--bundle")
+        }
+        status = "Building…"
+        runCommand(path: tesselCommand(), args: args, onOutput: { text in console.append(text) }) { code in
+            status = if code == 0 { "Built" } else { "Build failed" }
+        }
+    }
+
+    fn jump(p: Problem) {
+        let name = fileName(p.file)
+        if name != current {
+            open(name)
+        }
+        line = p.line
+    }
+
+    fn jumpTo(text: String) {
+        if let p = parseLocation(text: text) {
+            jump(p: p)
+        }
+    }
+
+    fn errorLines() -> [Int] {
+        problems.filter { p in fileName(p.file) == current }.map { p in p.line }
+    }
+}

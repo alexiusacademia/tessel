@@ -9,7 +9,9 @@ pub const COLORS: &[&str] = &[
 
 pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
 
-/// Built-in enums, registered before user types. Returns (Color, Weight).
+pub const ALIGNMENTS: &[&str] = &["leading", "center", "trailing"];
+
+/// Built-in enums, registered before user types: Color, Weight, Alignment.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -17,12 +19,13 @@ pub fn enums() -> Vec<EnumDef> {
         cases: cases.iter().map(|c| CaseDef { name: (*c).into(), fields: Vec::new() }).collect(),
         methods: Vec::new(),
     };
-    vec![simple("Color", COLORS), simple("Weight", WEIGHTS)]
+    vec![simple("Color", COLORS), simple("Weight", WEIGHTS), simple("Alignment", ALIGNMENTS)]
 }
 
 pub struct Builtins {
     pub color: Ty,
     pub weight: Ty,
+    pub alignment: Ty,
 }
 
 pub const VIEW_NAMES: &[&str] =
@@ -36,13 +39,21 @@ impl Builtins {
             "Button" => vec![P::unlabeled("label", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             "TextField" => vec![P::unlabeled("placeholder", Ty::Str), P::new("text", Ty::Str).bind()],
             "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
-            "CodeEditor" => vec![P::new("text", Ty::Str).bind(), P::new("errorLines", Ty::list(Ty::Int)).default()],
+            "CodeEditor" => vec![
+                P::new("text", Ty::Str).bind(),
+                P::new("errorLines", Ty::list(Ty::Int)).default(),
+                P::new("line", Ty::Int).bind().default(),
+            ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
                 selection.sets_tag = true;
                 vec![selection, content()]
             }
-            "VStack" | "HStack" => vec![P::new("spacing", Ty::Float).default(), content()],
+            "VStack" | "HStack" => vec![
+                P::new("spacing", Ty::Float).default(),
+                P::new("alignment", self.alignment.clone()).default(),
+                content(),
+            ],
             "ZStack" | "Scroll" => vec![content()],
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
@@ -71,6 +82,7 @@ impl Builtins {
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
             "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
+            "onAppear" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             _ => return None,
         })
     }
@@ -195,7 +207,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
-            "id", "tag", "shortcut",
+            "id", "tag", "shortcut", "onAppear",
         ],
         _ => &[],
     }
