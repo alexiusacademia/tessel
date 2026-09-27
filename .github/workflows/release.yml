@@ -182,8 +182,8 @@ jobs:
       # Signs tessel with the Developer ID certificate and has Apple notarize
       # it, so macOS runs it even when it's downloaded with a browser. Needs
       # the secrets MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
-      # NOTARY_KEY_P8 (base64 App Store Connect API key), NOTARY_KEY_ID and
-      # NOTARY_ISSUER_ID. Releases (tags) require them.
+      # NOTARY_KEY_P8 (base64 App Store Connect API key), NOTARY_KEY_ID and,
+      # for a team key only, NOTARY_ISSUER_ID. Releases (tags) require them.
       - name: Sign and notarize (macOS)
         if: runner.os == 'macOS'
         env:
@@ -222,8 +222,11 @@ jobs:
           NOTARY_ISSUER_ID="$(printf '%s' "$NOTARY_ISSUER_ID" | tr -d '[:space:]')"
           echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
           ditto -c -k --keepParent dist/pkg/tessel "$RUNNER_TEMP/tessel.zip"
+          # A team API key has an issuer ID; an individual key doesn't.
+          issuer=()
+          [[ -n "$NOTARY_ISSUER_ID" ]] && issuer=(--issuer "$NOTARY_ISSUER_ID")
           xcrun notarytool submit "$RUNNER_TEMP/tessel.zip" --wait --timeout 30m \
-            --key "$RUNNER_TEMP/key.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --key "$RUNNER_TEMP/key.p8" --key-id "$NOTARY_KEY_ID" "${issuer[@]}" \
             | tee "$RUNNER_TEMP/notary.txt"
           rm "$RUNNER_TEMP/key.p8"
           grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"
