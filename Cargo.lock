@@ -2505,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "tessel-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cc",
  "lsp-server",
@@ -2517,14 +2517,14 @@ dependencies = [
 
 [[package]]
 name = "tessel-compiler"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "inkwell",
 ]
 
 [[package]]
 name = "tessel-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "parley",
