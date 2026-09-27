@@ -15,7 +15,7 @@ case "$(uname -m)" in
   *) fail "Tessel currently supports Apple silicon Macs (arm64) only" ;;
 esac
 
-VERSION="${TESSEL_VERSION:-$(curl -fsSL "$BASE/latest.txt")}" || fail "can't reach $BASE"
+VERSION="${TESSEL_VERSION:-$(curl -fsSL "$BASE/latest-macos.txt" || curl -fsSL "$BASE/latest.txt")}" || fail "can't reach $BASE"
 FILE="tessel-$VERSION-macos-$ARCH.tar.gz"
 echo "Installing Tessel $VERSION into $DIR/bin"
 

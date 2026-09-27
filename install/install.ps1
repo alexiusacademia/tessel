@@ -8,7 +8,9 @@ $Dir = if ($env:TESSEL_HOME) { $env:TESSEL_HOME } else { Join-Path $env:LOCALAPP
 $Bin = Join-Path $Dir "bin"
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Tessel needs 64-bit Windows" }
-$Version = if ($env:TESSEL_VERSION) { $env:TESSEL_VERSION } else { (Invoke-RestMethod "$Base/latest.txt").Trim() }
+$Version = if ($env:TESSEL_VERSION) { $env:TESSEL_VERSION } else {
+    try { (Invoke-RestMethod "$Base/latest-windows.txt").Trim() } catch { (Invoke-RestMethod "$Base/latest.txt").Trim() }
+}
 $File = "tessel-$Version-windows-x64.zip"
 Write-Host "Installing Tessel $Version into $Bin"
 

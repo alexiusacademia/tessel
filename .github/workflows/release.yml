@@ -5,8 +5,10 @@
 # library and sdk/. They need nothing else installed.
 #
 # The macOS job runs on a self-hosted runner (the maintainer's Mac: no Actions
-# minutes, and it signs there); the Windows job on GitHub's runners. A manual
-# run builds only macOS unless `windows` is ticked.
+# minutes, and it signs there); the Windows job on GitHub's runners. For now
+# releases build macOS only; tick `windows` in a manual run to build Windows
+# too. Each platform has its own latest-<platform>.txt, so a macOS-only
+# release doesn't break Windows installs.
 name: Release
 
 on:
@@ -34,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.ref_type == 'tag' || inputs.windows) && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
+        include: ${{ fromJSON(inputs.windows && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -325,9 +327,17 @@ jobs:
           ls -la dist
           (cd dist && sha256sum tessel-* > SHA256SUMS)
           gcloud storage cp dist/* "gs://tessel-releases/$version/"
-          # The install scripts and the pointer to the newest version change
-          # with each release, so they must not be cached for long.
-          echo "$version" > latest.txt
-          gcloud storage cp latest.txt install/install.sh install/install.ps1 gs://tessel-releases/ \
+          # The newest version for each platform built this time, and the
+          # install scripts. They change with releases: no long caching.
+          pointers=()
+          for platform in macos windows; do
+            if ls dist/tessel-*-"$platform"-* > /dev/null 2>&1; then
+              echo "$version" > "latest-$platform.txt"
+              pointers+=("latest-$platform.txt")
+            fi
+          done
+          # latest.txt: for older install scripts (which are macOS or Windows alike).
+          [[ -f latest-macos.txt ]] && cp latest-macos.txt latest.txt && pointers+=(latest.txt)
+          gcloud storage cp "${pointers[@]}" install/install.sh install/install.ps1 gs://tessel-releases/ \
             --cache-control="no-cache, max-age=0"
           echo "Published https://storage.googleapis.com/tessel-releases/$version/"
