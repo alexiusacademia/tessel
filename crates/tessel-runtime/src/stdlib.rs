@@ -543,6 +543,36 @@ pub unsafe extern "C" fn tsl_copy_to_clipboard(s: *const Str) -> u8 {
     arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok() as u8
 }
 
+// ===== standard input =====
+
+/// `readLine()`: the next line of input without its line break, or nil at
+/// the end of the input.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_read_line() -> *mut Str {
+    use std::io::BufRead;
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let mut line = String::new();
+    match std::io::stdin().lock().read_line(&mut line) {
+        Ok(0) | Err(_) => std::ptr::null_mut(),
+        Ok(_) => {
+            let trimmed = line.strip_suffix('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).unwrap_or(&line);
+            str_new(trimmed)
+        }
+    }
+}
+
+/// `readInput()`: everything left on standard input (for piped input).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_read_input() -> *mut Str {
+    use std::io::Read;
+    let mut text = String::new();
+    let mut bytes = Vec::new();
+    if std::io::stdin().lock().read_to_end(&mut bytes).is_ok() {
+        text = String::from_utf8_lossy(&bytes).into_owned();
+    }
+    str_new(&text)
+}
+
 /// `clipboardText()`: nil if the clipboard has no text.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_clipboard_text() -> *mut Str {

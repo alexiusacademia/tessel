@@ -498,6 +498,25 @@ pub unsafe extern "C" fn tsl_print(s: *const Str) {
     let _ = out.write_all(b"\n");
 }
 
+/// `print(value, terminator:)` (`to_err` = 0) and `printError` (1): the text,
+/// then the terminator, flushed so a prompt without a line break shows.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_print_to(to_err: u8, s: *const Str, end: *const Str) {
+    let (s, end) = unsafe { (str_text(s), str_text(end)) };
+    if to_err != 0 {
+        let mut out = std::io::stderr().lock();
+        let _ = out.write_all(s.as_bytes());
+        let _ = out.write_all(end.as_bytes());
+    } else {
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(s.as_bytes());
+        let _ = out.write_all(end.as_bytes());
+        if !end.ends_with('\n') {
+            let _ = out.flush();
+        }
+    }
+}
+
 unsafe extern "C" fn str_retain(p: *mut u8) {
     unsafe { tsl_retain(*(p as *mut *mut Header)) }
 }

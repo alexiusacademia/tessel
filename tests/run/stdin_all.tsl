@@ -1,0 +1,8 @@
+// readInput reads everything piped in, like `cat notes.txt | myprogram`.
+
+fn main() {
+    let text = readInput()
+    let words = text.words()
+    print("{text.lines().count} lines, {words.count} words")
+    print(readInput() == "")
+}

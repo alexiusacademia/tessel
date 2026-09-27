@@ -2164,10 +2164,10 @@ impl Checker<'_> {
                         return self.codec_call(n, args, trailing, span, expected);
                     }
                     "abs" | "min" | "max" => return self.numeric_fn(n, args, trailing, span),
-                    "print" => {
+                    "print" | "printError" => {
                         let sig = self.builtins.function(n).unwrap();
                         self.args(&what, &sig.params, args, trailing, span);
-                        if let [arg] = args {
+                        if let Some(arg) = args.first().filter(|a| a.label.is_none()) {
                             let t = self.types.get(&arg.value.id).cloned().unwrap_or(Ty::Error);
                             self.showable(&t, arg.value.span);
                         }

@@ -178,7 +178,12 @@ impl Builtins {
 
     pub fn function(&self, name: &str) -> Option<FnSig> {
         Some(match name {
-            "print" => FnSig { params: vec![P::unlabeled("value", Ty::Any)], ret: Ty::Void },
+            "print" | "printError" => FnSig {
+                params: vec![P::unlabeled("value", Ty::Any), P::new("terminator", Ty::Str).default()],
+                ret: Ty::Void,
+            },
+            "readLine" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
+            "readInput" => FnSig { params: vec![], ret: Ty::Str },
             "fetch" => FnSig {
                 params: vec![P::new("url", Ty::Str), P::new("done", Ty::func(vec![Ty::opt(Ty::Str)], Ty::Void))],
                 ret: Ty::Void,
@@ -309,7 +314,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
-    "closeWebSocket", "background",
+    "closeWebSocket", "background", "printError", "readLine", "readInput",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -523,6 +528,8 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "openURL" => rt("tsl_open_url"),
         "copyToClipboard" => rt("tsl_copy_to_clipboard"),
         "clipboardText" => rt("tsl_clipboard_text"),
+        "readLine" => rt("tsl_read_line"),
+        "readInput" => rt("tsl_read_input"),
         "decodeBase64" => rt("tsl_decode_base64"),
         "sendWebSocket" => rt("tsl_send_web_socket"),
         "closeWebSocket" => rt("tsl_close_web_socket"),

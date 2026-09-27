@@ -1,0 +1,23 @@
+// Reading standard input line by line, and printing to stderr.
+
+fn main() {
+    print("Name: ", terminator: "")
+    let name = readLine() ?? "nobody"
+    print("Hello, {name}!")
+    var total = 0
+    var count = 0
+    while let line = readLine() {
+        if line.trim() == "" {
+            continue
+        }
+        if let n = Int(line.trim()) {
+            total += n
+            count += 1
+        } else {
+            printError("not a number: {line}")
+        }
+    }
+    print("{count} numbers, total {total}")
+    printError("done", terminator: "!\n")
+    print(readLine() == nil)
+}

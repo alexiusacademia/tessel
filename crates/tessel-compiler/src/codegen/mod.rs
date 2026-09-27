@@ -3974,13 +3974,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         span: Span,
     ) -> Option<Val<'ctx>> {
         match name {
-            "print" => {
+            "print" | "printError" => {
                 let x = arg(info.args[0].unwrap());
                 let xt = self.ty(x);
                 let v = self.expr(x).unwrap();
                 let s = self.stringify(v, &xt);
-                self.call_rt("tsl_print", &[s]);
+                self.hold(s, &Ty::Str);
+                let end = match info.args.get(1).copied().flatten() {
+                    Some(r) => self.expr_as(arg(r), &Ty::Str).unwrap(),
+                    None => self.str_lit("\n").into(),
+                };
+                self.unhold(1);
+                let err = self.i8().const_int((name == "printError") as u64, false);
+                let p = self.ptr_ty();
+                let f = self.declare_rt("tsl_print_to", &[self.i8().into(), p.into(), p.into()], None);
+                self.b.build_call(f, &[err.into(), s.into(), end.into()], "").unwrap();
                 self.release(s, &Ty::Str);
+                self.release(end, &Ty::Str);
                 None
             }
             "Int" | "Float" | "String" => {

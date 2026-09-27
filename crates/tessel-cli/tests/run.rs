@@ -46,11 +46,15 @@ fn run_programs() {
         if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
             cmd.env("TESSEL_SCRIPT", script);
         }
-        let out = cmd.output().unwrap();
+        // Programs that read input get `<name>.stdin` (and no input otherwise).
+        let stdin = std::fs::read(dir.join(format!("{name}.stdin"))).unwrap_or_default();
+        let out = run_with_input(&mut cmd, &stdin);
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         let expected_out = std::fs::read_to_string(dir.join(format!("{name}.out"))).unwrap_or_default();
         let expected_err = std::fs::read_to_string(dir.join(format!("{name}.err"))).ok();
+        // `<name>.stderr`: what a program that succeeds writes to stderr.
+        let expected_stderr = std::fs::read_to_string(dir.join(format!("{name}.stderr"))).unwrap_or_default();
         if stdout != expected_out {
             failures.push(format!("{name}: stdout differs\n--- expected\n{expected_out}--- got\n{stdout}"));
         }
@@ -59,8 +63,9 @@ fn run_programs() {
             Some(err) if stderr != *err => {
                 failures.push(format!("{name}: stderr differs\n--- expected\n{err}--- got\n{stderr}"))
             }
-            None if !out.status.success() || !stderr.is_empty() => {
-                failures.push(format!("{name}: failed ({}):\n{stderr}", out.status))
+            None if !out.status.success() => failures.push(format!("{name}: failed ({}):\n{stderr}", out.status)),
+            None if stderr != expected_stderr => {
+                failures.push(format!("{name}: stderr differs\n--- expected\n{expected_stderr}--- got\n{stderr}"))
             }
             _ => {}
         }
@@ -70,7 +75,7 @@ fn run_programs() {
             if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
                 leaks.env("TESSEL_SCRIPT", script);
             }
-            let leaks = leaks.output();
+            let leaks = Some(run_with_input(&mut leaks, &stdin)).ok_or(());
             if let Ok(leaks) = leaks {
                 let report = String::from_utf8_lossy(&leaks.stdout);
                 if !report.contains(" 0 leaks for 0 total leaked bytes") {
@@ -82,6 +87,21 @@ fn run_programs() {
         let _ = std::fs::remove_file(&exe);
     }
     assert!(failures.is_empty(), "\n{}\n", failures.join("\n\n"));
+}
+
+/// Runs `cmd` with `input` on its standard input.
+fn run_with_input(cmd: &mut Command, input: &[u8]) -> std::process::Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let input = input.to_vec();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&input);
+    });
+    let out = child.wait_with_output().unwrap();
+    let _ = writer.join();
+    out
 }
 
 /// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
