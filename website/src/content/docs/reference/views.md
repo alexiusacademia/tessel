@@ -322,11 +322,9 @@ Scroll {
 - Scrolling is vertical only. The content gets the scroll view's width, so
   text wraps rather than scroll sideways.
 
-:::note
-Put a single view, usually a `VStack`, inside `Scroll`. If you put several
-views directly inside, they are all placed at the top and draw over each
-other.
-:::
+- If you put several views directly inside, they are stacked downwards like
+  a leading-aligned `VStack` with spacing 8. Wrap them in your own `VStack`
+  to choose a different spacing or alignment.
 
 ## Image
 

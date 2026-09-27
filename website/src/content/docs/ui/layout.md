@@ -137,7 +137,9 @@ Scroll {
 ```
 
 A `Scroll` takes all the space it's offered, and its content starts at the top
-left. Scrolling is vertical only.
+left. Scrolling is vertical only. If you put several views directly inside a
+`Scroll`, it stacks them downwards, 8 points apart, as a `VStack` with
+`.leading` alignment would.
 
 ## Padding
 

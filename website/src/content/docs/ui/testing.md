@@ -72,6 +72,8 @@ opens a window as usual.
 | `click "Save"` | Clicks the first view with this label (see below). |
 | `click 40 60` | Clicks at a point, in points from the window's top left corner. |
 | `click button 2` | Clicks the 2nd view of a kind: `button`, `toggle`, `field`, `text` or `editor`. Counting starts at 1. |
+| `hover "Save"` | Moves the mouse pointer over the first view with this label, to show [hover backgrounds](/ui/styling/#hover-backgrounds). |
+| `hover 40 60` | Moves the pointer to a point. |
 | `close "main.tsl"` | Clicks the close button of the tab with this title. |
 | `type hello world` | Types text into the text field or code editor being edited. |
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
@@ -105,6 +107,10 @@ Clicking a text field or code editor starts editing it, as in a real window, so
 "Name".
 
 When there's nothing to click, the script stops with an error.
+
+`hover "label"` finds a view the same way, but only moves the pointer over
+its middle without clicking, so a `snapshot` afterwards shows its
+[hover background](/ui/styling/#hover-backgrounds).
 
 ### Typing and keys
 
@@ -172,7 +178,7 @@ appears in the same output, in order.
 cursor and selection. It needs a GPU (the screenshots on this site were made
 with it).
 
-If a command is unknown, or a `click` or `close` finds nothing, the app prints
+If a command is unknown, or a `click`, `close` or `hover` finds nothing, the app prints
 an error starting with `script:` and exits with code 2. Otherwise it exits with
 code 0 when the script is done.
 

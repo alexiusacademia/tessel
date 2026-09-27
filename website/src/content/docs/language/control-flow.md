@@ -96,6 +96,27 @@ CHERRY
 `a..b` counts from `a` up to, but not including, `b`. If `b` is not larger
 than `a`, the loop doesn't run at all.
 
+If you don't need the loop variable, name it `_`:
+
+```tessel
+for _ in 0..3 {
+    print("Hip hip hooray!")
+}
+```
+
+A range is a value of type `Range`, so you can also keep one in a variable or
+pass it to a function, and loop over it later:
+
+```tessel
+fn countdown(_ steps: Range) {
+    for i in steps {
+        print(10 - i)
+    }
+}
+
+countdown(7..10)   // prints 3, 2, 1
+```
+
 To loop over a list together with the position of each item, loop over a
 range of indexes:
 

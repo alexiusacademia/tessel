@@ -60,10 +60,11 @@ true  false  nil
 ```
 
 `_` is also reserved: it marks an unlabeled parameter, ignores a closure
-parameter or a value in a `match` pattern, and is the catch-all pattern.
+parameter, a `for` loop variable or a value in a `match` pattern, and is the
+catch-all pattern.
 
 These names are not keywords but are built in and can't be declared again:
-the types `Int`, `Float`, `Bool`, `String` and `View`; the enums `Color`,
+the types `Int`, `Float`, `Bool`, `String`, `Range` and `View`; the enums `Color`,
 `Weight`, `Alignment` and `IconName`; the [built-in views](/reference/views/);
 and the [built-in functions](/reference/stdlib/). Inside methods, `self` is an
 ordinary name that refers to the value the method was called on.
@@ -202,8 +203,8 @@ base_type = IDENT                                   named type
           | "fn" "(" (type ("," type)* ","?)? ")" ("->" type)? ;   function
 ```
 
-- Named types are `Int`, `Float`, `Bool`, `String`, `View`, the built-in
-  enums, and your own structs and enums.
+- Named types are `Int`, `Float`, `Bool`, `String`, `Range`, `View`, the
+  built-in enums, and your own structs and enums.
 - `T?` is an optional `T`. In `fn() -> Int?`, the `?` belongs to the return
   type; there is no way to write an optional function type with a return
   type, because types can't be put in parentheses.
@@ -223,7 +224,7 @@ stmt = local_decl
 
 local_decl  = ("let" | "var" | "state") IDENT (":" type)? "=" NL* expr ;
 return_stmt = "return" expr? ;
-for_stmt    = "for" IDENT "in" header_expr block ;
+for_stmt    = "for" (IDENT | "_") "in" header_expr block ;
 assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
 ```
 
@@ -231,7 +232,8 @@ assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
   statements can't share a line.
 - A declaration always needs a starting value: `var count = 0`.
 - `return`'s value, if any, starts on the same line.
-- The loop variable of `for` must be a name; `for _ in …` isn't allowed.
+- The loop variable of `for` is a name, or `_` when the body doesn't use it:
+  `for _ in 0..3 { … }`.
 - Assignment is a statement, not an expression. There is no `%=`.
 - `if` and `match` are expressions, so they can be used as statements too.
 - There are no `while`, `break` or `continue` statements; loop over a list or
@@ -304,7 +306,7 @@ closure_params = (IDENT | "_") ("," (IDENT | "_"))* ;
 ```
 
 - The value of a range `a..b` is the `Int`s from `a` up to, but not
-  including, `b`.
+  including, `b`. Its type is `Range`.
 - A `[…]` literal is a list or a dictionary, depending on whether its first
   entry has a `:`. Entries can't be mixed.
 - `.name` on its own is an enum case whose type comes from the context, as

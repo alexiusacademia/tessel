@@ -26,7 +26,8 @@ language may still change. This page is an honest list of where things stand.
 - **Text editing:** selecting with the mouse and keyboard, word and line
   movement, copy, cut, paste, and undo and redo.
 - **Background work:** timers (`after`), `fetch`, files, and running other
-  programs, all with completion blocks that run on the UI thread.
+  programs, all with completion blocks that run on the UI thread. They work in
+  programs with only `fn main` too.
 - **Tools:** the `tessel` command, the Tessel IDE, a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.

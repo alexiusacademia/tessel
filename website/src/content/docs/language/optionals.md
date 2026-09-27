@@ -118,6 +118,45 @@ Once one `?.` finds `nil`, the rest of the chain is skipped: in
 doesn't need a second `?`. You need `?.` again only where a member is itself
 optional, like `email` above.
 
+### Changing a value through `?.`
+
+A method that changes its value (like `append`, or a
+[changing method](/language/structs-enums/#methods-that-change-the-value) of your own) also
+works through `?.`. It changes the value inside the optional, and does nothing
+if there is none:
+
+```tessel
+struct Counter {
+    count: Int = 0
+
+    fn add() {
+        count += 1
+    }
+}
+
+fn main() {
+    var box: Counter? = Counter()
+    box?.add()
+    box?.add()
+    print(box?.count ?? 0)
+
+    var groups = ["fruit": ["apple"]]
+    groups["fruit"]?.append("pear")    // changes the list in the dictionary
+    groups["veg"]?.append("leek")      // no "veg" key, so nothing happens
+    print(groups["fruit"]?.count ?? 0)
+    print(groups.count)
+}
+```
+
+```text
+2
+2
+1
+```
+
+If the method returns a value, the result of the call is optional, as with
+any `?.`.
+
 ## Comparing with nil
 
 You can test an optional with `== nil` and `!= nil`, and compare it with a
@@ -139,10 +178,8 @@ true
 
 Prefer `if let` when you want to use the value, since it unwraps it for you.
 
-:::note
-Optional function values (like `fn()?`) can't be compared with `== nil`.
-Unwrap them with `if let` instead: `if let done = onDone { done() }`.
-:::
+This works for optionals of any type, including optional functions:
+`onDone == nil` checks whether a `fn()?` was given.
 
 ## Where optionals come from
 

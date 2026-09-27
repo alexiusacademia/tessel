@@ -355,9 +355,9 @@ double-click or move to your Applications folder. On Windows it makes
 [Command line](/start/cli/) for the details.
 
 :::note
-Name the output with `-o` here. Without it, `tessel build` names the
-executable after the folder, `todos`, and that name is already taken by the
-folder itself, so linking fails.
+Here `-o` just makes the name explicit. Without it, `tessel build todos`
+would name the executable after the folder, but since a folder called
+`todos` is already there, it uses `todos-app` instead.
 :::
 
 ## Where to go next

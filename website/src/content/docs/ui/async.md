@@ -149,6 +149,21 @@ app Runner(width: 420, height: 300) {
   all of its output. By convention, 0 means success.
 
 `onExit` is the last parameter, so it's usually written as a trailing block.
+Instead of blocks, you can also pass functions declared in the app:
+
+```tessel
+Button("List files") {
+    runCommand(path: "ls", onOutput: remember, onExit: finished)
+}
+
+fn remember(_ line: String) {
+    output.append(line)
+}
+
+fn finished(_ code: Int) {
+    output.append("Finished with exit code {code}")
+}
+```
 
 The program runs in the background. It can't read input from the user (its
 standard input is empty). `runCommand` returns an `Int` id right away; pass it
@@ -221,10 +236,35 @@ app Countdown(width: 300, height: 180) {
 A timer can't be cancelled once started. If it might no longer be wanted when
 it fires, have the block check a `state` value first.
 
-:::caution[Callbacks need an app]
-Callbacks from `fetch`, `runCommand` and `after` are delivered by the app's
-event loop. In a program with `fn main()` and no `app`, they never run.
-:::
+## Callbacks in a program without an app
+
+`fetch`, `runCommand` and `after` also work in a program with `fn main()` and
+no `app`. When `main` returns, the program doesn't end right away: it keeps
+running until no timers, downloads or commands are left, running their
+callbacks as they come in, and then exits.
+
+```tessel
+fn main() {
+    after(seconds: 1) {
+        print("one second later")
+    }
+    runCommand(path: "echo", args: ["hello"], onOutput: { line in
+        print("echo printed: {line}")
+    }) { code in
+        print("echo finished with {code}")
+    }
+    print("main is done")
+}
+```
+
+This prints:
+
+```text
+main is done
+echo printed: hello
+echo finished with 0
+one second later
+```
 
 ## Testing code that waits
 

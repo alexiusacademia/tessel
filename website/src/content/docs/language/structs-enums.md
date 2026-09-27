@@ -108,8 +108,10 @@ struct Player {
 ### Methods that change the value
 
 A method can change the struct's fields. There is no special keyword for
-this: Tessel sees that the method assigns to a field (or calls a changing
-method like `append` on one) and treats it as a changing method.
+this: Tessel sees that the method assigns to a field, or calls a changing
+method (like `append` on a field, another changing method of the struct such
+as `increment()`, or a changing method of a field such as
+`counter.increment()`), and treats it as a changing method.
 
 ```tessel
 struct Counter {

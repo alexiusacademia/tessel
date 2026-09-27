@@ -161,8 +161,9 @@ HStack {
 .onTap { open() }
 ```
 
-The hover background only shows on views that react to the mouse: views with
-`.onTap`, and buttons, toggles, text fields and pickers.
+It works on any view, not only ones you can click. When views with a hover
+background are nested, only the innermost one under the pointer shows its
+hover background.
 
 ## Text alignment
 

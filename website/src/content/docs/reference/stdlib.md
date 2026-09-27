@@ -32,7 +32,7 @@ after(seconds: 1) {
 ### print
 
 ```text
-print(_ value: Int, Float, Bool, String or an enum)
+print(_ value: Int, Float, Bool, String, Range or an enum)
 ```
 
 Writes a value to standard output, followed by a new line.
@@ -43,11 +43,12 @@ print(42)             // 42
 print(2.0)            // 2.0
 print(true)           // true
 print(Mode.grid)      // grid
+print(0..3)           // 0..3
 ```
 
 - A `Float` always shows a decimal point (`2.0`), so it reads differently
   from an `Int`.
-- An enum value prints as its case name.
+- An enum value prints as its case name, and a range as `start..end`.
 - Lists, dictionaries, structs and optionals can't be printed directly.
   Print a property instead (`list.count`), join a `[String]` with
   [`joined`](#joined), or give an optional a default with `??`.
@@ -326,11 +327,11 @@ app Watcher {
 
 ## Background work and timers
 
-:::note
-`fetch`, `after` and the blocks of `runCommand` are delivered by the app's
-event loop, so they only work in programs with an `app`. In a program with
-`fn main()`, their blocks never run: the program ends when `main` returns.
-:::
+The blocks of `fetch`, `after` and `runCommand` run later, on the UI thread in
+an app. They work in a program with only `fn main()` too: after `main`
+returns, the program keeps running until no timers or background work are
+left, then exits. See
+[Files, commands and timers](/ui/async/#callbacks-in-a-program-without-an-app).
 
 ### fetch
 

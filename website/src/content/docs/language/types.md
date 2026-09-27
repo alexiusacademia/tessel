@@ -19,6 +19,7 @@ fields, and empty lists or dictionaries.
 | `Float` | `0.5`, `3.14`, `2.0` | A decimal number (64-bit) |
 | `Bool` | `true`, `false` | A truth value |
 | `String` | `"hi"`, `"Hello, {name}"` | Text |
+| `Range` | `0..3`, `1..n` | A range of whole numbers |
 | `[T]` | `[1, 2, 3]` | A list of values of type `T` |
 | `[K: V]` | `["ada": 36]` | A dictionary from keys `K` to values `V` |
 | `T?` | `nil`, `5` | An optional: a `T`, or `nil` |
@@ -98,6 +99,25 @@ list of string properties and methods is on the
 
 Strings can't be indexed with `[…]`. Use methods like `substring`, `split`,
 `contains` or `hasPrefix` instead.
+
+## Range
+
+`a..b` is a `Range`: the whole numbers from `a` up to, but not including, `b`.
+You can loop over a range, store it, pass it around, compare two ranges with
+`==`, and print one:
+
+```tessel
+struct Chapter {
+    title: String
+    pages: Range
+}
+
+let intro = Chapter(title: "Intro", pages: 1..4)
+for page in intro.pages {
+    print("page {page}")     // page 1, page 2, page 3
+}
+print(intro.pages)           // 1..4
+```
 
 ## Lists
 

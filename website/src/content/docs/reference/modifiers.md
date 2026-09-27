@@ -334,11 +334,13 @@ Button("Save") { save() }
     .shortcut("s") { save() }
 ```
 
-- `key` is a letter, digit or other character, like `"s"`, `"1"` or `","`.
-  Upper and lower case are the same, and Shift isn't taken into account:
-  `.shortcut("s")` also runs on Shift+Cmd+S. The key names `"enter"`,
-  `"escape"`, `"tab"`, `"backspace"`, `"delete"`, `"left"`, `"right"`,
-  `"up"`, `"down"`, `"home"` and `"end"` work too.
+- `key` is one character that isn't an uppercase letter or whitespace, like
+  `"s"`, `"1"` or `","`. Shift isn't taken into account: `.shortcut("s")`
+  also runs on Shift+Cmd+S. The key names `"enter"`, `"escape"`, `"tab"`,
+  `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`,
+  `"home"` and `"end"` work too.
+- Any other key, such as `"F5"`, `"S"` or `"cmd+s"`, is an error. Don't
+  write Cmd or Ctrl: it's added for you.
 - The shortcut works only while its view is shown and enabled. In a
   `TabView`, only the shortcuts on the selected page work.
 - The shortcut belongs to the view it's on, not to a button: attaching it to
@@ -439,11 +441,8 @@ Text("files")
 
 It's drawn on top of a normal [`background`](#background).
 
-:::note
-Only views you can click show a hover background: buttons, toggles, text
-fields, code editors, pickers, tab views, and views with
-[`.onTap`](#ontap). On other views it never appears.
-:::
+Any view can have a hover background. If views with hover backgrounds are
+nested, only the innermost one under the pointer shows it.
 
 ## textAlignment
 

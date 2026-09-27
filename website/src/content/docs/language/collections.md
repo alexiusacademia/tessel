@@ -192,6 +192,17 @@ visits["home"] = (visits["home"] ?? 0) + 1
 print(visits["home"] ?? 0)   // 2
 ```
 
+To change a value in place, such as appending to a list stored in a
+dictionary, use `?.`. It changes the value if the key is there, and does
+nothing if it isn't:
+
+```tessel
+var groups = ["fruit": ["apple"]]
+groups["fruit"]?.append("pear")
+groups["veg"]?.append("leek")      // no "veg" key: nothing happens
+print(groups["fruit"]?.count ?? 0) // 2
+```
+
 ### Dictionary properties and methods
 
 | Member | Type | What it does |

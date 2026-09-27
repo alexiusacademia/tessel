@@ -43,7 +43,8 @@ Button("Save") { save() }
 
 The block is the button's `action:` parameter, written as a trailing block.
 Writing it with its label, `Button("Save", action: { save() })`, means the
-same thing.
+same thing. When the action is just a call to a function with no parameters,
+you can also pass the function itself: `Button("Save", action: save)`.
 
 The label is a `String`. Buttons have a light gray, rounded look with a blue
 label; `.color(…)` changes the label color and `.background(…)` replaces the

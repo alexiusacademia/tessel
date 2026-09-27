@@ -75,6 +75,7 @@ A larger example using structs, enums, loops and bindings is in
 | `Float` | `0.5`, `2.0` | 64-bit. No implicit Int↔Float conversion: write `Float(n)` or `Int(x)`. |
 | `Bool` | `true`, `false` | |
 | `String` | `"hi {name}"` | Immutable UTF-8 text. |
+| `Range` | `0..3`, `1..n` | Half-open range of `Int`s. A normal value: it can be stored, passed, compared with `==` and printed. |
 | `[T]` | `[1, 2, 3]`, `[]` | Growable list. |
 | `[K: V]` | `["a": 1]`, `[:]` | Dictionary. |
 | `T?` | `nil`, `5` | Optional: a value or `nil`. See §7.1. |

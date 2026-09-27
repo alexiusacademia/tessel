@@ -222,8 +222,8 @@ it in a `view` or function.
 ## Functions inside apps and views
 
 Functions declared inside an `app` or `view` body belong to it. They can read
-and change its `state` and `bind` parameters, so they're the natural place for
-the work your buttons do:
+and change its `state` and `bind` parameters, and read its other parameters,
+so they're the natural place for the work your buttons do:
 
 ```tessel
 app Counter(width: 300, height: 160) {
@@ -247,6 +247,48 @@ app Counter(width: 300, height: 160) {
 They can also compute values the body shows, like `greeting()` at the top of
 this page. Declare them directly in the body (not inside a `VStack` or other
 block); where in the body they go doesn't matter.
+
+Such a function can also be passed as a value, wherever a function is
+expected: to a button's `action:`, to a callback like `runCommand`'s
+`onOutput:`, or to a parameter of your own view. Here the row's `toggle`
+function uses the view's parameters, and the app passes its `picked` function
+on as `onPick`:
+
+```tessel
+struct Task {
+    title: String
+    done: Bool = false
+}
+
+view TaskRow(task: bind Task, label: String, onPick: fn(String)) {
+    fn toggle() {
+        task.done = !task.done
+        onPick(label)
+    }
+
+    HStack(spacing: 8) {
+        Text(task.title)
+        Button(if task.done { "Undo" } else { "Done" }, action: toggle)
+    }
+}
+
+app Tasks(width: 320, height: 200) {
+    state tasks = [Task(title: "Write"), Task(title: "Test")]
+    state last = ""
+
+    fn picked(_ label: String) {
+        last = label
+    }
+
+    for i in 0..tasks.count {
+        TaskRow(task: tasks[i], label: "task {i + 1}", onPick: picked)
+    }
+    Text("Last changed: {last}")
+}
+```
+
+A function inside a view always sees the view's latest arguments, even when it
+runs later, for example from a button click.
 
 Functions declared at the top level of a file, outside any view, work
 everywhere but can't see a view's state; pass them what they need as

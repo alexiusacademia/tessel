@@ -50,8 +50,9 @@ wherever the keyboard focus is.
 
 The key is a string:
 
-- **A letter, digit or punctuation character**, such as `"s"`, `"1"` or
-  `","`. Letters are case-insensitive: `"S"` is the same as `"s"`.
+- **One character** that isn't an uppercase letter or a space, such as
+  `"s"`, `"1"` or `","`. Write letters in lowercase; Shift isn't taken into
+  account, so `.shortcut("s")` also runs on Shift+Cmd+S.
 - **The name of a special key:** `"enter"`, `"tab"`, `"escape"`,
   `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`, `"home"`
   or `"end"`.
@@ -59,10 +60,16 @@ The key is a string:
 Only Cmd (or Ctrl) combinations can be shortcuts. There's no way to require
 Shift or Option as well, or to use a key on its own without Cmd.
 
-:::caution
-The key isn't checked when your program is compiled. A key string that doesn't
-match anything, such as `"cmd+s"` or `"F5"`, is accepted but never runs.
-:::
+`tessel check` checks the key, so a shortcut that could never be pressed is
+an error. Cmd is added for you, so don't write it:
+
+```text
+error: `cmd+s` isn't a key a shortcut can use
+  = help: Cmd (Ctrl on Windows) is added for you: write `.shortcut("s")`
+```
+
+`"S"` gets a hint to use the lowercase letter, and anything else, such as
+`"F5"`, lists the keys you can use.
 
 ## Built-in editing shortcuts
 

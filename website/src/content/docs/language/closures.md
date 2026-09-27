@@ -123,6 +123,9 @@ if let finish = onFinish {
 }
 ```
 
+To only check whether one was given, compare it with `nil`:
+`onFinish == nil` or `onFinish != nil`.
+
 ## Passing closures to functions
 
 A parameter with a function type accepts a closure:

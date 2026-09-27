@@ -157,7 +157,8 @@ print("{apples} apples cost {apples * price} coins")
 3 apples cost 6 coins
 ```
 
-You can interpolate an `Int`, `Float`, `Bool`, `String` or enum value.
+You can interpolate an `Int`, `Float`, `Bool`, `String`, `Range` or enum
+value.
 Lists, structs and optionals can't go in directly; for example, use
 `{list.count}`, `{names.joined(separator: ", ")}` or `{nickname ?? "none"}`
 instead.
@@ -281,11 +282,20 @@ If `b` is not greater than `a`, the range is empty and the loop body doesn't
 run. There is no inclusive range operator; write `1..(n + 1)` to include
 `n`.
 
-:::note
-Ranges can only be used directly in a `for` loop. Storing one in a variable
-(`let r = 0..10`) passes `tessel check` but currently fails when the program
-is built.
-:::
+A range is a value like any other, of type `Range`. You can store it in a
+variable, pass it to a function, compare two ranges with `==`, and print it:
+
+```tessel
+let lines = 2..5
+for i in lines {
+    print(i)          // prints 2, 3, 4
+}
+print(lines)          // 2..5
+print(lines == 2..5)  // true
+```
+
+To repeat something without using the number, name the loop variable `_`:
+`for _ in 0..3 { … }`.
 
 ### Other operators
 
