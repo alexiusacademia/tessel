@@ -22,6 +22,11 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app)
   run <path>     build and run a program
+  complete <file> <offset> [--text <path>]
+                 completion suggestions at byte <offset> of <file> (with the
+                 other .tsl files in its folder); --text reads the file's
+                 current, unsaved text from <path>. Prints `start <offset>`,
+                 then one suggestion per line: kind, label, detail (tab-separated)
   lsp            start the language server (used by editors)
   help           show this help
   version        print the compiler version";
@@ -77,6 +82,17 @@ fn main() -> ExitCode {
             }
         }
         (Some("run"), Some(path)) => run(Path::new(path), &args[2..]),
+        (Some("complete"), Some(file)) => {
+            let offset = args.get(2).and_then(|o| o.parse().ok());
+            let text = args.windows(2).find(|w| w[0] == "--text").map(|w| PathBuf::from(&w[1]));
+            match offset {
+                Some(offset) => complete(Path::new(file), offset, text.as_deref()),
+                None => {
+                    eprintln!("{USAGE}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         (Some("lsp"), _) => match lsp::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -129,6 +145,32 @@ fn load(path: &Path) -> Result<(SourceMap, usize), ExitCode> {
         sources.add(file.display().to_string(), text);
     }
     Ok((sources, files.len()))
+}
+
+/// `tessel complete`: suggestions for the IDE's editor.
+fn complete(file: &Path, offset: usize, text_from: Option<&Path>) -> ExitCode {
+    let Ok(text) = std::fs::read_to_string(text_from.unwrap_or(file)) else {
+        eprintln!("tessel: can't read `{}`", text_from.unwrap_or(file).display());
+        return ExitCode::FAILURE;
+    };
+    let same = |p: &Path| p.canonicalize().ok().is_some_and(|p| Some(p) == file.canonicalize().ok());
+    let folder = file.parent().filter(|f| !f.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let mut sources = SourceMap::new();
+    let id = sources.add(file.display().to_string(), text);
+    for other in program_files(folder).unwrap_or_default() {
+        if !same(&other)
+            && let Ok(t) = std::fs::read_to_string(&other)
+        {
+            sources.add(other.display().to_string(), t);
+        }
+    }
+    let c = tessel_compiler::complete(&sources, id, offset);
+    let mut out = format!("start {}\n", c.start);
+    for item in c.items {
+        out += &format!("{}\t{}\t{}\n", item.kind.name(), item.label, item.detail);
+    }
+    print!("{out}");
+    ExitCode::SUCCESS
 }
 
 fn report(diags: &[Diagnostic], sources: &SourceMap) {

@@ -1,0 +1,30 @@
+// A CodeEditor asks for suggestions when a word starts (or after `.`), then
+// filters them as the word goes on. Up/Down choose, Enter or Tab insert,
+// Escape closes the list.
+
+app Editor(width: 500, height: 300) {
+    state code = ""
+    state suggestions: [Completion] = []
+    state start = 0
+    state asked = 0
+
+    VStack {
+        CodeEditor(text: code, completions: suggestions, completionStart: start, onComplete: { offset in suggest(offset: offset) })
+        Text("asked {asked} time(s)")
+    }
+
+    fn suggest(offset: Int) {
+        asked += 1
+        let words = ["count", "counter", "color", "print", "padding"]
+        // The word starts where the letters before the caret start.
+        var s = offset
+        let chars = code.characters
+        for _ in 0..offset {
+            if s > 0 && chars[s - 1] != " " && chars[s - 1] != "." {
+                s -= 1
+            }
+        }
+        start = s
+        suggestions = words.map { w in Completion(label: w, detail: "Int", kind: "variable") }
+    }
+}

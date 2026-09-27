@@ -1,0 +1,39 @@
+Root
+  View
+    VStack
+      CodeEditor errors [] = "c"
+      Text "asked 1 time(s)"
+Completions: [count] counter color
+Root
+  View
+    VStack
+      CodeEditor errors [] = "cou"
+      Text "asked 1 time(s)"
+Completions: [count] counter
+Root
+  View
+    VStack
+      CodeEditor errors [] = "cou"
+      Text "asked 1 time(s)"
+Completions: count [counter]
+Root
+  View
+    VStack
+      CodeEditor errors [] = "counter"
+      Text "asked 1 time(s)"
+Root
+  View
+    VStack
+      CodeEditor errors [] = "counter p"
+      Text "asked 2 time(s)"
+Root
+  View
+    VStack
+      CodeEditor errors [] = "counter p."
+      Text "asked 3 time(s)"
+Completions: [count] counter color print padding
+Root
+  View
+    VStack
+      CodeEditor errors [] = "counter p.count"
+      Text "asked 3 time(s)"

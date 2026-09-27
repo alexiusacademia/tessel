@@ -200,4 +200,259 @@ Root
             HStack
               Icon circleCheck
               Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Completions: [uppercase]
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Completions: [greeting] background
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Completions: [count]
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Restart on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
 --- files: main.tsl

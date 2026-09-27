@@ -391,7 +391,8 @@ Svg("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><circle cx='
 ## CodeEditor
 
 ```text
-CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …)
+CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …,
+           completions: [Completion] = [], completionStart: Int = …, onComplete: fn(Int) = …)
 ```
 
 A multi-line code editor with line numbers and Tessel syntax colors. It's
@@ -406,6 +407,7 @@ CodeEditor(text: code, errorLines: errors, line: line)
 | `text` | The code being edited. Changed as the user types. |
 | `errorLines` | Line numbers (starting at 1) to mark with a red band and a red bar in the margin. |
 | `line` | Optional. The line the caret is on, starting at 1. The editor updates it as the caret moves, and when your program sets it, the caret jumps to the start of that line. |
+| `completions`, `completionStart`, `onComplete` | Optional. Suggestions shown as the user types; see [Code completion](/ui/code-editor/#code-completion). |
 
 - Text is drawn in a 13-point monospaced font, which `.font` doesn't change.
 - **Enter** keeps the current line's indentation, adding one level (4

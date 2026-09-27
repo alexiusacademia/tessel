@@ -165,7 +165,16 @@ pub enum Kind {
     TextField { placeholder: String, text: Callback },
     Toggle { label: String, is_on: Callback },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
-    CodeEditor { text: Callback, error_lines: Vec<i64>, line: Option<Callback> },
+    CodeEditor {
+        text: Callback,
+        error_lines: Vec<i64>,
+        line: Option<Callback>,
+        /// Suggestions for the word starting at byte `completion_start`.
+        completions: Vec<Suggestion>,
+        completion_start: i64,
+        /// Asks for suggestions, with the caret's byte offset.
+        on_complete: Option<Callback>,
+    },
     /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
     TabView { selection: Callback, close: Option<Callback> },
     /// A hairline separator across its stack.
@@ -425,22 +434,46 @@ pub unsafe extern "C" fn tsl_ui_toggle(label: *const Str, f: *const c_void, env:
     with_builder(|b| b.leaf(Kind::Toggle { label, is_on }));
 }
 
-/// `CodeEditor(text:errorLines:line:)`. `error_lines` (an `[Int]`) is
-/// borrowed; `line_f` is null when there's no `line:` binding.
+/// A `Completion` value (label, detail, kind).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Suggestion {
+    pub label: String,
+    pub detail: String,
+    pub kind: String,
+}
+
+/// `CodeEditor(text:errorLines:line:completions:completionStart:onComplete:)`.
+/// The lists are borrowed; `line_f` and `complete_f` are null when not given.
 #[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn tsl_ui_code_editor(
     f: *const c_void,
     env: *mut Header,
     error_lines: *const crate::List,
     line_f: *const c_void,
     line_env: *mut Header,
+    completions: *const crate::List,
+    completion_start: i64,
+    complete_f: *const c_void,
+    complete_env: *mut Header,
 ) {
     let text = Callback::new(f, env);
     let line = (!line_f.is_null()).then(|| Callback::new(line_f, line_env));
+    let on_complete = (!complete_f.is_null()).then(|| Callback::new(complete_f, complete_env));
     let n = unsafe { crate::tsl_list_len(error_lines) };
     let error_lines =
         (0..n).map(|i| unsafe { *(crate::tsl_list_get(error_lines, i, std::ptr::null()) as *const i64) }).collect();
-    with_builder(|b| b.leaf(Kind::CodeEditor { text, error_lines, line }));
+    let n = unsafe { crate::tsl_list_len(completions) };
+    let completions = (0..n)
+        .map(|i| unsafe {
+            // A `Completion` is three Strings.
+            let p = crate::tsl_list_get(completions, i, std::ptr::null()) as *const *const Str;
+            Suggestion { label: text_of(*p), detail: text_of(*p.add(1)), kind: text_of(*p.add(2)) }
+        })
+        .collect();
+    with_builder(|b| {
+        b.leaf(Kind::CodeEditor { text, error_lines, line, completions, completion_start, on_complete })
+    });
 }
 
 #[unsafe(no_mangle)]

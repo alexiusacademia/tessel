@@ -1,0 +1,16 @@
+click editor 1
+type "c"
+tree
+type "ou"
+tree
+key down
+tree
+key enter
+tree
+type " p"
+key escape
+tree
+type "."
+tree
+key tab
+tree

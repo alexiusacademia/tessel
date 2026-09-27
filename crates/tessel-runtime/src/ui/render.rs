@@ -42,6 +42,19 @@ impl TextEngine {
         layout
     }
 
+    /// Monospaced text, left-aligned, in one color.
+    pub fn mono_line(&mut self, text: &str, size: f64, weight: f32, color: Rgba) -> parley::Layout<Paint> {
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(StyleProperty::from(GenericFamily::Monospace));
+        b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
+        b.push_default(StyleProperty::Brush(Paint(color.0)));
+        let mut layout = b.build(text);
+        layout.break_all_lines(None);
+        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+        layout
+    }
+
     /// Monospaced gray text (line numbers).
     pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> parley::Layout<Paint> {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
@@ -86,6 +99,38 @@ pub struct Interaction {
     pub pointer: Option<(f64, f64)>,
     /// Undo and redo history of text fields and code editors, by key.
     pub history: HashMap<u64, super::edit::History>,
+    /// The code editor's completion list, laid out, when one shows.
+    pub popup: Option<Popup>,
+}
+
+/// A code editor's completion list, drawn over everything else.
+pub struct Popup {
+    pub rect: Rect,
+    pub row_h: f64,
+    /// The visible rows (the list scrolls to keep the selection in view).
+    pub rows: Vec<PopupRow>,
+    /// Index of the selected row within `rows`, if it's visible.
+    pub selected: Option<usize>,
+}
+
+pub struct PopupRow {
+    /// Index into the matching suggestions.
+    pub index: usize,
+    pub badge: parley::Layout<Paint>,
+    pub badge_color: Rgba,
+    pub label: parley::Layout<Paint>,
+    pub detail: parley::Layout<Paint>,
+}
+
+impl Popup {
+    /// The suggestion (index into the matches) at a point, if it's on the list.
+    pub fn row_at(&self, x: f64, y: f64) -> Option<usize> {
+        if !self.rect.contains(x, y) {
+            return None;
+        }
+        let i = ((y - self.rect.y - 4.0) / self.row_h).floor();
+        (i >= 0.0).then(|| self.rows.get(i as usize).map(|r| r.index)).flatten()
+    }
 }
 
 const ACCENT: Rgba = Rgba([0, 122, 255, 255]);
@@ -169,6 +214,34 @@ impl Painter<'_> {
                     );
             }
         }
+    }
+
+    /// Draws the completion list, if one shows (after the tree, so it's on top).
+    pub fn paint_popup(&mut self) {
+        let Some(p) = self.ui.popup.as_ref() else { return };
+        let r = p.rect;
+        let shadow = Rect { x: r.x, y: r.y + 3.0, w: r.w, h: r.h };
+        self.fill(shadow.inset(-2.0), 8.0, Rgba([0, 0, 0, 22]));
+        self.fill(r, 6.0, WHITE);
+        let t = self.t();
+        self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(r, 6.0));
+        for (i, row) in p.rows.iter().enumerate() {
+            let y = r.y + 4.0 + i as f64 * p.row_h;
+            if p.selected == Some(i) {
+                self.fill(Rect { x: r.x + 4.0, y, w: r.w - 8.0, h: p.row_h }, 4.0, SELECTION);
+            }
+            let badge = Rect { x: r.x + 8.0, y: y + (p.row_h - 16.0) / 2.0, w: 16.0, h: 16.0 };
+            self.fill(badge, 4.0, row.badge_color);
+            let (bw, bh) = (row.badge.width() as f64, row.badge.height() as f64);
+            self.text(&row.badge, badge.x + (16.0 - bw) / 2.0, badge.y + (16.0 - bh) / 2.0, None);
+            let ty = y + (p.row_h - row.label.height() as f64) / 2.0;
+            self.text(&row.label, r.x + 32.0, ty, None);
+            let dx = (r.x + r.w - 10.0 - row.detail.width() as f64).max(r.x + 44.0 + row.label.width() as f64);
+            let dy = y + (p.row_h - row.detail.height() as f64) / 2.0;
+            self.text(&row.detail, dx, dy, None);
+        }
+        self.scene.pop_layer();
+        self.stroke(r, 6.0, 1.0, FIELD_BORDER);
     }
 
     pub fn paint(&mut self, n: &Node) {

@@ -177,6 +177,31 @@ you name. The first time, `tessel` compiles the IDE and caches it in your
 system's temporary folder; it's compiled again only when `tessel` itself
 changes.
 
+## `tessel complete`
+
+```sh
+tessel complete main.tsl 120
+tessel complete main.tsl 120 --text /tmp/unsaved.tsl
+```
+
+Prints what could be typed at byte offset 120 of `main.tsl`, using the type
+checker: the members after `x.`, the enum cases after `.`, and the names in
+scope elsewhere. The other `.tsl` files in the same folder are part of the
+program. `--text` reads the file's current text from another file, for
+editors with unsaved changes.
+
+The first line is `start` and the offset where the word being completed
+starts; then one suggestion per line, tab-separated: kind, label, detail.
+
+```text
+start 118
+field	path	String
+field	line	Int
+method	rename	(to: String)
+```
+
+The [Tessel IDE](/start/ide/) uses it for code completion.
+
 ## `tessel lsp`
 
 ```sh

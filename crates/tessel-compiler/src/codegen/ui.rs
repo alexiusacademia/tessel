@@ -19,6 +19,7 @@ use inkwell::IntPredicate;
 
 use super::{pick, Body, FnCtx, Gen, Record, Store, Val, Var};
 use crate::ast::*;
+use crate::builtins;
 use crate::check::{ArgRef, CallInfo, Callee};
 use crate::types::Ty;
 
@@ -534,8 +535,30 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
                 };
-                self.call_rt("tsl_ui_code_editor", &[f, env, lines, line_f, line_env]);
+                // Completion: the suggestions, the offset they're for, and the block asking for them.
+                let comp_t = Ty::list(builtins::COMPLETION);
+                let completions = match a(3) {
+                    Some(x) => self.expr_as(x, &comp_t).unwrap(),
+                    None => {
+                        let ti = self.type_info(&builtins::COMPLETION);
+                        let zero = self.i64().const_zero();
+                        self.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                    }
+                };
+                let start = match a(4) {
+                    Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
+                    None => self.i64().const_int(u64::MAX, true).into(),
+                };
+                let (oc_f, oc_env) = match a(5) {
+                    Some(x) => {
+                        let c = self.expr_as(x, &Ty::func(vec![Ty::Int], Ty::Void)).unwrap().into_struct_value();
+                        (self.b.build_extract_value(c, 0, "").unwrap(), self.b.build_extract_value(c, 1, "").unwrap())
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                self.call_rt("tsl_ui_code_editor", &[f, env, lines, line_f, line_env, completions, start, oc_f, oc_env]);
                 self.release(lines, &list_t);
+                self.release(completions, &comp_t);
             }
             "Picker" => {
                 let loc = self.locator(a(0).unwrap());

@@ -33,7 +33,8 @@ pub fn enums() -> Vec<EnumDef> {
 /// Built-in structs, registered before user types: `HttpResponse` is struct 0.
 pub fn structs() -> Vec<StructDef> {
     let field = |name: &str, ty: Ty| FieldDef { name: name.into(), ty, has_default: false, span: Span::default() };
-    vec![StructDef {
+    vec![
+        StructDef {
         name: "HttpResponse".into(),
         span: Span::default(),
         fields: vec![
@@ -45,11 +46,21 @@ pub fn structs() -> Vec<StructDef> {
             field("error", Ty::Str),
         ],
         methods: Vec::new(),
-    }]
+        },
+        // A `CodeEditor` suggestion: what to insert, and what to show next to it.
+        StructDef {
+            name: "Completion".into(),
+            span: Span::default(),
+            fields: vec![field("label", Ty::Str), field("detail", Ty::Str), field("kind", Ty::Str)],
+            methods: Vec::new(),
+        },
+    ]
 }
 
 /// The `HttpResponse` struct (see `structs`).
 pub const HTTP_RESPONSE: Ty = Ty::Struct(0);
+/// The `Completion` struct (see `structs`).
+pub const COMPLETION: Ty = Ty::Struct(1);
 
 pub struct Builtins {
     pub color: Ty,
@@ -83,6 +94,9 @@ impl Builtins {
                 P::new("text", Ty::Str).bind(),
                 P::new("errorLines", Ty::list(Ty::Int)).default(),
                 P::new("line", Ty::Int).bind().default(),
+                P::new("completions", Ty::list(COMPLETION)).default(),
+                P::new("completionStart", Ty::Int).default(),
+                P::new("onComplete", Ty::func(vec![Ty::Int], Ty::Void)).default(),
             ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();

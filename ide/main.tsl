@@ -16,6 +16,12 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
+    // Code completion: the suggestions for the word starting at byte
+    // `suggestStart` of `suggestPath`, from the latest request.
+    state suggestions: [Completion] = []
+    state suggestStart = -1
+    state suggestPath = ""
+    state suggestRequest = 0
 
     VStack(spacing: 0) {
         // Toolbar
@@ -116,7 +122,14 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             } else {
                 TabView(selection: current, onClose: { path in closeDoc(path: path) }) {
                     for doc in docs {
-                        CodeEditor(text: doc.text, errorLines: errorLines(path: doc.path), line: doc.line)
+                        CodeEditor(
+                            text: doc.text,
+                            errorLines: errorLines(path: doc.path),
+                            line: doc.line,
+                            completions: if doc.path == suggestPath { suggestions } else { [] },
+                            completionStart: if doc.path == suggestPath { suggestStart } else { -1 },
+                            onComplete: { offset in complete(path: doc.path, offset: offset) }
+                        )
                             .id(doc.path)
                             .tabItem(if doc.text != doc.saved { "• {fileName(doc.path)}" } else { fileName(doc.path) })
                             .tag(doc.path)
@@ -411,6 +424,36 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         status = "Building…"
         runCommand(path: tesselCommand(), args: args, onOutput: { text in console.append(text) }) { code in
             status = if code == 0 { "Built" } else { "Build failed" }
+        }
+    }
+
+    // ----- code completion -----
+
+    // Asks `tessel complete` what fits at `offset`, with the unsaved text.
+    // Only the latest request's answer is used.
+    fn complete(path: String, offset: Int) {
+        let text = docs.first(where: { d in d.path == path })?.text ?? ""
+        suggestRequest += 1
+        let request = suggestRequest
+        let file = joinPath(tempFolder(), "tessel-complete-{request}.tsl")
+        if !writeFile(path: file, text: text) {
+            return
+        }
+        var found: [Completion] = []
+        var start = -1
+        runCommand(path: tesselCommand(), args: ["complete", path, "{offset}", "--text", file], onOutput: { line in
+            if line.hasPrefix("start ") {
+                start = Int(line.substring(from: 6, to: line.count)) ?? -1
+            } else if let c = parseCompletion(text: line) {
+                found.append(c)
+            }
+        }) { code in
+            deleteFile(file)
+            if request == suggestRequest {
+                suggestions = found
+                suggestStart = start
+                suggestPath = path
+            }
         }
     }
 

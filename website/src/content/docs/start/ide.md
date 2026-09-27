@@ -57,6 +57,12 @@ Each open file gets a tab. The editor has:
 - **Error markers** on lines with errors. They are updated each time the
   program is checked: when the IDE opens, when you save, and when you press
   Check.
+- **Code completion.** As you type, a list suggests what fits there: the
+  fields and methods after `doc.`, the modifiers after a view, the cases
+  after `.` where an enum is expected, and the names in scope (variables,
+  functions, views, types and keywords) elsewhere. Up and Down choose, Enter
+  or Tab insert, Escape closes the list. Accepting a function or method also
+  types its `(`.
 - **Undo and redo** with Cmd+Z and Cmd+Shift+Z.
 - The usual text editing keys: select with the mouse or Shift and the arrow
   keys, copy, cut, paste, and select all. Tab inserts four spaces.

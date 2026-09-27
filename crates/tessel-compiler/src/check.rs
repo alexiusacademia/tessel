@@ -27,7 +27,57 @@ pub struct Checked {
     pub views: HashMap<String, Vec<ParamSig>>,
     /// Signatures of functions declared inside views: (view, function).
     pub view_fns: HashMap<(String, String), FnSig>,
+    /// What fits where the completion mark is (see `complete`), if the
+    /// checker got there.
+    pub completion: Option<Vec<Suggestion>>,
 }
+
+/// The identifier `tessel complete` puts where the caret is, so the checker
+/// can say what fits there.
+pub const COMPLETION_MARK: &str = "__tessel_complete__";
+
+/// A completion suggestion.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Suggestion {
+    pub label: String,
+    /// A type or signature, shown next to the label.
+    pub detail: String,
+    pub kind: SuggestionKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SuggestionKind {
+    Variable,
+    Field,
+    Method,
+    Function,
+    View,
+    Modifier,
+    Type,
+    Case,
+    Keyword,
+}
+
+impl SuggestionKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            SuggestionKind::Variable => "variable",
+            SuggestionKind::Field => "field",
+            SuggestionKind::Method => "method",
+            SuggestionKind::Function => "function",
+            SuggestionKind::View => "view",
+            SuggestionKind::Modifier => "modifier",
+            SuggestionKind::Type => "type",
+            SuggestionKind::Case => "case",
+            SuggestionKind::Keyword => "keyword",
+        }
+    }
+}
+
+const KEYWORDS: &[&str] = &[
+    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "fn", "struct", "enum", "view",
+    "app", "true", "false", "nil",
+];
 
 impl Checked {
     /// A type as written in Tessel, like `[Todo]` or `fn(Int) -> Bool`.
@@ -135,6 +185,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         locals: HashMap::new(),
         loop_places: HashSet::new(),
         view_fns: HashMap::new(),
+        completion: None,
     };
     let ids = c.collect(program, require_entry);
     c.signatures(program, &ids);
@@ -168,6 +219,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
             })
             .collect(),
         view_fns: c.view_fns,
+        completion: c.completion,
     }
 }
 
@@ -247,6 +299,7 @@ struct Checker<'a> {
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
     view_fns: HashMap<(String, String), FnSig>,
+    completion: Option<Vec<Suggestion>>,
 }
 
 impl Checker<'_> {
@@ -1342,6 +1395,10 @@ impl Checker<'_> {
     }
 
     fn name_expr(&mut self, n: &str, span: Span) -> Ty {
+        if n == COMPLETION_MARK {
+            self.complete_names();
+            return Ty::Error;
+        }
         if let Some(l) = self.lookup(n) {
             return l.ty.clone();
         }
@@ -1379,6 +1436,10 @@ impl Checker<'_> {
 
     /// `.name` resolved against the expected enum type.
     fn dot_name(&mut self, n: &str, span: Span, expected: Option<&Ty>, called: bool) -> Ty {
+        if n == COMPLETION_MARK {
+            self.complete_dot(expected);
+            return Ty::Error;
+        }
         match expected.map(strip_opt) {
             Some(Ty::Enum(id)) => {
                 let id = *id;
@@ -1724,6 +1785,10 @@ impl Checker<'_> {
     }
 
     fn member(&mut self, object: &Expr, name: &Ident, optional: bool) -> Ty {
+        if name.name == COMPLETION_MARK {
+            self.complete_member(object);
+            return Ty::Error;
+        }
         // `Filter.all`: a case through its enum's name.
         if let ExprKind::Name(tn) = &object.kind
             && self.lookup(tn).is_none() {
@@ -1832,6 +1897,10 @@ impl Checker<'_> {
                 }
                 t
             }
+            ExprKind::Member { object, name, .. } if name.name == COMPLETION_MARK => {
+                self.complete_member(object);
+                Ty::Error
+            }
             ExprKind::Member { object, name, optional } => {
                 self.method_call(object, name, *optional, args, trailing, span)
             }
@@ -1852,6 +1921,10 @@ impl Checker<'_> {
         span: Span,
         expected: Option<&Ty>,
     ) -> Ty {
+        if n == COMPLETION_MARK {
+            self.complete_names();
+            return Ty::Error;
+        }
         let what = format!("`{n}`");
         if let Some(l) = self.lookup(n).cloned() {
             return match l.kind {
@@ -2592,6 +2665,165 @@ impl Checker<'_> {
 }
 
 // ===== helpers =====
+
+// ===== completion =====
+
+impl Checker<'_> {
+    fn suggest(&mut self, items: Vec<Suggestion>) {
+        if self.completion.is_none() {
+            self.completion = Some(items);
+        }
+    }
+
+    /// `(label: Type, …) -> Result`.
+    fn sig_text(&self, params: &[ParamSig], ret: &Ty) -> String {
+        let ps: Vec<String> = params
+            .iter()
+            .map(|p| {
+                let t = self.show(&p.ty);
+                if p.unlabeled { t } else { format!("{}: {t}", p.label) }
+            })
+            .collect();
+        let ret = if *ret == Ty::Void { String::new() } else { format!(" -> {}", self.show(ret)) };
+        format!("({}){ret}", ps.join(", "))
+    }
+
+    fn item(label: &str, detail: String, kind: SuggestionKind) -> Suggestion {
+        Suggestion { label: label.to_string(), detail, kind }
+    }
+
+    /// Everything a name here could be.
+    fn complete_names(&mut self) {
+        use SuggestionKind as K;
+        let mut items: Vec<Suggestion> = Vec::new();
+        let mut seen = HashSet::new();
+        let locals: Vec<Local> = self.scopes.iter().rev().flat_map(|s| s.iter().rev()).cloned().collect();
+        for l in locals {
+            if l.name.starts_with("__") || !seen.insert(l.name.clone()) {
+                continue;
+            }
+            let (detail, kind) = match &l.kind {
+                Kind::Fn(sig, _) => (self.sig_text(&sig.params, &sig.ret), K::Function),
+                Kind::State => (format!("state {}", self.show(&l.ty)), K::Variable),
+                Kind::Field => (format!("field {}", self.show(&l.ty)), K::Field),
+                _ => (self.show(&l.ty), K::Variable),
+            };
+            items.push(Self::item(&l.name, detail, kind));
+        }
+        let mut globals: Vec<(String, Global)> = self.globals.iter().map(|(n, g)| (n.clone(), *g)).collect();
+        globals.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, g) in globals {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let (detail, kind) = match g {
+                Global::Fn(i) => (self.sig_text(&self.fns[i].params, &self.fns[i].ret), K::Function),
+                Global::View(i) => (format!("view {}", self.sig_text(&self.views[i], &Ty::Void)), K::View),
+                Global::Struct(_) => ("struct".to_string(), K::Type),
+                Global::Enum(_) => ("enum".to_string(), K::Type),
+                Global::App => continue,
+            };
+            items.push(Self::item(&name, detail, kind));
+        }
+        for n in builtins::VIEW_NAMES {
+            if seen.insert(n.to_string()) {
+                let detail = self.builtins.view(n).map(|ps| format!("view {}", self.sig_text(&ps, &Ty::Void))).unwrap_or_default();
+                items.push(Self::item(n, detail, K::View));
+            }
+        }
+        for n in builtins::FUNCTION_NAMES {
+            if seen.insert(n.to_string()) {
+                let detail = self.builtins.function(n).map(|s| self.sig_text(&s.params, &s.ret)).unwrap_or_default();
+                items.push(Self::item(n, detail, K::Function));
+            }
+        }
+        for n in PRIMITIVES {
+            if seen.insert(n.to_string()) {
+                items.push(Self::item(n, "type".to_string(), K::Type));
+            }
+        }
+        items.push(Self::item("pi", "Float".to_string(), K::Variable));
+        for k in KEYWORDS {
+            items.push(Self::item(k, String::new(), K::Keyword));
+        }
+        self.suggest(items);
+    }
+
+    /// `object.` — the members of its type, or the cases of an enum.
+    fn complete_member(&mut self, object: &Expr) {
+        if let ExprKind::Name(tn) = &object.kind
+            && self.lookup(tn).is_none()
+            && let Some(Global::Enum(id)) = self.globals.get(tn).copied()
+        {
+            let items = self.cases(id);
+            self.suggest(items);
+            return;
+        }
+        let t = self.expr(object, None);
+        let items = self.members(strip_opt(&t));
+        self.suggest(items);
+    }
+
+    /// `.name` on its own: the cases of the expected enum.
+    fn complete_dot(&mut self, expected: Option<&Ty>) {
+        let items = match expected.map(strip_opt) {
+            Some(Ty::Enum(id)) => self.cases(*id),
+            Some(Ty::Float) => vec![Self::item("infinity", "Float".to_string(), SuggestionKind::Case)],
+            // After a view on the line before (`Text("a")` then `.padding`),
+            // the parser already made this a member; otherwise modifiers
+            // are the likeliest.
+            _ => self.members(&Ty::View),
+        };
+        self.suggest(items);
+    }
+
+    fn cases(&self, id: usize) -> Vec<Suggestion> {
+        self.enums[id]
+            .cases
+            .iter()
+            .map(|c| {
+                let detail = if c.fields.is_empty() {
+                    self.enums[id].name.clone()
+                } else {
+                    format!("{}{}", self.enums[id].name, self.sig_text(&c.fields, &Ty::Void))
+                };
+                Self::item(&c.name, detail, SuggestionKind::Case)
+            })
+            .collect()
+    }
+
+    fn members(&self, t: &Ty) -> Vec<Suggestion> {
+        use SuggestionKind as K;
+        let methods = |c: &Self, ms: &[MethodDef]| -> Vec<Suggestion> {
+            ms.iter().map(|m| Self::item(&m.name, c.sig_text(&m.sig.params, &m.sig.ret), K::Method)).collect()
+        };
+        match t {
+            Ty::Struct(id) => {
+                let def = &self.structs[*id];
+                let mut items: Vec<Suggestion> =
+                    def.fields.iter().map(|f| Self::item(&f.name, self.show(&f.ty), K::Field)).collect();
+                items.extend(methods(self, &def.methods));
+                items
+            }
+            Ty::Enum(id) => methods(self, &self.enums[*id].methods),
+            Ty::View => builtins::member_names(t)
+                .iter()
+                .map(|n| {
+                    let detail = self.builtins.modifier(n).map(|ps| self.sig_text(&ps, &Ty::Void)).unwrap_or_default();
+                    Self::item(n, detail, K::Modifier)
+                })
+                .collect(),
+            _ => builtins::member_names(t)
+                .iter()
+                .map(|n| match (builtins::property(t, n), builtins::method_of(t, n)) {
+                    (Some(pt), _) => Self::item(n, self.show(&pt), K::Field),
+                    (None, Some(m)) => Self::item(n, self.sig_text(&m.sig.params, &m.sig.ret), K::Method),
+                    (None, None) => Self::item(n, String::new(), K::Method),
+                })
+                .collect(),
+        }
+    }
+}
 
 fn fn_type(sig: &FnSig) -> Ty {
     Ty::Fn(sig.params.iter().map(|p| p.ty.clone()).collect(), Box::new(sig.ret.clone()))

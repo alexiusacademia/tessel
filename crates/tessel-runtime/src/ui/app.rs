@@ -47,9 +47,9 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use super::edit::{self, Clipboard, Edit, Editing, Unit};
-use super::layout::{read_string, Layouter};
+use super::layout::{read_string, Layouter, Rect};
 use super::render::{self, code_origin, field_origin, Interaction, Painter, TextEngine};
-use super::{build, Callback, Kind, Node};
+use super::{build, Callback, Kind, Node, Rgba};
 use crate::{Header, Str};
 
 // ===== timers =====
@@ -460,6 +460,71 @@ struct App {
     clipboard: Clipboard,
     /// Keys of the views in the current tree, to find ones that just appeared.
     keys: std::collections::HashSet<u64>,
+    completing: Completing,
+}
+
+/// Code completion in a `CodeEditor`.
+#[derive(Default)]
+struct Completing {
+    /// The editor and the word start (byte offset) suggestions were last
+    /// asked for. Suggestions for another start are stale and don't show.
+    asked: Option<(u64, usize)>,
+    /// The typed part of the word, which the selection belongs to.
+    prefix: String,
+    selected: usize,
+}
+
+/// The suggestions that match the word at the caret.
+struct Matches {
+    key: u64,
+    /// The word being completed: from `start` to `end` (it may go on after the caret).
+    start: usize,
+    end: usize,
+    items: Vec<super::Suggestion>,
+}
+
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Where the word ending at `caret` starts.
+fn word_start(text: &str, caret: usize) -> usize {
+    text[..caret].char_indices().rev().take_while(|(_, c)| is_word(*c)).last().map_or(caret, |(i, _)| i)
+}
+
+/// Suggestions matching `prefix`: those starting with it (exact case first),
+/// then those containing it.
+fn filter(all: &[super::Suggestion], prefix: &str) -> Vec<super::Suggestion> {
+    let lower = prefix.to_lowercase();
+    let mut out: Vec<super::Suggestion> = all.iter().filter(|s| s.label.starts_with(prefix)).cloned().collect();
+    for s in all {
+        let l = s.label.to_lowercase();
+        if !out.contains(s) && l.starts_with(&lower) {
+            out.push(s.clone());
+        }
+    }
+    if !prefix.is_empty() {
+        for s in all {
+            if !out.contains(s) && s.label.to_lowercase().contains(&lower) {
+                out.push(s.clone());
+            }
+        }
+    }
+    out
+}
+
+fn badge(kind: &str) -> (&'static str, Rgba) {
+    match kind {
+        "function" => ("f", Rgba([142, 68, 173, 255])),
+        "method" => ("m", Rgba([142, 68, 173, 255])),
+        "variable" => ("v", Rgba([0, 122, 255, 255])),
+        "field" => ("p", Rgba([48, 176, 199, 255])),
+        "view" => ("V", Rgba([255, 149, 0, 255])),
+        "modifier" => (".", Rgba([52, 199, 89, 255])),
+        "type" => ("T", Rgba([162, 132, 94, 255])),
+        "case" => ("c", Rgba([204, 160, 0, 255])),
+        _ => ("k", Rgba([142, 142, 147, 255])),
+    }
 }
 
 /// Keyboard modifiers, with the platform's shortcut key as `primary`
@@ -487,6 +552,180 @@ impl App {
         let tree = self.tree.as_mut().unwrap();
         Layouter { text: &mut self.text, scroll: &self.ui.scroll }.run(tree, self.width, self.height);
         self.follow_caret();
+        self.layout_popup();
+    }
+
+    // ===== code completion =====
+
+    /// The suggestions for the word at the caret, if the list should show.
+    fn matches(&self) -> Option<Matches> {
+        let e = self.ui.editing.as_ref()?;
+        let (key, start) = self.completing.asked?;
+        if key != e.key || !e.range().is_empty() {
+            return None;
+        }
+        let Kind::CodeEditor { text, completions, completion_start, .. } = &self.node(key)?.kind else { return None };
+        if *completion_start != start as i64 || completions.is_empty() {
+            return None;
+        }
+        let text = read_string(text);
+        let caret = e.focus.min(text.len());
+        if start > caret || word_start(&text, caret) != start {
+            return None;
+        }
+        let end = caret + text[caret..].chars().take_while(|c| is_word(*c)).map(char::len_utf8).sum::<usize>();
+        let prefix = &text[start..caret];
+        let items = filter(completions, prefix);
+        // Nothing left to complete.
+        if items.is_empty() || (items.len() == 1 && items[0].label == text[start..end]) {
+            return None;
+        }
+        Some(Matches { key, start, end, items })
+    }
+
+    /// After typing in a code editor: ask for suggestions when a new word
+    /// starts (or after `.`). While the word goes on, the list just filters.
+    fn after_typing(&mut self, typed: &str) {
+        let Some(e) = self.ui.editing.as_ref() else { return };
+        let key = e.key;
+        let caret = e.focus;
+        let Some(Kind::CodeEditor { text, on_complete: Some(ask), .. }) = self.node(key).map(|n| &n.kind) else { return };
+        let (text, ask) = (read_string(text), ask.clone());
+        let last = typed.chars().last().unwrap_or(' ');
+        if !(is_word(last) || last == '.') || caret > text.len() {
+            self.completing.asked = None;
+            return;
+        }
+        let start = word_start(&text, caret);
+        let before = text[..start].chars().next_back();
+        // Not in numbers (`12`, `3.5`).
+        if text[start..].starts_with(|c: char| c.is_ascii_digit())
+            || (start == caret && before == Some('.') && text[..start - 1].ends_with(|c: char| c.is_ascii_digit()))
+        {
+            self.completing.asked = None;
+            return;
+        }
+        if self.completing.asked == Some((key, start)) {
+            return;
+        }
+        self.completing.asked = Some((key, start));
+        self.completing.selected = 0;
+        ask.call_with_int(caret as i64);
+        self.dirty = true;
+    }
+
+    /// Replaces the word being completed with suggestion `index` of `m`.
+    fn accept(&mut self, m: &Matches, index: usize) {
+        let Some(s) = m.items.get(index) else { return };
+        let text = self.node(m.key).and_then(editable_text).map(read_string).unwrap_or_default();
+        // Calls get their `(`, or `()` when they take nothing.
+        let mut insert = s.label.clone();
+        let callable = matches!(s.kind.as_str(), "function" | "method" | "view" | "modifier");
+        if callable && !text[m.end.min(text.len())..].starts_with('(') {
+            insert.push('(');
+            if s.detail.trim_start_matches("view ").starts_with("()") {
+                insert.push(')');
+            }
+        }
+        if let Some(e) = self.ui.editing.as_mut().filter(|e| e.key == m.key) {
+            e.anchor = m.start;
+            e.focus = m.end;
+        }
+        self.completing.asked = None;
+        self.edit(Edit::Insert(insert));
+    }
+
+    /// Keys the completion list takes while it shows. Returns whether it took the key.
+    fn completion_key(&mut self, name: &str) -> bool {
+        let Some(m) = self.matches() else { return false };
+        match name {
+            "up" | "down" => {
+                let n = m.items.len();
+                let s = &mut self.completing.selected;
+                *s = if name == "down" { (*s + 1) % n } else { (*s + n - 1) % n };
+            }
+            "enter" | "tab" => {
+                let i = self.completing.selected.min(m.items.len() - 1);
+                let word = self.node(m.key).and_then(editable_text).map(read_string).unwrap_or_default();
+                if name == "enter" && word.get(m.start..m.end) == Some(m.items[i].label.as_str()) {
+                    // Already typed in full: Enter is a new line.
+                    self.completing.asked = None;
+                    return false;
+                }
+                self.accept(&m, i);
+            }
+            "escape" => self.completing.asked = None,
+            _ => return false,
+        }
+        self.dirty = true;
+        true
+    }
+
+    /// A click on the completion list accepts the suggestion under it.
+    fn popup_click(&mut self, x: f64, y: f64) -> bool {
+        let Some(index) = self.ui.popup.as_ref().and_then(|p| p.row_at(x, y)) else { return false };
+        if let Some(m) = self.matches() {
+            self.accept(&m, index);
+            self.dirty = true;
+        }
+        true
+    }
+
+    /// Lays out the completion list under the word being completed.
+    fn layout_popup(&mut self) {
+        self.ui.popup = None;
+        let Some(m) = self.matches() else { return };
+        let prefix = self.node(m.key).and_then(editable_text).map(read_string).unwrap_or_default();
+        let caret = self.ui.editing.as_ref().map_or(m.start, |e| e.focus.min(prefix.len()));
+        let prefix = prefix[m.start..caret].to_string();
+        if prefix != self.completing.prefix {
+            self.completing.prefix = prefix;
+            self.completing.selected = 0;
+        }
+        let selected = self.completing.selected.min(m.items.len() - 1);
+        self.completing.selected = selected;
+        let Some(node) = self.node(m.key) else { return };
+        let Some(layout) = &node.layout.text else { return };
+        let mut at = Editing::new(m.key, "");
+        at.anchor = m.start;
+        at.focus = m.start;
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        let (cx, top, bottom) = match edit::geometry(layout, &at).0 {
+            Some(c) => (x0 - sx + c.x0, y0 - sy + c.y0, y0 - sy + c.y1),
+            None => (x0, y0, y0 + 16.0),
+        };
+        const VISIBLE: usize = 10;
+        let first = selected.saturating_sub(VISIBLE - 1);
+        let mut rows = Vec::new();
+        let mut widest: f64 = 0.0;
+        for (index, s) in m.items.iter().enumerate().skip(first).take(VISIBLE) {
+            let (letter, badge_color) = badge(&s.kind);
+            let detail: String = if s.detail.chars().count() > 48 {
+                s.detail.chars().take(47).chain(std::iter::once('…')).collect()
+            } else {
+                s.detail.clone()
+            };
+            let row = render::PopupRow {
+                index,
+                badge: self.text.mono_line(letter, 11.0, 700.0, Rgba([255, 255, 255, 255])),
+                badge_color,
+                label: self.text.mono_line(&s.label, 13.0, 400.0, Rgba([29, 29, 31, 255])),
+                detail: self.text.layout(&detail, 11.5, 400.0, Rgba([142, 142, 147, 255]), None),
+            };
+            widest = widest.max(row.label.width() as f64 + row.detail.width() as f64);
+            rows.push(row);
+        }
+        let row_h = 22.0;
+        let w = (widest + 64.0).clamp(220.0, 560.0).min(self.width - 8.0);
+        let h = rows.len() as f64 * row_h + 8.0;
+        let x = (cx - 32.0).min(self.width - w - 4.0).max(4.0);
+        let y = if bottom + 2.0 + h > self.height - 4.0 && top - h - 2.0 > 4.0 { top - h - 2.0 } else { bottom + 2.0 };
+        self.ui.popup = Some(render::Popup {
+            rect: Rect { x, y, w, h },
+            row_h,
+            selected: Some(selected - first),
+            rows,
+        });
     }
 
     /// Stops editing a field that disappeared, keeps the selection valid,
@@ -667,13 +906,18 @@ impl App {
             }
         }
         self.edit(Edit::Insert(text.to_string()));
+        if self.editing_code() {
+            self.after_typing(text);
+        }
     }
 
     fn scene(&mut self, scale: f64) -> Scene {
         self.update();
         let mut scene = Scene::new();
         let tree = self.tree.as_ref().unwrap();
-        Painter { scene: &mut scene, ui: &self.ui, scale }.paint(tree);
+        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale };
+        painter.paint(tree);
+        painter.paint_popup();
         scene
     }
 
@@ -752,6 +996,9 @@ impl App {
 
     /// A completed click at (x, y).
     fn click(&mut self, x: f64, y: f64) {
+        if self.popup_click(x, y) {
+            return;
+        }
         let hit = self.hit(x, y);
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
@@ -888,6 +1135,9 @@ impl App {
 
     /// A key press, by name (see the script commands).
     fn key(&mut self, name: &str, mods: Mods) {
+        if !mods.primary && !mods.shift && self.completion_key(name) {
+            return;
+        }
         // Text editing keeps Cmd+A/C/X/V/Z while a field is being edited.
         let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v" | "z");
         if mods.primary && !editing_key && self.run_shortcut(name) {
@@ -1118,6 +1368,7 @@ pub unsafe extern "C" fn tsl_ui_run(title: *const Str, width: f64, height: f64, 
         dirty: true,
         clipboard: Clipboard::Headless,
         keys: Default::default(),
+        completing: Completing::default(),
     };
     let code = match std::env::var("TESSEL_SCRIPT") {
         Ok(script) => run_script(app, &script),
@@ -1285,6 +1536,16 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             "dump" | "tree" => {
                 app.update();
                 print!("{}", app.dump(word == "dump"));
+                // The completion list, with the selected suggestion marked.
+                if let Some(m) = app.matches() {
+                    let items: Vec<String> = m
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, s)| if i == app.completing.selected { format!("[{}]", s.label) } else { s.label.clone() })
+                        .collect();
+                    println!("Completions: {}", items.join(" "));
+                }
             }
             _ => {
                 eprintln!("script: unknown command `{word}`");
@@ -1462,6 +1723,7 @@ impl ApplicationHandler for WindowApp {
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 let (x, y) = self.cursor;
                 match state {
+                    ElementState::Pressed if self.app.popup_click(x, y) => {}
                     ElementState::Pressed => {
                         let hit = self.app.hit(x, y);
                         if let Some(Hit::Field(key)) = hit {

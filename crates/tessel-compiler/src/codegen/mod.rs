@@ -665,7 +665,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_substring" => (vec![p, i, i], Some(p)),
             "tsl_str_find" => (vec![p, p], Some(i)),
             "tsl_ui_shortcut" => (vec![p, p, p], None),
-            "tsl_ui_code_editor" => (vec![p, p, p, p, p], None),
+            "tsl_ui_code_editor" => (vec![p, p, p, p, p, p, i, p, p], None),
             "tsl_ui_on_appear" | "tsl_ui_on_submit" => (vec![p, p], None),
             "tsl_ui_begin_tabs" => (vec![p, p, p, p], None),
             "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),

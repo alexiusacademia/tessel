@@ -25,3 +25,24 @@ click "trash"
 click "Delete"
 wait 0
 tree
+click "main.tsl"
+click editor 1
+key up
+key up
+key end
+key enter
+type let greeting = "hi".up
+wait 0
+tree
+key enter
+key enter
+type print(gr
+wait 0
+tree
+key tab
+type .cou
+wait 0
+tree
+key tab
+type )
+tree

@@ -39,6 +39,9 @@ CodeEditor(text: source, errorLines: problems, line: currentLine)
 | `text:` | `bind String` | The text being edited. Required. |
 | `errorLines:` | `[Int]` | Line numbers to mark as having errors. Optional; empty by default. |
 | `line:` | `bind Int` | The line the cursor is on. Optional. |
+| `completions:` | `[Completion]` | Suggestions to offer as the user types. Optional; see [Code completion](#code-completion). |
+| `completionStart:` | `Int` | Where the word those suggestions are for starts (a byte offset in `text`). |
+| `onComplete:` | `fn(Int)` | Called when the editor wants suggestions, with the cursor's byte offset. |
 
 Line numbers start at 1, as they do in the gutter.
 
@@ -91,6 +94,68 @@ line the cursor is on:
 That's how you jump to an error: store the line in the bound value, for
 example when the user clicks an error in a list. Setting it to the line the
 cursor is already on does nothing, since nothing changed.
+
+## Code completion
+
+The editor can offer suggestions as the user types, in a list under the
+word. You provide them; the editor decides when to ask, shows and filters
+them, and inserts the chosen one:
+
+1. When the user starts a word (or types `.`), the editor calls
+   `onComplete` with the cursor's position in `text`, as a byte offset.
+2. Your code works out the suggestions, maybe in the background, and sets
+   `completions` to a list of `Completion` values, and `completionStart` to
+   the offset where the word starts.
+3. The list shows while the cursor stays in that word, keeping only the
+   suggestions that match what's typed so far. It only shows when
+   `completionStart` is where the current word starts, so a late answer for a
+   word the user has moved on from never shows.
+
+`Completion` is a built-in struct:
+
+```tessel
+Completion(label: "count", detail: "Int", kind: "variable")
+```
+
+- `label` is inserted in place of the word.
+- `detail` is shown in gray on the right, like a type or a signature.
+- `kind` picks the little badge: `"function"`, `"method"`, `"variable"`,
+  `"field"`, `"view"`, `"modifier"`, `"type"`, `"case"` or `"keyword"`.
+  Accepting a function, method, view or modifier also types `(` (or `()` when
+  its `detail` starts with `()`).
+
+While the list shows, **Up** and **Down** choose, **Enter** or **Tab** insert,
+and **Escape** closes it. Clicking a suggestion inserts it too. Enter on a
+suggestion that's already typed in full just starts a new line.
+
+A small example with a fixed list of words:
+
+```tessel
+app Editor(width: 500, height: 300) {
+    state code = ""
+    state suggestions: [Completion] = []
+    state start = 0
+
+    CodeEditor(text: code, completions: suggestions, completionStart: start, onComplete: { offset in suggest(offset: offset) })
+
+    fn suggest(offset: Int) {
+        // The word starts after the last space or `.` before the cursor.
+        let chars = code.characters
+        var s = offset
+        for _ in 0..offset {
+            if s > 0 && chars[s - 1] != " " && chars[s - 1] != "." {
+                s -= 1
+            }
+        }
+        start = s
+        suggestions = ["count", "color", "print"].map { w in Completion(label: w, detail: "", kind: "variable") }
+    }
+}
+```
+
+(This counts characters, which equal bytes only for plain ASCII text. The
+[Tessel IDE](/start/ide/) asks `tessel complete` instead, which knows Tessel
+and works in bytes.)
 
 ## Size
 
