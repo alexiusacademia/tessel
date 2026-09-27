@@ -1,0 +1,16 @@
+// Math functions, pi, and formatted(decimals:).
+fn main() {
+    print(sqrt(2.0).formatted(decimals: 4))
+    print(pow(8.0, 1.0 / 3.0))
+    print(sin(pi / 2.0))
+    print(atan2(1.0, 1.0).formatted(decimals: 5))
+    print(max(0, 2.5))
+    print(min(3, -7))
+    print(abs(-4))
+    print(abs(-4.5))
+    print(floor(2.7))
+    print(round(-0.0001).formatted(decimals: 2))
+    print(log(exp(1.0)))
+    let x: Float = 1.23456
+    print("A = {x.formatted(decimals: 2)} m²")
+}

@@ -1,0 +1,18 @@
+Root
+  View
+    VStack
+      Text "saved 0.7854"
+      Button "Save"
+      Button "Open"
+Root
+  View
+    VStack
+      Text "opened: area=0.7854"
+      Button "Save"
+      Button "Open"
+Root
+  View
+    VStack
+      Text "open cancelled"
+      Button "Save"
+      Button "Open"

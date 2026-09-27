@@ -54,6 +54,12 @@ fn host_triple() -> TargetTriple {
     }
 }
 
+/// Math functions, in the order the runtime's `tsl_math` numbers them.
+const MATH_FNS: &[&str] = &[
+    "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "floor", "ceil",
+    "round", "abs", "min", "max",
+];
+
 /// Built-in methods that change their receiver (as in the checker).
 const MUTATING_BUILTINS: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
 
@@ -674,6 +680,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_padding" => (vec![f64t, f64t, f64t, f64t], None),
             "tsl_ui_font" => (vec![f64t, i8t, i32t, i8t], None),
             "tsl_ui_text_alignment" => (vec![i32t], None),
+            "tsl_math" => (vec![i32t, f64t, f64t], Some(f64t)),
+            "tsl_float_format" => (vec![f64t, i], Some(p)),
+            "tsl_file_dialog" => (vec![i8t, p, p, p], Some(p)),
             "tsl_ui_color" => (vec![i32t], None),
             "tsl_ui_background" => (vec![i32t, f64t], None),
             "tsl_ui_border" => (vec![i32t, f64t, f64t], None),
@@ -1755,6 +1764,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let val = self.load(&v.ty, p);
             self.retain(val, &v.ty);
             return Some(val);
+        }
+        if n == "pi" && !self.fns.contains_key(n) {
+            return Some(self.ctx.f64_type().const_float(std::f64::consts::PI).into());
         }
         // A top-level function used as a value.
         let f = *self.fns.get(n).expect("resolved name");
@@ -3127,6 +3139,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let a = |g: &mut Self, i: usize, t: &Ty| -> Option<Val<'ctx>> {
             info.args.get(i).copied().flatten().map(|r| g.expr_as(arg(r), t).unwrap())
         };
+        if let (Ty::Float, "formatted") = (recv, name) {
+            let decimals = a(self, 0, &Ty::Int).unwrap();
+            return self.call_rt("tsl_float_format", &[v, decimals]);
+        }
         match recv {
             Ty::Str => {
                 let r = match name {
@@ -3438,6 +3454,60 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(self.truthy(r).into())
             }
             "currentFolder" => self.call_rt("tsl_current_folder", &[]),
+            _ if MATH_FNS.contains(&name) && *t == Ty::Float => {
+                let op = MATH_FNS.iter().position(|m| *m == name).unwrap() as u64;
+                // Math arguments are always positional (`pow(x, 2.0)`).
+                let a = self.expr_as(&args[0].value, &Ty::Float).unwrap();
+                let b = match args.get(1) {
+                    Some(x) => self.expr_as(&x.value, &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_zero().into(),
+                };
+                let op = self.ctx.i32_type().const_int(op, false);
+                self.call_rt("tsl_math", &[op.into(), a, b])
+            }
+            // `abs`, `min`, `max` on Ints.
+            "abs" | "min" | "max" => {
+                let a = self.expr_as(&args[0].value, &Ty::Int).unwrap().into_int_value();
+                if name == "abs" {
+                    let neg = self.b.build_int_neg(a, "").unwrap();
+                    let is_neg = self.b.build_int_compare(IntPredicate::SLT, a, self.i64().const_zero(), "").unwrap();
+                    return Some(self.b.build_select(is_neg, neg, a, "").unwrap());
+                }
+                let b = self.expr_as(&args[1].value, &Ty::Int).unwrap().into_int_value();
+                let pred = if name == "min" { IntPredicate::SLT } else { IntPredicate::SGT };
+                let pick_a = self.b.build_int_compare(pred, a, b, "").unwrap();
+                Some(self.b.build_select(pick_a, a, b, "").unwrap())
+            }
+            "openFile" | "saveFile" => {
+                // openFile(title:types:), saveFile(title:name:types:)
+                let texts: &[usize] = if name == "openFile" { &[0] } else { &[0, 1] };
+                let mut strs = Vec::new();
+                for &i in texts {
+                    strs.push(match info.args[i] {
+                        Some(r) => self.expr_as(arg(r), &Ty::Str).unwrap(),
+                        None => self.str_lit("").into(),
+                    });
+                }
+                if name == "openFile" {
+                    strs.push(self.str_lit("").into());
+                }
+                let list_t = Ty::list(Ty::Str);
+                let types = match info.args[texts.len()] {
+                    Some(r) => self.expr_as(arg(r), &list_t).unwrap(),
+                    None => {
+                        let info_ptr = self.type_info(&Ty::Str);
+                        let zero = self.i64().const_zero();
+                        self.call_rt("tsl_list_new", &[info_ptr.into(), zero.into()]).unwrap()
+                    }
+                };
+                let save = self.i8().const_int((name == "saveFile") as u64, false);
+                let p = self.call_rt("tsl_file_dialog", &[save.into(), strs[0], strs[1], types]).unwrap().into_pointer_value();
+                for v in strs {
+                    self.release(v, &Ty::Str);
+                }
+                self.release(types, &list_t);
+                Some(self.opt_from_ptr(p, t))
+            }
             "runCommand" => {
                 let path = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
                 let list_t = Ty::list(Ty::Str);

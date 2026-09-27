@@ -163,6 +163,25 @@ impl Builtins {
                 ret: Ty::Int,
             },
             "stopCommand" => FnSig { params: vec![P::new("id", Ty::Int)], ret: Ty::Void },
+            "sqrt" | "exp" | "log" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "floor"
+            | "ceil" | "round" => FnSig { params: vec![P::unlabeled("x", Ty::Float)], ret: Ty::Float },
+            "pow" => FnSig { params: vec![P::unlabeled("x", Ty::Float), P::unlabeled("power", Ty::Float)], ret: Ty::Float },
+            "atan2" => FnSig { params: vec![P::unlabeled("y", Ty::Float), P::unlabeled("x", Ty::Float)], ret: Ty::Float },
+            // `abs`, `min` and `max` take Int or Float: checked specially.
+            "abs" => FnSig { params: vec![P::unlabeled("x", Ty::Any)], ret: Ty::Any },
+            "min" | "max" => FnSig { params: vec![P::unlabeled("a", Ty::Any), P::unlabeled("b", Ty::Any)], ret: Ty::Any },
+            "openFile" => FnSig {
+                params: vec![P::new("title", Ty::Str).default(), P::new("types", Ty::list(Ty::Str)).default()],
+                ret: Ty::opt(Ty::Str),
+            },
+            "saveFile" => FnSig {
+                params: vec![
+                    P::new("title", Ty::Str).default(),
+                    P::new("name", Ty::Str).default(),
+                    P::new("types", Ty::list(Ty::Str)).default(),
+                ],
+                ret: Ty::opt(Ty::Str),
+            },
             _ => return None,
         })
     }
@@ -171,7 +190,8 @@ impl Builtins {
 pub const FUNCTION_NAMES: &[&str] = &[
     "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
-    "stopCommand",
+    "stopCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -234,6 +254,10 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "find" => method(vec![P::unlabeled("text", Ty::Str)], Ty::opt(Ty::Int)),
             _ => return None,
         },
+        Ty::Float => match name {
+            "formatted" => method(vec![P::new("decimals", Ty::Int)], Ty::Str),
+            _ => return None,
+        },
         Ty::Dict(k, v) => match name {
             "removeValue" => mutating(vec![P::new("forKey", (**k).clone())], Ty::opt((**v).clone())),
             "contains" => method(vec![P::new("key", (**k).clone())], Ty::Bool),
@@ -255,6 +279,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "replace", "lines", "substring", "find",
         ],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
+        Ty::Float => &["formatted"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",

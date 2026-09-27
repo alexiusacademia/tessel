@@ -9,6 +9,8 @@ arboard = "3.6.1"
 parley = "0.11"
 png = "0.18.1"
 pollster = "1.0.1"
+# Native Open and Save dialogs (openFile, saveFile).
+rfd = { version = "0.17.2", default-features = false }
 ureq = "3.4.2"
 vello = "0.10"
 vello_svg = "0.11"

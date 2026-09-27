@@ -2,3 +2,4 @@
 .tessel-run
 .tessel-run.exe
 tests/ide/session.actual
+tests/run/dialog_test.och

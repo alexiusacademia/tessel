@@ -1,0 +1,26 @@
+// Native file dialogs (answered by the test script) and math.
+
+app Dialogs {
+    state status = "ready"
+
+    VStack {
+        Text(status)
+        Button("Save") {
+            if let path = saveFile(title: "Save the shape", name: "shape.och", types: ["och"]) {
+                let area = pi * pow(0.5, 2.0)
+                if writeFile(path: path, text: "area={area.formatted(decimals: 4)}") {
+                    status = "saved {area.formatted(decimals: 4)}"
+                }
+            } else {
+                status = "save cancelled"
+            }
+        }
+        Button("Open") {
+            if let path = openFile(title: "Open a shape", types: ["och"]) {
+                status = "opened: {readFile(path) ?? "?"}"
+            } else {
+                status = "open cancelled"
+            }
+        }
+    }
+}

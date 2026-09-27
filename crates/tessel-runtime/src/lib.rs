@@ -440,6 +440,41 @@ pub extern "C" fn tsl_current_folder() -> *mut Str {
     str_new(&dir)
 }
 
+/// Math functions, by number (the order of MATH_FNS in the compiler's codegen).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_math(op: i32, a: f64, b: f64) -> f64 {
+    match op {
+        0 => a.sqrt(),
+        1 => a.powf(b),
+        2 => a.exp(),
+        3 => a.ln(),
+        4 => a.log10(),
+        5 => a.sin(),
+        6 => a.cos(),
+        7 => a.tan(),
+        8 => a.asin(),
+        9 => a.acos(),
+        10 => a.atan(),
+        11 => a.atan2(b),
+        12 => a.floor(),
+        13 => a.ceil(),
+        14 => a.round(),
+        15 => a.abs(),
+        16 => a.min(b),
+        17 => a.max(b),
+        _ => f64::NAN,
+    }
+}
+
+/// `x.formatted(decimals: n)`: the number with exactly `n` decimals (0–15).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_float_format(x: f64, decimals: i64) -> *mut Str {
+    let text = format!("{:.*}", decimals.clamp(0, 15) as usize, x);
+    // "-0.00" reads oddly; show "0.00".
+    let text = if text.starts_with('-') && text[1..].chars().all(|c| c == '0' || c == '.') { text[1..].to_string() } else { text };
+    str_new(&text)
+}
+
 /// An environment variable, or null if it isn't set.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_environment(name: *const Str) -> *mut Str {

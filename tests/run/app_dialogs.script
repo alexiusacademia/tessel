@@ -1,0 +1,9 @@
+answer "tests/run/dialog_test.och"
+click "Save"
+tree
+answer "tests/run/dialog_test.och"
+click "Open"
+tree
+answer cancel
+click "Open"
+tree

@@ -1351,6 +1351,8 @@ impl Checker<'_> {
                 self.error(span, format!("`{n}` is the app and can't be used as a value"));
                 Ty::Error
             }
+            // The one built-in constant.
+            None if n == "pi" => Ty::Float,
             None if builtins::VIEW_NAMES.contains(&n) || builtins::FUNCTION_NAMES.contains(&n) => {
                 self.error(span, format!("`{n}` must be called: `{n}(…)`"));
                 Ty::Error
@@ -1736,7 +1738,7 @@ impl Checker<'_> {
                     Ty::Error
                 }
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) => match builtins::property(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float => match builtins::property(&recv, n) {
                 Some(t) => t,
                 None if builtins::method_of(&recv, n).is_some() => {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}(…)`"));
@@ -1884,6 +1886,7 @@ impl Checker<'_> {
                 }
                 match n {
                     "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
+                    "abs" | "min" | "max" => return self.numeric_fn(n, args, trailing, span),
                     "print" => {
                         let sig = self.builtins.function(n).unwrap();
                         self.args(&what, &sig.params, args, trailing, span);
@@ -1903,6 +1906,36 @@ impl Checker<'_> {
                 Ty::Error
             }
         }
+    }
+
+    /// `abs(x)`, `min(a, b)`, `max(a, b)`: on two `Int`s or two `Float`s.
+    fn numeric_fn(&mut self, n: &str, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        let want = if n == "abs" { 1 } else { 2 };
+        if args.len() != want || trailing.is_some() || args.iter().any(|a| a.label.is_some()) {
+            let shape = if n == "abs" { "abs(x)" } else { &format!("{n}(a, b)") };
+            self.error(span, format!("write it as `{shape}`"));
+            for a in args {
+                self.expr(&a.value, None);
+            }
+            return Ty::Error;
+        }
+        // The type comes from the first value that isn't a plain number, so
+        // `max(0, x)` with a Float `x` is a Float (and `0` is taken as `0.0`).
+        let literal = |e: &Expr| matches!(e.kind, ExprKind::Int(_) | ExprKind::Float(_));
+        let lead = args.iter().position(|a| !literal(&a.value)).unwrap_or(0);
+        let hint = args.iter().any(|a| matches!(a.value.kind, ExprKind::Float(_))).then_some(Ty::Float);
+        let t = self.expr(&args[lead].value, hint.as_ref());
+        if !t.is_numeric() {
+            let what = self.a(&t);
+            self.error(args[lead].value.span, format!("`{n}` works on numbers, not {what}"));
+            return Ty::Error;
+        }
+        for (i, a) in args.iter().enumerate() {
+            if i != lead {
+                self.expect(&a.value, &t);
+            }
+        }
+        t
     }
 
     /// `Int(x)`, `Float(x)`, `String(x)`.
@@ -2038,7 +2071,7 @@ impl Checker<'_> {
                 self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                 self.map_call(elem, args, trailing, span)
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) => match builtins::method_of(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {

@@ -17,6 +17,8 @@
 //!                       Windows). Keys: backspace delete left right up down
 //!                       home end enter tab escape, and letters for shortcuts
 //! hover "Add"           move the pointer over a labelled view (or `hover 40 60`)
+//! answer "/tmp/a.och"   what the next openFile/saveFile dialog returns
+//!                       (`answer cancel` for cancelling it)
 //! scroll 0 120          scroll the view under the pointer by (dx, dy) points
 //! wait 1.5              let 1.5 seconds pass (fires timers)
 //! repeat 20 key down    run a command several times
@@ -262,6 +264,71 @@ fn deliver_background() -> bool {
         }
     }
     ran
+}
+
+// ===== file dialogs =====
+
+thread_local! {
+    /// Headless runs: what the next dialogs return (`answer` script command).
+    static DIALOG_ANSWERS: RefCell<std::collections::VecDeque<Option<String>>> =
+        const { RefCell::new(std::collections::VecDeque::new()) };
+}
+
+/// `openFile(title:types:)` (`save` = 0) and `saveFile(title:name:types:)`
+/// (`save` = 1): a native dialog; the chosen path, or null if cancelled.
+/// `types` are file extensions without the dot, like `["och"]`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_file_dialog(
+    save: u8,
+    title: *const Str,
+    name: *const Str,
+    types: *const crate::List,
+) -> *mut Str {
+    let title = unsafe { crate::str_text(title) }.to_string();
+    let name = unsafe { crate::str_text(name) }.to_string();
+    let n = unsafe { crate::tsl_list_len(types) };
+    let types: Vec<String> = (0..n)
+        .map(|i| unsafe {
+            let p = crate::tsl_list_get(types, i, std::ptr::null()) as *const *const Str;
+            crate::str_text(*p).trim_start_matches('.').to_string()
+        })
+        .collect();
+    let chosen = if std::env::var_os("TESSEL_SCRIPT").is_some() {
+        DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten()
+    } else {
+        let mut dialog = rfd::FileDialog::new();
+        if !title.is_empty() {
+            dialog = dialog.set_title(&title);
+        }
+        if !types.is_empty() {
+            let label = types.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(", ");
+            dialog = dialog.add_filter(label, &types);
+        }
+        let path = if save == 0 {
+            dialog.pick_file()
+        } else {
+            if !name.is_empty() {
+                dialog = dialog.set_file_name(&name);
+            }
+            dialog.save_file()
+        };
+        path.map(|p| {
+            let mut p = p.to_string_lossy().into_owned();
+            // Saving: add the first file type's extension if it's missing.
+            if save != 0 {
+                if let Some(ext) = types.first() {
+                    if !p.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase())) {
+                        p = format!("{p}.{ext}");
+                    }
+                }
+            }
+            p
+        })
+    };
+    match chosen {
+        Some(p) => crate::str_new(&p),
+        None => std::ptr::null_mut(),
+    }
 }
 
 /// For programs without an `app` (only `fn main`): after `main` returns,
@@ -1044,6 +1111,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                         return 2;
                     }
                 }
+            }
+            "answer" => {
+                // What the next file dialog returns: a path, or `cancel`.
+                let answer = (rest != "cancel").then(|| rest.trim_matches('"').to_string());
+                DIALOG_ANSWERS.with(|a| a.borrow_mut().push_back(answer));
             }
             "hover" => {
                 app.update();
