@@ -77,6 +77,168 @@ If you run a single file from a multi-file program, like
 other files will be missing. Run the folder instead.
 :::
 
+## How files work together
+
+A small notes app shows how the pieces of a bigger program usually spread
+over files, and how they reach each other:
+
+```text
+notes/
+  model.tsl     the data: a struct, and functions on it
+  storage.tsl   saving and loading it
+  views.tsl     reusable parts of the window
+  main.tsl      the app: its state, and the window
+```
+
+```tessel
+// The data, and the functions that work on it.
+
+struct Note {
+    title: String
+    body: String = ""
+    pinned: Bool = false
+}
+
+fn sortedNotes(notes: [Note]) -> [Note] {
+    notes.sorted(by: { a, b in a.pinned && !b.pinned })
+}
+
+fn summary(notes: [Note]) -> String {
+    let pinned = notes.filter { n in n.pinned }.count
+    "{notes.count} notes, {pinned} pinned"
+}
+```
+
+```tessel
+// Saving and loading notes as a JSON file.
+
+fn notesFile() -> String {
+    joinPath(appDataFolder("Notes"), "notes.json")
+}
+
+fn loadNotes() -> [Note] {
+    let text = readFile(notesFile()) ?? "[]"
+    let notes: [Note] = fromJson(text) ?? []
+    notes
+}
+
+fn saveNotes(notes: [Note]) -> Bool {
+    writeFile(path: notesFile(), text: toJson(notes, pretty: true))
+}
+```
+
+```tessel
+// Reusable pieces of the window.
+
+view NoteRow(note: bind Note) {
+    HStack(spacing: 8) {
+        Toggle("", isOn: note.pinned)
+        TextField("Title", text: note.title)
+    }
+}
+
+view Footer(text: String) {
+    Text(text).font(size: 12).color(.secondary)
+}
+```
+
+```tessel
+// The app: its state, and the window built from the other files' views.
+
+app Notes(width: 420, height: 320) {
+    state notes: [Note] = []
+    state status = ""
+
+    VStack(spacing: 10, alignment: .leading) {
+        for note in notes {
+            NoteRow(note: note)
+        }
+        HStack {
+            Button("Add") { notes.append(Note(title: "New note")) }
+            Button("Save") { save() }
+        }
+        Footer(text: "{summary(notes: notes)} {status}")
+    }
+    .padding(16)
+    .onAppear { notes = loadNotes() }
+
+    fn save() {
+        notes = sortedNotes(notes: notes)
+        status = if saveNotes(notes: notes) { "· saved" } else { "· couldn't save" }
+    }
+}
+```
+
+```sh
+tessel run notes
+```
+
+Here's what each file uses from the others:
+
+- `storage.tsl` uses the `Note` type from `model.tsl`: `[Note]` in its
+  signatures, and `fromJson` builds `Note` values.
+- `views.tsl` takes a `Note` as a [binding](/ui/state/#bindings-bind-parameters)
+  (`note: bind Note`), so its toggle and text field change the note that
+  belongs to the app.
+- `main.tsl` puts it all together: it shows `NoteRow` and `Footer` from
+  `views.tsl`, calls `summary` and `sortedNotes` from `model.tsl`, and
+  `loadNotes` and `saveNotes` from `storage.tsl`.
+
+None of this needs an import: a name declared in any file can be used in any
+other.
+
+### How data moves between files
+
+There are no global variables in Tessel, so files don't share data by
+reaching into each other. Data moves the same way it does inside one file:
+
+- **Down, as values.** The app owns the data (in `state`) and passes it to
+  functions and views as arguments: `summary(notes: notes)`,
+  `Footer(text: …)`. The function or view gets a copy.
+- **Back up, as results.** Functions return new values, and the caller
+  stores them: `notes = sortedNotes(notes: notes)`.
+- **Changed in place, with `bind`.** A view that changes the caller's data
+  takes it as a `bind` parameter, like `NoteRow(note: bind Note)`. In the app,
+  the list's items are passed straight in: `NoteRow(note: note)` inside
+  `for note in notes`.
+- **Through the disk or the network.** `storage.tsl` saves and loads files;
+  other files only call its functions.
+
+So one file (usually `main.tsl`, with the `app`) owns the program's
+changing data, and the other files provide types, functions and views that
+work on what they're given. That keeps each file easy to understand on its
+own.
+
+### Everything is visible everywhere
+
+- **Order doesn't matter.** A file can use a type or function declared
+  further down, or in a file that comes later alphabetically.
+- **Types are shared.** A struct, enum or [interface](/language/interfaces/)
+  declared in one file can be used in the others, and a struct in one file can
+  conform to an interface declared in another.
+- **Methods travel with their type.** Methods are declared inside their
+  struct or enum, in the same file; every file can call them.
+- **Functions inside a view stay there.** A `fn` declared inside a `view` or
+  the `app` belongs to it and can use its `state`; other files can't call it.
+  Put functions that others need at the top level of a file.
+
+### Organizing a program
+
+- Group by what things are about: a file per feature or per kind of data
+  (`invoice.tsl` for the `Invoice` struct, its functions and its views) works
+  well; so does splitting into model, storage and views as above.
+- Keep the `app` short: its state, the main layout, and the actions that
+  change the state. Move the rest into views and functions in other files.
+- Since names are shared, give top-level names that are clear across the
+  whole program: `loadNotes` rather than `load`, `NoteRow` rather than `Row`.
+- Each `.tsl` file directly inside the folder is part of the program. Keep
+  experiments and old versions outside the folder (or rename them to another
+  extension), or they'll be compiled too.
+
+The [Tessel IDE](/start/ide/) works on a folder in the same way: its
+explorer shows the files, **Check** and **Run** use the whole folder, and
+[code completion](/start/ide/#the-editor) suggests names from all the files.
+
 ## What goes at the top level
 
 A file contains only declarations:
@@ -86,6 +248,7 @@ A file contains only declarations:
 | `fn` | a function, see [Functions](/language/functions/) |
 | `struct` | a struct type, see [Structs and enums](/language/structs-enums/) |
 | `enum` | an enum type, see [Structs and enums](/language/structs-enums/) |
+| `interface` | methods and properties that several types share, see [Interfaces](/language/interfaces/) |
 | `view` | a piece of user interface, see [Apps and views](/ui/apps-views/) |
 | `app` | the entry point of a program with a window |
 

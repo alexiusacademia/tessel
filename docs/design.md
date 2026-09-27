@@ -192,17 +192,24 @@ struct Circle: Shape {
 let shapes: [Shape] = [Circle(radius: 1.0), Rect(width: 2.0, height: 3.0)]
 ```
 
-- An interface lists method signatures; structs and enums conform with
-  `: A, B` and must have each method with the same labels, types and result.
+- An interface lists method signatures and properties (`name: String`);
+  structs and enums conform with `: A, B` and must have each method with the
+  same labels, types and result, and each property as a field (so enums can't
+  meet property requirements).
 - An interface is a type. A conforming value converts to it where the
-  interface is expected (arguments, results, list items, fields, optionals).
-- Interface methods can't change the value, so an interface value can share
-  one box between copies and stay a plain value. For the same reason it's not
-  equatable, and it can't be saved (loading wouldn't know the type).
+  interface is expected (arguments, results, list items, fields, optionals),
+  and so do lists and optionals of it (`[Circle]` to `[Shape]`, copied).
+- Interface values are values: a copy is independent. Methods that change the
+  value (inferred, like struct methods) work on a `var`, copying the box
+  first when it's shared (copy-on-write).
+- `==` compares the type and the value; `is` and `as?` ask which type a value
+  holds. Saving writes `{"type": name, "value": …}`, and loading picks the
+  type by name among the conforming types.
 - Implementation: an interface value is `{method table, box}`; the box holds
   the concrete value, and the table (one per type and interface) lists that
-  type's methods in the interface's order. A call loads the method from the
-  table and passes the box's contents as the receiver.
+  type's methods in the interface's order, then one function per property
+  giving the field's address. `is`/`as?`, `==` and saving compare the table
+  pointer to identify the type.
 
 ## 7. Control flow
 

@@ -34,10 +34,11 @@ after(seconds: 1) {
 ### print
 
 ```text
-print(_ value: Int, Float, Bool, String, Range or an enum)
+print(_ value: Int, Float, Bool, String, Range or an enum, terminator: String = "\n")
 ```
 
-Writes a value to standard output, followed by a new line.
+Writes a value to standard output, followed by `terminator` (a new line,
+unless you say otherwise).
 
 ```tessel
 print("Hello")        // Hello
@@ -46,6 +47,7 @@ print(2.0)            // 2.0
 print(true)           // true
 print(Mode.grid)      // grid
 print(0..3)           // 0..3
+print("Name: ", terminator: "")   // no line break: the answer goes on the same line
 ```
 
 - A `Float` always shows a decimal point (`2.0`), so it reads differently
@@ -56,6 +58,79 @@ print(0..3)           // 0..3
   [`joined`](#joined), or give an optional a default with `??`.
 - In an app, the output goes to the terminal the app was started from (or to
   the console of the [Tessel IDE](/start/ide/)).
+
+### printError
+
+```text
+printError(_ value: …, terminator: String = "\n")
+```
+
+Like `print`, but writes to standard error. Use it for error messages and
+warnings from a command-line program, so they don't mix with its real
+output when that's piped into a file or another program:
+
+```tessel
+if let text = readFile(path) {
+    print(text.uppercase())
+} else {
+    printError("can't read {path}")
+    exit(1)
+}
+```
+
+### readLine
+
+```text
+readLine() -> String?
+```
+
+Reads the next line from standard input: what the user types, up to Enter,
+or the next line of input piped into the program. The line break isn't
+included. At the end of the input, it returns `nil`.
+
+```tessel
+fn main() {
+    print("What's your name? ", terminator: "")
+    let name = readLine() ?? "stranger"
+    print("Hello, {name}!")
+}
+```
+
+Read every line until the input ends with `while let`:
+
+```tessel
+fn main() {
+    var total = 0
+    while let line = readLine() {
+        total += Int(line.trim()) ?? 0
+    }
+    print("total: {total}")
+}
+```
+
+```sh
+printf '1\n2\n3\n' | tessel run sum.tsl      # total: 6
+```
+
+### readInput
+
+```text
+readInput() -> String
+```
+
+Reads all of standard input at once, until it ends; empty if there's none.
+It suits programs that process piped text, like
+`cat notes.txt | tessel run count.tsl`:
+
+```tessel
+fn main() {
+    let text = readInput()
+    print("{text.lines().count} lines, {text.words().count} words")
+}
+```
+
+In an app (which has a window, not a terminal) there's usually no input:
+`readLine()` returns `nil` and `readInput()` an empty string.
 
 ### Int()
 

@@ -29,9 +29,13 @@ language may still change. This page is an honest list of where things stand.
   downloads and WebSockets, running other programs, and heavy computations on
   another thread (`background`), all with completion blocks that run on the
   UI thread. They work in programs with only `fn main` too.
+- **Language:** structs, enums with values, interfaces, closures, optionals,
+  `for` and `while` loops with `break` and `continue`, and programs split
+  over any number of files.
 - **Standard library:** files and folders, JSON and binary encoding of your
   own types, `Data` for raw bytes, dates and times, random numbers, the
-  clipboard, and many methods for strings, numbers and lists.
+  clipboard, reading standard input and writing to standard error, and many
+  methods for strings, numbers and lists.
 - **Tools:** the `tessel` command, the Tessel IDE, a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
@@ -79,7 +83,7 @@ These are the next areas of work. None of them has a date.
 | Hot reload | Keep the running app's state when its code changes. |
 | App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
-| Language | Errors that carry a reason, and generics for your own types. |
+| Language | Errors that carry a reason, generics for your own types, tuples and sets. |
 | Packaging | App icons, code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 

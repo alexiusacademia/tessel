@@ -138,19 +138,160 @@ fn largest(shapes: [Shape]) -> Shape? {
 }
 ```
 
-## Rules and limits
+## Properties
 
-- **Interface methods can't change the value.** A method that changes its
-  struct (say, `count += 1`) can't be the one an interface requires. Return a
-  changed copy instead: `fn incremented() -> Counter`. This keeps interface
-  values plain values, like everything else in Tessel.
-- **Only methods.** An interface can't require fields; require a method that
-  returns the value instead, like `fn name() -> String`.
-- **No `==`.** Interface values can't be compared, since two different types
-  have no common way to be equal.
-- **Not saved.** Values of an interface type can't be saved with `toJson` or
-  `toBinary`, because loading them back wouldn't know which type to make.
-- **Converted one at a time.** A `Circle` converts to a `Shape`, but a list
-  `[Circle]` doesn't convert to `[Shape]`; build the list as `[Shape]` from the
-  start.
-- You can't yet ask an interface value which type it holds.
+An interface can also require properties, written like struct fields. Every
+conforming struct has a field with that name and type:
+
+```tessel
+interface Named {
+    name: String
+}
+
+struct Person: Named {
+    name: String
+    age: Int
+}
+
+struct Pet: Named {
+    name: String
+    species: String
+}
+
+fn main() {
+    var all: [Named] = [Person(name: "Ada", age: 36), Pet(name: "Rex", species: "dog")]
+    all[1].name = "Max"
+    print(all.map { n in n.name }.joined(separator: ", "))
+}
+```
+
+```text
+Ada, Max
+```
+
+Properties can be read and, on a `var`, changed through the interface. Only
+structs have fields, so an enum can't conform to an interface that requires a
+property.
+
+## Methods that change the value
+
+A conforming type's methods may change its value, and calling them through
+the interface changes the interface value, like calling a changing method on
+the struct itself. The value must be a `var` (or `state`, or a list item you
+can change):
+
+```tessel
+interface Counter {
+    fn increment()
+    fn value() -> Int
+}
+
+struct Clicks: Counter {
+    count: Int = 0
+
+    fn increment() {
+        count += 1
+    }
+
+    fn value() -> Int {
+        count
+    }
+}
+
+fn main() {
+    var a: Counter = Clicks()
+    a.increment()
+    let copy = a
+    a.increment()
+    print("{a.value()} {copy.value()}")
+}
+```
+
+```text
+2 1
+```
+
+Interface values are values, like everything in Tessel: `copy` keeps the
+value it had when it was copied, and changing `a` afterwards doesn't change
+it.
+
+## Comparing
+
+`==` and `!=` work on interface values: two values are equal when they hold
+the same type and equal values. A `Circle` never equals a `Rect`, and list
+methods like `contains` work on lists of interface values. (A type that
+can't be compared, because it holds functions, is only equal to the very same
+copy.)
+
+## Which type is it?
+
+`is` checks which type an interface value holds, and `as?` gives you the value
+as that type, or `nil`:
+
+```tessel
+interface Shape {
+    fn area() -> Float
+}
+
+struct Circle: Shape {
+    radius: Float
+    fn area() -> Float { pi * radius * radius }
+}
+
+struct Square: Shape {
+    side: Float
+    fn area() -> Float { side * side }
+}
+
+fn main() {
+    let shapes: [Shape] = [Circle(radius: 1.0), Square(side: 2.0)]
+    for s in shapes {
+        if let c = s as? Circle {
+            print("a circle, radius {c.radius}")
+        } else if s is Square {
+            print("a square")
+        }
+    }
+}
+```
+
+```text
+a circle, radius 1.0
+a square
+```
+
+The type after `is` or `as?` must conform to the interface; asking whether a
+`Shape` is a type that isn't a `Shape` is an error, since the answer is
+always no.
+
+## Converting lists and optionals
+
+A value converts to an interface automatically, and so do lists and
+optionals of it: a `[Circle]` can be passed where a `[Shape]` is expected,
+and a `Circle?` where a `Shape?` is. The list is converted into a new
+`[Shape]` list; the original `[Circle]` list stays as it was.
+
+## Saving
+
+Interface values can be saved with `toJson` and `toBinary`, and loaded back
+with `fromJson` and `fromBinary`, as long as every type that conforms can be
+saved. Each value is written with the name of its type, so loading makes the
+right type again:
+
+```json
+{"type": "Circle", "value": {"radius": 1.0}}
+```
+
+A saved value whose type name isn't one of the conforming types makes the
+load return `nil`. If you rename a type, older files still name the old type.
+
+The same goes for [background work](/ui/async/#heavy-work-in-the-background):
+interface values can be passed to it and returned from it.
+
+## Rules
+
+- A conforming method must match the requirement exactly: the same name,
+  the same parameter labels and types, and the same result.
+- Interface methods can't have default values for their parameters.
+- An interface value is created by converting a value of a conforming type;
+  the interface itself can't be called to create one.
