@@ -1,0 +1,70 @@
+// toJson/fromJson and toBinary/fromBinary for every kind of value.
+
+enum Shape { rectangular, trapezoidal }
+
+enum Unit {
+    meters
+    custom(name: String, factor: Float)
+}
+
+struct Point {
+    x: Float
+    y: Float = 0.0
+}
+
+struct Project {
+    name: String
+    version: Int = 1
+    shape: Shape = Shape.trapezoidal
+    unit: Unit = Unit.meters
+    points: [Point] = []
+    tags: [String: Int] = [:]
+    note: String? = nil
+    visible: Bool = true
+    span: Range = 0..10
+    blob: Data = Data()
+}
+
+fn main() {
+    var p = Project(name: "Canal \"A\"")
+    p.unit = Unit.custom(name: "feet", factor: 0.3048)
+    p.points = [Point(x: 1.5, y: 2.0), Point(x: -3.0)]
+    p.tags = ["length": 12, "width": 3]
+    p.note = "first draft"
+    p.blob = Data(bytes: [0, 1, 254, 255])
+
+    let text = toJson(p, pretty: true)
+    print(text)
+    let back: Project? = fromJson(text)
+    print(back == p)
+
+    let bin = toBinary(p)
+    print("binary: {bin.count} bytes, JSON: {toJson(p).count} characters")
+    let fromBin: Project? = fromBinary(bin)
+    print(fromBin == p)
+
+    // Missing fields take their defaults; unknown ones are ignored.
+    let partial: Project? = fromJson("\{\"name\": \"B\", \"extra\": [1, 2], \"shape\": \"rectangular\"}")
+    if let q = partial {
+        print("{q.name} {q.version} {q.shape == Shape.rectangular} {q.points.count} {q.note == nil}")
+    }
+    // A required field is missing, the wrong type, bad JSON: nil.
+    let noName: Project? = fromJson("\{\"version\": 2}")
+    let wrongType: Project? = fromJson("\{\"name\": 5}")
+    let broken: Project? = fromJson("\{not json")
+    print("{noName == nil} {wrongType == nil} {broken == nil}")
+
+    // Plain values and collections.
+    print(toJson([1, 2, 3]))
+    let nums: [Int]? = fromJson("[4, 5.0, 6]")
+    print(nums?.count ?? -1)
+    let words: [String: [Bool]]? = fromJson("\{\"a\": [true, false]}")
+    print((words ?? [:])["a"]?.count ?? -1)
+    let d = Data(text: "héllo")
+    print("{d.count} {d[1]} {d.text ?? "?"} {d.bytes.count}")
+    print(writeData(path: "tests/run/codec_test.bin", data: bin))
+    if let read = readData("tests/run/codec_test.bin") {
+        print(read == bin)
+    }
+    deleteFile("tests/run/codec_test.bin")
+}

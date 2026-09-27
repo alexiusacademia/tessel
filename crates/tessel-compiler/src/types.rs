@@ -12,6 +12,8 @@ pub enum Ty {
     Float,
     Bool,
     Str,
+    /// Raw bytes (`Data`): files, and the binary encoding of values.
+    Data,
     Range,
     View,
     List(Box<Ty>),

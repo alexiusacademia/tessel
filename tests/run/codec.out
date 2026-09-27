@@ -1,0 +1,43 @@
+{
+  "name": "Canal \"A\"",
+  "version": 1,
+  "shape": "trapezoidal",
+  "unit": {
+    "custom": {
+      "name": "feet",
+      "factor": 0.3048
+    }
+  },
+  "points": [
+    {
+      "x": 1.5,
+      "y": 2.0
+    },
+    {
+      "x": -3.0,
+      "y": 0.0
+    }
+  ],
+  "tags": {
+    "length": 12,
+    "width": 3
+  },
+  "note": "first draft",
+  "visible": true,
+  "span": [
+    0,
+    10
+  ],
+  "blob": "AAH+/w=="
+}
+true
+binary: 206 bytes, JSON: 253 characters
+true
+B 1 true 0 true
+true true true
+[1,2,3]
+3
+2
+6 195 héllo 6
+true
+true

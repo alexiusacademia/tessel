@@ -15,6 +15,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+mod codec;
 pub mod ui;
 
 use std::collections::HashMap;
@@ -187,6 +188,11 @@ pub struct Str {
 
 unsafe extern "C" fn str_drop(h: *mut Header) {
     unsafe { free(h as *mut u8) };
+}
+
+/// The drop function of `Str` objects (also used for `Data`).
+pub(crate) fn str_drop_fn() -> unsafe extern "C" fn(*mut Header) {
+    str_drop
 }
 
 pub(crate) unsafe fn str_text<'a>(s: *const Str) -> &'a str {

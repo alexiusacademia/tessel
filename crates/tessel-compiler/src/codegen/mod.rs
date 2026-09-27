@@ -32,11 +32,13 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, Int
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel};
 
 use crate::ast::*;
+use crate::builtins;
 use crate::check::{ArgRef, CallInfo, Callee, Checked};
 use crate::diag::Diagnostic;
 use crate::source::{SourceMap, Span};
 use crate::types::{FnSig, Ty};
 
+mod codec;
 mod ui;
 
 /// Byte offset of a box's data (matches the runtime's `BOX_DATA`).
@@ -465,7 +467,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Int => self.i64().into(),
             Ty::Float => self.ctx.f64_type().into(),
             Ty::Bool => self.ctx.bool_type().into(),
-            Ty::Str | Ty::List(_) | Ty::Dict(..) => self.ptr_ty().into(),
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) => self.ptr_ty().into(),
             // A view value is a closure that emits the view when called.
             Ty::View => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Range => self.ctx.struct_type(&[self.i64().into(), self.i64().into()], false).into(),
@@ -526,6 +528,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Float => "f".into(),
             Ty::Bool => "b".into(),
             Ty::Str => "s".into(),
+            Ty::Data => "d".into(),
             Ty::Void => "v".into(),
             Ty::View => "w".into(),
             Ty::Range => "r".into(),
@@ -541,7 +544,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn needs_rc(&self, t: &Ty) -> bool {
         match t {
-            Ty::Str | Ty::List(_) | Ty::Dict(..) | Ty::Fn(..) | Ty::View => true,
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Fn(..) | Ty::View => true,
             Ty::Enum(id) => self.has_payload(*id),
             Ty::Struct(id) => self.checked.structs[*id].fields.iter().any(|f| self.needs_rc(&f.ty)),
             Ty::Opt(inner) => self.needs_rc(inner),
@@ -627,6 +630,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_from_int" => (vec![i], Some(p)),
             "tsl_str_from_float" => (vec![f64t], Some(p)),
             "tsl_str_from_bool" => (vec![i8t], Some(p)),
+            "tsl_data_eq" => (vec![p, p], Some(i8t)),
             "tsl_str_eq" | "tsl_str_contains" | "tsl_str_has_prefix" | "tsl_str_has_suffix" => {
                 (vec![p, p], Some(i8t))
             }
@@ -796,7 +800,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let f = if retain { "tsl_retain" } else { "tsl_release" };
         match t {
-            Ty::Str | Ty::List(_) | Ty::Dict(..) => {
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) => {
                 self.call_rt(f, &[v]);
             }
             Ty::Fn(..) | Ty::Enum(_) | Ty::View => {
@@ -1104,6 +1108,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 .unwrap(),
             Ty::Str => {
                 let r = self.call_rt("tsl_str_eq", &[a, b]);
+                self.truthy(r)
+            }
+            Ty::Data => {
+                let r = self.call_rt("tsl_data_eq", &[a, b]);
                 self.truthy(r)
             }
             Ty::List(_) => {
@@ -2080,6 +2088,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// `v.name` where `v` (borrowed) has type `t`. Returns an owned value.
     fn property(&mut self, v: Val<'ctx>, t: &Ty, name: &str, span: Span) -> Val<'ctx> {
+        if let (Some(call), Some(pt)) = (builtins::runtime_property(t, name), builtins::property(t, name)) {
+            return self.call_rt_generic(call.rt, &[(v, t.clone())], &pt).unwrap();
+        }
         match t {
             Ty::Struct(id) => {
                 let idx = self.field_index(*id, name);
@@ -2214,6 +2225,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn index(&mut self, e: &Expr, object: &Expr, index: &Expr) -> Option<Val<'ctx>> {
         let t = self.ty(e);
         match self.ty(object) {
+            Ty::Data => {
+                let d = self.expr(object).unwrap();
+                let i = self.expr(index).unwrap();
+                let l = self.loc(e.span);
+                let r = self.call_rt_generic_loc("tsl_data_get", d, i, l);
+                self.release(d, &Ty::Data);
+                Some(r)
+            }
             Ty::Dict(kt, vt) => {
                 let d = self.expr(object).unwrap();
                 let k = self.expr_as(index, &kt).unwrap();
@@ -3139,6 +3158,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let a = |g: &mut Self, i: usize, t: &Ty| -> Option<Val<'ctx>> {
             info.args.get(i).copied().flatten().map(|r| g.expr_as(arg(r), t).unwrap())
         };
+        if let (Some(call), Some(m)) = (builtins::runtime_method(recv, name), builtins::method_of(recv, name)) {
+            let mut vals = vec![(v, recv.clone())];
+            for (i, p) in m.sig.params.iter().enumerate() {
+                let x = match a(self, i, &p.ty) {
+                    Some(x) => x,
+                    None => self.default_value(call.defaults.get(i).copied().unwrap_or(builtins::Dflt::Req), &p.ty),
+                };
+                vals.push((x, p.ty.clone()));
+            }
+            let r = self.call_rt_generic(call.rt, &vals, &m.sig.ret);
+            for (x, ty) in vals.into_iter().skip(1) {
+                self.release(x, &ty);
+            }
+            return r;
+        }
         if let (Ty::Float, "formatted") = (recv, name) {
             let decimals = a(self, 0, &Ty::Int).unwrap();
             return self.call_rt("tsl_float_format", &[v, decimals]);
@@ -3359,6 +3393,106 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// The C type a value of type `t` is passed to (or returned from) the runtime as.
+    fn c_type(&mut self, t: &Ty) -> BasicTypeEnum<'ctx> {
+        match t {
+            Ty::Bool => self.i8().into(),
+            Ty::Int => self.i64().into(),
+            Ty::Float => self.ctx.f64_type().into(),
+            _ => self.ptr_ty().into(),
+        }
+    }
+
+    /// Declares (once) a runtime function with the given C signature.
+    fn declare_rt(&mut self, name: &str, params: &[BasicMetadataTypeEnum<'ctx>], ret: Option<BasicTypeEnum<'ctx>>) -> FunctionValue<'ctx> {
+        if let Some(f) = self.module.get_function(name) {
+            return f;
+        }
+        let fty = match ret {
+            Some(r) => r.fn_type(params, false),
+            None => self.ctx.void_type().fn_type(params, false),
+        };
+        self.module.add_function(name, fty, None)
+    }
+
+    /// `data[i]`: `tsl_data_get(data, i, location)`.
+    fn call_rt_generic_loc(&mut self, name: &str, d: Val<'ctx>, i: Val<'ctx>, loc: PointerValue<'ctx>) -> Val<'ctx> {
+        let p = self.ptr_ty();
+        let f = self.declare_rt(name, &[p.into(), self.i64().into(), p.into()], Some(self.i64().into()));
+        self.b.build_call(f, &[d.into(), i.into(), loc.into()], "").unwrap().try_as_basic_value().basic().unwrap()
+    }
+
+    /// Calls a table-driven runtime function (see `builtins::RtCall`) with
+    /// already evaluated arguments (borrowed), and returns the result as `ret`.
+    fn call_rt_generic(&mut self, rt: &str, args: &[(Val<'ctx>, Ty)], ret: &Ty) -> Option<Val<'ctx>> {
+        // An optional Int/Float comes back through an out pointer.
+        let out_param = match ret {
+            Ty::Opt(inner) if matches!(**inner, Ty::Int | Ty::Float | Ty::Bool) => Some((**inner).clone()),
+            _ => None,
+        };
+        let f = match self.module.get_function(rt) {
+            Some(f) => f,
+            None => {
+                let mut ps: Vec<BasicMetadataTypeEnum> = args.iter().map(|(_, t)| self.c_type(t).into()).collect();
+                if out_param.is_some() {
+                    ps.push(self.ptr_ty().into());
+                }
+                let fty = match (ret, &out_param) {
+                    (Ty::Void, _) => self.ctx.void_type().fn_type(&ps, false),
+                    (_, Some(_)) => self.i8().fn_type(&ps, false),
+                    (Ty::Opt(_), None) => self.ptr_ty().fn_type(&ps, false),
+                    _ => self.c_type(ret).fn_type(&ps, false),
+                };
+                self.module.add_function(rt, fty, None)
+            }
+        };
+        let mut vals: Vec<BasicMetadataValueEnum> = Vec::new();
+        for (v, t) in args {
+            let v = if *t == Ty::Bool { self.to_c_bool(v.into_int_value()) } else { *v };
+            vals.push(v.into());
+        }
+        let out = out_param.as_ref().map(|inner| {
+            let lt = self.llty(inner).unwrap();
+            let slot = self.alloca(lt, "out");
+            self.b.build_store(slot, lt.const_zero()).unwrap();
+            slot
+        });
+        if let Some(slot) = out {
+            vals.push(slot.into());
+        }
+        let r = self.b.build_call(f, &vals, "").unwrap().try_as_basic_value().basic();
+        Some(match (ret, out_param) {
+            (Ty::Void, _) => return None,
+            (_, Some(inner)) => {
+                let present = self.truthy(r);
+                let v = self.load(&inner, out.unwrap());
+                let st = self.llty(ret).unwrap().into_struct_type();
+                let s = self.b.build_insert_value(st.get_undef(), present, 0, "").unwrap();
+                self.b.build_insert_value(s, v, 1, "").unwrap().into_struct_value().into()
+            }
+            (Ty::Opt(_), None) => self.opt_from_ptr(r.unwrap().into_pointer_value(), ret),
+            (Ty::Bool, _) => self.truthy(r).into(),
+            _ => r.unwrap(),
+        })
+    }
+
+    /// A default argument of a table-driven runtime call.
+    fn default_value(&mut self, d: builtins::Dflt, t: &Ty) -> Val<'ctx> {
+        match d {
+            builtins::Dflt::Int(n) => self.i64().const_int(n as u64, true).into(),
+            builtins::Dflt::Float(x) => self.ctx.f64_type().const_float(x).into(),
+            builtins::Dflt::Bool(b) => self.ctx.bool_type().const_int(b as u64, false).into(),
+            builtins::Dflt::Str(s) => self.str_lit(s).into(),
+            builtins::Dflt::EmptyList => {
+                let Ty::List(elem) = t else { unreachable!("EmptyList default for a non-list") };
+                let info = self.type_info(elem);
+                let zero = self.i64().const_zero();
+                self.call_rt("tsl_list_new", &[info.into(), zero.into()]).unwrap()
+            }
+            builtins::Dflt::Req => unreachable!("required argument missing"),
+        }
+    }
+
     fn builtin_fn<'e>(
         &mut self,
         name: &str,
@@ -3544,9 +3678,101 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_after", &[secs], action);
                 None
             }
+            "Data" => Some(match args.first().and_then(|a| a.label.as_ref()).map(|l| l.name.as_str()) {
+                Some("bytes") => {
+                    let lt = Ty::list(Ty::Int);
+                    let l = self.expr_as(&args[0].value, &lt).unwrap();
+                    let d = self.call_rt_generic("tsl_data_from_ints", &[(l, lt.clone())], &Ty::Data).unwrap();
+                    self.release(l, &lt);
+                    d
+                }
+                Some(_) => {
+                    let s = self.expr_as(&args[0].value, &Ty::Str).unwrap();
+                    let d = self.call_rt_generic("tsl_data_from_str", &[(s, Ty::Str)], &Ty::Data).unwrap();
+                    self.release(s, &Ty::Str);
+                    d
+                }
+                None => self.call_rt_generic("tsl_data_empty", &[], &Ty::Data).unwrap(),
+            }),
+            "toJson" | "toBinary" => {
+                let x = &args[0].value;
+                let xt = self.ty(x);
+                let v = self.expr(x).unwrap();
+                let p = self.spill(&xt, v);
+                let enc = self.enc_helper(&xt);
+                let tree = self.b.build_call(enc, &[p.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+                self.release(v, &xt);
+                let ptr = self.ptr_ty();
+                let r = if name == "toJson" {
+                    let pretty = match args.get(1) {
+                        Some(a) => {
+                            let b = self.expr_as(&a.value, &Ty::Bool).unwrap().into_int_value();
+                            self.to_c_bool(b)
+                        }
+                        None => self.i8().const_zero().into(),
+                    };
+                    let f = self.declare_rt("tsl_tree_to_json", &[ptr.into(), self.i8().into()], Some(ptr.into()));
+                    self.b.build_call(f, &[tree.into(), pretty.into()], "").unwrap()
+                } else {
+                    let f = self.declare_rt("tsl_tree_to_binary", &[ptr.into()], Some(ptr.into()));
+                    self.b.build_call(f, &[tree.into()], "").unwrap()
+                };
+                r.try_as_basic_value().basic()
+            }
+            "fromJson" | "fromBinary" => {
+                let Ty::Opt(inner) = t else { unreachable!("fromJson has an optional type") };
+                let inner = (**inner).clone();
+                let input_t = if name == "fromJson" { Ty::Str } else { Ty::Data };
+                let s = self.expr_as(&args[0].value, &input_t).unwrap();
+                let ptr = self.ptr_ty();
+                let parse = self.declare_rt(if name == "fromJson" { "tsl_json_parse" } else { "tsl_binary_parse" }, &[ptr.into()], Some(ptr.into()));
+                let tree = self.b.build_call(parse, &[s.into()], "").unwrap().try_as_basic_value().basic().unwrap().into_pointer_value();
+                self.release(s, &input_t);
+                let lt = self.llty(t).unwrap();
+                let slot = self.alloca(lt, "decoded");
+                let none = self.none(t);
+                self.b.build_store(slot, none).unwrap();
+                let (parsed, done) = (self.block_named("parsed"), self.block_named("decoded"));
+                let is_tree = self.b.build_is_not_null(tree, "").unwrap();
+                self.b.build_conditional_branch(is_tree, parsed, done).unwrap();
+                self.b.position_at_end(parsed);
+                let il = self.llty(&inner).unwrap();
+                let out = self.alloca(il, "value");
+                let dec = self.dec_helper(&inner);
+                let ok = self.b.build_call(dec, &[tree.into(), out.into()], "").unwrap().try_as_basic_value().basic();
+                let ok = self.truthy(ok);
+                let (good, freed) = (self.block_named("good"), self.block_named("free"));
+                self.b.build_conditional_branch(ok, good, freed).unwrap();
+                self.b.position_at_end(good);
+                let v = self.load(&inner, out);
+                let some = self.some(t, v);
+                self.b.build_store(slot, some).unwrap();
+                self.br(freed);
+                self.b.position_at_end(freed);
+                let free = self.declare_rt("tsl_tree_free", &[ptr.into()], None);
+                self.b.build_call(free, &[tree.into()], "").unwrap();
+                self.br(done);
+                self.b.position_at_end(done);
+                Some(self.load(t, slot))
+            }
             _ => {
-                self.unsupported(span, &format!("`{name}`"));
-                self.undef(t)
+                let (Some(call), Some(sig)) = (builtins::runtime_fn(name), builtins::Builtins::standard().function(name)) else {
+                    self.unsupported(span, &format!("`{name}`"));
+                    return self.undef(t);
+                };
+                let mut vals = Vec::new();
+                for (i, p) in sig.params.iter().enumerate() {
+                    let v = match info.args.get(i).copied().flatten() {
+                        Some(r) => self.expr_as(arg(r), &p.ty).unwrap(),
+                        None => self.default_value(call.defaults.get(i).copied().unwrap_or(builtins::Dflt::Req), &p.ty),
+                    };
+                    vals.push((v, p.ty.clone()));
+                }
+                let r = self.call_rt_generic(call.rt, &vals, t);
+                for (v, ty) in vals {
+                    self.release(v, &ty);
+                }
+                r
             }
         }
     }

@@ -36,6 +36,13 @@ pub struct Builtins {
     pub icon: Ty,
 }
 
+impl Builtins {
+    /// The built-in enums are always the first four (see `enums`).
+    pub fn standard() -> Builtins {
+        Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2), icon: Ty::Enum(3) }
+    }
+}
+
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
@@ -170,6 +177,8 @@ impl Builtins {
             // `abs`, `min` and `max` take Int or Float: checked specially.
             "abs" => FnSig { params: vec![P::unlabeled("x", Ty::Any)], ret: Ty::Any },
             "min" | "max" => FnSig { params: vec![P::unlabeled("a", Ty::Any), P::unlabeled("b", Ty::Any)], ret: Ty::Any },
+            "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
+            "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
                 params: vec![P::new("title", Ty::Str).default(), P::new("types", Ty::list(Ty::Str)).default()],
                 ret: Ty::opt(Ty::Str),
@@ -191,7 +200,8 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
     "stopCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile",
+    "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData",
+    "toJson", "fromJson", "toBinary", "fromBinary",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -216,6 +226,10 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
         (Ty::List(t), "first" | "last") => Ty::opt((**t).clone()),
         (Ty::Dict(k, _), "keys") => Ty::list((**k).clone()),
         (Ty::Dict(_, v), "values") => Ty::list((**v).clone()),
+        (Ty::Data, "count") => Ty::Int,
+        (Ty::Data, "isEmpty") => Ty::Bool,
+        (Ty::Data, "bytes") => Ty::list(Ty::Int),
+        (Ty::Data, "text") => Ty::opt(Ty::Str),
         _ => return None,
     })
 }
@@ -280,6 +294,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         ],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::Float => &["formatted"],
+        Ty::Data => &["count", "isEmpty", "bytes", "text"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
@@ -287,4 +302,70 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         ],
         _ => &[],
     }
+}
+
+// ===== standard library functions that are plain runtime calls =====
+
+/// A default argument value for a runtime call.
+#[derive(Clone, Copy, Debug)]
+pub enum Dflt {
+    /// The argument is required.
+    Req,
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Str(&'static str),
+    EmptyList,
+}
+
+/// A built-in function or method that compiles to a call of runtime function
+/// `rt`, with the arguments in parameter order (a method's receiver first).
+///
+/// Types map to the C ABI as: Int → i64, Float → f64, Bool → u8, String,
+/// Data, lists and dictionaries → pointers (borrowed). Results: an optional
+/// String/Data/list/dictionary is a pointer, null for nil; an optional Int or
+/// Float comes back through a trailing out pointer, with a u8 "present"
+/// result. Owned results (strings, lists…) are new references.
+#[derive(Clone, Copy, Debug)]
+pub struct RtCall {
+    pub rt: &'static str,
+    pub defaults: &'static [Dflt],
+}
+
+const fn rt(rt: &'static str) -> RtCall {
+    RtCall { rt, defaults: &[] }
+}
+
+#[allow(dead_code)]
+const fn rt_d(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
+    RtCall { rt, defaults }
+}
+
+/// Built-in functions that are runtime calls (their signatures are in
+/// `Builtins::function`).
+pub fn runtime_fn(name: &str) -> Option<RtCall> {
+    Some(match name {
+        "readData" => rt("tsl_read_data"),
+        "writeData" => rt("tsl_write_data"),
+        _ => return None,
+    })
+}
+
+/// Built-in methods that are runtime calls (signatures in `method_of`).
+pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
+    Some(match (recv, name) {
+        (Ty::Data, "text") => rt("tsl_data_text"),
+        _ => return None,
+    })
+}
+
+/// Built-in properties that are runtime calls (types in `property`).
+pub fn runtime_property(recv: &Ty, name: &str) -> Option<RtCall> {
+    Some(match (recv, name) {
+        (Ty::Data, "count") => rt("tsl_data_len"),
+        (Ty::Data, "isEmpty") => rt("tsl_data_is_empty"),
+        (Ty::Data, "bytes") => rt("tsl_data_ints"),
+        (Ty::Data, "text") => rt("tsl_data_text"),
+        _ => return None,
+    })
 }

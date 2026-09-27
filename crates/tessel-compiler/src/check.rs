@@ -39,6 +39,7 @@ impl Checked {
             Ty::Float => "Float".into(),
             Ty::Bool => "Bool".into(),
             Ty::Str => "String".into(),
+            Ty::Data => "Data".into(),
             Ty::Range => "Range".into(),
             Ty::View => "View".into(),
             Ty::Any => "any value".into(),
@@ -111,7 +112,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
     for (i, e) in enums.iter().enumerate() {
         globals.insert(e.name.clone(), Global::Enum(i));
     }
-    let builtins = Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2), icon: Ty::Enum(3) };
+    let builtins = Builtins::standard();
     let mut c = Checker {
         diags,
         builtins,
@@ -216,7 +217,7 @@ enum Mode {
     Content,
 }
 
-const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "Range", "View"];
+const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "Data", "Range", "View"];
 const MUTATING: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
 
 struct Checker<'a> {
@@ -259,6 +260,7 @@ impl Checker<'_> {
             Ty::Float => "Float".into(),
             Ty::Bool => "Bool".into(),
             Ty::Str => "String".into(),
+            Ty::Data => "Data".into(),
             Ty::Range => "Range".into(),
             Ty::View => "View".into(),
             Ty::Any => "any value".into(),
@@ -436,6 +438,7 @@ impl Checker<'_> {
                 "Float" => Ty::Float,
                 "Bool" => Ty::Bool,
                 "String" => Ty::Str,
+                "Data" => Ty::Data,
                 "Range" => Ty::Range,
                 "View" => Ty::View,
                 name => match self.globals.get(name) {
@@ -1271,6 +1274,11 @@ impl Checker<'_> {
                         self.expect(index, &k);
                         Ty::opt(*v)
                     }
+                    // A byte, 0–255.
+                    Ty::Data => {
+                        self.expect(index, &Ty::Int);
+                        Ty::Int
+                    }
                     Ty::Error => Ty::Error,
                     Ty::Opt(_) => {
                         self.error(object.span, "this might be `nil`, so it can't be indexed")
@@ -1738,7 +1746,7 @@ impl Checker<'_> {
                     Ty::Error
                 }
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float => match builtins::property(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float | Ty::Int | Ty::Data => match builtins::property(&recv, n) {
                 Some(t) => t,
                 None if builtins::method_of(&recv, n).is_some() => {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}(…)`"));
@@ -1803,7 +1811,7 @@ impl Checker<'_> {
 
     fn call(&mut self, callee: &Expr, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
         match &callee.kind {
-            ExprKind::Name(n) => self.call_name(n, callee.span, args, trailing, span),
+            ExprKind::Name(n) => self.call_name(n, callee.span, args, trailing, span, expected),
             ExprKind::DotName(n) => {
                 let t = self.dot_name(n, callee.span, expected, true);
                 if let Ty::Enum(id) = t {
@@ -1822,7 +1830,15 @@ impl Checker<'_> {
         }
     }
 
-    fn call_name(&mut self, n: &str, name_span: Span, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+    fn call_name(
+        &mut self,
+        n: &str,
+        name_span: Span,
+        args: &[Arg],
+        trailing: Option<&Expr>,
+        span: Span,
+        expected: Option<&Ty>,
+    ) -> Ty {
         let what = format!("`{n}`");
         if let Some(l) = self.lookup(n).cloned() {
             return match l.kind {
@@ -1886,6 +1902,10 @@ impl Checker<'_> {
                 }
                 match n {
                     "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
+                    "Data" => return self.data_init(args, trailing, span),
+                    "toJson" | "toBinary" | "fromJson" | "fromBinary" => {
+                        return self.codec_call(n, args, trailing, span, expected);
+                    }
                     "abs" | "min" | "max" => return self.numeric_fn(n, args, trailing, span),
                     "print" => {
                         let sig = self.builtins.function(n).unwrap();
@@ -1905,6 +1925,107 @@ impl Checker<'_> {
                 self.unknown_name(n, name_span);
                 Ty::Error
             }
+        }
+    }
+
+    /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`.
+    fn data_init(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        let label = args.first().and_then(|a| a.label.as_ref()).map(|l| l.name.as_str());
+        match (args, label) {
+            ([], _) if trailing.is_none() => {}
+            ([a], Some("bytes")) => {
+                self.expect(&a.value, &Ty::list(Ty::Int));
+            }
+            ([a], Some("text")) => {
+                self.expect(&a.value, &Ty::Str);
+            }
+            _ => {
+                for a in args {
+                    self.expr(&a.value, None);
+                }
+                self.error(span, "make Data with `Data()`, `Data(bytes: [Int])` or `Data(text: String)`");
+            }
+        }
+        Ty::Data
+    }
+
+    /// `toJson(value, pretty:)`, `toBinary(value)`: any value that can be
+    /// saved. `fromJson(text)`, `fromBinary(data)`: the type comes from where
+    /// the result goes (`let p: Project? = fromJson(text)`).
+    fn codec_call(&mut self, n: &str, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
+        let encode = n.starts_with("to");
+        let input = if n == "fromBinary" { Ty::Data } else { Ty::Str };
+        let Some(first) = args.first().filter(|a| a.label.is_none() && trailing.is_none()) else {
+            self.error(span, format!("write it as `{n}(value)`"));
+            return Ty::Error;
+        };
+        if encode {
+            let t = self.expr(&first.value, None);
+            if let Err(why) = self.saveable(&t) {
+                let what = self.a(&t);
+                self.error(first.value.span, format!("{what} can't be saved with `{n}`")).help(why);
+            }
+            match &args[1..] {
+                [] => {}
+                [p] if n == "toJson" && p.label.as_ref().is_some_and(|l| l.name == "pretty") => {
+                    self.expect(&p.value, &Ty::Bool);
+                }
+                _ => {
+                    self.error(span, if n == "toJson" { "write it as `toJson(value)` or `toJson(value, pretty: true)`" } else { "write it as `toBinary(value)`" });
+                }
+            }
+            return if n == "toJson" { Ty::Str } else { Ty::Data };
+        }
+        self.expect(&first.value, &input);
+        if args.len() > 1 {
+            self.error(span, format!("write it as `{n}(value)`"));
+        }
+        match expected.map(strip_opt) {
+            Some(t) if !t.has_error() && *t != Ty::Any && *t != Ty::Void => {
+                let t = t.clone();
+                if let Err(why) = self.saveable(&t) {
+                    let what = self.a(&t);
+                    self.error(span, format!("{what} can't be read with `{n}`")).help(why);
+                }
+                Ty::opt(t)
+            }
+            Some(t) if t.has_error() => Ty::Error,
+            _ => {
+                self.error(span, format!("can't tell what type `{n}` should read"))
+                    .help(format!("give the result a type, like `let project: Project? = {n}(…)`"));
+                Ty::Error
+            }
+        }
+    }
+
+    /// Can values of `t` be written as JSON or binary? Err says why not.
+    fn saveable(&self, t: &Ty) -> Result<(), String> {
+        match t {
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error => Ok(()),
+            Ty::List(e) | Ty::Opt(e) => self.saveable(e),
+            Ty::Dict(k, v) => {
+                if !matches!(**k, Ty::Str | Ty::Int | Ty::Bool) && !matches!(**k, Ty::Enum(_)) {
+                    return Err("dictionary keys must be String, Int, Bool or an enum".into());
+                }
+                self.saveable(v)
+            }
+            Ty::Struct(id) => {
+                for f in &self.structs[*id].fields {
+                    self.saveable(&f.ty).map_err(|e| format!("field `{}`: {e}", f.name))?;
+                }
+                Ok(())
+            }
+            Ty::Enum(id) => {
+                for c in &self.enums[*id].cases {
+                    for f in &c.fields {
+                        self.saveable(&f.ty).map_err(|e| format!("case `{}`: {e}", c.name))?;
+                    }
+                }
+                Ok(())
+            }
+            Ty::Fn(..) => Err("functions can't be saved".into()),
+            Ty::View => Err("views can't be saved".into()),
+            Ty::Void | Ty::Any => Err("this has no value to save".into()),
         }
     }
 
@@ -2071,7 +2192,7 @@ impl Checker<'_> {
                 self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                 self.map_call(elem, args, trailing, span)
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float => match builtins::method_of(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {
