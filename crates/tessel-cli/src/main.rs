@@ -12,7 +12,9 @@ const USAGE: &str = "usage: tessel <command>
 
 commands:
   check <path>   check a program for errors; <path> is a .tsl file or a folder
-  build <path> [-o <output>]   compile a program to a native executable
+  build <path> [-o <output>] [--bundle]
+                 compile a program to a native executable; with --bundle,
+                 an app bundle you can double-click (macOS: Name.app)
   run <path>     build and run a program
   lsp            start the language server (used by editors)
   version        print the compiler version";
@@ -26,13 +28,22 @@ fn main() -> ExitCode {
         }
         (Some("check"), Some(path)) => check(Path::new(path)),
         (Some("build"), Some(path)) => {
-            let out = match args.get(2).map(String::as_str) {
-                Some("-o") => args.get(3).map(PathBuf::from),
-                _ => None,
-            };
+            let rest = &args[2..];
+            let out = rest.iter().position(|a| a == "-o").and_then(|i| rest.get(i + 1)).map(PathBuf::from);
+            let bundle = rest.iter().any(|a| a == "--bundle");
             let out = out.unwrap_or_else(|| default_output(Path::new(path)));
             match build(Path::new(path), &out) {
-                Ok(()) => {
+                Ok(app_name) if bundle => match make_bundle(&out, app_name.as_deref()) {
+                    Ok(bundle) => {
+                        println!("built {}", bundle.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("tessel: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Ok(_) => {
                     println!("built {}", out.display());
                     ExitCode::SUCCESS
                 }
@@ -138,7 +149,8 @@ fn runtime_lib() -> Result<PathBuf, String> {
     }
 }
 
-fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
+/// Compiles and links a program. Returns the `app`'s name, if it has one.
+fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
     let (sources, _) = load(path)?;
     let analysis = tessel_compiler::analyze(&sources, true);
     if !analysis.diags.is_empty() {
@@ -155,7 +167,11 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
         report(&diags, &sources);
         return Err(ExitCode::FAILURE);
     }
-    let output = linker(&obj, &runtime, out)
+    let app_name = analysis.program.items.iter().find_map(|i| match i {
+        tessel_compiler::ast::Item::App(a) => Some(a.name.name.clone()),
+        _ => None,
+    });
+    let output = linker(&obj, &runtime, out, app_name.is_some())
         .map_err(fail)?
         .output()
         .map_err(|e| fail(format!("can't run the system linker: {e}")))?;
@@ -165,17 +181,60 @@ fn build(path: &Path, out: &Path) -> Result<(), ExitCode> {
         let details = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         return Err(fail(format!("linking failed ({}):\n{}", output.status, details.trim())));
     }
-    Ok(())
+    Ok(app_name)
+}
+
+/// Wraps a built app in a platform app bundle. On macOS: `Name.app`, next
+/// to the executable (which moves inside it). Returns the bundle's path.
+fn make_bundle(exe: &Path, app_name: Option<&str>) -> Result<PathBuf, String> {
+    if !cfg!(target_os = "macos") {
+        // Windows apps are already a single double-clickable .exe.
+        return Ok(exe.to_path_buf());
+    }
+    let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+    let name = app_name.unwrap_or(stem);
+    let bundle = exe.with_file_name(format!("{name}.app"));
+    let macos = bundle.join("Contents/MacOS");
+    if bundle.exists() {
+        std::fs::remove_dir_all(&bundle).map_err(|e| format!("can't replace `{}`: {e}", bundle.display()))?;
+    }
+    std::fs::create_dir_all(&macos).map_err(|e| format!("can't create `{}`: {e}", bundle.display()))?;
+    std::fs::rename(exe, macos.join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
+    let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>{name}</string>
+    <key>CFBundleDisplayName</key><string>{name}</string>
+    <key>CFBundleExecutable</key><string>{name}</string>
+    <key>CFBundleIdentifier</key><string>dev.tessel.{id}</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+"#
+    );
+    std::fs::write(bundle.join("Contents/Info.plist"), plist).map_err(|e| format!("can't write Info.plist: {e}"))?;
+    Ok(bundle)
 }
 
 /// The command that links the program's object file with the runtime.
-fn linker(obj: &Path, runtime: &Path, out: &Path) -> Result<Command, String> {
+fn linker(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<Command, String> {
     if cfg!(target_env = "msvc") {
         // MSVC's link.exe, found the way Rust finds it (Visual Studio Build Tools).
         let target = if cfg!(target_arch = "aarch64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" };
         let mut cmd = cc::windows_registry::find(target, "link.exe")
             .ok_or("can't find the MSVC linker (link.exe); install Visual Studio Build Tools with the C++ workload")?;
         cmd.arg("/NOLOGO").arg(obj).arg(runtime).args(platform_link_args());
+        if gui {
+            // A window app: no console window next to it.
+            cmd.args(["/SUBSYSTEM:WINDOWS", "/ENTRY:mainCRTStartup"]);
+        }
         cmd.arg(format!("/OUT:{}", out.display()));
         Ok(cmd)
     } else {
