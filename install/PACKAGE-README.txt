@@ -9,8 +9,10 @@ This folder contains:
   tessel (tessel.exe on Windows)       the Tessel command and IDE
   libtessel_runtime.a                  the runtime library linked into every
   (tessel_runtime.lib on Windows)      app; keep it next to `tessel`
-  sdk/ (macOS)                         descriptions of the macOS libraries
-                                       apps use, for tessel's built-in linker
+  sdk/                                 what tessel's built-in linker needs:
+                                       descriptions of the macOS libraries
+                                       apps use, or on Windows the MinGW-w64
+                                       C runtime and Windows import libraries
 
 Put this folder on your PATH, then:
 
@@ -19,8 +21,6 @@ Put this folder on your PATH, then:
   tessel build app.tsl   make a standalone executable
   tessel help            all commands
 
-On macOS, tessel has its own linker: nothing else is needed.
-On Windows, building apps uses Microsoft's linker from the Visual Studio
-Build Tools (C++ workload), for now.
+tessel has its own linker, so nothing else needs to be installed: no
+Xcode, no Visual Studio. The apps you build need nothing else to run.
 
-The apps you build need nothing else to run.

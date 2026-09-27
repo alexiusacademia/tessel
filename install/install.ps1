@@ -29,15 +29,6 @@ if (-not (($UserPath -split ";") -contains $Bin)) {
     Write-Host "Added $Bin to your PATH (open a new terminal to use it)"
 }
 
-# Building apps uses the Microsoft linker from Visual Studio Build Tools.
-$VsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-$HasTools = (Test-Path $VsWhere) -and (& $VsWhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
-if (-not $HasTools) {
-    Write-Host ""
-    Write-Host "Note: building apps needs the Visual Studio Build Tools (C++ build tools):"
-    Write-Host "  winget install Microsoft.VisualStudio.2022.BuildTools --override `"--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive`""
-}
-
 Write-Host ""
 & (Join-Path $Bin "tessel.exe") --version
 Write-Host "Done. Try: tessel run hello.tsl, or just 'tessel' in a folder to open the IDE."

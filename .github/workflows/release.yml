@@ -144,12 +144,10 @@ jobs:
           "CC_x86_64_pc_windows_gnullvm=C:\llvm-mingw\bin\x86_64-w64-mingw32-clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           "AR_x86_64_pc_windows_gnullvm=C:\llvm-mingw\bin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=C:\llvm-mingw\bin\x86_64-w64-mingw32-clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
-          # See ci.yml: an empty stand-in for the libxml2 library LLVM lists but doesn't ship.
-          if (-not (Test-Path "$prefix\lib\xml2s.lib")) {
-            Set-Content -Path stub.c -Value "void tessel_xml2_stub(void) {}"
-            & "$prefix\bin\clang-cl.exe" /c stub.c /Fo:stub.obj
-            & "$prefix\bin\llvm-lib.exe" /out:"$prefix\lib\xml2s.lib" stub.obj
-          }
+          # LLVM lists libxml2 (xml2s.lib) but doesn't ship it; lld's manifest
+          # merger uses it. Tessel never merges manifests, so stubs will do.
+          & "$prefix\bin\clang-cl.exe" /c /MT install\xml2-stub.c /Fo:xml2-stub.obj
+          & "$prefix\bin\llvm-lib.exe" /out:"$prefix\lib\xml2s.lib" xml2-stub.obj
 
       # ---- Build, check and package ----
 
