@@ -8,9 +8,12 @@ use tessel_compiler::codegen;
 use tessel_compiler::diag::{render, Diagnostic};
 use tessel_compiler::source::SourceMap;
 
-const USAGE: &str = "usage: tessel <command>
+const USAGE: &str = "usage: tessel [command]
+
+With no command, opens the Tessel IDE on the current folder.
 
 commands:
+  ide [folder]   open the Tessel IDE on a folder (default: the current one)
   check <path> [--format lines]
                  check a program for errors; <path> is a .tsl file or a folder.
                  With --format lines, prints one error per line for tools:
@@ -20,11 +23,24 @@ commands:
                  an app bundle you can double-click (macOS: Name.app)
   run <path>     build and run a program
   lsp            start the language server (used by editors)
+  help           show this help
   version        print the compiler version";
+
+/// The IDE's source, built into `tessel` so it works wherever `tessel` is installed.
+const IDE_SOURCES: &[(&str, &str)] = &[
+    ("main.tsl", include_str!("../../../ide/main.tsl")),
+    ("project.tsl", include_str!("../../../ide/project.tsl")),
+];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match (args.first().map(String::as_str), args.get(1)) {
+        (None, _) => ide(Path::new(".")),
+        (Some("ide"), folder) => ide(Path::new(folder.map_or(".", String::as_str))),
+        (Some("help" | "--help" | "-h"), _) => {
+            println!("{USAGE}");
+            ExitCode::SUCCESS
+        }
         (Some("version" | "--version" | "-V"), _) => {
             println!("tessel {}", tessel_compiler::VERSION);
             ExitCode::SUCCESS
@@ -174,9 +190,14 @@ fn runtime_lib() -> Result<PathBuf, String> {
 /// Compiles and links a program. Returns the `app`'s name, if it has one.
 fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
     let (sources, _) = load(path)?;
-    let analysis = tessel_compiler::analyze(&sources, true);
+    build_sources(&sources, out)
+}
+
+fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, ExitCode> {
+    let sources = sources;
+    let analysis = tessel_compiler::analyze(sources, true);
     if !analysis.diags.is_empty() {
-        report(&analysis.diags.list, &sources);
+        report(&analysis.diags.list, sources);
         return Err(ExitCode::FAILURE);
     }
     let fail = |msg: String| {
@@ -185,8 +206,8 @@ fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
     };
     let runtime = runtime_lib().map_err(fail)?;
     let obj = std::env::temp_dir().join(format!("tessel-{}.o", std::process::id()));
-    if let Err(diags) = codegen::compile(&analysis.program, &analysis.checked, &sources, &obj, true) {
-        report(&diags, &sources);
+    if let Err(diags) = codegen::compile(&analysis.program, &analysis.checked, sources, &obj, true) {
+        report(&diags, sources);
         return Err(ExitCode::FAILURE);
     }
     let app_name = analysis.program.items.iter().find_map(|i| match i {
@@ -288,6 +309,52 @@ fn platform_link_args() -> Vec<&'static str> {
         args
     } else {
         vec![]
+    }
+}
+
+/// Opens the IDE on `folder`, compiling it first if this version of Tessel
+/// hasn't yet (it's cached until the IDE or `tessel` itself changes).
+fn ide(folder: &Path) -> ExitCode {
+    let Ok(folder) = folder.canonicalize() else {
+        eprintln!("tessel: `{}` doesn't exist", folder.display());
+        return ExitCode::FAILURE;
+    };
+    let me = std::env::current_exe().ok();
+    let stamp = me.as_ref().and_then(|m| m.metadata().ok()?.modified().ok());
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&(IDE_SOURCES, tessel_compiler::VERSION, stamp), &mut h);
+    let dir = std::env::temp_dir().join(format!("tessel-ide-{:016x}", std::hash::Hasher::finish(&h)));
+    let exe = dir.join(format!("Tessel{}", std::env::consts::EXE_SUFFIX));
+    if !exe.exists() {
+        eprintln!("tessel: preparing the IDE (first run only)…");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("tessel: can't create `{}`: {e}", dir.display());
+            return ExitCode::FAILURE;
+        }
+        let mut sources = SourceMap::new();
+        for (name, text) in IDE_SOURCES {
+            sources.add(format!("ide/{name}"), *text);
+        }
+        let tmp = dir.join(format!("building{}", std::env::consts::EXE_SUFFIX));
+        if let Err(code) = build_sources(&sources, &tmp) {
+            return code;
+        }
+        if let Err(e) = std::fs::rename(&tmp, &exe) {
+            eprintln!("tessel: can't install the IDE: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    let mut cmd = Command::new(&exe);
+    cmd.env("TESSEL_PROJECT", &folder);
+    if let Some(me) = me {
+        cmd.env("TESSEL_EXE", me);
+    }
+    match cmd.status() {
+        Ok(s) => ExitCode::from(s.code().unwrap_or(0) as u8),
+        Err(e) => {
+            eprintln!("tessel: can't start the IDE: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

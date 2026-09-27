@@ -28,6 +28,16 @@ fn main() {
 }
 ```
 
+## The Tessel IDE
+
+Run `tessel` in a project folder (or `tessel ide <folder>`) to open the Tessel
+IDE: a file list, a code editor with syntax colors and live error markers,
+Check / Run / Build / Package buttons (Cmd+K, Cmd+R, Cmd+B; Cmd+S saves), a
+problems list and a console. Click a problem, or an error location in the
+console, to jump to it.
+
+The IDE is itself a Tessel app: see [`ide/`](ide/).
+
 ## Layout
 
 | Path | |
@@ -36,6 +46,8 @@ fn main() {
 | `crates/tessel-runtime` | Windows, layout, GPU rendering, event loop |
 | `crates/tessel-cli` | The `tessel` command |
 | `examples/` | Sample programs, one folder each (a folder is a program) |
+| `ide/` | The Tessel IDE, written in Tessel |
+| `editors/vscode/` | VS Code extension (highlighting, errors as you type, types on hover) |
 | `tests/run/` | Programs with expected output, run by `cargo test` |
 | `docs/` | Language design |
 
