@@ -252,7 +252,7 @@ fn platform_link_args() -> Vec<&'static str> {
             "synchronization.lib", "user32.lib", "gdi32.lib", "ole32.lib", "oleaut32.lib", "shell32.lib",
             "uuid.lib", "dwmapi.lib", "uxtheme.lib", "imm32.lib", "comctl32.lib", "winmm.lib", "dxgi.lib",
             "d3d12.lib", "d3dcompiler.lib", "opengl32.lib", "propsys.lib", "runtimeobject.lib", "secur32.lib",
-            "crypt32.lib", "ncrypt.lib", "dbghelp.lib",
+            "crypt32.lib", "ncrypt.lib", "dbghelp.lib", "pathcch.lib",
         ]
         .to_vec();
     }
