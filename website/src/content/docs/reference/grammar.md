@@ -160,7 +160,7 @@ parentheses: `view Header { … }`.
 ### Functions and parameters
 
 ```text
-fn_decl = "fn" IDENT params ("->" type)? block ;
+fn_decl = "fn" IDENT generics? params ("->" type)? block ;
 params  = "(" (param ("," param)* ","?)? ")" ;
 param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 ```
@@ -175,7 +175,8 @@ param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 ### struct
 
 ```text
-struct_decl = "struct" IDENT conforms? "{" members "}" ;
+struct_decl = "struct" IDENT generics? conforms? "{" members "}" ;
+generics    = "<" IDENT (":" IDENT)? ("," IDENT (":" IDENT)?)* ">" ;
 conforms    = ":" IDENT ("," IDENT)* ;
 field       = IDENT ":" type ("=" expr)? ;
 members     = (separator* (field | fn_decl))* separator* ;   (for structs)
@@ -188,7 +189,7 @@ Fields and methods are separated by line breaks or commas:
 ### enum
 
 ```text
-enum_decl = "enum" IDENT conforms? "{" members "}" ;
+enum_decl = "enum" IDENT generics? conforms? "{" members "}" ;
 case      = IDENT params? ;
 members   = (separator* (case | fn_decl))* separator* ;      (for enums)
 ```
@@ -211,13 +212,19 @@ have default values. See [Interfaces](/language/interfaces/).
 ```text
 type      = base_type "?"* ;
 base_type = IDENT                                   named type
+          | IDENT "<" type ("," type)* ">"          generic type
           | "[" type "]"                            list
           | "[" type ":" type "]"                   dictionary
           | "fn" "(" (type ("," type)* ","?)? ")" ("->" type)? ;   function
 ```
 
 - Named types are `Int`, `Float`, `Bool`, `String`, `Range`, `View`, the
-  built-in enums, and your own structs and enums.
+  built-in enums, and your own structs, enums and interfaces. A generic struct
+  or enum is written with its type arguments: `Stack<Int>`. See
+  [Generics](/language/generics/).
+- In an expression, `Name<…>` is read as a generic type (like `Stack<Int>()`)
+  when it starts with a capital letter and the `>` is followed by `(` or `.`;
+  otherwise `<` is "less than".
 - `T?` is an optional `T`. In `fn() -> Int?`, the `?` belongs to the return
   type; there is no way to write an optional function type with a return
   type, because types can't be put in parentheses.

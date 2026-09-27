@@ -29,7 +29,7 @@ language may still change. This page is an honest list of where things stand.
   downloads and WebSockets, running other programs, and heavy computations on
   another thread (`background`), all with completion blocks that run on the
   UI thread. They work in programs with only `fn main` too.
-- **Language:** structs, enums with values, interfaces, closures, optionals,
+- **Language:** structs, enums with values, interfaces, generics, closures, optionals,
   `for` and `while` loops with `break` and `continue`, and programs split
   over any number of files.
 - **Standard library:** files and folders, JSON and binary encoding of your
@@ -83,7 +83,7 @@ These are the next areas of work. None of them has a date.
 | Hot reload | Keep the running app's state when its code changes. |
 | App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
-| Language | Errors that carry a reason, generics for your own types, tuples and sets. |
+| Language | Errors that carry a reason, tuples and sets. |
 | Packaging | App icons, code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 

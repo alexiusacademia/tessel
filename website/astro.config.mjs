@@ -39,6 +39,7 @@ export default defineConfig({
 						{ label: 'Functions', slug: 'language/functions' },
 						{ label: 'Structs and enums', slug: 'language/structs-enums' },
 						{ label: 'Interfaces', slug: 'language/interfaces' },
+						{ label: 'Generics', slug: 'language/generics' },
 						{ label: 'Control flow', slug: 'language/control-flow' },
 						{ label: 'Optionals and errors', slug: 'language/optionals' },
 						{ label: 'Collections', slug: 'language/collections' },

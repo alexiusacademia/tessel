@@ -211,6 +211,30 @@ let shapes: [Shape] = [Circle(radius: 1.0), Rect(width: 2.0, height: 3.0)]
   giving the field's address. `is`/`as?`, `==` and saving compare the table
   pointer to identify the type.
 
+## 6c. Generics
+
+```tessel
+fn lastOr<T>(items: [T], fallback: T) -> T { items.last ?? fallback }
+struct Stack<T> { items: [T] = [] }
+enum Result<T> { ok(value: T), failure(message: String) }
+fn largest<T: Shape>(items: [T]) -> T? { … }
+```
+
+- Functions, structs and enums take type parameters, optionally constrained
+  to an interface (`T: Shape`), whose methods and properties can then be used.
+- Type arguments are inferred from the arguments and the expected type, or
+  written out for types (`Stack<Int>()`, `Result<Int>.ok(value: 1)`). In
+  expressions, `Name<` starts type arguments only when the name is
+  capitalized and the matching `>` is followed by `(` or `.`.
+- Implementation: specialization. Each set of type arguments gets a copy of
+  the declaration (`generics.rs`: new expression ids, the parameters replaced,
+  names like `Stack<Int>`), which is checked and compiled as ordinary code, so
+  codegen knows nothing about generics. The declaration is also checked once
+  with its parameters as `Ty::Generic`, which is accepted like an error type;
+  errors a particular type causes are reported in its copy, with a note at
+  the use that needed it. Declared names in a copy get spans tagged in the
+  file number's high bits, since local types are recorded by span.
+
 ## 7. Control flow
 
 `if`, `match` and `for` work the same inside functions and inside views.
