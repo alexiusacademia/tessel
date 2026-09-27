@@ -121,6 +121,6 @@ fn ide_session() {
     let _ = std::fs::remove_file(&exe);
     if got != expected {
         std::fs::write(root.join("tests/ide/session.actual"), &got).unwrap();
-        panic!("IDE session differs; see tests/ide/session.actual");
+        panic!("IDE session differs; see tests/ide/session.actual\n--- got\n{got}");
     }
 }
