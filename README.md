@@ -53,6 +53,10 @@ cargo test    # unit tests, error-message fixtures, and programs in tests/run
               # (checked for memory leaks on macOS)
 ```
 
+On Windows, build with `cargo build --target x86_64-pc-windows-msvc` (see
+`.cargo/config.toml`) and set `LLVM_SYS_221_PREFIX` to an LLVM 22 install; the
+CI workflow shows the exact steps.
+
 Use `cargo build --release` for much smaller app binaries: `tessel build`
 links against the runtime library built next to the `tessel` executable.
 
