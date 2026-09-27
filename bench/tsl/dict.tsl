@@ -1,0 +1,13 @@
+fn main() {
+    var m: [Int: Int] = [:]
+    for i in 0..1000000 {
+        m[i * 7] = i
+    }
+    var sum = 0
+    for k in 0..2000000 {
+        if let v = m[k] {
+            sum += v
+        }
+    }
+    print("{m.count} {sum}")
+}

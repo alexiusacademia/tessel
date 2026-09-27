@@ -287,10 +287,19 @@ impl Lexer<'_> {
             }
         };
         digits(self);
-        let is_float = self.peek(0) == b'.' && self.peek(1).is_ascii_digit();
+        let mut is_float = self.peek(0) == b'.' && self.peek(1).is_ascii_digit();
         if is_float {
             self.pos += 1;
             digits(self);
+        }
+        // An exponent: `1e9`, `6.02e23`, `1.5E-3`.
+        if matches!(self.peek(0), b'e' | b'E') {
+            let sign = usize::from(matches!(self.peek(1), b'+' | b'-'));
+            if self.peek(1 + sign).is_ascii_digit() {
+                self.pos += 1 + sign;
+                digits(self);
+                is_float = true;
+            }
         }
         let text: String = self.src[lo..self.pos].chars().filter(|&c| c != '_').collect();
         if is_float {
@@ -528,6 +537,12 @@ mod tests {
     fn range_is_not_a_float() {
         assert_eq!(kinds("0..10")[..3], [Tok::Int(0), Tok::DotDot, Tok::Int(10)]);
         assert_eq!(kinds("1.5")[0], Tok::Float(1.5));
+        assert_eq!(kinds("1e3")[0], Tok::Float(1000.0));
+        assert_eq!(kinds("6.02e23")[0], Tok::Float(6.02e23));
+        assert_eq!(kinds("1.5E-3")[0], Tok::Float(1.5e-3));
+        assert_eq!(kinds("2e+2")[0], Tok::Float(200.0));
+        // `e` not followed by digits is a name: `2.each` isn't a number.
+        assert_eq!(kinds("3e")[0], Tok::Int(3));
     }
 
     #[test]

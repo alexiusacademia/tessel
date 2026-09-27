@@ -1,0 +1,10 @@
+fn fib(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    fib(n: n - 1) + fib(n: n - 2)
+}
+
+fn main() {
+    print(fib(n: 38))
+}

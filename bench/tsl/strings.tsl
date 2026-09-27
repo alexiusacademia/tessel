@@ -1,0 +1,14 @@
+fn main() {
+    var parts: [String] = []
+    for i in 0..1000000 {
+        parts.append("item{i}")
+    }
+    let text = parts.joined(separator: ",")
+    var commas = 0
+    for p in text.split(",") {
+        if p.hasSuffix("7") {
+            commas += 1
+        }
+    }
+    print("{text.count} {commas}")
+}
