@@ -31,7 +31,7 @@ struct Reported;
 
 type PResult<T> = Result<T, Reported>;
 
-const ITEM_START: &str = "a declaration (`app`, `view`, `struct`, `enum` or `fn`)";
+const ITEM_START: &str = "a declaration (`app`, `view`, `struct`, `enum`, `interface` or `fn`)";
 
 impl<'a> Parser<'a> {
     // ----- token helpers -----
@@ -178,6 +178,7 @@ impl<'a> Parser<'a> {
                 Tok::Eof => break,
                 Tok::Struct => self.struct_decl().map(Item::Struct),
                 Tok::Enum => self.enum_decl().map(Item::Enum),
+                Tok::Interface => self.interface_decl().map(Item::Interface),
                 Tok::Fn => self.fn_decl().map(Item::Fn),
                 Tok::View => self.view_decl().map(Item::View),
                 Tok::App => self.app_decl().map(Item::App),
@@ -212,6 +213,7 @@ impl<'a> Parser<'a> {
     fn struct_decl(&mut self) -> PResult<StructDecl> {
         self.bump(); // struct
         let name = self.ident("a struct name")?;
+        let conforms = self.conformances()?;
         self.expect(Tok::LBrace)?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
@@ -233,12 +235,13 @@ impl<'a> Parser<'a> {
             }
             Ok(())
         });
-        Ok(StructDecl { name, fields, methods })
+        Ok(StructDecl { name, conforms, fields, methods })
     }
 
     fn enum_decl(&mut self) -> PResult<EnumDecl> {
         self.bump(); // enum
         let name = self.ident("an enum name")?;
+        let conforms = self.conformances()?;
         self.expect(Tok::LBrace)?;
         let mut cases = Vec::new();
         let mut methods = Vec::new();
@@ -252,7 +255,55 @@ impl<'a> Parser<'a> {
             }
             Ok(())
         });
-        Ok(EnumDecl { name, cases, methods })
+        Ok(EnumDecl { name, conforms, cases, methods })
+    }
+
+    /// `: Shape, Named` after a struct or enum name.
+    fn conformances(&mut self) -> PResult<Vec<Ident>> {
+        let mut out = Vec::new();
+        if self.eat(&Tok::Colon) {
+            loop {
+                out.push(self.ident("an interface name")?);
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn interface_decl(&mut self) -> PResult<InterfaceDecl> {
+        self.bump(); // interface
+        let name = self.ident("an interface name")?;
+        self.expect(Tok::LBrace)?;
+        let mut methods = Vec::new();
+        self.members(|p| {
+            if !p.at(&Tok::Fn) {
+                let span = p.span();
+                p.error(span, "an interface lists methods, like `fn area() -> Float`")
+                    .help("fields can't be required; require a method that returns the value instead");
+                return Err(Reported);
+            }
+            let lo = p.bump().span;
+            let name = p.ident("a method name")?;
+            if !p.at(&Tok::LParen) {
+                let span = p.span();
+                p.error(span, format!("method `{}` needs a parameter list", name.name))
+                    .help(format!("write `fn {}()` even when it takes no parameters", name.name));
+                return Err(Reported);
+            }
+            let params = p.params()?;
+            let ret = if p.eat(&Tok::Arrow) { Some(p.type_expr()?) } else { None };
+            if p.at(&Tok::LBrace) {
+                let span = p.span();
+                p.error(span, "an interface only lists methods; their bodies go in the types that conform to it")
+                    .help(format!("remove the body here, and write it in each type: `struct Circle: {} {{ … }}`", "…"));
+                return Err(Reported);
+            }
+            methods.push(MethodReq { name, params, ret, span: lo.to(p.prev_span()) });
+            Ok(())
+        });
+        Ok(InterfaceDecl { name, methods })
     }
 
     /// Parses `member (, | newline) member ... }` after the opening brace.

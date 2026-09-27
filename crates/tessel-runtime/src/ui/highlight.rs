@@ -17,7 +17,7 @@ const CALL: Rgba = Rgba([50, 109, 116, 255]);
 const CASE: Rgba = Rgba([57, 0, 160, 255]);
 
 const KEYWORDS: &[&str] = &[
-    "app", "view", "struct", "enum", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
+    "app", "view", "struct", "enum", "interface", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
     "return", "while", "break", "continue", "true", "false", "nil",
 ];
 

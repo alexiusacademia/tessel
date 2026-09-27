@@ -347,6 +347,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         self.method_decls.insert((d.name.name.clone(), m.name.name.clone()), (m, Ty::Enum(id)));
                     }
                 }
+                Item::Interface(_) => {}
                 Item::Fn(f) => {
                     self.fn_decls.insert(f.name.name.clone(), f);
                 }
@@ -510,6 +511,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.ctx.struct_type(&[self.ctx.bool_type().into(), inner], false).into()
             }
             Ty::Fn(..) => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
+            // An interface value: the method table of its type, and a box
+            // holding the value (shared: interface methods can't change it).
+            Ty::Iface(_) => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Enum(id) => {
                 if self.has_payload(*id) {
                     self.ctx.struct_type(&[self.ctx.i32_type().into(), self.ptr_ty().into()], false).into()
@@ -572,13 +576,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Fn(ps, r) => format!("F{}_{}", ps.iter().map(|p| self.key(p)).collect::<String>(), self.key(r)),
             Ty::Struct(id) => format!("S{}{}", self.checked.structs[*id].name.len(), self.checked.structs[*id].name),
             Ty::Enum(id) => format!("E{}{}", self.checked.enums[*id].name.len(), self.checked.enums[*id].name),
+            Ty::Iface(id) => format!("I{}{}", self.checked.ifaces[*id].name.len(), self.checked.ifaces[*id].name),
             Ty::Error | Ty::Any => "x".into(),
         }
     }
 
     fn needs_rc(&self, t: &Ty) -> bool {
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Fn(..) | Ty::View => true,
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
             Ty::Enum(id) => self.has_payload(*id),
             Ty::Struct(id) => self.checked.structs[*id].fields.iter().any(|f| self.needs_rc(&f.ty)),
             Ty::Opt(inner) => self.needs_rc(inner),
@@ -837,7 +842,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) => {
                 self.call_rt(f, &[v]);
             }
-            Ty::Fn(..) | Ty::Enum(_) | Ty::View => {
+            Ty::Fn(..) | Ty::Enum(_) | Ty::View | Ty::Iface(_) => {
                 let p = self.b.build_extract_value(v.into_struct_value(), 1, "").unwrap();
                 self.call_rt(f, &[p]);
             }
@@ -1820,6 +1825,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Opt(inner) if !matches!(from, Ty::Opt(_)) => {
                 let inner_v = self.coerce(v, from, inner);
                 self.some(to, inner_v)
+            }
+            // A struct or enum where an interface is wanted: box it with its method table.
+            Ty::Iface(i) if matches!(from, Ty::Struct(_) | Ty::Enum(_)) => {
+                let info = self.type_info(from);
+                let bx = self.call_rt("tsl_box_new", &[info.into()]).unwrap().into_pointer_value();
+                let data = self.box_data(bx);
+                self.b.build_store(data, v).unwrap();
+                let vt = self.vtable(from, *i);
+                let st = self.llty(to).unwrap().into_struct_type();
+                let s = self.b.build_insert_value(st.get_undef(), vt, 0, "").unwrap();
+                self.b.build_insert_value(s, bx, 1, "").unwrap().into_struct_value().into()
             }
             _ => v,
         }
@@ -2995,6 +3011,37 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 r
             }
+            Callee::IfaceMethod { iface, index } => {
+                let (iface, index) = (*iface, *index);
+                let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
+                let ot = self.ty(object);
+                let it = Ty::Iface(iface);
+                let ov = self.expr(object).unwrap();
+                if let Ty::Opt(_) = ot {
+                    // `shape?.area()`
+                    if t == Ty::Void {
+                        let flag = self.b.build_extract_value(ov.into_struct_value(), 0, "").unwrap().into_int_value();
+                        let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+                        self.b.build_conditional_branch(flag, some_bb, done).unwrap();
+                        self.b.position_at_end(some_bb);
+                        let iv = self.b.build_extract_value(ov.into_struct_value(), 1, "").unwrap();
+                        self.hold(iv, &it);
+                        self.iface_call(iface, index, iv, &info, &arg);
+                        self.unhold(1);
+                        self.release(iv, &it);
+                        self.br(done);
+                        self.b.position_at_end(done);
+                        return None;
+                    }
+                    let info2 = info.clone();
+                    return Some(self.optional_chain(ov, &ot, &t, |g, v| g.iface_call(iface, index, v, &info2, &arg).unwrap()));
+                }
+                self.hold(ov, &it);
+                let r = self.iface_call(iface, index, ov, &info, &arg);
+                self.unhold(1);
+                self.release(ov, &it);
+                r
+            }
             Callee::StructInit(id) => {
                 let id = *id;
                 let st = self.struct_ty(id);
@@ -3667,6 +3714,70 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// The method table of `ty` for interface `iface`: its methods, in the
+    /// order the interface lists them.
+    fn vtable(&mut self, ty: &Ty, iface: usize) -> PointerValue<'ctx> {
+        let name = format!("tsl_vt_{}_{}", self.key(ty), self.key(&Ty::Iface(iface)));
+        if let Some(g) = self.module.get_global(&name) {
+            return g.as_pointer_value();
+        }
+        let owner = match ty {
+            Ty::Struct(id) => self.checked.structs[*id].name.clone(),
+            Ty::Enum(id) => self.checked.enums[*id].name.clone(),
+            _ => unreachable!("only structs and enums conform"),
+        };
+        let fns: Vec<PointerValue> = self.checked.ifaces[iface]
+            .methods
+            .iter()
+            .map(|(m, _)| self.methods[&(owner.clone(), m.clone())].as_global_value().as_pointer_value())
+            .collect();
+        let arr_ty = self.ptr_ty().array_type(fns.len() as u32);
+        let g = self.module.add_global(arr_ty, None, &name);
+        g.set_linkage(Linkage::Internal);
+        g.set_constant(true);
+        g.set_initializer(&self.ptr_ty().const_array(&fns));
+        g.as_pointer_value()
+    }
+
+    /// Calls method `index` of interface `iface` on interface value `v`
+    /// (borrowed): looks the method up in the value's table, and passes it
+    /// the boxed value as the receiver.
+    fn iface_call<'e>(
+        &mut self,
+        iface: usize,
+        index: usize,
+        v: Val<'ctx>,
+        info: &CallInfo,
+        arg: &dyn Fn(ArgRef) -> &'e Expr,
+    ) -> Option<Val<'ctx>> {
+        let sig = self.checked.ifaces[iface].methods[index].1.clone();
+        let s = v.into_struct_value();
+        let vt = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
+        let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+        let recv = self.box_data(bx);
+        let mut vals = Vec::new();
+        for (i, p) in sig.params.iter().enumerate() {
+            let v = self.expr_as(arg(info.args[i].expect("interface methods have no defaults")), &p.ty).unwrap();
+            self.hold(v, &p.ty);
+            vals.push(v);
+        }
+        self.unhold(vals.len());
+        let ptys: Vec<Ty> = sig.params.iter().map(|p| p.ty.clone()).collect();
+        let fn_ty = self.fn_type(&ptys, &sig.ret, true);
+        let slot = unsafe {
+            self.b
+                .build_gep(self.ptr_ty().array_type(self.checked.ifaces[iface].methods.len() as u32), vt, &[
+                    self.i64().const_zero(),
+                    self.i64().const_int(index as u64, false),
+                ], "")
+                .unwrap()
+        };
+        let fp = self.b.build_load(self.ptr_ty(), slot, "method").unwrap().into_pointer_value();
+        let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), recv.into()];
+        all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
+        self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic()
+    }
+
     /// `adapter(box, i64 flag)`: calls the `fn(Bool)` block in the box.
     fn bool_adapter(&mut self) -> PointerValue<'ctx> {
         let name = "tsl_h_bool_done";
@@ -4280,7 +4391,7 @@ fn int_pred(op: BinOp) -> IntPredicate {
 
 fn crate_equatable(t: &Ty) -> bool {
     match t {
-        Ty::Fn(..) | Ty::View | Ty::Any | Ty::Void | Ty::Range => false,
+        Ty::Fn(..) | Ty::View | Ty::Any | Ty::Void | Ty::Range | Ty::Iface(_) => false,
         Ty::List(t) | Ty::Opt(t) => crate_equatable(t),
         Ty::Dict(k, v) => crate_equatable(k) && crate_equatable(v),
         _ => true,

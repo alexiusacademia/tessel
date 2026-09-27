@@ -177,6 +177,33 @@ method can `match self { … }`). `self` is not a keyword, just a name that
 exists inside methods. Methods that change fields may only be called on a
 `var`, `state` or `bind`.
 
+## 6b. Interfaces
+
+```tessel
+interface Shape {
+    fn area() -> Float
+}
+
+struct Circle: Shape {
+    radius: Float
+    fn area() -> Float { pi * radius * radius }
+}
+
+let shapes: [Shape] = [Circle(radius: 1.0), Rect(width: 2.0, height: 3.0)]
+```
+
+- An interface lists method signatures; structs and enums conform with
+  `: A, B` and must have each method with the same labels, types and result.
+- An interface is a type. A conforming value converts to it where the
+  interface is expected (arguments, results, list items, fields, optionals).
+- Interface methods can't change the value, so an interface value can share
+  one box between copies and stay a plain value. For the same reason it's not
+  equatable, and it can't be saved (loading wouldn't know the type).
+- Implementation: an interface value is `{method table, box}`; the box holds
+  the concrete value, and the table (one per type and interface) lists that
+  type's methods in the interface's order. A call loads the method from the
+  table and passes the box's contents as the receiver.
+
 ## 7. Control flow
 
 `if`, `match` and `for` work the same inside functions and inside views.

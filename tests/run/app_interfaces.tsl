@@ -1,0 +1,57 @@
+// Interface values in an app's state and a view's parameters.
+
+interface Tool {
+    fn label() -> String
+    fn apply(value: Int) -> Int
+}
+
+struct Adder: Tool {
+    amount: Int
+
+    fn label() -> String {
+        "+{amount}"
+    }
+
+    fn apply(value: Int) -> Int {
+        value + amount
+    }
+}
+
+enum Doubler: Tool {
+    twice
+    thrice
+
+    fn label() -> String {
+        match self {
+            .twice -> "×2"
+            .thrice -> "×3"
+        }
+    }
+
+    fn apply(value: Int) -> Int {
+        match self {
+            .twice -> value * 2
+            .thrice -> value * 3
+        }
+    }
+}
+
+view ToolButton(tool: Tool, value: bind Int) {
+    Button(tool.label()) { value = tool.apply(value: value) }
+}
+
+app Tools(width: 360, height: 200) {
+    state value = 1
+    state tools: [Tool] = [Adder(amount: 1), Doubler.twice, Doubler.thrice]
+    state last: Tool? = nil
+
+    VStack(spacing: 8) {
+        Text("{value}")
+        HStack {
+            for tool in tools {
+                ToolButton(tool: tool, value: value)
+            }
+        }
+        Button("Add +10") { tools.append(Adder(amount: 10)) }
+    }
+}

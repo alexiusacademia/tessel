@@ -1,0 +1,14 @@
+Root
+  View
+    VStack
+      Text "32"
+      HStack
+        View
+          Button "+1"
+        View
+          Button "×2"
+        View
+          Button "×3"
+        View
+          Button "+10"
+      Button "Add +10"

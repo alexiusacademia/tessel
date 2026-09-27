@@ -1,0 +1,45 @@
+interface Shape {
+    fn area() -> Float
+    fn scaled(by: Float) -> Float
+}
+
+interface Bad {
+    fn f(x: Int = 1) // error: can't have default values
+}
+
+struct Circle: Shape { // error: has no method `scaled`
+    radius: Float
+    fn area() -> Float { radius }
+}
+
+struct Square: Shape {
+    side: Float
+    fn area() -> Int { 1 } // error: doesn't match what `Shape` requires
+    fn scaled(by: Float) -> Float { side * by }
+}
+
+struct Counter: Shape {
+    n: Float
+    fn area() -> Float { // error: changes `Counter`
+        n = n + 1.0
+        n
+    }
+    fn scaled(by: Float) -> Float { n }
+}
+
+struct Plain: Circle { // error: isn't an interface
+    x: Int
+}
+
+struct Other: Missing { // error: unknown interface
+    x: Int
+}
+
+fn main() {
+    let a: Shape = Square(side: 1.0)
+    let b: Shape = Plain(x: 1) // error: expected `Shape`
+    let s = Shape() // error: can't be created directly
+    print(a == a) // error: can't be compared
+    print(a.perimeter()) // error: has no method `perimeter`
+    let t = toJson(a) // error: can't be saved
+}

@@ -53,7 +53,7 @@ an identifier (see below).
 ### Keywords
 
 ```text
-app  view  struct  enum  fn
+app  view  struct  enum  interface  fn
 let  var  state  bind
 if  else  for  while  in  match  return  break  continue
 true  false  nil
@@ -143,7 +143,7 @@ A program is a folder of `.tsl` files. Each file is a list of declarations:
 
 ```text
 file = NL? (item (NL item)*)? NL? ;
-item = app_decl | view_decl | struct_decl | enum_decl | fn_decl ;
+item = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl ;
 ```
 
 ### app and view
@@ -175,7 +175,8 @@ param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 ### struct
 
 ```text
-struct_decl = "struct" IDENT "{" members "}" ;
+struct_decl = "struct" IDENT conforms? "{" members "}" ;
+conforms    = ":" IDENT ("," IDENT)* ;
 field       = IDENT ":" type ("=" expr)? ;
 members     = (separator* (field | fn_decl))* separator* ;   (for structs)
 separator   = NL | "," ;
@@ -187,13 +188,23 @@ Fields and methods are separated by line breaks or commas:
 ### enum
 
 ```text
-enum_decl = "enum" IDENT "{" members "}" ;
+enum_decl = "enum" IDENT conforms? "{" members "}" ;
 case      = IDENT params? ;
 members   = (separator* (case | fn_decl))* separator* ;      (for enums)
 ```
 
 A case may carry values, declared like parameters:
 `enum Shape { circle(radius: Float), square(side: Float) }`.
+
+### interface
+
+```text
+interface_decl = "interface" IDENT "{" (separator* requirement)* separator* "}" ;
+requirement    = "fn" IDENT params ("->" type)? ;
+```
+
+A requirement is a method's signature without a body. Its parameters can't
+have default values. See [Interfaces](/language/interfaces/).
 
 ## Types
 

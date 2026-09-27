@@ -1,0 +1,10 @@
+a circle of radius 2.0: 12.57
+a rect 3.0×4.0: 12.00
+a triangle: 6.00
+total 30.57
+circle, equilateral
+largest: the circle of radius 2.0
+largest of none: 0.0
+demo: 4 shapes, highlight a circle of radius 1.0
+4 and 3
+6.0 < 12.0 < 12.6 < 100.0

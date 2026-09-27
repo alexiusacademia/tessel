@@ -22,6 +22,8 @@ pub enum Ty {
     Fn(Vec<Ty>, Box<Ty>),
     Struct(usize),
     Enum(usize),
+    /// A value of any type that conforms to the interface.
+    Iface(usize),
     /// Only in built-in signatures: accepts any value (checked specially).
     Any,
 }
@@ -130,6 +132,15 @@ pub struct StructDef {
 pub struct CaseDef {
     pub name: String,
     pub fields: Vec<ParamSig>,
+}
+
+/// An `interface`: the methods its types have.
+#[derive(Debug)]
+pub struct IfaceDef {
+    pub name: String,
+    pub span: Span,
+    /// Required methods, in declaration order (the order of the method table).
+    pub methods: Vec<(String, FnSig)>,
 }
 
 #[derive(Debug)]

@@ -27,6 +27,9 @@ pub struct Checked {
     pub views: HashMap<String, Vec<ParamSig>>,
     /// Signatures of functions declared inside views: (view, function).
     pub view_fns: HashMap<(String, String), FnSig>,
+    pub ifaces: Vec<IfaceDef>,
+    /// Which struct or enum conforms to which interface.
+    pub conforms: Vec<(Ty, usize)>,
     /// What fits where the completion mark is (see `complete`), if the
     /// checker got there.
     pub completion: Option<Vec<Suggestion>>,
@@ -75,7 +78,7 @@ impl SuggestionKind {
 }
 
 const KEYWORDS: &[&str] = &[
-    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "while", "break", "continue", "fn", "struct", "enum", "view",
+    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "while", "break", "continue", "fn", "struct", "enum", "interface", "view",
     "app", "true", "false", "nil",
 ];
 
@@ -104,6 +107,7 @@ impl Checked {
             }
             Ty::Struct(id) => self.structs[*id].name.clone(),
             Ty::Enum(id) => self.enums[*id].name.clone(),
+            Ty::Iface(id) => self.ifaces[*id].name.clone(),
         }
     }
 }
@@ -115,6 +119,9 @@ pub enum Callee {
     Fn(String),
     /// A struct or enum method; the receiver is the callee's object.
     Method { owner: Ty, name: String },
+    /// A method called through an interface value: the interface and the
+    /// method's index in it.
+    IfaceMethod { iface: usize, index: usize },
     /// A method called by bare name inside another method of the same type.
     SelfMethod { owner: Ty, name: String },
     /// A function declared inside a view.
@@ -186,6 +193,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         loop_places: HashSet::new(),
         view_fns: HashMap::new(),
         completion: None,
+        ifaces: Vec::new(),
+        conforms: Vec::new(),
         loops: 0,
         outer_loops: 0,
     };
@@ -193,6 +202,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
     c.signatures(program, &ids);
     c.check_main(program, require_entry);
     c.check_recursive_structs();
+    c.check_conformance();
     c.bodies(program, &ids);
     let fns = program
         .items
@@ -221,6 +231,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
             })
             .collect(),
         view_fns: c.view_fns,
+        conforms: c.conforms.iter().map(|(t, i, _)| (t.clone(), *i)).collect(),
+        ifaces: c.ifaces,
         completion: c.completion,
     }
 }
@@ -229,6 +241,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
 enum Global {
     Struct(usize),
     Enum(usize),
+    Iface(usize),
     Fn(usize),
     View(usize),
     App,
@@ -302,6 +315,9 @@ struct Checker<'a> {
     loop_places: HashSet<Span>,
     view_fns: HashMap<(String, String), FnSig>,
     completion: Option<Vec<Suggestion>>,
+    ifaces: Vec<IfaceDef>,
+    /// (type, interface, where the type says it conforms)
+    conforms: Vec<(Ty, usize, Span)>,
     /// How many loops enclose the code being checked, within the current
     /// function or closure (`break` and `continue` need one).
     loops: usize,
@@ -340,6 +356,7 @@ impl Checker<'_> {
             }
             Ty::Struct(id) => self.structs[*id].name.clone(),
             Ty::Enum(id) => self.enums[*id].name.clone(),
+            Ty::Iface(id) => self.ifaces[*id].name.clone(),
         }
     }
 
@@ -362,7 +379,7 @@ impl Checker<'_> {
             (Ty::Float, Ty::Int) => Some("convert it with `Float(…)`".to_string()),
             (Ty::Int, Ty::Float) => Some("convert it with `Int(…)`, which drops the fraction".to_string()),
             (Ty::Str, Ty::Int | Ty::Float | Ty::Bool) => Some("turn it into text with \"{…}\"".to_string()),
-            (e, Ty::Opt(inner)) if fits(inner, e) => Some(
+            (e, Ty::Opt(inner)) if self.fits(inner, e) => Some(
                 "this value might be `nil`; unwrap it with `if let`, or give a default with `?? …`".to_string(),
             ),
             _ => None,
@@ -460,6 +477,10 @@ impl Checker<'_> {
                     self.enums.push(EnumDef { name: d.name.name.clone(), span, cases: vec![], methods: vec![] });
                     (Global::Enum(self.enums.len() - 1), Some(self.enums.len() - 1))
                 }
+                Item::Interface(d) => {
+                    self.ifaces.push(IfaceDef { name: d.name.name.clone(), span: d.name.span, methods: vec![] });
+                    (Global::Iface(self.ifaces.len() - 1), Some(self.ifaces.len() - 1))
+                }
                 Item::Fn(_) => {
                     self.fns.push(FnSig { params: vec![], ret: Ty::Void });
                     (Global::Fn(self.fns.len() - 1), Some(self.fns.len() - 1))
@@ -496,6 +517,70 @@ impl Checker<'_> {
 
     // ===== pass 2: signatures =====
 
+    /// Records the interfaces in `: A, B` after a struct or enum name.
+    fn conformances(&mut self, names: &[Ident], ty: Ty) {
+        for n in names {
+            match self.globals.get(&n.name).copied() {
+                Some(Global::Iface(i)) => {
+                    if self.conforms.iter().any(|(t, j, _)| *t == ty && *j == i) {
+                        self.error(n.span, format!("`{}` is listed twice", n.name));
+                    } else {
+                        self.conforms.push((ty.clone(), i, n.span));
+                    }
+                }
+                Some(_) => {
+                    self.error(n.span, format!("`{}` isn't an interface", n.name))
+                        .help("only interfaces can go after `:`, like `struct Circle: Shape`");
+                }
+                None => {
+                    self.error(n.span, format!("unknown interface `{}`", n.name))
+                        .help(format!("declare it: `interface {} {{ fn … }}`", n.name));
+                }
+            }
+        }
+    }
+
+    /// Each type has every method its interfaces require, with the same
+    /// parameters and result, and those methods don't change the value.
+    fn check_conformance(&mut self) {
+        let conforms = self.conforms.clone();
+        for (ty, iface, span) in conforms {
+            let (tname, methods) = match &ty {
+                Ty::Struct(id) => (self.structs[*id].name.clone(), self.structs[*id].methods.clone()),
+                Ty::Enum(id) => (self.enums[*id].name.clone(), self.enums[*id].methods.clone()),
+                _ => continue,
+            };
+            let iname = self.ifaces[iface].name.clone();
+            for (mname, want) in self.ifaces[iface].methods.clone() {
+                let wanted = format!("fn {mname}{}", self.sig_text(&want.params, &want.ret));
+                let Some(m) = methods.iter().find(|m| m.name == mname) else {
+                    self.error(span, format!("`{tname}` says it's a `{iname}`, but has no method `{mname}`"))
+                        .help(format!("add it to `{tname}`: `{wanted} {{ … }}`"));
+                    continue;
+                };
+                let same_params = m.sig.params.len() == want.params.len()
+                    && m.sig.params.iter().zip(&want.params).all(|(a, b)| {
+                        a.label == b.label && a.unlabeled == b.unlabeled && a.ty == b.ty
+                    });
+                if !same_params || m.sig.ret != want.ret {
+                    let have = format!("fn {mname}{}", self.sig_text(&m.sig.params, &m.sig.ret));
+                    self.error(m.span, format!("`{mname}` doesn't match what `{iname}` requires"))
+                        .label(format!("this is `{have}`"))
+                        .help(format!("`{iname}` requires `{wanted}`"));
+                } else if m.mutating {
+                    self.error(m.span, format!("`{mname}` changes `{tname}`, so it can't be used through `{iname}`"))
+                        .help("interface methods can't change the value; return a changed copy instead");
+                }
+            }
+        }
+    }
+
+    /// Does `found` fit where `expected` is wanted (including a type that
+    /// conforms to an expected interface)?
+    fn fits(&self, found: &Ty, expected: &Ty) -> bool {
+        fits_with(found, expected, &self.conforms)
+    }
+
     fn resolve(&mut self, t: &TypeExpr) -> Ty {
         match t {
             TypeExpr::Named(id) => match id.name.as_str() {
@@ -509,6 +594,7 @@ impl Checker<'_> {
                 name => match self.globals.get(name) {
                     Some(Global::Struct(i)) => Ty::Struct(*i),
                     Some(Global::Enum(i)) => Ty::Enum(*i),
+                    Some(Global::Iface(i)) => Ty::Iface(*i),
                     Some(Global::View(_)) => {
                         self.error(id.span, format!("`{name}` is a view, not a type"))
                             .help("use `View` for a parameter that accepts any view");
@@ -523,7 +609,7 @@ impl Checker<'_> {
                         let types: Vec<String> = self
                             .globals
                             .iter()
-                            .filter(|(_, g)| matches!(g, Global::Struct(_) | Global::Enum(_)))
+                            .filter(|(_, g)| matches!(g, Global::Struct(_) | Global::Enum(_) | Global::Iface(_)))
                             .map(|(n, _)| n.clone())
                             .collect();
                         names.extend(types.iter().map(String::as_str));
@@ -642,6 +728,7 @@ impl Checker<'_> {
                     let methods = self.methods(&d.methods, &names, &d.name.name);
                     self.structs[id].fields = fields;
                     self.structs[id].methods = methods;
+                    self.conformances(&d.conforms, Ty::Struct(id));
                 }
                 Item::Enum(d) => {
                     let mut cases: Vec<CaseDef> = Vec::new();
@@ -657,6 +744,26 @@ impl Checker<'_> {
                     let methods = self.methods(&d.methods, &names, &d.name.name);
                     self.enums[id].cases = cases;
                     self.enums[id].methods = methods;
+                    self.conformances(&d.conforms, Ty::Enum(id));
+                }
+                Item::Interface(d) => {
+                    let mut methods: Vec<(String, FnSig)> = Vec::new();
+                    for m in &d.methods {
+                        if methods.iter().any(|(n, _)| *n == m.name.name) {
+                            self.error(m.name.span, format!("`{}` already has a method named `{}`", d.name.name, m.name.name));
+                            continue;
+                        }
+                        for p in &m.params {
+                            if let Some(d) = &p.default {
+                                self.error(d.span, "interface methods can't have default values")
+                                    .help("every type's method takes the value; give the default at the call instead");
+                            }
+                        }
+                        let params = self.params_sig(&m.params, false);
+                        let ret = m.ret.as_ref().map_or(Ty::Void, |t| self.resolve(t));
+                        methods.push((m.name.name.clone(), FnSig { params, ret }));
+                    }
+                    self.ifaces[id].methods = methods;
                 }
                 Item::Fn(f) => self.fns[id] = self.fn_sig(f),
                 Item::View(v) => self.views[id] = self.params_sig(&v.params, true),
@@ -780,6 +887,7 @@ impl Checker<'_> {
                     self.view_body(&[], &[], &app.body, &app.name);
                 }
                 _ if id.is_none() => {}
+                Item::Interface(_) => {}
                 Item::Struct(d) => {
                     let id = id.unwrap();
                     for f in &d.fields {
@@ -1232,7 +1340,7 @@ impl Checker<'_> {
     /// Checks `e` against `expected`, reporting a mismatch.
     fn expect(&mut self, e: &Expr, expected: &Ty) -> Ty {
         let t = self.expr(e, Some(expected));
-        if !fits(&t, expected) {
+        if !self.fits(&t, expected) {
             self.mismatch(e.span, expected, &t);
         }
         t
@@ -1453,6 +1561,11 @@ impl Checker<'_> {
                 self.error(span, format!("`{n}` is a view; to show it, call it: `{n}(…)`"));
                 Ty::Error
             }
+            Some(Global::Iface(_)) => {
+                self.error(span, format!("`{n}` is an interface, a type rather than a value"))
+                    .help(format!("use it in a type, like `let shapes: [{n}] = […]`"));
+                Ty::Error
+            }
             Some(Global::App) => {
                 self.error(span, format!("`{n}` is the app and can't be used as a value"));
                 Ty::Error
@@ -1535,7 +1648,7 @@ impl Checker<'_> {
             }
             BinOp::Eq | BinOp::Ne => {
                 let (lt, rt) = self.operand_pair(l, r, None);
-                if !(fits(&rt, &lt) || fits(&lt, &rt)) {
+                if !(self.fits(&rt, &lt) || self.fits(&lt, &rt)) {
                     let (a, b) = (self.a(&lt), self.a(&rt));
                     self.error(l.span.to(r.span), format!("can't compare {a} with {b}"))
                         .help("both sides of `==` must have the same type");
@@ -1589,7 +1702,7 @@ impl Checker<'_> {
                 match lt {
                     Ty::Opt(inner) => {
                         let rt = self.expr(r, Some(&inner));
-                        if fits(&rt, &inner) {
+                        if self.fits(&rt, &inner) {
                             *inner
                         } else if rt == Ty::Opt(inner.clone()) {
                             rt
@@ -2022,6 +2135,11 @@ impl Checker<'_> {
                 self.error(name_span, format!("enums can't be called; pick a case, like `{n}.{example}`"));
                 Ty::Error
             }
+            Some(Global::Iface(_)) => {
+                self.error(name_span, format!("`{n}` is an interface, so it can't be created directly"))
+                    .help(format!("create a value of a type that conforms to it, like `struct Circle: {n}`"));
+                Ty::Error
+            }
             Some(Global::App) => {
                 self.error(name_span, "the app can't be shown inside a view")
                     .help("move its content into a `view` and show that");
@@ -2226,6 +2344,10 @@ impl Checker<'_> {
                 Ok(())
             }
             Ty::Fn(..) => Err("functions can't be saved".into()),
+            Ty::Iface(i) => Err(format!(
+                "`{}` is an interface, and values of an interface can't be saved (which type to load isn't known)",
+                self.ifaces[*i].name
+            )),
             Ty::View => Err("views can't be saved".into()),
             Ty::Void | Ty::Any => Err("this has no value to save".into()),
         }
@@ -2390,6 +2512,22 @@ impl Checker<'_> {
                     }
                 }
             }
+            Ty::Iface(id) => {
+                let def = &self.ifaces[*id];
+                match def.methods.iter().position(|(m, _)| m == n) {
+                    Some(index) => {
+                        let sig = def.methods[index].1.clone();
+                        self.set_callee(Callee::IfaceMethod { iface: *id, index });
+                        self.args(&what, &sig.params, args, trailing, span);
+                        sig.ret
+                    }
+                    None => {
+                        let (iname, names) = (def.name.clone(), def.methods.iter().map(|(m, _)| m.clone()).collect());
+                        self.no_member(name, &format!("`{iname}` has no method `{n}`"), names);
+                        Ty::Error
+                    }
+                }
+            }
             Ty::List(elem) if n == "map" => {
                 self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                 self.map_call(elem, args, trailing, span)
@@ -2463,7 +2601,7 @@ impl Checker<'_> {
                 self.error(f.span, "the `map` block must produce a value for each item");
                 Ty::Error
             }
-            Ty::Fn(ps, r) if ps.len() == 1 && fits(elem, &ps[0]) => Ty::list(*r),
+            Ty::Fn(ps, r) if ps.len() == 1 && self.fits(elem, &ps[0]) => Ty::list(*r),
             Ty::Error => Ty::Error,
             t => {
                 let (e, found) = (self.show(elem), self.a(&t));
@@ -2773,6 +2911,7 @@ impl Checker<'_> {
                 Global::View(i) => (format!("view {}", self.sig_text(&self.views[i], &Ty::Void)), K::View),
                 Global::Struct(_) => ("struct".to_string(), K::Type),
                 Global::Enum(_) => ("enum".to_string(), K::Type),
+                Global::Iface(_) => ("interface".to_string(), K::Type),
                 Global::App => continue,
             };
             items.push(Self::item(&name, detail, kind));
@@ -2858,6 +2997,11 @@ impl Checker<'_> {
                 items
             }
             Ty::Enum(id) => methods(self, &self.enums[*id].methods),
+            Ty::Iface(id) => self.ifaces[*id]
+                .methods
+                .iter()
+                .map(|(n, sig)| Self::item(n, self.sig_text(&sig.params, &sig.ret), K::Method))
+                .collect(),
             Ty::View => builtins::member_names(t)
                 .iter()
                 .map(|n| {
@@ -2894,22 +3038,23 @@ fn strip_opt(t: &Ty) -> &Ty {
 }
 
 /// Can a value of type `found` be used where `expected` is wanted?
-fn fits(found: &Ty, expected: &Ty) -> bool {
+fn fits_with(found: &Ty, expected: &Ty, conforms: &[(Ty, usize, Span)]) -> bool {
     if found.has_error() || expected.has_error() || *expected == Ty::Any || found == expected {
         return true;
     }
     match (found, expected) {
-        (_, Ty::Opt(inner)) => fits(found, inner),
+        (_, Ty::Opt(inner)) => fits_with(found, inner, conforms),
         (Ty::Fn(fp, fr), Ty::Fn(ep, er)) => {
-            fp.len() == ep.len() && fp.iter().zip(ep).all(|(a, b)| a == b || a.has_error()) && fits(fr, er)
+            fp.len() == ep.len() && fp.iter().zip(ep).all(|(a, b)| a == b || a.has_error()) && fits_with(fr, er, conforms)
         }
+        (Ty::Struct(_) | Ty::Enum(_), Ty::Iface(i)) => conforms.iter().any(|(t, j, _)| t == found && j == i),
         _ => false,
     }
 }
 
 fn equatable(t: &Ty) -> bool {
     match t {
-        Ty::Fn(..) | Ty::View | Ty::Any => false,
+        Ty::Fn(..) | Ty::View | Ty::Any | Ty::Iface(_) => false,
         Ty::List(t) | Ty::Opt(t) => equatable(t),
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,

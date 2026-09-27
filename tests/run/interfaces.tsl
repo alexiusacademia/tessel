@@ -1,0 +1,123 @@
+// Interfaces: types that conform, values of an interface type in lists,
+// optionals, fields and state, and calls that go to each type's method.
+
+interface Shape {
+    fn area() -> Float
+    fn describe(prefix: String) -> String
+}
+
+interface Named {
+    fn name() -> String
+}
+
+struct Circle: Shape, Named {
+    radius: Float
+
+    fn area() -> Float {
+        pi * radius * radius
+    }
+
+    fn describe(prefix: String) -> String {
+        "{prefix} circle of radius {radius}"
+    }
+
+    fn name() -> String {
+        "circle"
+    }
+}
+
+struct Rect: Shape {
+    width: Float
+    height: Float
+    label: String = "rect"
+
+    fn area() -> Float {
+        width * height
+    }
+
+    fn describe(prefix: String) -> String {
+        "{prefix} {label} {width}×{height}"
+    }
+}
+
+enum Tri: Shape, Named {
+    equilateral(side: Float)
+    right(a: Float, b: Float)
+
+    fn area() -> Float {
+        match self {
+            .equilateral(s) -> sqrt(3.0) / 4.0 * s * s
+            .right(a, b) -> a * b / 2.0
+        }
+    }
+
+    fn describe(prefix: String) -> String {
+        "{prefix} triangle"
+    }
+
+    fn name() -> String {
+        match self {
+            .equilateral -> "equilateral"
+            .right -> "right"
+        }
+    }
+}
+
+struct Drawing {
+    title: String
+    shapes: [Shape]
+    highlight: Shape? = nil
+}
+
+fn largest(shapes: [Shape]) -> Shape? {
+    var best: Shape? = nil
+    var bestArea = -1.0
+    for s in shapes {
+        if s.area() > bestArea {
+            best = s
+            bestArea = s.area()
+        }
+    }
+    best
+}
+
+fn makeShape(big: Bool) -> Shape {
+    if big {
+        return Rect(width: 10.0, height: 10.0, label: "big")
+    }
+    Circle(radius: 1.0)
+}
+
+fn main() {
+    let shapes: [Shape] = [Circle(radius: 2.0), Rect(width: 3.0, height: 4.0), Tri.right(a: 3.0, b: 4.0)]
+    for s in shapes {
+        print("{s.describe(prefix: "a")}: {s.area().formatted(decimals: 2)}")
+    }
+    var total = 0.0
+    for s in shapes {
+        total += s.area()
+    }
+    print("total {total.formatted(decimals: 2)}")
+
+    let names: [Named] = [Circle(radius: 1.0), Tri.equilateral(side: 2.0)]
+    print(names.map { n in n.name() }.joined(separator: ", "))
+
+    if let big = largest(shapes: shapes) {
+        print("largest: {big.describe(prefix: "the")}")
+    }
+    let none: [Shape] = []
+    print("largest of none: {largest(shapes: none)?.area() ?? 0.0}")
+
+    var d = Drawing(title: "demo", shapes: shapes)
+    d.shapes.append(makeShape(big: true))
+    d.highlight = makeShape(big: false)
+    print("{d.title}: {d.shapes.count} shapes, highlight {d.highlight?.describe(prefix: "a") ?? "none"}")
+
+    // Copies are independent values.
+    var copy = d.shapes
+    copy.removeFirst()
+    print("{d.shapes.count} and {copy.count}")
+
+    let sorted = d.shapes.sorted(by: { a, b in a.area() < b.area() })
+    print(sorted.map { s in s.area().formatted(decimals: 1) }.joined(separator: " < "))
+}

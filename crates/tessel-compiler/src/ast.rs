@@ -17,6 +17,7 @@ pub struct Program {
 pub enum Item {
     Struct(StructDecl),
     Enum(EnumDecl),
+    Interface(InterfaceDecl),
     Fn(FnDecl),
     View(ViewDecl),
     App(AppDecl),
@@ -27,6 +28,7 @@ impl Item {
         match self {
             Item::Struct(d) => &d.name,
             Item::Enum(d) => &d.name,
+            Item::Interface(d) => &d.name,
             Item::Fn(d) => &d.name,
             Item::View(d) => &d.name,
             Item::App(d) => &d.name,
@@ -37,6 +39,8 @@ impl Item {
 #[derive(Debug)]
 pub struct StructDecl {
     pub name: Ident,
+    /// Interfaces it conforms to (`struct Circle: Shape`).
+    pub conforms: Vec<Ident>,
     pub fields: Vec<FieldDecl>,
     pub methods: Vec<FnDecl>,
 }
@@ -51,8 +55,25 @@ pub struct FieldDecl {
 #[derive(Debug)]
 pub struct EnumDecl {
     pub name: Ident,
+    pub conforms: Vec<Ident>,
     pub cases: Vec<CaseDecl>,
     pub methods: Vec<FnDecl>,
+}
+
+/// `interface Shape { fn area() -> Float }`: methods a type must have.
+#[derive(Debug)]
+pub struct InterfaceDecl {
+    pub name: Ident,
+    pub methods: Vec<MethodReq>,
+}
+
+/// A method an interface requires: its signature, without a body.
+#[derive(Debug)]
+pub struct MethodReq {
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub ret: Option<TypeExpr>,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -219,6 +240,7 @@ fn item_exprs<'a>(item: &'a Item, f: &mut dyn FnMut(&'a Expr)) {
             }
         }
         Item::Enum(d) => d.methods.iter().for_each(|m| block(&m.body, f)),
+        Item::Interface(_) => {}
         Item::Fn(d) => block(&d.body, f),
         Item::View(d) => block(&d.body, f),
         Item::App(d) => {
