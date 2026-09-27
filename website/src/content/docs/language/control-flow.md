@@ -188,15 +188,106 @@ print(prices[0])
 When the list can't change (a `let`, a parameter, or the result of a call
 like `filter`), the loop variable is a constant.
 
-### No while, break or continue
+## while loops
 
-Tessel doesn't have `while` loops, `break` or `continue` yet. Some ways to
-get the same effect:
+`while` repeats its body as long as a condition is true. It checks the
+condition before each round, so the body may not run at all:
 
-- To skip an item, wrap the body in an `if`.
-- To stop at the first match, put the loop in a function and `return` from
-  it, or use a list method like `first(where:)`.
-- To repeat something a fixed number of times, loop over a range.
+```tessel
+fn collatzSteps(n: Int) -> Int {
+    var steps = 0
+    var x = n
+    while x != 1 {
+        x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 }
+        steps += 1
+    }
+    steps
+}
+
+fn main() {
+    print(collatzSteps(n: 27))
+}
+```
+
+```text
+111
+```
+
+Use `for` when you're going through a list or a range, and `while` when you
+don't know in advance how many rounds it takes.
+
+### while let
+
+`while let` runs the body as long as an optional has a value, with the value
+named inside, like [`if let`](#if-let) in a loop:
+
+```tessel
+fn main() {
+    var queue = ["one", "two", "three"]
+    while let next = queue.first {
+        queue.removeFirst()
+        print("took {next}")
+    }
+}
+```
+
+```text
+took one
+took two
+took three
+```
+
+## break and continue
+
+In any loop, `for` or `while`:
+
+- `continue` skips the rest of the body and goes on with the next round.
+- `break` leaves the loop straight away.
+
+```tessel
+fn main() {
+    for n in 1..100 {
+        if n % 2 == 0 {
+            continue       // skip even numbers
+        }
+        if n > 7 {
+            break          // done
+        }
+        print(n)
+    }
+}
+```
+
+```text
+1
+3
+5
+7
+```
+
+In nested loops, they apply to the innermost one. `while true { … }` with a
+`break` inside is a loop that decides when to stop in the middle:
+
+```tessel
+fn main() {
+    var guess = 1
+    while true {
+        if guess * guess > 50 {
+            break
+        }
+        guess += 1
+    }
+    print("{guess} squared is the first square above 50")
+}
+```
+
+```text
+8 squared is the first square above 50
+```
+
+A block (`{ x in … }`) is a small function of its own, so `break` and
+`continue` inside it can't leave a loop outside it; use `return` to leave the
+block. And `return` still leaves the whole function, from inside any loop:
 
 ```tessel
 fn firstNegative(numbers: [Int]) -> Int? {
@@ -216,6 +307,10 @@ fn main() {
 ```text
 -2
 ```
+
+A view body can't use `while`, `break` or `continue`: it describes what to
+show, so it uses `for` to show views for each item, and `if` to choose. Loops
+with `while`, `break` and `continue` belong in functions and actions.
 
 ## match
 

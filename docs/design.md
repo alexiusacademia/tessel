@@ -191,7 +191,13 @@ match shape {
 
 for item in items { print(item) }
 for i in 0..10 { … }           // half-open range
+while x != 1 { … }
+while let next = queue.first { … }
 ```
+
+- `break` leaves the innermost `for` or `while`; `continue` goes on with its
+  next round. Neither crosses a closure (a block is a function of its own).
+  View bodies use only `if`, `match` and `for`: they describe what to show.
 
 - `if` and `match` are expressions: they produce a value when every branch
   does. `match` must cover every case.

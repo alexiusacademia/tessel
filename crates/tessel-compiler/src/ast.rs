@@ -129,6 +129,10 @@ pub enum Stmt {
     Assign { target: Expr, op: AssignOp, value: Expr, span: Span },
     Return { value: Option<Expr>, span: Span },
     For { var: Ident, iter: Expr, body: Block, span: Span },
+    /// `while cond { … }`, also `while let x = … { … }`.
+    While { cond: Cond, body: Block, span: Span },
+    Break(Span),
+    Continue(Span),
     Expr(Expr),
 }
 
@@ -245,6 +249,13 @@ pub fn block_exprs<'a>(b: &'a Block, f: &mut dyn FnMut(&'a Expr)) {
                 expr_tree(iter, f);
                 block_exprs(body, f);
             }
+            Stmt::While { cond, body, .. } => {
+                match cond {
+                    Cond::Expr(c) | Cond::Let(_, _, c) => expr_tree(c, f),
+                }
+                block_exprs(body, f);
+            }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Expr(e) => expr_tree(e, f),
         }
     }

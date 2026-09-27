@@ -18,7 +18,7 @@ const CASE: Rgba = Rgba([57, 0, 160, 255]);
 
 const KEYWORDS: &[&str] = &[
     "app", "view", "struct", "enum", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
-    "return", "true", "false", "nil",
+    "return", "while", "break", "continue", "true", "false", "nil",
 ];
 
 /// Colored ranges (byte offsets) for `text`. Text not covered is plain.

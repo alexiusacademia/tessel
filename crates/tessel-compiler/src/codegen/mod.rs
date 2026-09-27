@@ -203,6 +203,15 @@ struct FnCtx<'ctx> {
     record: Option<Record<'ctx>>,
 }
 
+/// Where `continue` and `break` jump in a loop of function `func`; `depth`
+/// is the number of scopes outside the loop body (whose variables stay).
+struct LoopTarget<'ctx> {
+    func: FunctionValue<'ctx>,
+    next: BasicBlock<'ctx>,
+    done: BasicBlock<'ctx>,
+    depth: usize,
+}
+
 /// A view's persistent state: the data of a box holding a struct of its
 /// `state` values.
 #[derive(Clone)]
@@ -233,6 +242,8 @@ struct Gen<'ctx, 'a> {
     strings: HashMap<String, PointerValue<'ctx>>,
     locs: HashMap<(u32, u32), PointerValue<'ctx>>,
     closures: usize,
+    /// Loops being emitted, innermost last: where `break` and `continue` go.
+    loops: Vec<LoopTarget<'ctx>>,
     stack: Vec<FnCtx<'ctx>>,
 
     /// Views by name (the `app` included), and what's compiled for them.
@@ -281,6 +292,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             strings: HashMap::new(),
             locs: HashMap::new(),
             closures: 0,
+            loops: Vec::new(),
             stack: Vec::new(),
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
@@ -1464,6 +1476,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.continue_dead();
             }
             Stmt::For { var, iter, body, .. } => self.for_loop(var, iter, body),
+            Stmt::While { cond, body, .. } => self.while_loop(cond, body),
+            Stmt::Break(_) | Stmt::Continue(_) => {
+                let func = self.func();
+                let Some(target) = self.loops.iter().rev().find(|l| l.func == func) else {
+                    unreachable!("checked: `break` is inside a loop")
+                };
+                let (to, depth) = (if matches!(s, Stmt::Break(_)) { target.done } else { target.next }, target.depth);
+                // Leaving the body: release its variables, as `return` does.
+                let vars: Vec<Var> = self.stack.last().unwrap().scopes[depth..].iter().flatten().cloned().collect();
+                for v in vars.iter().rev() {
+                    self.release_var(v);
+                }
+                self.b.build_unconditional_branch(to).unwrap();
+                self.continue_dead();
+            }
             Stmt::Expr(e) => {
                 let t = self.ty(e);
                 if let Some(v) = self.expr(e) {
@@ -1551,6 +1578,38 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.release(old, &tt);
     }
 
+    /// `while cond { … }` and `while let x = optional { … }`.
+    fn while_loop(&mut self, cond: &Cond, body: &Block) {
+        let (cond_bb, body_bb, done) = (self.block_named("while"), self.block_named("body"), self.block_named("done"));
+        self.br(cond_bb);
+        self.b.position_at_end(cond_bb);
+        let depth = self.stack.last().unwrap().scopes.len();
+        self.loops.push(LoopTarget { func: self.func(), next: cond_bb, done, depth });
+        self.push_scope();
+        match cond {
+            Cond::Expr(c) => {
+                let c = self.expr(c).unwrap().into_int_value();
+                self.b.build_conditional_branch(c, body_bb, done).unwrap();
+                self.b.position_at_end(body_bb);
+            }
+            Cond::Let(name, _, value) => {
+                let Ty::Opt(inner) = self.ty(value) else { unreachable!() };
+                let ov = self.expr(value).unwrap().into_struct_value();
+                let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
+                self.b.build_conditional_branch(flag, body_bb, done).unwrap();
+                self.b.position_at_end(body_bb);
+                let v = self.b.build_extract_value(ov, 1, "").unwrap();
+                let ty = self.checked.locals.get(&name.span).cloned().unwrap_or(*inner);
+                self.declare_value(&name.name, &ty, Some(v));
+            }
+        }
+        self.block(body, Some(&Ty::Void));
+        self.pop_scope();
+        self.loops.pop();
+        self.br(cond_bb);
+        self.b.position_at_end(done);
+    }
+
     fn for_loop(&mut self, var: &Ident, iter: &Expr, body: &Block) {
         self.for_each_in(var, iter, &mut |g| {
             g.block(body, Some(&Ty::Void));
@@ -1583,21 +1642,26 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             };
             let i = self.alloca(self.i64().into(), "i");
             self.b.build_store(i, lo).unwrap();
-            let (cond_bb, body_bb, done) = (self.block_named("for"), self.block_named("body"), self.block_named("done"));
+            let (cond_bb, body_bb, next_bb, done) =
+                (self.block_named("for"), self.block_named("body"), self.block_named("next"), self.block_named("done"));
             self.b.build_unconditional_branch(cond_bb).unwrap();
             self.b.position_at_end(cond_bb);
             let cur = self.b.build_load(self.i64(), i, "").unwrap().into_int_value();
             let more = self.b.build_int_compare(IntPredicate::SLT, cur, hi, "").unwrap();
             self.b.build_conditional_branch(more, body_bb, done).unwrap();
             self.b.position_at_end(body_bb);
+            let depth = self.stack.last().unwrap().scopes.len();
+            self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth });
             self.push_scope();
             self.declare_value(&var.name, &Ty::Int, Some(cur.into()));
             body(self);
             self.pop_scope();
-            if !self.terminated() {
-                let next = self.b.build_int_add(cur, self.i64().const_int(1, false), "").unwrap();
-                self.b.build_store(i, next).unwrap();
-            }
+            self.loops.pop();
+            self.br(next_bb);
+            self.b.position_at_end(next_bb);
+            let cur = self.b.build_load(self.i64(), i, "").unwrap().into_int_value();
+            let next = self.b.build_int_add(cur, self.i64().const_int(1, false), "").unwrap();
+            self.b.build_store(i, next).unwrap();
             self.br(cond_bb);
             self.b.position_at_end(done);
             return;
@@ -1630,7 +1694,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.push_var(Var { name: String::new(), ty: Ty::List(elem.clone()), store: Store::Slot(slot) });
             slot
         };
-        let (cond_bb, body_bb, done) = (self.block_named("for"), self.block_named("body"), self.block_named("done"));
+        let (cond_bb, body_bb, next_bb, done) =
+            (self.block_named("for"), self.block_named("body"), self.block_named("next"), self.block_named("done"));
         self.b.build_unconditional_branch(cond_bb).unwrap();
         self.b.position_at_end(cond_bb);
         let list = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
@@ -1639,6 +1704,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let more = self.b.build_int_compare(IntPredicate::SLT, cur, len, "").unwrap();
         self.b.build_conditional_branch(more, body_bb, done).unwrap();
         self.b.position_at_end(body_bb);
+        let depth = self.stack.last().unwrap().scopes.len();
+        self.loops.push(LoopTarget { func: self.func(), next: next_bb, done, depth });
         self.push_scope();
         if place {
             let stable = self.in_state(iter);
@@ -1652,11 +1719,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         body(self);
         self.pop_scope();
-        if !self.terminated() {
-            let cur = self.b.build_load(self.i64(), idx, "").unwrap().into_int_value();
-            let next = self.b.build_int_add(cur, self.i64().const_int(1, false), "").unwrap();
-            self.b.build_store(idx, next).unwrap();
-        }
+        self.loops.pop();
+        self.br(next_bb);
+        self.b.position_at_end(next_bb);
+        let cur = self.b.build_load(self.i64(), idx, "").unwrap().into_int_value();
+        let next = self.b.build_int_add(cur, self.i64().const_int(1, false), "").unwrap();
+        self.b.build_store(idx, next).unwrap();
         self.br(cond_bb);
         self.b.position_at_end(done);
         self.pop_scope();
@@ -4180,6 +4248,13 @@ fn walk_stmt<'a>(s: &'a Stmt, f: &mut dyn FnMut(Node<'a>)) {
             walk_expr(iter, f);
             walk_block(body, f);
         }
+        Stmt::While { cond, body, .. } => {
+            match cond {
+                Cond::Expr(c) | Cond::Let(_, _, c) => walk_expr(c, f),
+            }
+            walk_block(body, f);
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
         Stmt::Expr(e) => walk_expr(e, f),
         Stmt::Fn(d) => walk_block(&d.body, f),
     }
@@ -4232,6 +4307,18 @@ pub(crate) fn free_block(b: &Block, bound: &mut Vec<String>, out: &mut BTreeSet<
                 bound.push(var.name.clone());
                 free_block(body, bound, out);
                 bound.pop();
+            }
+            Stmt::While { cond, body, .. } => {
+                let mark = bound.len();
+                match cond {
+                    Cond::Expr(c) => free_expr(c, bound, out),
+                    Cond::Let(name, _, v) => {
+                        free_expr(v, bound, out);
+                        bound.push(name.name.clone());
+                    }
+                }
+                free_block(body, bound, out);
+                bound.truncate(mark);
             }
             Stmt::Expr(e) => free_expr(e, bound, out),
             _ => {}

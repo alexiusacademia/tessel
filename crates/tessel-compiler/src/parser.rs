@@ -449,6 +449,20 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Stmt::Return { value, span: lo.to(self.prev_span()) })
             }
+            Tok::While => {
+                self.bump();
+                let cond = self.condition()?;
+                if !self.at(&Tok::LBrace) {
+                    let span = self.span();
+                    self.error(span, "expected `{` after the `while` condition")
+                        .help("the body of a `while` goes in braces: `while n > 0 { … }`");
+                    return Err(Reported);
+                }
+                let body = self.block()?;
+                Ok(Stmt::While { cond, body, span: lo.to(self.prev_span()) })
+            }
+            Tok::Break => Ok(Stmt::Break(self.bump().span)),
+            Tok::Continue => Ok(Stmt::Continue(self.bump().span)),
             Tok::For => {
                 self.bump();
                 // `for _ in 0..3`: a loop variable that isn't used.
@@ -895,9 +909,9 @@ impl<'a> Parser<'a> {
         Ok(self.new_expr(kind, span))
     }
 
-    fn if_expr(&mut self) -> PResult<Expr> {
-        let lo = self.bump().span; // if
-        let cond = self.with_trailing(false, |p| -> PResult<Cond> {
+    /// The condition of `if` or `while`: `x > 0`, or `let x = optional`.
+    fn condition(&mut self) -> PResult<Cond> {
+        self.with_trailing(false, |p| -> PResult<Cond> {
             if p.eat(&Tok::Let) {
                 let name = p.ident("a name")?;
                 let ty = if p.eat(&Tok::Colon) { Some(p.type_expr()?) } else { None };
@@ -906,7 +920,12 @@ impl<'a> Parser<'a> {
             } else {
                 Ok(Cond::Expr(Box::new(p.expr()?)))
             }
-        })?;
+        })
+    }
+
+    fn if_expr(&mut self) -> PResult<Expr> {
+        let lo = self.bump().span; // if
+        let cond = self.condition()?;
         if !self.at(&Tok::LBrace) {
             let span = self.span();
             self.error(span, "expected `{` after the `if` condition")

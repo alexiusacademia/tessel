@@ -75,7 +75,7 @@ impl SuggestionKind {
 }
 
 const KEYWORDS: &[&str] = &[
-    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "fn", "struct", "enum", "view",
+    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "while", "break", "continue", "fn", "struct", "enum", "view",
     "app", "true", "false", "nil",
 ];
 
@@ -186,6 +186,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         loop_places: HashSet::new(),
         view_fns: HashMap::new(),
         completion: None,
+        loops: 0,
+        outer_loops: 0,
     };
     let ids = c.collect(program, require_entry);
     c.signatures(program, &ids);
@@ -300,6 +302,11 @@ struct Checker<'a> {
     loop_places: HashSet<Span>,
     view_fns: HashMap<(String, String), FnSig>,
     completion: Option<Vec<Suggestion>>,
+    /// How many loops enclose the code being checked, within the current
+    /// function or closure (`break` and `continue` need one).
+    loops: usize,
+    /// Loops outside the closures being checked (which `break` can't leave).
+    outer_loops: usize,
 }
 
 impl Checker<'_> {
@@ -834,7 +841,9 @@ impl Checker<'_> {
                 c.declare(&p.name, ps.ty.clone(), Kind::Param);
             }
             c.returns.push(sig.ret.clone());
+            let loops = std::mem::take(&mut c.loops);
             c.block(&f.body, Some(&sig.ret));
+            c.loops = loops;
             c.returns.pop();
         });
     }
@@ -982,9 +991,28 @@ impl Checker<'_> {
                 let (elem, place) = self.iter_type(iter);
                 self.with_scope(|c| {
                     c.declare(var, elem, if place { Kind::LoopPlace } else { Kind::LoopLet });
+                    c.loops += 1;
                     c.block(body, Some(&Ty::Void));
+                    c.loops -= 1;
                 });
             }
+            Stmt::While { cond, body, .. } => {
+                self.with_scope(|c| {
+                    c.cond(cond);
+                    c.loops += 1;
+                    c.block(body, Some(&Ty::Void));
+                    c.loops -= 1;
+                });
+            }
+            Stmt::Break(span) | Stmt::Continue(span) if self.loops == 0 => {
+                let word = if matches!(s, Stmt::Break(_)) { "break" } else { "continue" };
+                let in_block = self.outer_loops > 0;
+                let d = self.error(*span, format!("`{word}` can only be used inside a `for` or `while` loop"));
+                if in_block {
+                    d.help("this block (`{ x in … }`) runs on its own, so it can't leave the loop around it; use `return` to leave the block");
+                }
+            }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Expr(e) => self.expect_or_discard(e, &Ty::Void),
         }
     }
@@ -1125,6 +1153,14 @@ impl Checker<'_> {
                     Stmt::Return { span, .. } => {
                         c.error(*span, "`return` can't be used in a view body")
                             .help("use `if` to choose which views to show");
+                    }
+                    Stmt::While { span, .. } => {
+                        c.error(*span, "`while` can't be used in a view body")
+                            .help("show views for each item with `for item in list { … }`");
+                    }
+                    Stmt::Break(span) | Stmt::Continue(span) => {
+                        c.error(*span, "`break` and `continue` can't be used in a view body")
+                            .help("choose what to show with `if`, or filter the list first: `for x in items.filter { … }`");
                     }
                 }
             }
@@ -1615,7 +1651,7 @@ impl Checker<'_> {
                     Ty::Error => Ty::Error,
                     t => {
                         let what = self.a(&t);
-                        self.error(value.span, format!("`if let` needs an optional value, but this is {what}"))
+                        self.error(value.span, format!("`let` in a condition needs an optional value, but this is {what}"))
                             .help("use a plain `if`, or `let` to name the value");
                         t
                     }
@@ -1763,7 +1799,9 @@ impl Checker<'_> {
                 self.error(span, format!("this block should take {} parameter(s), but {} are named", ptys.len(), params.len()));
             }
         }
-        self.with_scope(|c| {
+        let loops = std::mem::take(&mut self.loops);
+        self.outer_loops += loops;
+        let t = self.with_scope(|c| {
             for (i, p) in params.iter().enumerate() {
                 c.declare(p, ptys.get(i).cloned().unwrap_or(Ty::Error), Kind::Let);
             }
@@ -1781,7 +1819,10 @@ impl Checker<'_> {
             };
             c.returns.pop();
             Ty::Fn(ptys.clone(), Box::new(ret))
-        })
+        });
+        self.outer_loops -= loops;
+        self.loops = loops;
+        t
     }
 
     fn member(&mut self, object: &Expr, name: &Ident, optional: bool) -> Ty {
@@ -2930,6 +2971,13 @@ fn stmt_mutates(s: &Stmt, roots: &HashSet<String>) -> bool {
         Stmt::Let(d) | Stmt::Var(d) | Stmt::State(d) => expr_mutates(&d.value, roots),
         Stmt::Return { value, .. } => value.as_ref().is_some_and(|v| expr_mutates(v, roots)),
         Stmt::For { iter, body, .. } => expr_mutates(iter, roots) || block_mutates(body, roots),
+        Stmt::While { cond, body, .. } => {
+            let c = match cond {
+                Cond::Expr(c) | Cond::Let(_, _, c) => c,
+            };
+            expr_mutates(c, roots) || block_mutates(body, roots)
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => false,
         Stmt::Expr(e) => expr_mutates(e, roots),
         Stmt::Fn(_) => false,
     }

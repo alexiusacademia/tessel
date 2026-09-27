@@ -1,0 +1,105 @@
+// `while`, `while let`, `break` and `continue`, in every kind of loop.
+
+struct Item {
+    name: String
+    tags: [String]
+}
+
+fn collatz(n: Int) -> Int {
+    var steps = 0
+    var x = n
+    while x != 1 {
+        x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 }
+        steps += 1
+    }
+    steps
+}
+
+fn firstBig(items: [Item]) -> String {
+    var i = 0
+    while i < items.count {
+        let item = items[i]
+        if item.tags.count > 1 {
+            return item.name
+        }
+        i += 1
+    }
+    "none"
+}
+
+fn main() {
+    print("collatz(27) = {collatz(n: 27)}")
+
+    // break and continue in a range loop, with strings in the body.
+    var odd: [String] = []
+    for i in 0..100 {
+        let label = "n{i}"
+        if i % 2 == 0 {
+            continue
+        }
+        if i > 9 {
+            break
+        }
+        odd.append(label)
+    }
+    print(odd.joined(separator: " "))
+
+    // In a list loop, over a list that the loop changes.
+    var items = [
+        Item(name: "a", tags: ["x"]),
+        Item(name: "b", tags: ["x", "y"]),
+        Item(name: "skip", tags: []),
+        Item(name: "c", tags: ["z"]),
+        Item(name: "stop", tags: []),
+        Item(name: "never", tags: []),
+    ]
+    for item in items {
+        let copy = item
+        if item.name == "skip" {
+            continue
+        }
+        if item.name == "stop" {
+            break
+        }
+        item.tags.append("seen")
+        print("{copy.name}: {item.tags.count} tags")
+    }
+    print("first with several tags: {firstBig(items: items)}")
+
+    // while let: take items off a list until it's empty.
+    var queue = ["one", "two", "three"]
+    while let next = queue.first {
+        queue.removeFirst()
+        if next == "two" {
+            continue
+        }
+        print("took {next}")
+    }
+
+    // Nested loops: break only leaves the inner one.
+    var pairs = 0
+    for a in 0..5 {
+        var b = 0
+        while true {
+            if b >= a {
+                break
+            }
+            pairs += 1
+            b += 1
+        }
+    }
+    print("pairs {pairs}")
+
+    // A closure made in a loop keeps its own copy.
+    var blocks: [fn() -> String] = []
+    var n = 0
+    while n < 3 {
+        let word = "block{n}"
+        blocks.append({ word })
+        n += 1
+        if n == 2 {
+            continue
+        }
+    }
+    print(blocks.map { b in b() }.joined(separator: ","))
+}

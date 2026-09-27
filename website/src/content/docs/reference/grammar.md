@@ -55,7 +55,7 @@ an identifier (see below).
 ```text
 app  view  struct  enum  fn
 let  var  state  bind
-if  else  for  in  match  return
+if  else  for  while  in  match  return  break  continue
 true  false  nil
 ```
 
@@ -221,12 +221,16 @@ stmt = local_decl
      | fn_decl
      | return_stmt
      | for_stmt
+     | while_stmt
+     | "break"
+     | "continue"
      | assign_stmt
      | expr ;
 
 local_decl  = ("let" | "var" | "state") IDENT (":" type)? "=" NL* expr ;
 return_stmt = "return" expr? ;
 for_stmt    = "for" (IDENT | "_") "in" header_expr block ;
+while_stmt  = "while" condition block ;
 assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
 ```
 
@@ -238,8 +242,9 @@ assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
   `for _ in 0..3 { … }`.
 - Assignment is a statement, not an expression. There is no `%=`.
 - `if` and `match` are expressions, so they can be used as statements too.
-- There are no `while`, `break` or `continue` statements; loop over a list or
-  a range with `for`.
+- `break` and `continue` apply to the innermost `for` or `while` loop in the
+  same function or block. View bodies can't use `while`, `break` or
+  `continue`.
 
 ## Expressions
 

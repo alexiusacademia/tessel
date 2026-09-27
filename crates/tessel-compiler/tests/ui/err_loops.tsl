@@ -1,0 +1,22 @@
+fn f(items: [Int]) {
+    break // error: can only be used inside a `for` or `while` loop
+    for i in items {
+        let g: fn(Int) = { x in
+            continue // error: can't leave the loop around it
+        }
+    }
+    while 3 { // error: expected `Bool`
+    }
+    while let x = 5 { // error: needs an optional value
+    }
+}
+
+view V {
+    VStack {
+        while true { // error: `while` can't be used in a view body
+        }
+        for i in 0..3 {
+            break // error: can't be used in a view body
+        }
+    }
+}
