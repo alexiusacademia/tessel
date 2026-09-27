@@ -1,7 +1,7 @@
 // The Tessel IDE, written in Tessel.
 
 app Tessel(title: "Tessel", width: 1200, height: 780) {
-    state project = environment("TESSEL_PROJECT") ?? currentFolder()
+    state project = normalize(path: environment("TESSEL_PROJECT") ?? currentFolder())
     state tree: [Entry] = []
     state expanded: [String] = []
     state selected = ""
@@ -189,6 +189,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     }
 
     fn open(path: String) {
+        let path = normalize(path: path)
         if docs.first(where: { d in d.path == path }) == nil {
             let text = readFile(path) ?? ""
             docs.append(Doc(path: path, text: text, saved: text))

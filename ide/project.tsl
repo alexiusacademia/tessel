@@ -45,7 +45,13 @@ fn parentOf(path: String) -> String {
 }
 
 fn join(folder: String, name: String) -> String {
-    "{folder}/{name}"
+    normalize(path: "{folder}/{name}")
+}
+
+// Paths always use "/" (Windows accepts it too), so the same file always has
+// the same path and paths can be compared as strings.
+fn normalize(path: String) -> String {
+    path.replace("\\", with: "/")
 }
 
 // The explorer's visible rows: folders first, then files; expanded folders
@@ -75,7 +81,7 @@ fn parseProblem(text: String) -> Problem? {
     if f.count != 6 {
         return nil
     }
-    Problem(file: f[0], line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, message: f[5])
+    Problem(file: normalize(path: f[0]), line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, message: f[5])
 }
 
 // ` --> file:line:column`, as printed by compile and runtime errors.
@@ -96,5 +102,5 @@ fn parseLocation(text: String) -> Problem? {
     }
     let line = Int(parts[parts.count - 2]) ?? 1
     let column = Int(parts[parts.count - 1]) ?? 1
-    Problem(file: file, line: line, column: column, message: "")
+    Problem(file: normalize(path: file), line: line, column: column, message: "")
 }
