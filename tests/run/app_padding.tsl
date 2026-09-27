@@ -1,0 +1,17 @@
+// .padding: all edges, horizontal/vertical, or single edges.
+app Paddings(width: 420, height: 420) {
+    VStack(spacing: 10) {
+        Text("default (8)").padding().background(.lightGray)
+        Text("all 16").padding(16).background(.lightGray)
+        Text("horizontal 24, vertical 4").padding(horizontal: 24, vertical: 4).background(.lightGray)
+        Text("horizontal only").padding(horizontal: 30).background(.lightGray)
+        Text("top 20, leading 40").padding(top: 20, leading: 40).background(.lightGray)
+        Text("4 everywhere, bottom 24").padding(4, bottom: 24).background(.lightGray)
+        Text("chained: 4 then horizontal 20").padding(4).padding(horizontal: 20).background(.lightGray)
+        Text("A longer text that wraps inside uneven padding on both sides of it.")
+            .padding(leading: 60, trailing: 10)
+            .frame(width: 300)
+            .background(.yellow)
+    }
+    .padding(horizontal: 20)
+}

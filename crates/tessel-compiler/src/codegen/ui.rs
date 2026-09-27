@@ -582,8 +582,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let int = |g: &mut Self, x: &Expr| g.expr(x).unwrap();
         match name {
             "padding" => {
-                let v = float(self, a(0), 8.0);
-                self.call_rt("tsl_ui_padding", &[v]);
+                // Arguments: amount, horizontal, vertical, top, leading, bottom,
+                // trailing. The most specific one given sets each edge; with
+                // only some edges named, the others get 0, and with nothing
+                // named, every edge gets 8.
+                let given: Vec<Option<Val<'ctx>>> =
+                    (0..7).map(|i| a(i).map(|x| self.expr_as(x, &Ty::Float).unwrap())).collect();
+                let base = match given[0] {
+                    Some(v) => v,
+                    None if given.iter().any(Option::is_some) => f64t.const_zero().into(),
+                    None => f64t.const_float(8.0).into(),
+                };
+                let edge = |own: usize, axis: usize| given[own].or(given[axis]).unwrap_or(base);
+                let edges = [edge(3, 2), edge(4, 1), edge(5, 2), edge(6, 1)];
+                self.call_rt("tsl_ui_padding", &edges);
             }
             "opacity" => {
                 let v = float(self, a(0), 1.0);

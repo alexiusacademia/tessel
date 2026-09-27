@@ -25,7 +25,35 @@ impl Rect {
     }
 
     pub fn inset(&self, d: f64) -> Rect {
-        Rect { x: self.x + d, y: self.y + d, w: (self.w - 2.0 * d).max(0.0), h: (self.h - 2.0 * d).max(0.0) }
+        self.inset_by(Insets { top: d, leading: d, bottom: d, trailing: d })
+    }
+
+    pub fn inset_by(&self, i: Insets) -> Rect {
+        Rect {
+            x: self.x + i.leading,
+            y: self.y + i.top,
+            w: (self.w - i.horizontal()).max(0.0),
+            h: (self.h - i.vertical()).max(0.0),
+        }
+    }
+}
+
+/// Space around a view's content, per edge (`.padding`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Insets {
+    pub top: f64,
+    pub leading: f64,
+    pub bottom: f64,
+    pub trailing: f64,
+}
+
+impl Insets {
+    pub fn horizontal(&self) -> f64 {
+        self.leading + self.trailing
+    }
+
+    pub fn vertical(&self) -> f64 {
+        self.top + self.bottom
     }
 }
 
@@ -148,12 +176,12 @@ impl Layouter<'_> {
             n.layout.size = Size::default();
             return n.layout.size;
         }
-        let pad = n.mods.padding.unwrap_or(0.0);
+        let pad = n.mods.padding;
         let offered = Size {
             w: n.mods.width.unwrap_or(avail.w.min(n.mods.max_width.unwrap_or(f64::INFINITY))),
             h: n.mods.height.unwrap_or(avail.h.min(n.mods.max_height.unwrap_or(f64::INFINITY))),
         };
-        let inner_avail = Size { w: (offered.w - 2.0 * pad).max(0.0), h: (offered.h - 2.0 * pad).max(0.0) };
+        let inner_avail = Size { w: (offered.w - pad.horizontal()).max(0.0), h: (offered.h - pad.vertical()).max(0.0) };
         let inner = self.measure_inner(n, inner_avail, &style);
         n.layout.natural = inner;
         // With a max size, take all the space offered (up to the max), but
@@ -165,8 +193,8 @@ impl Layouter<'_> {
             (None, None) => content,
         };
         n.layout.size = Size {
-            w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + 2.0 * pad).max(n.mods.min_width.unwrap_or(0.0)),
-            h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + 2.0 * pad).max(n.mods.min_height.unwrap_or(0.0)),
+            w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + pad.horizontal()).max(n.mods.min_width.unwrap_or(0.0)),
+            h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + pad.vertical()).max(n.mods.min_height.unwrap_or(0.0)),
         };
         n.layout.size
     }
@@ -358,7 +386,7 @@ impl Layouter<'_> {
         if n.mods.hidden {
             return;
         }
-        let mut content = rect.inset(n.mods.padding.unwrap_or(0.0));
+        let mut content = rect.inset_by(n.mods.padding);
         // Content with a size of its own sits in a larger frame by the frame's
         // alignment. Text and SVGs are centered by default; stacks lay out
         // their children across the whole frame unless an alignment is given.
@@ -472,8 +500,7 @@ impl Layouter<'_> {
                 if (r.w - c.layout.size.w).abs() > 0.5 {
                     let style = c.layout.style;
                     let s = s.clone();
-                    let pad = c.mods.padding.unwrap_or(0.0);
-                    let t = self.text_block(&s, &style, Some((r.w - 2.0 * pad).max(0.0)));
+                    let t = self.text_block(&s, &style, Some((r.w - c.mods.padding.horizontal()).max(0.0)));
                     c.layout.natural = Size { w: t.width() as f64, h: t.height() as f64 };
                     c.layout.text = Some(t);
                 }

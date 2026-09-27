@@ -87,7 +87,18 @@ impl Builtins {
     /// Modifiers callable on any `View`. `id` and `tag` are checked specially.
     pub fn modifier(&self, name: &str) -> Option<Vec<P>> {
         Some(match name {
-            "padding" => vec![P::unlabeled("amount", Ty::Float).default()],
+            "padding" => {
+                let edge = |l: &str| P::new(l, Ty::Float).default();
+                vec![
+                    P::unlabeled("amount", Ty::Float).default(),
+                    edge("horizontal"),
+                    edge("vertical"),
+                    edge("top"),
+                    edge("leading"),
+                    edge("bottom"),
+                    edge("trailing"),
+                ]
+            }
             "font" => vec![P::new("size", Ty::Float).default(), P::new("weight", self.weight.clone()).default()],
             "color" => vec![P::unlabeled("color", self.color.clone())],
             "background" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],

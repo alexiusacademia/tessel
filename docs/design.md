@@ -292,6 +292,16 @@ Text("Hi")
     .background(.blue, radius: 6)
 ```
 
+`.padding` takes one amount for every edge (`.padding()` is 8), or
+separate edges; the most specific value wins, and edges not named get 0:
+
+```tessel
+.padding(16)
+.padding(horizontal: 16, vertical: 8)
+.padding(top: 4, leading: 12)
+.padding(8, bottom: 20)      // 8 everywhere except the bottom
+```
+
 ### 8.5 Built-in views (v1)
 
 | View | Signature (simplified) |

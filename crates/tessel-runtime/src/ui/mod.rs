@@ -179,7 +179,8 @@ pub enum Kind {
 
 #[derive(Default)]
 pub struct Mods {
-    pub padding: Option<f64>,
+    /// `.padding(…)`; repeated paddings add up.
+    pub padding: layout::Insets,
     pub width: Option<f64>,
     pub height: Option<f64>,
     /// `.frame(minWidth:minHeight:)`: never smaller than this.
@@ -596,8 +597,14 @@ fn modify(f: impl FnOnce(&mut Mods)) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_padding(amount: f64) {
-    modify(|m| m.padding = Some(m.padding.unwrap_or(0.0) + amount));
+pub extern "C" fn tsl_ui_padding(top: f64, leading: f64, bottom: f64, trailing: f64) {
+    modify(|m| {
+        let p = &mut m.padding;
+        p.top += top;
+        p.leading += leading;
+        p.bottom += bottom;
+        p.trailing += trailing;
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -764,7 +771,7 @@ mod tests {
             tsl_ui_text_field(str_new("Your name"), name as *const c_void, std::ptr::null_mut());
             tsl_ui_toggle(str_new("Enabled"), flag as *const c_void, std::ptr::null_mut());
             tsl_ui_end();
-            tsl_ui_padding(24.0);
+            tsl_ui_padding(24.0, 24.0, 24.0, 24.0);
         }
     }
 

@@ -187,7 +187,7 @@ impl Painter<'_> {
         if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hovered == Some(n.key)) {
             self.fill(r, radius, c);
         }
-        let content = r.inset(n.mods.padding.unwrap_or(0.0));
+        let content = r.inset_by(n.mods.padding);
         let hovered = self.ui.hovered == Some(n.key) && !style.disabled;
         let pressed = self.ui.pressed == Some(n.key) && !style.disabled;
         match &n.kind {
@@ -388,13 +388,13 @@ impl Painter<'_> {
 
 /// Where a code editor's text starts (before scrolling).
 pub fn code_origin(n: &Node) -> (f64, f64) {
-    let content = n.layout.rect.inset(n.mods.padding.unwrap_or(0.0));
+    let content = n.layout.rect.inset_by(n.mods.padding);
     (content.x + n.layout.gutter + 8.0, content.y + 6.0)
 }
 
 /// Where a text field's text starts (before horizontal scrolling).
 pub fn field_origin(n: &Node) -> (f64, f64) {
-    let content = n.layout.rect.inset(n.mods.padding.unwrap_or(0.0));
+    let content = n.layout.rect.inset_by(n.mods.padding);
     let line_h = match (&n.layout.text, &n.layout.placeholder) {
         (Some(t), Some(p)) => (p.height() as f64).max(t.height() as f64),
         _ => 0.0,

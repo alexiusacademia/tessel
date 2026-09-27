@@ -346,7 +346,7 @@ impl App {
         e.clamp(&read_string(text));
         let Some(layout) = &node.layout.text else { return };
         let (caret, _) = edit::geometry(layout, e);
-        let content = node.layout.rect.inset(node.mods.padding.unwrap_or(0.0));
+        let content = node.layout.rect.inset_by(node.mods.padding);
         // Scroll so the caret stays visible.
         let keep = |offset: &mut f64, lo: f64, hi: f64, visible: f64, total: f64| {
             if hi - *offset > visible {

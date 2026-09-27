@@ -1,0 +1,11 @@
+Root
+  View
+    VStack
+      Text "default (8)"
+      Text "all 16"
+      Text "horizontal 24, vertical 4"
+      Text "horizontal only"
+      Text "top 20, leading 40"
+      Text "4 everywhere, bottom 24"
+      Text "chained: 4 then horizontal 20"
+      Text "A longer text that wraps inside uneven padding on both sides of it."
