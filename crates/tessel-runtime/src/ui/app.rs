@@ -810,6 +810,7 @@ impl App {
             let matches = match &n.kind {
                 Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } => s == label,
                 Kind::TextField { placeholder, .. } => placeholder == label,
+                Kind::Svg { icon: Some(name), .. } => *name == label,
                 _ => false,
             };
             if matches && !n.mods.hidden {

@@ -1,0 +1,22 @@
+// Small reusable views for the IDE.
+
+// A toolbar action: an icon and a label.
+view ToolButton(icon: IconName, label: String, tint: Color = .primary, action: fn()) {
+    HStack(spacing: 5) {
+        Icon(icon).font(size: 14).color(tint)
+        Text(label).font(size: 13)
+    }
+    .padding(6)
+    .hoverBackground(.lightGray, radius: 6)
+    .onTap { action() }
+}
+
+// A compact icon-only action, e.g. in the explorer header.
+view IconButton(icon: IconName, action: fn()) {
+    Icon(icon)
+        .font(size: 14)
+        .color(.secondary)
+        .padding(4)
+        .hoverBackground(.lightGray, radius: 4)
+        .onTap { action() }
+}

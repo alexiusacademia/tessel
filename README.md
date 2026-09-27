@@ -81,5 +81,7 @@ timers, print the view tree, or save a screenshot:
 TESSEL_SCRIPT='click "+"; click "+"; tree; snapshot counter.png' ./counter
 ```
 
-See `crates/tessel-runtime/src/ui/app.rs` for all commands. `tests/run/app_*`
+`click "label"` finds a text, button, toggle or field by its label, or a
+built-in icon by its name (`click "trash"`). See
+`crates/tessel-runtime/src/ui/app.rs` for all commands. `tests/run/app_*`
 use this.

@@ -50,6 +50,11 @@ pub fn load(source: &str, color: Rgba) -> Option<Rc<Svg>> {
     })
 }
 
+/// A built-in icon by name, for the runtime's own controls.
+pub fn icon(name: &str, color: Rgba) -> Option<Rc<Svg>> {
+    ICONS.iter().find(|(n, _)| *n == name).and_then(|(_, source)| load(source, color))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

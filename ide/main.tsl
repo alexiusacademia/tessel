@@ -25,11 +25,15 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             Spacer()
             Text(status).color(.secondary)
             Toggle("Restart on save", isOn: restartOnSave)
-            Button("Save") { save() }.shortcut("s") { save() }
-            Button("Check") { check() }.shortcut("k") { check() }
-            Button(if running == nil { "Run" } else { "Stop" }) { runOrStop() }.shortcut("r") { runOrStop() }
-            Button("Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
-            Button("Package") { build(bundle: true) }
+            ToolButton(icon: .save, label: "Save") { save() }.shortcut("s") { save() }
+            ToolButton(icon: .circleCheck, label: "Check") { check() }.shortcut("k") { check() }
+            if running == nil {
+                ToolButton(icon: .play, label: "Run", tint: .green) { runOrStop() }.shortcut("r") { runOrStop() }
+            } else {
+                ToolButton(icon: .stop, label: "Stop", tint: .red) { runOrStop() }.shortcut("r") { runOrStop() }
+            }
+            ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
+            ToolButton(icon: .package, label: "Package") { build(bundle: true) }
         }
         .padding(8)
         Divider()
@@ -40,10 +44,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                 HStack(spacing: 2) {
                     Text("EXPLORER").font(size: 11, weight: .semibold).color(.secondary)
                     Spacer()
-                    Text("+ File").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.newFile) }
-                    Text("+ Folder").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.newFolder) }
-                    Text("Rename…").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.rename) }
-                    Text("Delete…").font(size: 11).padding(4).hoverBackground(.lightGray, radius: 4).onTap { ask(Prompt.delete) }
+                    IconButton(icon: .filePlus) { ask(Prompt.newFile) }
+                    IconButton(icon: .folderPlus) { ask(Prompt.newFolder) }
+                    IconButton(icon: .pencil) { ask(Prompt.rename) }
+                    IconButton(icon: .trash) { ask(Prompt.delete) }
                 }
                 .padding(8)
                 Text(fileName(project).uppercase()).font(size: 11, weight: .bold).padding(8)
@@ -65,17 +69,21 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                         for e in tree {
                             HStack(spacing: 5) {
                                 Spacer().frame(width: Float(e.depth) * 14)
-                                Text(if !e.folder { " " } else if expanded.contains(e.path) { "▾" } else { "▸" })
-                                    .font(size: 11)
-                                    .color(.secondary)
-                                    .frame(width: 10)
-                                if e.folder {
+                                if e.folder && expanded.contains(e.path) {
+                                    Icon(.chevronDown).font(size: 11).color(.secondary)
+                                    Icon(.folderOpen).font(size: 13).color(.blue)
+                                    Text(e.name).font(size: 13)
+                                } else if e.folder {
+                                    Icon(.chevronRight).font(size: 11).color(.secondary)
+                                    Icon(.folder).font(size: 13).color(.blue)
                                     Text(e.name).font(size: 13)
                                 } else if e.name.hasSuffix(".tsl") {
-                                    Text("T").font(size: 9, weight: .bold).color(.white).padding(2).background(.blue, radius: 3)
+                                    Spacer().frame(width: 13)
+                                    Icon(.fileCode).font(size: 13).color(.blue)
                                     Text(e.name).font(size: 13)
                                 } else {
-                                    Text("•").font(size: 13).color(.gray)
+                                    Spacer().frame(width: 13)
+                                    Icon(.file).font(size: 13).color(.gray)
                                     Text(e.name).font(size: 13).color(.secondary)
                                 }
                                 Spacer()
@@ -94,7 +102,8 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
 
             // Editor tabs
             if docs.isEmpty {
-                VStack {
+                VStack(spacing: 10) {
+                    Icon(.fileCode).font(size: 40).color(.lightGray)
                     Text("Open a file from the explorer").color(.secondary)
                 }
             } else {
@@ -114,8 +123,16 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         TabView(selection: panel) {
             Scroll {
                 VStack(spacing: 2, alignment: .leading) {
+                    if problems.isEmpty {
+                        HStack(spacing: 6) {
+                            Icon(.circleCheck).font(size: 12).color(.green)
+                            Text("No problems").font(size: 12).color(.secondary)
+                        }
+                        .padding(3)
+                    }
                     for p in problems {
                         HStack(spacing: 6) {
+                            Icon(.circleX).font(size: 12).color(.red)
                             Text("{fileName(p.file)}:{p.line}").font(size: 12).color(.secondary)
                             Text(p.message).font(size: 12).color(.red)
                             Spacer()

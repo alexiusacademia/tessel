@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use parley::{FontContext, GenericFamily, LayoutContext, PositionedLayoutItem, StyleProperty};
-use vello::kurbo::{Affine, Circle, Line, RoundedRect, Stroke};
+use vello::kurbo::{Affine, Circle, RoundedRect, Stroke};
 use vello::peniko::{Color, Fill, Mix};
 use vello::util::RenderContext;
 use vello::{wgpu, AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
@@ -117,6 +117,22 @@ pub struct Painter<'a> {
 impl Painter<'_> {
     fn t(&self) -> Affine {
         Affine::scale(self.scale)
+    }
+
+    /// Draws `svg` centered in `r`, scaled to fit.
+    fn draw_svg(&mut self, svg: &super::svg::Svg, r: Rect) {
+        let s = (r.w / svg.width.max(1.0)).min(r.h / svg.height.max(1.0));
+        let x = r.x + (r.w - svg.width * s) / 2.0;
+        let y = r.y + (r.h - svg.height * s) / 2.0;
+        let t = self.t() * Affine::translate((x, y)) * Affine::scale(s);
+        self.scene.append(&svg.scene, Some(t));
+    }
+
+    /// Draws the built-in icon `name` in `r`.
+    fn svg(&mut self, name: &str, r: Rect, c: Rgba) {
+        if let Some(svg) = super::svg::icon(name, c) {
+            self.draw_svg(&svg, r);
+        }
     }
 
     fn fill(&mut self, r: Rect, radius: f64, c: Rgba) {
@@ -326,11 +342,7 @@ impl Painter<'_> {
                         if over {
                             self.fill(c, 4.0, super::COLORS[13]);
                         }
-                        let t = self.t();
-                        let color_x = color(super::COLORS[1]);
-                        let (cx, cy, d) = (c.x + c.w / 2.0, c.y + c.h / 2.0, 3.5);
-                        self.scene.stroke(&Stroke::new(1.3), t, color_x, None, &Line::new((cx - d, cy - d), (cx + d, cy + d)));
-                        self.scene.stroke(&Stroke::new(1.3), t, color_x, None, &Line::new((cx - d, cy + d), (cx + d, cy - d)));
+                        self.svg("close", Rect { x: c.x + c.w / 2.0 - 6.0, y: c.y + c.h / 2.0 - 6.0, w: 12.0, h: 12.0 }, super::COLORS[1]);
                     }
                 }
                 if let Some(c) = n.children.get(selected) {
@@ -342,11 +354,7 @@ impl Painter<'_> {
             }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
-                    let s = (content.w / svg.width.max(1.0)).min(content.h / svg.height.max(1.0));
-                    let x = content.x + (content.w - svg.width * s) / 2.0;
-                    let y = content.y + (content.h - svg.height * s) / 2.0;
-                    let t = self.t() * Affine::translate((x, y)) * Affine::scale(s);
-                    self.scene.append(&svg.scene, Some(t));
+                    self.draw_svg(&svg, content);
                 }
             }
             Kind::Image(_) => {

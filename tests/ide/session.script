@@ -1,5 +1,5 @@
 wait 0
-click "+ File"
+click "filePlus"
 type helpers
 key enter
 click editor 1
@@ -13,7 +13,7 @@ key cmd+z
 tree
 key cmd+s
 wait 0
-click "Rename…"
+click "pencil"
 key cmd+a
 type math.tsl
 key enter
@@ -21,7 +21,7 @@ click "main.tsl"
 close "main.tsl"
 tree
 click "math.tsl"
-click "Delete…"
+click "trash"
 click "Delete"
 wait 0
 tree

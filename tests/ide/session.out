@@ -7,35 +7,54 @@ Root
         Spacer
         Text "No problems"
         Toggle "Restart on save" = true
-        Button "Save"
-        Button "Check"
-        Button "Run"
-        Button "Build"
-        Button "Package"
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
       Divider
       HStack
         VStack
           HStack
             Text "EXPLORER"
             Spacer
-            Text "+ File"
-            Text "+ Folder"
-            Text "Rename…"
-            Text "Delete…"
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
           Text "PROJECT"
           Spacer
           Scroll
             VStack
               HStack
                 Spacer
-                Text " "
-                Text "T"
+                Spacer
+                Icon fileCode
                 Text "helpers.tsl"
                 Spacer
               HStack
                 Spacer
-                Text " "
-                Text "T"
+                Spacer
+                Icon fileCode
                 Text "main.tsl"
                 Spacer
         Divider
@@ -45,6 +64,9 @@ Root
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
 Root
   View
     VStack
@@ -54,35 +76,54 @@ Root
         Spacer
         Text "No problems"
         Toggle "Restart on save" = true
-        Button "Save"
-        Button "Check"
-        Button "Run"
-        Button "Build"
-        Button "Package"
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
       Divider
       HStack
         VStack
           HStack
             Text "EXPLORER"
             Spacer
-            Text "+ File"
-            Text "+ Folder"
-            Text "Rename…"
-            Text "Delete…"
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
           Text "PROJECT"
           Spacer
           Scroll
             VStack
               HStack
                 Spacer
-                Text " "
-                Text "T"
+                Spacer
+                Icon fileCode
                 Text "main.tsl"
                 Spacer
               HStack
                 Spacer
-                Text " "
-                Text "T"
+                Spacer
+                Icon fileCode
                 Text "math.tsl"
                 Spacer
         Divider
@@ -92,6 +133,9 @@ Root
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
 Root
   View
     VStack
@@ -101,36 +145,59 @@ Root
         Spacer
         Text "No problems"
         Toggle "Restart on save" = true
-        Button "Save"
-        Button "Check"
-        Button "Run"
-        Button "Build"
-        Button "Package"
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
       Divider
       HStack
         VStack
           HStack
             Text "EXPLORER"
             Spacer
-            Text "+ File"
-            Text "+ Folder"
-            Text "Rename…"
-            Text "Delete…"
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
           Text "PROJECT"
           Spacer
           Scroll
             VStack
               HStack
                 Spacer
-                Text " "
-                Text "T"
+                Spacer
+                Icon fileCode
                 Text "main.tsl"
                 Spacer
         Divider
         VStack
+          Icon fileCode
           Text "Open a file from the explorer"
       Divider
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
 --- files: main.tsl
