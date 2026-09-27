@@ -1,0 +1,213 @@
+# Builds standalone Tessel packages and publishes them to Google Cloud Storage
+# (gs://tessel-releases) when a version tag like v0.1.0 is pushed.
+#
+# The packages contain `tessel` with LLVM linked in, and the runtime library.
+# They need no Rust, LLVM or Homebrew; building apps uses the system linker.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to the bucket (otherwise only build and test)"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  LLVM_VERSION: "22.1.8"
+
+jobs:
+  package:
+    name: Package (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        shell: bash
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match the version in Cargo.toml ($version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # ---- macOS: LLVM's official static build, linked with its own lld ----
+
+      - name: Cache LLVM (macOS)
+        if: runner.os == 'macOS'
+        id: llvm-cache-mac
+        uses: actions/cache@v4
+        with:
+          path: ~/llvm
+          key: llvm-${{ env.LLVM_VERSION }}-macos-arm64-static
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS' && steps.llvm-cache-mac.outputs.cache-hit != 'true'
+        run: |
+          name="LLVM-$LLVM_VERSION-macOS-ARM64"
+          curl -sSfL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz"
+          mkdir -p ~/llvm
+          # Only what building Tessel needs (the full release is 7 GB).
+          tar -xf llvm.tar.xz -C ~/llvm \
+            "$name/bin/llvm-config" "$name/bin/clang" "$name/bin/clang-*" "$name/bin/lld" "$name/bin/ld64.lld" \
+            "$name/lib/clang" "$name/include/llvm" "$name/include/llvm-c" "$name/lib/libLLVM*.a"
+          rm llvm.tar.xz
+          mv ~/llvm/"$name" ~/llvm/current
+
+      - name: Configure the build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew list zstd >/dev/null 2>&1 || brew install zstd
+          # Link zstd statically: a folder with only the static library comes
+          # first, and so does the SDK's libc++ (not LLVM's), so `tessel`
+          # depends on nothing outside macOS.
+          mkdir -p ~/staticlibs
+          cp "$(brew --prefix zstd)/lib/libzstd.a" ~/staticlibs/
+          sdk="$(xcrun --show-sdk-path)"
+          {
+            echo "LLVM_SYS_221_PREFIX=$HOME/llvm/current"
+            # LLVM's libraries are LLVM 22 bitcode, which only its own lld can link.
+            echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$HOME/llvm/current/bin/clang"
+            echo "RUSTFLAGS=-L native=$HOME/staticlibs -L native=$sdk/usr/lib -C link-arg=-fuse-ld=lld -C link-arg=-isysroot -C link-arg=$sdk"
+          } >> "$GITHUB_ENV"
+
+      # ---- Windows: LLVM's official build is already static ----
+
+      - name: Cache LLVM (Windows)
+        if: runner.os == 'Windows'
+        id: llvm-cache-win
+        uses: actions/cache@v4
+        with:
+          path: C:\llvm
+          key: llvm-${{ env.LLVM_VERSION }}-x86_64-pc-windows-msvc
+
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows' && steps.llvm-cache-win.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
+          curl.exe -sSfL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/$name.tar.xz"
+          New-Item -ItemType Directory -Force C:\llvm | Out-Null
+          tar -xf llvm.tar.xz -C C:\llvm
+          Remove-Item llvm.tar.xz
+
+      - name: Configure the build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = "C:\llvm\clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
+          "LLVM_SYS_221_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # See ci.yml: an empty stand-in for the libxml2 library LLVM lists but doesn't ship.
+          if (-not (Test-Path "$prefix\lib\xml2s.lib")) {
+            Set-Content -Path stub.c -Value "void tessel_xml2_stub(void) {}"
+            & "$prefix\bin\clang-cl.exe" /c stub.c /Fo:stub.obj
+            & "$prefix\bin\llvm-lib.exe" /out:"$prefix\lib\xml2s.lib" stub.obj
+          }
+
+      # ---- Build, check and package ----
+
+      - name: Build
+        run: cargo build --release --workspace --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          out="target/${{ matrix.target }}/release"
+          mkdir -p dist/pkg
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp "$out/tessel.exe" "$out/tessel_runtime.lib" dist/pkg/
+          else
+            cp "$out/tessel" "$out/libtessel_runtime.a" dist/pkg/
+          fi
+          cp install/PACKAGE-README.txt dist/pkg/README.txt
+
+      - name: Check the package is standalone (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          otool -L dist/pkg/tessel
+          if otool -L dist/pkg/tessel | tail -n +2 | grep -vE '^[[:space:]]*(/usr/lib/|/System/)'; then
+            echo "::error::tessel depends on libraries outside macOS"
+            exit 1
+          fi
+
+      - name: Smoke test the package
+        shell: bash
+        run: |
+          # Run from the package only, without the build's LLVM on PATH.
+          t="dist/pkg/tessel${{ runner.os == 'Windows' && '.exe' || '' }}"
+          "$t" --version
+          "$t" check examples/todos
+          "$t" run tests/run/hello.tsl
+          "$t" build examples/todos -o dist/smoke/todos
+          TESSEL_SCRIPT='click field 1; type "hello"; click "Add"; tree' dist/smoke/todos${{ runner.os == 'Windows' && '.exe' || '' }}
+
+      - name: Archive
+        shell: bash
+        run: |
+          cd dist/pkg
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            7z a "../tessel-$VERSION-${{ matrix.name }}.zip" . > /dev/null
+          else
+            tar -czf "../tessel-$VERSION-${{ matrix.name }}.tar.gz" .
+          fi
+          ls -la ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tessel-${{ matrix.name }}
+          path: dist/tessel-*
+
+  publish:
+    name: Publish to Google Cloud Storage
+    needs: package
+    if: github.ref_type == 'tag' || inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # to sign in to Google Cloud without a stored key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
+          service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          ls -la dist
+          (cd dist && sha256sum tessel-* > SHA256SUMS)
+          gcloud storage cp dist/* "gs://tessel-releases/$version/"
+          # The install scripts and the pointer to the newest version change
+          # with each release, so they must not be cached for long.
+          echo "$version" > latest.txt
+          gcloud storage cp latest.txt install/install.sh install/install.ps1 gs://tessel-releases/ \
+            --cache-control="no-cache, max-age=0"
+          echo "Published https://storage.googleapis.com/tessel-releases/$version/"
