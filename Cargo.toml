@@ -10,3 +10,11 @@ license = "MIT"
 [workspace.lints.clippy]
 # Nested `if let` + condition often reads more clearly than a let-chain here.
 collapsible_if = "allow"
+
+# Release builds (and the runtime library linked into every app) are optimized
+# as a whole and abort on a crash instead of unwinding: apps are about a third
+# smaller. Tessel's runtime errors print their message before exiting either way.
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1

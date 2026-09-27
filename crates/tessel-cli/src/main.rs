@@ -334,7 +334,8 @@ mod bundled {
             .map(String::from)
             .to_vec();
         args.extend(["-syslibroot".into(), path(sdk), "-o".into(), path(out), path(obj), path(runtime)]);
-        args.push("-dead_strip".into());
+        // No local symbol names or debug information: smaller apps.
+        args.extend(["-dead_strip", "-x", "-S"].map(String::from));
         let list = |dir: &Path| -> Result<Vec<String>, String> {
             let mut names: Vec<String> = std::fs::read_dir(dir)
                 .map_err(|e| format!("can't read the linker stubs in `{}`: {e}", dir.display()))?
@@ -460,7 +461,7 @@ fn platform_link_args() -> Vec<String> {
             "Foundation", "Metal", "QuartzCore",
         ];
         let mut args: Vec<String> = frameworks.iter().flat_map(|f| ["-framework".to_string(), f.to_string()]).collect();
-        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-mmacosx-version-min=11.0"].map(String::from));
+        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-Wl,-x", "-Wl,-S", "-mmacosx-version-min=11.0"].map(String::from));
         args
     } else {
         vec![]
