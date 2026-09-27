@@ -218,7 +218,8 @@ enum Mode {
 }
 
 const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "Data", "Range", "View"];
-const MUTATING: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
+const MUTATING: &[&str] =
+    &["append", "insert", "remove", "removeAll", "removeValue", "removeFirst", "removeLast", "appendAll"];
 
 struct Checker<'a> {
     diags: &'a mut Diagnostics,

@@ -9,6 +9,8 @@ arboard = "3.6.1"
 parley = "0.11"
 png = "0.18.1"
 pollster = "1.0.1"
+# Dates in the computer's time zone (formatDate, parseDate, date).
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # JSON and MessagePack for toJson/fromJson/toBinary/fromBinary.
 rmp-serde = "1.3.1"
 serde_json = { version = "1.0.151", features = ["preserve_order"] }

@@ -177,6 +177,45 @@ impl Builtins {
             // `abs`, `min` and `max` take Int or Float: checked specially.
             "abs" => FnSig { params: vec![P::unlabeled("x", Ty::Any)], ret: Ty::Any },
             "min" | "max" => FnSig { params: vec![P::unlabeled("a", Ty::Any), P::unlabeled("b", Ty::Any)], ret: Ty::Any },
+            "now" | "randomFloat" => FnSig { params: vec![], ret: Ty::Float },
+            "formatDate" => FnSig {
+                params: vec![P::unlabeled("time", Ty::Float), P::new("format", Ty::Str).default()],
+                ret: Ty::Str,
+            },
+            "parseDate" => FnSig {
+                params: vec![P::unlabeled("text", Ty::Str), P::new("format", Ty::Str).default()],
+                ret: Ty::opt(Ty::Float),
+            },
+            "date" => FnSig {
+                params: vec![
+                    P::new("year", Ty::Int),
+                    P::new("month", Ty::Int),
+                    P::new("day", Ty::Int),
+                    P::new("hour", Ty::Int).default(),
+                    P::new("minute", Ty::Int).default(),
+                    P::new("second", Ty::Int).default(),
+                ],
+                ret: Ty::Float,
+            },
+            "every" => FnSig {
+                params: vec![P::new("seconds", Ty::Float), P::new("action", Ty::func(vec![], Ty::Void))],
+                ret: Ty::Int,
+            },
+            "stopTimer" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
+            "random" => FnSig { params: vec![P::unlabeled("range", Ty::Range)], ret: Ty::Int },
+            "appendFile" => FnSig { params: vec![P::new("path", Ty::Str), P::new("text", Ty::Str)], ret: Ty::Bool },
+            "copyFile" => FnSig { params: vec![P::new("from", Ty::Str), P::new("to", Ty::Str)], ret: Ty::Bool },
+            "fileSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Int) },
+            "modifiedTime" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Float) },
+            "homeFolder" | "documentsFolder" | "tempFolder" | "platform" => FnSig { params: vec![], ret: Ty::Str },
+            "appDataFolder" => FnSig { params: vec![P::unlabeled("name", Ty::Str)], ret: Ty::Str },
+            "joinPath" => FnSig { params: vec![P::unlabeled("folder", Ty::Str), P::unlabeled("name", Ty::Str)], ret: Ty::Str },
+            "arguments" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
+            "exit" => FnSig { params: vec![P::unlabeled("code", Ty::Int).default()], ret: Ty::Void },
+            "openURL" => FnSig { params: vec![P::unlabeled("url", Ty::Str)], ret: Ty::Bool },
+            "copyToClipboard" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::Bool },
+            "clipboardText" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
+            "decodeBase64" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::opt(Ty::Data) },
             "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
@@ -201,7 +240,10 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
     "stopCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData",
-    "toJson", "fromJson", "toBinary", "fromBinary",
+    "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
+    "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
+    "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
+    "copyToClipboard", "clipboardText", "decodeBase64",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -224,14 +266,31 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
         (Ty::List(_) | Ty::Str | Ty::Dict(..), "count") => Ty::Int,
         (Ty::List(_) | Ty::Str | Ty::Dict(..), "isEmpty") => Ty::Bool,
         (Ty::List(t), "first" | "last") => Ty::opt((**t).clone()),
+        (Ty::List(_), "indices") => Ty::Range,
         (Ty::Dict(k, _), "keys") => Ty::list((**k).clone()),
         (Ty::Dict(_, v), "values") => Ty::list((**v).clone()),
+        (Ty::Str, "characters") => Ty::list(Ty::Str),
+        (Ty::Str, "urlEncoded" | "fileName" | "fileExtension" | "folder") => Ty::Str,
+        (Ty::Str, "urlDecoded") => Ty::opt(Ty::Str),
+        (Ty::Int, "isEven" | "isOdd") => Ty::Bool,
+        (Ty::Float, "isNaN" | "isFinite") => Ty::Bool,
+        (Ty::Data, "base64") => Ty::Str,
         (Ty::Data, "count") => Ty::Int,
         (Ty::Data, "isEmpty") => Ty::Bool,
         (Ty::Data, "bytes") => Ty::list(Ty::Int),
         (Ty::Data, "text") => Ty::opt(Ty::Str),
         _ => return None,
     })
+}
+
+/// Can two values of `t` be compared with `==`?
+fn equatable(t: &Ty) -> bool {
+    match t {
+        Ty::Fn(..) | Ty::View | Ty::Any => false,
+        Ty::List(t) | Ty::Opt(t) => equatable(t),
+        Ty::Dict(k, v) => equatable(k) && equatable(v),
+        _ => true,
+    }
 }
 
 /// Methods of built-in types. `map` and `sorted` are checked specially.
@@ -255,6 +314,20 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
                     Ty::list(t),
                 ),
                 "joined" if t == Ty::Str => method(vec![P::new("separator", Ty::Str).default()], Ty::Str),
+                "index" | "lastIndex" if equatable(&t) => method(vec![P::new("of", t.clone())], Ty::opt(Ty::Int)),
+                "firstIndex" => method(vec![P::new("where", pred(&t))], Ty::opt(Ty::Int)),
+                "count" => method(vec![P::new("where", pred(&t))], Ty::Int),
+                "any" | "all" => method(vec![P::new("where", pred(&t))], Ty::Bool),
+                "sum" if matches!(t, Ty::Int | Ty::Float) => method(vec![], t),
+                "min" | "max" if matches!(t, Ty::Int | Ty::Float | Ty::Str) => method(vec![], Ty::opt(t)),
+                "prefix" | "suffix" => method(vec![P::unlabeled("count", Ty::Int)], Ty::list(t)),
+                "dropFirst" | "dropLast" => method(vec![P::unlabeled("count", Ty::Int).default()], Ty::list(t)),
+                "slice" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::list(t)),
+                "unique" if equatable(&t) => method(vec![], Ty::list(t)),
+                "shuffled" => method(vec![], Ty::list(t)),
+                "randomElement" => method(vec![], Ty::opt(t)),
+                "removeFirst" | "removeLast" => mutating(vec![], t),
+                "appendAll" => mutating(vec![P::unlabeled("items", Ty::list(t.clone()))], Ty::Void),
                 _ => return None,
             }
         }
@@ -266,10 +339,24 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "lines" => method(vec![], Ty::list(Ty::Str)),
             "substring" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::Str),
             "find" => method(vec![P::unlabeled("text", Ty::Str)], Ty::opt(Ty::Int)),
+            "findLast" => method(vec![P::unlabeled("text", Ty::Str)], Ty::opt(Ty::Int)),
+            "reversed" | "trimStart" | "trimEnd" | "capitalized" => method(vec![], Ty::Str),
+            "repeated" => method(vec![P::unlabeled("times", Ty::Int)], Ty::Str),
+            "padStart" | "padEnd" => {
+                method(vec![P::unlabeled("length", Ty::Int), P::new("with", Ty::Str).default()], Ty::Str)
+            }
+            "character" => method(vec![P::new("at", Ty::Int)], Ty::opt(Ty::Str)),
+            "words" => method(vec![], Ty::list(Ty::Str)),
+            "occurrences" => method(vec![P::new("of", Ty::Str)], Ty::Int),
+            _ => return None,
+        },
+        Ty::Int => match name {
+            "clamped" => method(vec![P::new("min", Ty::Int), P::new("max", Ty::Int)], Ty::Int),
             _ => return None,
         },
         Ty::Float => match name {
             "formatted" => method(vec![P::new("decimals", Ty::Int)], Ty::Str),
+            "clamped" => method(vec![P::new("min", Ty::Float), P::new("max", Ty::Float)], Ty::Float),
             _ => return None,
         },
         Ty::Dict(k, v) => match name {
@@ -286,15 +373,20 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
     match recv {
         Ty::List(_) => &[
             "count", "isEmpty", "first", "last", "append", "insert", "remove", "removeAll", "filter", "contains",
-            "reversed", "map", "sorted", "joined",
+            "reversed", "map", "sorted", "joined", "index", "lastIndex", "firstIndex", "any", "all", "sum", "min",
+            "max", "prefix", "suffix", "dropFirst", "dropLast", "slice", "unique", "shuffled", "randomElement",
+            "removeFirst", "removeLast", "appendAll", "indices",
         ],
         Ty::Str => &[
             "count", "isEmpty", "contains", "hasPrefix", "hasSuffix", "split", "trim", "uppercase", "lowercase",
-            "replace", "lines", "substring", "find",
+            "replace", "lines", "substring", "find", "findLast", "reversed", "trimStart", "trimEnd", "capitalized",
+            "repeated", "padStart", "padEnd", "character", "words", "occurrences", "characters", "urlEncoded",
+            "urlDecoded", "fileName", "fileExtension", "folder",
         ],
+        Ty::Int => &["isEven", "isOdd", "clamped"],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
-        Ty::Float => &["formatted"],
-        Ty::Data => &["count", "isEmpty", "bytes", "text"],
+        Ty::Float => &["formatted", "clamped", "isNaN", "isFinite"],
+        Ty::Data => &["count", "isEmpty", "bytes", "text", "base64"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
@@ -336,7 +428,6 @@ const fn rt(rt: &'static str) -> RtCall {
     RtCall { rt, defaults: &[] }
 }
 
-#[allow(dead_code)]
 const fn rt_d(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
     RtCall { rt, defaults }
 }
@@ -345,6 +436,29 @@ const fn rt_d(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
 /// `Builtins::function`).
 pub fn runtime_fn(name: &str) -> Option<RtCall> {
     Some(match name {
+        "now" => rt("tsl_now"),
+        "randomFloat" => rt("tsl_random_float"),
+        "random" => rt("tsl_random_int"),
+        "formatDate" => rt_d("tsl_format_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd HH:mm")]),
+        "parseDate" => rt_d("tsl_parse_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd")]),
+        "date" => rt_d("tsl_make_date", &[Dflt::Req, Dflt::Req, Dflt::Req, Dflt::Int(0), Dflt::Int(0), Dflt::Int(0)]),
+        "stopTimer" => rt("tsl_stop_timer"),
+        "appendFile" => rt("tsl_append_file"),
+        "copyFile" => rt("tsl_copy_file"),
+        "fileSize" => rt("tsl_file_size"),
+        "modifiedTime" => rt("tsl_modified_time"),
+        "homeFolder" => rt("tsl_home_folder"),
+        "documentsFolder" => rt("tsl_documents_folder"),
+        "tempFolder" => rt("tsl_temp_folder"),
+        "appDataFolder" => rt("tsl_app_data_folder"),
+        "joinPath" => rt("tsl_join_path"),
+        "platform" => rt("tsl_platform"),
+        "arguments" => rt("tsl_arguments"),
+        "exit" => rt_d("tsl_exit", &[Dflt::Int(0)]),
+        "openURL" => rt("tsl_open_url"),
+        "copyToClipboard" => rt("tsl_copy_to_clipboard"),
+        "clipboardText" => rt("tsl_clipboard_text"),
+        "decodeBase64" => rt("tsl_decode_base64"),
         "readData" => rt("tsl_read_data"),
         "writeData" => rt("tsl_write_data"),
         _ => return None,
@@ -355,6 +469,19 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
 pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
     Some(match (recv, name) {
         (Ty::Data, "text") => rt("tsl_data_text"),
+        (Ty::Str, "findLast") => rt("tsl_str_find_last"),
+        (Ty::Str, "reversed") => rt("tsl_str_reversed"),
+        (Ty::Str, "trimStart") => rt("tsl_str_trim_start"),
+        (Ty::Str, "trimEnd") => rt("tsl_str_trim_end"),
+        (Ty::Str, "capitalized") => rt("tsl_str_capitalized"),
+        (Ty::Str, "repeated") => rt("tsl_str_repeated"),
+        (Ty::Str, "padStart") => rt_d("tsl_str_pad_start", &[Dflt::Req, Dflt::Str(" ")]),
+        (Ty::Str, "padEnd") => rt_d("tsl_str_pad_end", &[Dflt::Req, Dflt::Str(" ")]),
+        (Ty::Str, "character") => rt("tsl_str_character_at"),
+        (Ty::Str, "words") => rt("tsl_str_words"),
+        (Ty::Str, "occurrences") => rt("tsl_str_occurrences"),
+        (Ty::Int, "clamped") => rt("tsl_int_clamped"),
+        (Ty::Float, "clamped") => rt("tsl_float_clamped"),
         _ => return None,
     })
 }
@@ -362,6 +489,17 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
 /// Built-in properties that are runtime calls (types in `property`).
 pub fn runtime_property(recv: &Ty, name: &str) -> Option<RtCall> {
     Some(match (recv, name) {
+        (Ty::Str, "characters") => rt("tsl_str_characters"),
+        (Ty::Str, "urlEncoded") => rt("tsl_str_url_encoded"),
+        (Ty::Str, "urlDecoded") => rt("tsl_str_url_decoded"),
+        (Ty::Str, "fileName") => rt("tsl_path_file_name"),
+        (Ty::Str, "fileExtension") => rt("tsl_path_extension"),
+        (Ty::Str, "folder") => rt("tsl_path_folder"),
+        (Ty::Int, "isEven") => rt("tsl_int_is_even"),
+        (Ty::Int, "isOdd") => rt("tsl_int_is_odd"),
+        (Ty::Float, "isNaN") => rt("tsl_float_is_nan"),
+        (Ty::Float, "isFinite") => rt("tsl_float_is_finite"),
+        (Ty::Data, "base64") => rt("tsl_data_base64"),
         (Ty::Data, "count") => rt("tsl_data_len"),
         (Ty::Data, "isEmpty") => rt("tsl_data_is_empty"),
         (Ty::Data, "bytes") => rt("tsl_data_ints"),

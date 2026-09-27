@@ -1,0 +1,17 @@
+// Repeating timers: every(seconds:) and stopTimer. The program ends when the
+// timer is stopped and nothing else is waiting.
+
+fn main() {
+    var ticks = 0
+    var id = 0
+    id = every(seconds: 0.01) {
+        ticks += 1
+        print("tick {ticks}")
+        if ticks == 3 {
+            stopTimer(id)
+            after(seconds: 0.02) {
+                print("stopped after {ticks} ticks")
+            }
+        }
+    }
+}

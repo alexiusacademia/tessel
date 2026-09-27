@@ -16,6 +16,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod codec;
+mod stdlib;
 pub mod ui;
 
 use std::collections::HashMap;
@@ -378,7 +379,7 @@ pub unsafe extern "C" fn tsl_str_find(s: *const Str, part: *const Str) -> i64 {
 }
 
 /// A new `[String]` from an iterator of text.
-unsafe fn str_list<'a>(items: impl Iterator<Item = &'a str>) -> *mut List {
+pub(crate) unsafe fn str_list<'a>(items: impl Iterator<Item = &'a str>) -> *mut List {
     let mut list = unsafe { tsl_list_new(&TSL_TYPE_STR, 0) };
     for item in items {
         let obj = str_new(item);
@@ -732,6 +733,41 @@ pub unsafe extern "C" fn tsl_list_reversed(l: *const List) -> *mut List {
         let (n, size) = ((*out).len as usize, elem_size(out));
         for i in 0..n / 2 {
             ptr::swap_nonoverlapping(elem_at(out, i as i64), elem_at(out, (n - 1 - i) as i64), size);
+        }
+        out
+    }
+}
+
+/// Items `from` up to, not including, `to` (both clamped to the list), as a new list.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_slice(l: *const List, from: i64, to: i64) -> *mut List {
+    unsafe {
+        let n = (*l).len;
+        let (from, to) = (from.clamp(0, n), to.clamp(0, n));
+        let mut out = tsl_list_new((*l).elem, (to - from).max(0));
+        for i in from..to {
+            let p = elem_at(l as *mut List, i);
+            if let Some(retain) = (*(*l).elem).retain {
+                retain(p);
+            }
+            tsl_list_push(&mut out, p);
+        }
+        out
+    }
+}
+
+/// A copy in random order.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_shuffled(l: *const List) -> *mut List {
+    unsafe {
+        let out = list_clone(l);
+        let (n, size) = ((*out).len as usize, elem_size(out));
+        // Fisher–Yates.
+        for i in (1..n).rev() {
+            let j = (stdlib::random_u64() % (i as u64 + 1)) as usize;
+            if i != j {
+                ptr::swap_nonoverlapping(elem_at(out, i as i64), elem_at(out, j as i64), size);
+            }
         }
         out
     }

@@ -44,7 +44,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     /// Emits `for i in 0..n { body(i) }`.
-    fn counted_loop(&mut self, n: IntValue<'ctx>, body: &mut dyn FnMut(&mut Self, IntValue<'ctx>)) {
+    pub(super) fn counted_loop(&mut self, n: IntValue<'ctx>, body: &mut dyn FnMut(&mut Self, IntValue<'ctx>)) {
         let i_slot = self.alloca(self.i64().into(), "i");
         self.b.build_store(i_slot, self.i64().const_zero()).unwrap();
         let (cond, work, done) = (self.block_named("loop"), self.block_named("step"), self.block_named("looped"));

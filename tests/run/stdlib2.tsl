@@ -1,0 +1,54 @@
+// The standard library: strings, numbers, paths, dates, files, the system.
+
+fn main() {
+    // Strings
+    let s = "hello big world"
+    print(s.capitalized())
+    print("{s.reversed()} | {"ab".repeated(3)} | [{"7".padStart(3, with: "0")}] [{"ab".padEnd(4)}]")
+    print("[{"  x  ".trimStart()}] [{"  x  ".trimEnd()}]")
+    print("{s.findLast("o") ?? -1} {s.character(at: 1) ?? "?"} {s.character(at: 99) ?? "none"}")
+    print("{s.words().count} {"a,b,,c".occurrences(of: ",")} {"héllo".characters.count}")
+    print("{"a b&c=é".urlEncoded} {"a%20b".urlDecoded ?? "?"} {"%zz".urlDecoded ?? "bad"}")
+    // Paths
+    let path = joinPath("/Users/me/docs", "report.final.txt")
+    print("{path} | {path.fileName} | {path.fileExtension} | {path.folder}")
+    // Numbers
+    print("{(4).isEven} {(7).isOdd} {(15).clamped(min: 0, max: 10)} {(2.5).clamped(min: 0.0, max: 1.0)}")
+    print("{(0.0 / 0.0).isNaN} {(1.0 / 0.0).isFinite}")
+    var inRange = true
+    for _ in 0..200 {
+        let r = random(5..8)
+        let f = randomFloat()
+        if r < 5 || r >= 8 || f < 0.0 || f >= 1.0 {
+            inRange = false
+        }
+    }
+    print("random in range: {inRange}")
+    // Dates
+    let t = date(year: 2026, month: 9, day: 27, hour: 14, minute: 5)
+    print(formatDate(t))
+    print(formatDate(t, format: "EEEE, d MMMM yyyy"))
+    print((parseDate("2026-09-27 14:05", format: "yyyy-MM-dd HH:mm") ?? 0.0) == t)
+    print(parseDate("not a date") == nil)
+    print(now() > t - 100000000.0)
+    // Files
+    let dir = joinPath(tempFolder(), "tessel-stdlib-test")
+    createFolder(dir)
+    let file = joinPath(dir, "log.txt")
+    writeFile(path: file, text: "one\n")
+    appendFile(path: file, text: "two\n")
+    print((readFile(file) ?? "").lines().count)
+    print(fileSize(file) ?? -1)
+    print(copyFile(from: file, to: joinPath(dir, "copy.txt")))
+    print((modifiedTime(file) ?? 0.0) > 0.0)
+    deleteFile(joinPath(dir, "copy.txt"))
+    deleteFile(file)
+    deleteFile(dir)
+    // The system
+    print(platform() == "macos" || platform() == "windows")
+    print(arguments().count)
+    print(homeFolder() != "")
+    let d = Data(text: "Tessel")
+    print(d.base64)
+    print((decodeBase64(d.base64) ?? Data()).text ?? "?")
+}

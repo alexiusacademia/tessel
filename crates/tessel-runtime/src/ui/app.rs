@@ -54,10 +54,15 @@ use crate::{Header, Str};
 struct Timer {
     due: f64,
     action: Callback,
+    /// `every(seconds:)`: the interval it repeats at.
+    repeat: Option<f64>,
+    id: i64,
 }
 
 thread_local! {
     static TIMERS: RefCell<Vec<Timer>> = const { RefCell::new(Vec::new()) };
+    /// Repeating timers stopped while timers are firing.
+    static STOPPED: RefCell<Vec<i64>> = const { RefCell::new(Vec::new()) };
     static CLOCK: RefCell<Clock> = RefCell::new(Clock::Real(Instant::now()));
 }
 
@@ -79,7 +84,24 @@ fn now() -> f64 {
 pub unsafe extern "C" fn tsl_after(seconds: f64, f: *const c_void, env: *mut Header) {
     let action = Callback::new(f, env);
     let due = now() + seconds.max(0.0);
-    TIMERS.with(|t| t.borrow_mut().push(Timer { due, action }));
+    TIMERS.with(|t| t.borrow_mut().push(Timer { due, action, repeat: None, id: 0 }));
+}
+
+/// `every(seconds:) { … }`: runs `action` again and again; returns an id for `stopTimer`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_every(seconds: f64, f: *const c_void, env: *mut Header) -> i64 {
+    let action = Callback::new(f, env);
+    let interval = seconds.max(0.001);
+    let id = next_id() as i64;
+    TIMERS.with(|t| t.borrow_mut().push(Timer { due: now() + interval, action, repeat: Some(interval), id }));
+    id
+}
+
+/// `stopTimer(id)`: stops a repeating timer (nothing happens if it's gone).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_stop_timer(id: i64) {
+    TIMERS.with(|t| t.borrow_mut().retain(|x| x.id != id || x.repeat.is_none()));
+    STOPPED.with(|s| s.borrow_mut().push(id));
 }
 
 /// Runs timers that are due. Returns whether any ran.
@@ -92,8 +114,16 @@ fn fire_timers() -> bool {
         due
     });
     let fired = !due.is_empty();
+    STOPPED.with(|s| s.borrow_mut().clear());
     for timer in due {
         timer.action.call();
+        // A repeating timer comes back, unless its own action stopped it.
+        if let Some(interval) = timer.repeat {
+            if !STOPPED.with(|s| s.borrow().contains(&timer.id)) {
+                let next = Timer { due: timer.due + interval, action: timer.action, repeat: timer.repeat, id: timer.id };
+                TIMERS.with(|t| t.borrow_mut().push(next));
+            }
+        }
     }
     fired
 }

@@ -39,6 +39,7 @@ use crate::source::{SourceMap, Span};
 use crate::types::{FnSig, Ty};
 
 mod codec;
+mod stdlib;
 mod ui;
 
 /// Byte offset of a box's data (matches the runtime's `BOX_DATA`).
@@ -63,7 +64,8 @@ const MATH_FNS: &[&str] = &[
 ];
 
 /// Built-in methods that change their receiver (as in the checker).
-const MUTATING_BUILTINS: &[&str] = &["append", "insert", "remove", "removeAll", "removeValue"];
+const MUTATING_BUILTINS: &[&str] =
+    &["append", "insert", "remove", "removeAll", "removeValue", "removeFirst", "removeLast", "appendAll"];
 
 pub fn compile(
     program: &Program,
@@ -2106,6 +2108,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.b.build_int_compare(IntPredicate::EQ, n, self.i64().const_zero(), "").unwrap().into()
                 }
             },
+            Ty::List(_) if name == "indices" => self.list_indices(v),
             Ty::List(elem) => {
                 let len = self.call_rt("tsl_list_len", &[v]).unwrap().into_int_value();
                 match name {
@@ -3010,6 +3013,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         // Methods that change the receiver work on its storage (`slot`, if
         // the caller already has it).
         match (recv, name) {
+            (Ty::List(elem), "removeFirst" | "removeLast" | "appendAll") => {
+                let elem = (**elem).clone();
+                let slot = slot.unwrap_or_else(|| self.write_ptr(object));
+                let mut vals = Vec::new();
+                if name == "appendAll" {
+                    vals.push(self.expr_as(arg(info.args[0].unwrap()), &Ty::list(elem.clone())).unwrap());
+                }
+                let l = self.loc(span);
+                self.list_mutating(slot, &elem, name, &vals, l).unwrap()
+            }
             (Ty::List(elem), "append" | "insert" | "remove" | "removeAll") => {
                 let elem = (**elem).clone();
                 let slot = slot.unwrap_or_else(|| self.write_ptr(object));
@@ -3275,7 +3288,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                             r
                         }
                     },
-                    _ => unreachable!("list method {name}"),
+                    _ => {
+                        let m = builtins::method_of(recv, name).expect("checked list method");
+                        let mut vals = Vec::new();
+                        for (i, p) in m.sig.params.iter().enumerate() {
+                            if let Some(x) = a(self, i, &p.ty) {
+                                vals.push(x);
+                            }
+                        }
+                        return self.list_method(v, &elem, name, &vals, span);
+                    }
                 })
             }
             Ty::Dict(kt, _) => {
@@ -3433,7 +3455,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let f = match self.module.get_function(rt) {
             Some(f) => f,
             None => {
-                let mut ps: Vec<BasicMetadataTypeEnum> = args.iter().map(|(_, t)| self.c_type(t).into()).collect();
+                // A Range goes as two Ints (start, end).
+                let mut ps: Vec<BasicMetadataTypeEnum> = Vec::new();
+                for (_, t) in args {
+                    if *t == Ty::Range {
+                        let i = BasicMetadataTypeEnum::from(self.i64());
+                        ps.extend([i, i]);
+                    } else {
+                        ps.push(self.c_type(t).into());
+                    }
+                }
                 if out_param.is_some() {
                     ps.push(self.ptr_ty().into());
                 }
@@ -3448,6 +3479,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         let mut vals: Vec<BasicMetadataValueEnum> = Vec::new();
         for (v, t) in args {
+            if *t == Ty::Range {
+                let r = v.into_struct_value();
+                for i in 0..2 {
+                    vals.push(self.b.build_extract_value(r, i, "").unwrap().into());
+                }
+                continue;
+            }
             let v = if *t == Ty::Bool { self.to_c_bool(v.into_int_value()) } else { *v };
             vals.push(v.into());
         }
@@ -3671,6 +3709,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let id = self.expr_as(arg(info.args[0].unwrap()), &Ty::Int).unwrap();
                 self.call_rt("tsl_stop_command", &[id]);
                 None
+            }
+            "every" => {
+                let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();
+                let action = self.expr_as(arg(info.args[1].unwrap()), &Ty::func(vec![], Ty::Void)).unwrap();
+                let s = action.into_struct_value();
+                let f = self.b.build_extract_value(s, 0, "").unwrap();
+                let env = self.b.build_extract_value(s, 1, "").unwrap();
+                let p = self.ptr_ty();
+                let rt = self.declare_rt("tsl_every", &[self.ctx.f64_type().into(), p.into(), p.into()], Some(self.i64().into()));
+                // The runtime keeps the closure (its reference moves there).
+                self.b.build_call(rt, &[secs.into(), f.into(), env.into()], "").unwrap().try_as_basic_value().basic()
             }
             "after" => {
                 let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();
