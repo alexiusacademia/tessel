@@ -950,7 +950,15 @@ impl<'a> Parser<'a> {
                 Ok(arm) => {
                     arms.push(arm);
                     if !matches!(self.peek(), Tok::Newline | Tok::RBrace) {
-                        self.unexpected("end of line after the match arm");
+                        // `.a -> x = 1`: an assignment is a statement, not a value.
+                        let assigns =
+                            matches!(self.peek(), Tok::Eq | Tok::PlusEq | Tok::MinusEq | Tok::StarEq | Tok::SlashEq);
+                        let span = self.span();
+                        let found = describe(self.peek());
+                        let e = self.error(span, format!("expected end of line after the match arm, found {found}"));
+                        if assigns {
+                            e.help("to change something in an arm, put it in braces: `.case -> { x = 1 }`");
+                        }
                         self.recover_line();
                     }
                 }
