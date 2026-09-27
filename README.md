@@ -51,7 +51,29 @@ The IDE is itself a Tessel app: see [`ide/`](ide/).
 | `tests/run/` | Programs with expected output, run by `cargo test` |
 | `docs/` | Language design |
 
-## Building
+## Installing
+
+macOS (Apple silicon):
+
+```sh
+curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://storage.googleapis.com/tessel-releases/install.ps1 | iex
+```
+
+Packages are built by `.github/workflows/release.yml` when a `v*` tag is
+pushed, and published to the `tessel-releases` bucket in the `tessel-lang`
+Google Cloud project. They contain `tessel` (with LLVM and its linker, lld,
+built in), the runtime library, and `sdk/`: stubs of the macOS libraries
+apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
+import libraries (`install/windows-sdk.sh`). Nothing else is needed to build
+apps: no Xcode or Visual Studio.
+
+## Building from source
 
 Requires Rust and LLVM 22 (`brew install llvm@22`; the path is set in
 `.cargo/config.toml`).

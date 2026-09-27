@@ -57,11 +57,11 @@ These are the main gaps you may run into today.
   and gives you the text, or `nil`. There are no POST requests, headers or
   status codes yet.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS, but apps
-  have no custom icon, aren't code signed, and there are no installers.
+  have no custom icon and aren't code signed.
 - **Editor support:** the language server reports errors and shows types on
   hover, but doesn't offer completion or go-to-definition.
-- **Installation:** there are no prebuilt downloads; you
-  [build Tessel from source](/start/installation/).
+- **Installation:** packages exist for Apple silicon Macs and 64-bit
+  Windows only (no Intel Macs yet), and they aren't code signed.
 
 ## Planned
 

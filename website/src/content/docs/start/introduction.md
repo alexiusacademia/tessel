@@ -117,9 +117,8 @@ look the same on macOS and Windows.
 
 ## Current status
 
-Tessel is young. It is at version 0.1, it runs on **macOS and Windows**, and
-there are no prebuilt downloads yet: you [build it from
-source](/start/installation/). The language and its built-in views are
+Tessel is young. It is at version 0.1, it runs on **macOS and Windows**,  and you
+[install it](/start/installation/) with one command. The language and its built-in views are
 already enough to write real apps (the [Tessel IDE](/start/ide/) is written
 in Tessel), but many things are still missing, and details may change.
 The [roadmap](/about/roadmap/) lists what works and what doesn't yet.
