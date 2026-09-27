@@ -117,6 +117,10 @@ pub fn compile(
             .run_passes("default<O2>", &tm, PassBuilderOptions::create())
             .map_err(|e| vec![internal(e.to_string())])?;
     }
+    // For working on the compiler: the (optimized) LLVM code, as text.
+    if let Some(path) = std::env::var_os("TESSEL_EMIT_LLVM") {
+        let _ = g.module.print_to_file(path);
+    }
     tm.write_to_file(&g.module, FileType::Object, out).map_err(|e| vec![internal(e.to_string())])
 }
 
@@ -653,9 +657,133 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn call_rt(&mut self, name: &str, args: &[Val<'ctx>]) -> Option<Val<'ctx>> {
+        // The list operations inside loops are emitted inline (see `list_*_inline`).
+        match name {
+            "tsl_list_len" => return Some(self.list_len_inline(args[0].into_pointer_value()).into()),
+            "tsl_list_get" => return Some(self.list_get_inline(args).into()),
+            "tsl_list_elem_mut" => return Some(self.list_elem_mut_inline(args).into()),
+            _ => {}
+        }
         let f = self.rt(name);
         let args: Vec<BasicMetadataValueEnum> = args.iter().map(|a| (*a).into()).collect();
         self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic()
+    }
+
+    // ===== lists, inline =====
+    //
+    // A list is `{ rc: i64, drop: ptr, len: i64, cap: i64, elem: ptr, data: ptr }`
+    // (the runtime's `List`), where `elem` is the element type's `TslType`,
+    // which starts with its size. Reading the length and addressing an
+    // element are a few instructions, so they're emitted here instead of
+    // calling the runtime; only errors and copying a shared list call it.
+
+    fn list_field(&mut self, l: PointerValue<'ctx>, offset: u64, ty: BasicTypeEnum<'ctx>) -> BasicValueEnum<'ctx> {
+        let p = unsafe { self.b.build_gep(self.i8(), l, &[self.i64().const_int(offset, false)], "").unwrap() };
+        self.b.build_load(ty, p, "").unwrap()
+    }
+
+    fn list_len_inline(&mut self, l: PointerValue<'ctx>) -> IntValue<'ctx> {
+        let i = self.i64().into();
+        self.list_field(l, 16, i).into_int_value()
+    }
+
+    /// Stops with the runtime's out-of-range error unless `i` is below `len`.
+    fn list_bounds(&mut self, i: IntValue<'ctx>, len: IntValue<'ctx>, fail: impl FnOnce(&mut Self)) {
+        // Unsigned, so a negative index is out of range too.
+        let ok = self.b.build_int_compare(IntPredicate::ULT, i, len, "inbounds").unwrap();
+        let (good, bad) = (self.block_named("inbounds"), self.block_named("outofbounds"));
+        let expect = self.module.get_function("llvm.expect.i1").unwrap_or_else(|| {
+            let b = self.ctx.bool_type();
+            self.module.add_function("llvm.expect.i1", b.fn_type(&[b.into(), b.into()], false), None)
+        });
+        let likely = self.b.build_call(expect, &[ok.into(), self.ctx.bool_type().const_int(1, false).into()], "").unwrap();
+        let likely = likely.try_as_basic_value().basic().unwrap().into_int_value();
+        self.b.build_conditional_branch(likely, good, bad).unwrap();
+        self.b.position_at_end(bad);
+        fail(self);
+        self.b.build_unreachable().unwrap();
+        self.b.position_at_end(good);
+    }
+
+    /// The address of element `i` of list `l` (already checked).
+    fn list_elem_addr(&mut self, l: PointerValue<'ctx>, i: IntValue<'ctx>) -> PointerValue<'ctx> {
+        let p = self.ptr_ty().into();
+        let data = self.list_field(l, 40, p).into_pointer_value();
+        let elem = self.list_field(l, 32, p).into_pointer_value();
+        let size = self.b.build_load(self.i64(), elem, "size").unwrap().into_int_value();
+        let offset = self.b.build_int_mul(i, size, "").unwrap();
+        unsafe { self.b.build_gep(self.i8(), data, &[offset], "elem").unwrap() }
+    }
+
+    /// `tsl_list_get(list, i, loc)`: element `i`, for reading.
+    fn list_get_inline(&mut self, args: &[Val<'ctx>]) -> PointerValue<'ctx> {
+        let l = args[0].into_pointer_value();
+        let i = args[1].into_int_value();
+        let len = self.list_len_inline(l);
+        self.list_bounds(i, len, |g| {
+            let f = g.rt("tsl_list_get");
+            g.b.build_call(f, &[args[0].into(), args[1].into(), args[2].into()], "").unwrap();
+        });
+        self.list_elem_addr(l, i)
+    }
+
+    /// Appends `v` (of type `elem`, moved in) to the list in `slot`. When
+    /// the list isn't shared and has room, it's stored in place; otherwise
+    /// the runtime grows (or copies) the list first.
+    pub(super) fn push_item(&mut self, slot: PointerValue<'ctx>, v: Val<'ctx>, elem: &Ty) {
+        let (i, p) = (self.i64().into(), self.ptr_ty().into());
+        let l = self.b.build_load(self.ptr_ty(), slot, "list").unwrap().into_pointer_value();
+        let rc = self.b.build_load(self.i64(), l, "rc").unwrap().into_int_value();
+        let len = self.list_len_inline(l);
+        let cap = self.list_field(l, 24, i).into_int_value();
+        let unique = self.b.build_int_compare(IntPredicate::EQ, rc, self.i64().const_int(1, false), "").unwrap();
+        let room = self.b.build_int_compare(IntPredicate::SLT, len, cap, "").unwrap();
+        let fast = self.b.build_and(unique, room, "").unwrap();
+        let (fast_bb, slow_bb, done) = (self.block_named("push"), self.block_named("grow"), self.block_named("pushed"));
+        self.b.build_conditional_branch(fast, fast_bb, slow_bb).unwrap();
+        self.b.position_at_end(fast_bb);
+        let data = self.list_field(l, 40, p).into_pointer_value();
+        let lt = self.llty(elem).unwrap();
+        let dst = unsafe { self.b.build_gep(lt, data, &[len], "").unwrap() };
+        self.b.build_store(dst, v).unwrap();
+        let new_len = self.b.build_int_add(len, self.i64().const_int(1, false), "").unwrap();
+        let len_p = unsafe { self.b.build_gep(self.i8(), l, &[self.i64().const_int(16, false)], "").unwrap() };
+        self.b.build_store(len_p, new_len).unwrap();
+        self.br(done);
+        self.b.position_at_end(slow_bb);
+        let tmp = self.spill(elem, v);
+        let f = self.rt("tsl_list_push");
+        self.b.build_call(f, &[slot.into(), tmp.into()], "").unwrap();
+        self.br(done);
+        self.b.position_at_end(done);
+    }
+
+    /// `tsl_list_elem_mut(slot, i, loc)`: element `i` of the list in `slot`,
+    /// for writing (the list is copied first if it's shared).
+    fn list_elem_mut_inline(&mut self, args: &[Val<'ctx>]) -> PointerValue<'ctx> {
+        let slot = args[0].into_pointer_value();
+        let i = args[1].into_int_value();
+        let l = self.b.build_load(self.ptr_ty(), slot, "list").unwrap().into_pointer_value();
+        let len = self.list_len_inline(l);
+        self.list_bounds(i, len, |g| {
+            let f = g.rt("tsl_list_elem_mut");
+            g.b.build_call(f, &[args[0].into(), args[1].into(), args[2].into()], "").unwrap();
+        });
+        let rc = self.b.build_load(self.i64(), l, "rc").unwrap().into_int_value();
+        let unique = self.b.build_int_compare(IntPredicate::EQ, rc, self.i64().const_int(1, false), "").unwrap();
+        let here = self.b.get_insert_block().unwrap();
+        let (copy, done) = (self.block_named("copy"), self.block_named("unique"));
+        self.b.build_conditional_branch(unique, done, copy).unwrap();
+        self.b.position_at_end(copy);
+        let f = self.rt("tsl_list_unique");
+        let copied = self.b.build_call(f, &[slot.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+        let copy_end = self.b.get_insert_block().unwrap();
+        self.br(done);
+        self.b.position_at_end(done);
+        let phi = self.b.build_phi(self.ptr_ty(), "").unwrap();
+        phi.add_incoming(&[(&l, here), (&copied, copy_end)]);
+        let l = phi.as_basic_value().into_pointer_value();
+        self.list_elem_addr(l, i)
     }
 
     /// Declares a runtime function on first use.
@@ -743,6 +871,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, p, p], None),
+            "tsl_list_unique" => (vec![p], Some(p)),
             _ => panic!("unknown runtime function {name}"),
         };
         let ps: Vec<BasicMetadataTypeEnum> = params.into_iter().map(Into::into).collect();
@@ -1709,7 +1838,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn for_loop(&mut self, var: &Ident, iter: &Expr, body: &Block) {
-        self.for_each_in(var, iter, &mut |g| {
+        let captured = captures(body, &var.name);
+        self.for_each_in(var, iter, captured, &mut |g| {
             g.block(body, Some(&Ty::Void));
         });
     }
@@ -1724,7 +1854,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     /// A `for` loop whose body is emitted by `body`.
-    fn for_each_in(&mut self, var: &Ident, iter: &Expr, body: &mut dyn FnMut(&mut Self)) {
+    /// `captured`: a closure in the body captures the loop variable.
+    fn for_each_in(&mut self, var: &Ident, iter: &Expr, captured: bool, body: &mut dyn FnMut(&mut Self)) {
         if self.ty(iter) == Ty::Range {
             let (lo, hi) = match &iter.kind {
                 ExprKind::Binary(BinOp::Range, lo, hi) => {
@@ -1776,7 +1907,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let movable = place && through_index(iter);
         // A closure capturing the loop variable must find the element again
         // later; if the list's storage may move, keep a locator for it.
-        let relocate = if place && (!self.in_state(iter) || movable) {
+        let relocate = if place && ((captured && !self.in_state(iter)) || movable) {
             let loc = self.make_closure(Body::Locator(iter), &Ty::View);
             let lt = self.llty(&Ty::View).unwrap();
             let slot = self.alloca(lt, "list_locator");
@@ -1958,8 +2089,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.hold_slot(slot, &t);
                 for item in items {
                     let v = self.expr_as(item, elem).unwrap();
-                    let p = self.spill(elem, v);
-                    self.call_rt("tsl_list_push", &[slot.into(), p.into()]);
+                    self.push_item(slot, v, elem);
                 }
                 self.unhold(1);
                 Some(self.load(&t, slot))
@@ -3382,10 +3512,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 match name {
                     "append" | "insert" => {
                         let v = self.expr_as(arg(info.args[0].unwrap()), &elem).unwrap();
-                        let p = self.spill(&elem, v);
                         if name == "append" {
-                            self.call_rt("tsl_list_push", &[slot.into(), p.into()]);
+                            self.push_item(slot, v, &elem);
                         } else {
+                            let p = self.spill(&elem, v);
                             let i = self.expr(arg(info.args[1].unwrap())).unwrap();
                             self.call_rt("tsl_list_insert", &[slot.into(), p.into(), i, l.into()]);
                         }
@@ -3446,8 +3576,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let out_slot = self.spill(&Ty::List(Box::new(out_t.clone())), out);
                 self.each(list, &elem, span, |g, item| {
                     let r = g.call_fn_value(f, &ft, &[item]).unwrap();
-                    let p = g.spill(&out_t, r);
-                    g.call_rt("tsl_list_push", &[out_slot.into(), p.into()]);
+                    g.push_item(out_slot, r, &out_t);
                 });
                 self.release(list, recv);
                 self.release(f, &ft);
@@ -3501,8 +3630,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let (yes, no, next) = (g.block_named("keep"), g.block_named("drop"), g.block_named("next"));
             g.b.build_conditional_branch(keep, yes, no).unwrap();
             g.b.position_at_end(yes);
-            let p = g.spill(elem, item);
-            g.call_rt("tsl_list_push", &[out_slot.into(), p.into()]);
+            g.push_item(out_slot, item, elem);
             g.br(next);
             g.b.position_at_end(no);
             g.release(item, elem);
@@ -4279,15 +4407,38 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "currentFolder" => self.call_rt("tsl_current_folder", &[]),
             _ if MATH_FNS.contains(&name) && *t == Ty::Float => {
-                let op = MATH_FNS.iter().position(|m| *m == name).unwrap() as u64;
                 // Math arguments are always positional (`pow(x, 2.0)`).
                 let a = self.expr_as(&args[0].value, &Ty::Float).unwrap();
-                let b = match args.get(1) {
-                    Some(x) => self.expr_as(&x.value, &Ty::Float).unwrap(),
-                    None => self.ctx.f64_type().const_zero().into(),
+                let b = args.get(1).map(|x| self.expr_as(&x.value, &Ty::Float).unwrap());
+                // LLVM's own operations where it has them (so they're
+                // optimized, and `sqrt` is one instruction); else the C library.
+                let f = match name {
+                    "sqrt" => "llvm.sqrt.f64",
+                    "pow" => "llvm.pow.f64",
+                    "exp" => "llvm.exp.f64",
+                    "log" => "llvm.log.f64",
+                    "log10" => "llvm.log10.f64",
+                    "sin" => "llvm.sin.f64",
+                    "cos" => "llvm.cos.f64",
+                    "floor" => "llvm.floor.f64",
+                    "ceil" => "llvm.ceil.f64",
+                    "round" => "llvm.round.f64",
+                    "abs" => "llvm.fabs.f64",
+                    "min" => "llvm.minnum.f64",
+                    "max" => "llvm.maxnum.f64",
+                    other => other,
                 };
-                let op = self.ctx.i32_type().const_int(op, false);
-                self.call_rt("tsl_math", &[op.into(), a, b])
+                let f64t = self.ctx.f64_type();
+                let n = if b.is_some() { 2 } else { 1 };
+                let func = self.module.get_function(f).unwrap_or_else(|| {
+                    let params: Vec<BasicMetadataTypeEnum> = vec![f64t.into(); n];
+                    self.module.add_function(f, f64t.fn_type(&params, false), None)
+                });
+                let mut call_args: Vec<BasicMetadataValueEnum> = vec![a.into()];
+                if let Some(b) = b {
+                    call_args.push(b.into());
+                }
+                self.b.build_call(func, &call_args, "").unwrap().try_as_basic_value().basic()
             }
             // `abs`, `min`, `max` on Ints.
             "abs" | "min" | "max" => {
@@ -4719,6 +4870,20 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
         }
         _ => for_each_child(e, &mut |c| walk_expr(c, f)),
     }
+}
+
+/// Does a closure in `b` capture the variable `name`?
+pub(super) fn captures(b: &Block, name: &str) -> bool {
+    let mut found = false;
+    walk_block(b, &mut |node| {
+        if let Node::E(Expr { kind: ExprKind::Closure { params, body }, .. }) = node {
+            let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+            let mut free = BTreeSet::new();
+            free_block(body, &mut bound, &mut free);
+            found |= free.contains(name);
+        }
+    });
+    found
 }
 
 /// A generic declaration (compiled only through its specialized copies).

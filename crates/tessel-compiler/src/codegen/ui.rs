@@ -336,7 +336,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             match s {
                 Stmt::Expr(e) => self.content_expr(e),
                 Stmt::For { var, iter, body, .. } => {
-                    self.for_each_in(var, iter, &mut |g| g.content_block(body, false));
+                    // In a view, the loop variable may also go to a view's
+                    // `bind` parameter, which finds it again later like a closure.
+                    let captured = true;
+                    self.for_each_in(var, iter, captured, &mut |g| g.content_block(body, false));
                 }
                 Stmt::Let(_) | Stmt::Var(_) => self.stmt(s),
                 // `state` and functions belong to the view; the checker rejects the rest.

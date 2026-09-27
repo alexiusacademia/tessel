@@ -227,8 +227,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.counted_loop(len, &mut |g, i| {
                     let item = g.item(other, elem, i);
                     g.retain(item, elem);
-                    let p = g.spill(elem, item);
-                    g.call_rt("tsl_list_push", &[slot.into(), p.into()]);
+                    g.push_item(slot, item, elem);
                 });
                 self.release(other, &Ty::list(elem.clone()));
                 None
