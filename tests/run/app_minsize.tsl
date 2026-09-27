@@ -1,0 +1,15 @@
+// .frame(minWidth:minHeight:): views that are never smaller than a size.
+app MinSize(width: 400, height: 320) {
+    VStack(spacing: 10) {
+        HStack(spacing: 8) {
+            Button("OK") {}.frame(minWidth: 100)
+            Button("Cancel") {}.frame(minWidth: 100)
+            Button("A much longer label") {}.frame(minWidth: 100)
+        }
+        Text("min 200, centered").frame(minWidth: 200).background(.lightGray)
+        Text("min 200, leading").frame(minWidth: 200, alignment: .leading).background(.lightGray)
+        Text("tall").frame(minWidth: 120, minHeight: 60, alignment: .bottomTrailing).background(.yellow)
+        Text("min 100, max 250").frame(minWidth: 100, maxWidth: 250).background(.lightGray)
+    }
+    .padding(20)
+}

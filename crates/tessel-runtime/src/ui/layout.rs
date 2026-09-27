@@ -165,8 +165,8 @@ impl Layouter<'_> {
             (None, None) => content,
         };
         n.layout.size = Size {
-            w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + 2.0 * pad),
-            h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + 2.0 * pad),
+            w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + 2.0 * pad).max(n.mods.min_width.unwrap_or(0.0)),
+            h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + 2.0 * pad).max(n.mods.min_height.unwrap_or(0.0)),
         };
         n.layout.size
     }
@@ -351,6 +351,9 @@ impl Layouter<'_> {
         if rect.w > max_w || rect.h > max_h {
             rect = aligned(rect, Size { w: rect.w.min(max_w), h: rect.h.min(max_h) }, 1);
         }
+        // …or less than its min size (it then overflows, rather than squash its content).
+        rect.w = rect.w.max(n.mods.min_width.unwrap_or(0.0));
+        rect.h = rect.h.max(n.mods.min_height.unwrap_or(0.0));
         n.layout.rect = rect;
         if n.mods.hidden {
             return;

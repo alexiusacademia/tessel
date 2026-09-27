@@ -616,8 +616,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "frame" => {
                 let mut dims = Vec::new();
-                // width, height, maxWidth, maxHeight: each as (has, value)
-                for i in 0..4 {
+                // width, height, minWidth, maxWidth, minHeight, maxHeight: each as (has, value)
+                for i in 0..6 {
                     match a(i) {
                         Some(x) => {
                             let v = self.expr_as(x, &Ty::opt(Ty::Float)).unwrap().into_struct_value();
@@ -632,7 +632,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         }
                     }
                 }
-                match a(4) {
+                match a(6) {
                     Some(x) => {
                         dims.push(self.i8().const_int(1, false).into());
                         dims.push(int(self, x));

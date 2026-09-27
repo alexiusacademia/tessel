@@ -1,0 +1,11 @@
+Root
+  View
+    VStack
+      HStack
+        Button "OK"
+        Button "Cancel"
+        Button "A much longer label"
+      Text "min 200, centered"
+      Text "min 200, leading"
+      Text "tall"
+      Text "min 100, max 250"

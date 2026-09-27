@@ -333,7 +333,7 @@ HStack(spacing: 4) {
 
 In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
-Common modifiers: `padding`, `frame(width:height:maxWidth:maxHeight:alignment:)`, `font`, `color`,
+Common modifiers: `padding`, `frame(width:height:minWidth:maxWidth:minHeight:maxHeight:alignment:)`, `font`, `color`,
 `textAlignment`, `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
 
 ### 8.6 Alignment
@@ -358,6 +358,9 @@ Text("Subheading").frame(maxWidth: .infinity, alignment: .trailing)
 Button("Continue") { next() }.frame(maxWidth: .infinity)
 ```
 
+- `.frame(minWidth:minHeight:)` keeps a view from getting smaller than a
+  size (it still grows with its content), e.g. buttons of equal width:
+  `Button("OK") { … }.frame(minWidth: 100)`.
 - `.textAlignment(.leading | .center | .trailing)` lines up the lines of
   multi-line text within the text's box. Like `.font`, it applies to every
   text inside a stack it's set on. (Where the box itself goes is up to the

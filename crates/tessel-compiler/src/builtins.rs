@@ -100,7 +100,9 @@ impl Builtins {
                 vec![
                     P::new("width", Ty::opt(Ty::Float)).default(),
                     P::new("height", Ty::opt(Ty::Float)).default(),
+                    P::new("minWidth", Ty::opt(Ty::Float)).default(),
                     P::new("maxWidth", Ty::opt(Ty::Float)).default(),
+                    P::new("minHeight", Ty::opt(Ty::Float)).default(),
                     P::new("maxHeight", Ty::opt(Ty::Float)).default(),
                     P::new("alignment", self.alignment.clone()).default(),
                 ]

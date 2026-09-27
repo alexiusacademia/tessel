@@ -182,6 +182,9 @@ pub struct Mods {
     pub padding: Option<f64>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    /// `.frame(minWidth:minHeight:)`: never smaller than this.
+    pub min_width: Option<f64>,
+    pub min_height: Option<f64>,
     /// `.frame(maxWidth:maxHeight:)`: grow to the space offered, up to this (may be infinite).
     pub max_width: Option<f64>,
     pub max_height: Option<f64>,
@@ -631,14 +634,24 @@ pub extern "C" fn tsl_ui_frame(
     width: f64,
     has_height: u8,
     height: f64,
+    has_min_width: u8,
+    min_width: f64,
     has_max_width: u8,
     max_width: f64,
+    has_min_height: u8,
+    min_height: f64,
     has_max_height: u8,
     max_height: f64,
     has_align: u8,
     align: i32,
 ) {
     modify(|m| {
+        if has_min_width != 0 {
+            m.min_width = Some(min_width.max(0.0));
+        }
+        if has_min_height != 0 {
+            m.min_height = Some(min_height.max(0.0));
+        }
         if has_max_width != 0 {
             m.max_width = Some(max_width.max(0.0));
         }

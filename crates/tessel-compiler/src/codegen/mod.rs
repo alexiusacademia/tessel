@@ -653,7 +653,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_color" => (vec![i32t], None),
             "tsl_ui_background" => (vec![i32t, f64t], None),
             "tsl_ui_border" => (vec![i32t, f64t, f64t], None),
-            "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, i32t], None),
+            "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, i32t], None),
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, p, p], None),
