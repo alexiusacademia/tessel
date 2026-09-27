@@ -217,6 +217,9 @@ jobs:
           codesign --verify --strict --verbose=2 dist/pkg/tessel
 
           # Notarize (a bare executable can't be stapled; macOS checks online).
+          # Pasted IDs may carry stray whitespace.
+          NOTARY_KEY_ID="$(printf '%s' "$NOTARY_KEY_ID" | tr -d '[:space:]')"
+          NOTARY_ISSUER_ID="$(printf '%s' "$NOTARY_ISSUER_ID" | tr -d '[:space:]')"
           echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
           ditto -c -k --keepParent dist/pkg/tessel "$RUNNER_TEMP/tessel.zip"
           xcrun notarytool submit "$RUNNER_TEMP/tessel.zip" --wait --timeout 30m \
