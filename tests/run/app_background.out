@@ -1,0 +1,10 @@
+Root
+  View
+    VStack
+      Text "Counting…"
+      Button "Count" disabled
+Root
+  View
+    VStack
+      Text "17984 primes below 200000, the last 199999"
+      Button "Count"

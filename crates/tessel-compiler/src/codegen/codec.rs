@@ -37,7 +37,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.declare_rt(name, &ps, r)
     }
 
-    fn tree_call(&mut self, name: &str, params: &[&str], ret: Option<&str>, args: &[Val<'ctx>]) -> Option<Val<'ctx>> {
+    pub(super) fn tree_call(&mut self, name: &str, params: &[&str], ret: Option<&str>, args: &[Val<'ctx>]) -> Option<Val<'ctx>> {
         let f = self.tree_fn(name, params, ret);
         let args: Vec<_> = args.iter().map(|a| (*a).into()).collect();
         self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic()
@@ -278,7 +278,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     /// Decodes tree `h` into `out` with its type's helper; true if it worked.
-    fn decode_via(&mut self, t: &Ty, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {
+    pub(super) fn decode_via(&mut self, t: &Ty, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {
         let f = self.dec_helper(t);
         let r = self.b.build_call(f, &[h.into(), out.into()], "").unwrap().try_as_basic_value().basic();
         self.truthy(r)

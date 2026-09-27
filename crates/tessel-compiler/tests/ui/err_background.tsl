@@ -1,0 +1,25 @@
+fn slow(n: Int) -> Int {
+    n * 2
+}
+
+view Calc {
+    state total = 0
+    state items: [Int] = []
+
+    fn helper() -> Int {
+        3
+    }
+
+    VStack {
+        Button("Go") {
+            background(work: { slow(n: total) }) { r in total = r } // error: can't use `total`
+            let copy = items
+            background(work: { copy.count }) { r in total = r }
+            background(work: { helper() }) { r in total = r } // error: `helper` is a function
+            background(work: { print("hi") }) { r in } // error: must end with the value
+            background(work: { slow(n: 1) }) { r in total = r.count } // error: `Int` has no
+            background(work: { n in slow(n: n) }) { r in } // error: takes no values
+            background(work: { slow(n: 1) }) // error: write it as
+        }
+    }
+}

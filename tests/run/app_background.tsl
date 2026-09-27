@@ -1,0 +1,40 @@
+// Heavy work in an app: the button starts it, the result updates `state`
+// when it's done, and the window stays responsive meanwhile.
+
+fn primesBelow(limit: Int) -> [Int] {
+    var sieve: [Bool] = []
+    for _ in 0..limit {
+        sieve.append(true)
+    }
+    var primes: [Int] = []
+    for i in 2..limit {
+        if sieve[i] {
+            primes.append(i)
+            for k in i..(limit - 1) / i + 1 {
+                sieve[i * k] = false
+            }
+        }
+    }
+    primes
+}
+
+app Primes(width: 360, height: 200) {
+    state limit = 200000
+    state status = "Idle"
+    state busy = false
+
+    VStack(spacing: 12) {
+        Text(status)
+        Button("Count") {
+            busy = true
+            status = "Counting…"
+            let n = limit
+            background(work: { primesBelow(limit: n) }) { primes in
+                status = "{primes.count} primes below {n}, the last {primes[primes.count - 1]}"
+                busy = false
+            }
+        }
+        .disabled(busy)
+    }
+    .padding(24)
+}

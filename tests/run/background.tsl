@@ -1,0 +1,69 @@
+// `background` runs heavy work on another thread with copies of the values
+// it uses; its result comes back to the block after it.
+
+struct Point {
+    x: Float
+    y: Float
+}
+
+enum Shape {
+    circle(radius: Float)
+    square(side: Float)
+}
+
+fn sumTo(n: Int) -> Int {
+    var total = 0
+    for i in 0..n {
+        total += i
+    }
+    total
+}
+
+fn area(shape: Shape) -> Float {
+    match shape {
+        .circle(r) -> pi * r * r
+        .square(s) -> s * s
+    }
+}
+
+fn main() {
+    let n = 1000000
+    background(work: { sumTo(n: n) }) { total in
+        print("sum {total}")
+        scaleAndMeasure()
+    }
+    print("main returns")
+}
+
+fn scaleAndMeasure() {
+    let points = [Point(x: 1.0, y: 2.0), Point(x: 3.0, y: 4.0)]
+    let scale = 2.0
+    background(work: {
+        var out: [Point] = []
+        for p in points {
+            out.append(Point(x: p.x * scale, y: p.y * scale))
+        }
+        out
+    }) { scaled in
+        print("scaled {scaled.count}: {scaled[1].x}, {scaled[1].y}")
+        let shapes = [Shape.circle(radius: 1.0), Shape.square(side: 3.0)]
+        background(work: {
+            var areas: [Float] = []
+            for s in shapes {
+                areas.append(area(shape: s))
+            }
+            areas
+        }) { areas in
+            print("areas {areas[0].formatted(decimals: 4)} {areas[1]}")
+            let word = "tessel"
+            background(work: {
+                if word.count > 3 {
+                    return word.uppercase()
+                }
+                word
+            }) { text in
+                print("text {text}")
+            }
+        }
+    }
+}

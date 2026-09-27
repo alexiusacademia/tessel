@@ -295,7 +295,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
-    "closeWebSocket",
+    "closeWebSocket", "background",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.

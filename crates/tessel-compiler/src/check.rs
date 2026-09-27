@@ -1916,6 +1916,7 @@ impl Checker<'_> {
                 match n {
                     "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
                     "Data" => return self.data_init(args, trailing, span),
+                    "background" => return self.background(args, trailing, span),
                     "toJson" | "toBinary" | "fromJson" | "fromBinary" => {
                         return self.codec_call(n, args, trailing, span, expected);
                     }
@@ -1939,6 +1940,65 @@ impl Checker<'_> {
                 Ty::Error
             }
         }
+    }
+
+    /// `background(work: { … }) { result in … }`: `work` runs on another
+    /// thread with copies of the values it uses, and `done` gets a copy of
+    /// its result on the UI thread. So `work` may only use values that can be
+    /// copied that way (not `state`, bindings, or the app's functions), and
+    /// its result must be something `toBinary` could save.
+    fn background(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        let work = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "work"));
+        let done = trailing.or_else(|| args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "done")).map(|a| &a.value));
+        let (Some(work), Some(done)) = (work, done) else {
+            self.error(span, "write it as `background(work: { … }) { result in … }`");
+            return Ty::Void;
+        };
+        let ExprKind::Closure { params, body } = &work.value.kind else {
+            self.error(work.value.span, "`work:` must be a block, like `work: { compute(input) }`");
+            return Ty::Void;
+        };
+        if !params.is_empty() {
+            self.error(work.value.span, "the `work:` block takes no values")
+                .help("it uses the values around it: `let input = x` then `background(work: { compute(input) }) { … }`");
+            return Ty::Void;
+        }
+        let wt = self.expr(&work.value, None);
+        let result = match wt {
+            Ty::Fn(_, r) => *r,
+            _ => Ty::Error,
+        };
+        if result == Ty::Void {
+            self.error(work.value.span, "the `work:` block must end with the value it computes")
+                .help("the result goes to the block after it: `background(work: { total(items) }) { sum in … }`");
+        } else if let Err(why) = self.saveable(&result) {
+            let what = self.a(&result);
+            self.error(work.value.span, format!("background work can't return {what}")).help(why);
+        }
+        // What the work uses from outside: copied in, so it must be plain values.
+        let mut free = std::collections::BTreeSet::new();
+        crate::codegen::free_block(body, &mut Vec::new(), &mut free);
+        for name in &free {
+            let Some(local) = self.lookup(name).cloned() else { continue };
+            let problem = match &local.kind {
+                Kind::State => Some(format!("`{name}` is `state`, which the app keeps changing")),
+                Kind::Bind => Some(format!("`{name}` is a binding to the app's data")),
+                Kind::Field | Kind::SelfValue => Some(format!("`{name}` belongs to `self`")),
+                Kind::Fn(..) => Some(format!("`{name}` is a function of the app or view")),
+                _ => None,
+            };
+            if let Some(problem) = problem {
+                self.error(work.value.span, format!("background work can't use `{name}`: {problem}"))
+                    .help(format!("copy what it needs first, like `let input = {name}`, and use that"));
+            } else if let Err(why) = self.saveable(&local.ty) {
+                let what = self.a(&local.ty);
+                self.error(work.value.span, format!("background work can't use `{name}`, which is {what}")).help(why);
+            }
+        }
+        if result != Ty::Void && !result.has_error() {
+            self.expect(done, &Ty::func(vec![result], Ty::Void));
+        }
+        Ty::Void
     }
 
     /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`.

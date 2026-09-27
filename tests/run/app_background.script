@@ -1,0 +1,4 @@
+click "Count"
+tree
+wait 0
+tree

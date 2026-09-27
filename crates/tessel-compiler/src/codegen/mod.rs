@@ -3416,6 +3416,99 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// `background(work: { … }) { result in … }`. The values `work` uses
+    /// are encoded (as for `toBinary`) into one tree here; a worker function,
+    /// run on another thread, decodes them into its own copies, runs `work`
+    /// and encodes the result; the done adapter decodes that back on the UI
+    /// thread. So no value is ever shared between threads.
+    fn background<'e>(&mut self, args: &'e [Arg], arg: &dyn Fn(ArgRef) -> &'e Expr, span: Span) {
+        let label = |a: &&Arg, l: &str| a.label.as_ref().is_some_and(|x| x.name == l);
+        let work = &args.iter().find(|a| label(a, "work")).unwrap().value;
+        let done = match args.iter().find(|a| label(a, "done")) {
+            Some(a) => &a.value,
+            None => arg(ArgRef::Trailing),
+        };
+        let ExprKind::Closure { body, .. } = &work.kind else { unreachable!("checked: `work` is a block") };
+        let Ty::Fn(_, result) = self.ty(work) else { unreachable!() };
+        let result = *result;
+        // What `work` uses from here, into one tree.
+        let mut free = BTreeSet::new();
+        free_block(body, &mut Vec::new(), &mut free);
+        let captures: Vec<Var<'ctx>> = free.iter().filter_map(|n| self.lookup(n)).collect();
+        let input = self.tree_call("tsl_tree_array", &[], Some("ptr"), &[]).unwrap().into_pointer_value();
+        for v in &captures {
+            let vp = self.var_read_ptr(v, span);
+            let enc = self.enc_helper(&v.ty);
+            let item = self.b.build_call(enc, &[vp.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+            self.tree_call("tsl_tree_push", &["ptr", "ptr"], None, &[input.into(), item]);
+        }
+
+        // The worker: `ptr tsl_bg_N(ptr input)`.
+        self.closures += 1;
+        let p = self.ptr_ty();
+        let worker = self.module.add_function(&format!("tsl_bg_{}", self.closures), p.fn_type(&[p.into()], false), Some(Linkage::Internal));
+        let names: Vec<(String, Ty)> = captures.iter().map(|v| (v.name.clone(), v.ty.clone())).collect();
+        let work_t = Ty::func(vec![], result.clone());
+        self.in_helper(worker, |g| {
+            let tree = worker.get_nth_param(0).unwrap().into_pointer_value();
+            for (i, (name, ty)) in names.iter().enumerate() {
+                let item = g.tree_call("tsl_tree_at", &["ptr", "i64"], Some("ptr"), &[tree.into(), g.i64().const_int(i as u64, false).into()]);
+                let lt = g.llty(ty).unwrap();
+                let out = g.alloca(lt, name);
+                g.decode_via(ty, item.unwrap().into_pointer_value(), out);
+                let v = g.load(ty, out);
+                g.declare_value(name, ty, Some(v));
+            }
+            let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
+            g.b.build_call(free, &[tree.into()], "").unwrap();
+            // `work` as a closure over those copies, so `return` works as in any block.
+            let f = g.closure(&[], body, &work_t);
+            let v = g.call_fn_value(f, &work_t, &[]).unwrap();
+            g.release(f, &work_t);
+            let vp = g.spill(&result, v);
+            let enc = g.enc_helper(&result);
+            let out = g.b.build_call(enc, &[vp.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+            g.release(v, &result);
+            g.finish_function(Some(out));
+        });
+
+        // The done block, called on the UI thread with the result tree.
+        let dt = Ty::func(vec![result.clone()], Ty::Void);
+        let closure = self.expr_as(done, &dt).unwrap();
+        let bx = self.box_closure(&dt, closure);
+        let adapter = self.background_adapter(&result);
+        let f = self.declare_rt("tsl_background", &[p.into(), p.into(), p.into(), p.into()], None);
+        let wp = worker.as_global_value().as_pointer_value();
+        self.b.build_call(f, &[wp.into(), input.into(), adapter.into(), bx.into()], "").unwrap();
+    }
+
+    /// `adapter(box, tree)`: decodes a `background` result and calls the `fn(T)` block in the box.
+    fn background_adapter(&mut self, t: &Ty) -> PointerValue<'ctx> {
+        let name = format!("tsl_h_bg_done_{}", self.key(t));
+        if let Some(f) = self.helpers.get(&name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(&name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name, f);
+        let ft = Ty::func(vec![t.clone()], Ty::Void);
+        let t = t.clone();
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let tree = f.get_nth_param(1).unwrap().into_pointer_value();
+            let closure = g.load(&ft, g.box_data(bx));
+            let lt = g.llty(&t).unwrap();
+            let out = g.alloca(lt, "result");
+            g.decode_via(&t, tree, out);
+            let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
+            g.b.build_call(free, &[tree.into()], "").unwrap();
+            let v = g.load(&t, out);
+            g.call_fn_value(closure, &ft, &[v]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
     /// `adapter(box, i64 flag)`: calls the `fn(Bool)` block in the box.
     fn bool_adapter(&mut self) -> PointerValue<'ctx> {
         let name = "tsl_h_bool_done";
@@ -3605,7 +3698,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn builtin_fn<'e>(
         &mut self,
         name: &str,
-        args: &[Arg],
+        args: &'e [Arg],
         info: &CallInfo,
         arg: &dyn Fn(ArgRef) -> &'e Expr,
         t: &Ty,
@@ -3889,6 +3982,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 None => self.call_rt_generic("tsl_data_empty", &[], &Ty::Data).unwrap(),
             }),
+            "background" => {
+                self.background(args, arg, span);
+                None
+            }
             "toJson" | "toBinary" => {
                 let x = &args[0].value;
                 let xt = self.ty(x);
@@ -4099,7 +4196,7 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
 }
 
 /// Collects names used in `b` that aren't declared inside it.
-fn free_block(b: &Block, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
+pub(crate) fn free_block(b: &Block, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
     let mark = bound.len();
     for s in &b.stmts {
         match s {
@@ -4125,7 +4222,7 @@ fn free_block(b: &Block, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
     bound.truncate(mark);
 }
 
-fn free_expr(e: &Expr, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
+pub(crate) fn free_expr(e: &Expr, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
     match &e.kind {
         ExprKind::Name(n) => {
             if !bound.contains(n) {

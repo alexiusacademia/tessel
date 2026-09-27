@@ -146,6 +146,8 @@ enum Event {
     Downloaded(u64, bool),
     Message(u64, String),
     Closed(u64, String),
+    /// `background` work finished: its result (a codec tree, as an address).
+    Computed(u64, usize),
 }
 
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -159,6 +161,8 @@ thread_local! {
     static WAITING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
     /// `onOutput` and `onExit` blocks of running commands, by id.
     static COMMANDS: RefCell<HashMap<u64, (Callback, Callback)>> = RefCell::new(HashMap::new());
+    /// `background` work still running: the blocks that get its results.
+    static COMPUTING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -276,6 +280,26 @@ pub extern "C" fn tsl_stop_command(id: i64) {
     }
 }
 
+/// `background(work:) { result in … }`: runs `worker(input)` on another
+/// thread, then `done(result)` on the UI thread. `input` and the result are
+/// codec trees, so the two threads share no values: the worker owns (and
+/// frees) `input`, and `done` owns the result.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_background(
+    worker: extern "C" fn(*mut u8) -> *mut u8,
+    input: *mut u8,
+    done_f: *const std::ffi::c_void,
+    done_env: *mut crate::Header,
+) {
+    let id = next_id();
+    COMPUTING.with(|c| c.borrow_mut().insert(id, Callback::new(done_f, done_env)));
+    let input = input as usize;
+    std::thread::spawn(move || {
+        let result = worker(input as *mut u8);
+        post(Event::Computed(id, result as usize));
+    });
+}
+
 /// Runs the blocks for finished background work. Returns whether any ran.
 fn deliver_background() -> bool {
     let events: Vec<Event> = std::mem::take(&mut *EVENTS.lock().unwrap());
@@ -296,6 +320,11 @@ fn deliver_background() -> bool {
             Event::Exited(id, code) => {
                 if let Some((_, on_exit)) = COMMANDS.with(|c| c.borrow_mut().remove(&id)) {
                     on_exit.call_with_int(code as i64);
+                }
+            }
+            Event::Computed(id, tree) => {
+                if let Some(cb) = COMPUTING.with(|c| c.borrow_mut().remove(&id)) {
+                    cb.call_with(tree as *mut u8);
                 }
             }
             other => net::deliver(other),
@@ -385,7 +414,10 @@ pub fn run_until_idle() {
 
 /// Is background work still going (loads or commands)?
 fn background_busy() -> bool {
-    WAITING.with(|w| !w.borrow().is_empty()) || COMMANDS.with(|c| !c.borrow().is_empty()) || net::busy()
+    WAITING.with(|w| !w.borrow().is_empty())
+        || COMMANDS.with(|c| !c.borrow().is_empty())
+        || COMPUTING.with(|c| !c.borrow().is_empty())
+        || net::busy()
 }
 
 // ===== the app model =====
