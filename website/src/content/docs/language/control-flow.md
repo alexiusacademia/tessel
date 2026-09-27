@@ -282,6 +282,19 @@ match count {
 2, doubled is 4
 ```
 
+Braces are also needed when an arm changes a variable, because an
+assignment isn't a value:
+
+```tessel
+match mode {
+    .light -> { brightness = 1.0 }
+    .dark -> { brightness = 0.2 }
+}
+```
+
+Without the braces, `.light -> brightness = 1.0` is an error, and
+`tessel check` suggests adding them.
+
 ### match as a value
 
 Like `if`, `match` is an expression. Its value is the value of the arm that

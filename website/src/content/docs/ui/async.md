@@ -1,6 +1,6 @@
 ---
 title: Files, commands and timers
-description: Read and write files, run other programs, download text and run code later. Callbacks run on the UI thread and may change state.
+description: Read and write files, let the user choose files with open and save dialogs, run other programs, download text and run code later. Callbacks run on the UI thread and may change state.
 ---
 
 Apps need to do more than draw: save files, run tools, load data from the
@@ -87,6 +87,87 @@ for name in names {
 
 The file functions work in any program, including one with `fn main()`
 instead of an app.
+
+## Documents and custom file types
+
+Many apps work on documents: the user saves their work to a file, and opens
+it again later. `openFile` and `saveFile` show the system's standard open and
+save dialogs and give you the path the user picked, or `nil` if they
+cancelled. You then read or write the file with `readFile` and `writeFile`.
+
+This notes app saves each note in its own file, with the extension `.note`:
+
+```tessel
+app Notes(width: 420, height: 220) {
+    state title = ""
+    state body = ""
+    state status = "New note"
+
+    VStack(spacing: 8, alignment: .leading) {
+        TextField("Title", text: title)
+        TextField("Text", text: body)
+        HStack {
+            Button("Open…") { open() }
+            Button("Save…") { save() }
+            Text(status).color(.secondary)
+        }
+    }
+    .padding(16)
+
+    fn save() {
+        let text = "title={title}\nbody={body}\n"
+        if let path = saveFile(title: "Save note", name: "{title}.note", types: ["note"]) {
+            status = if writeFile(path: path, text: text) { "Saved" } else { "Couldn't save" }
+        }
+    }
+
+    fn open() {
+        if let path = openFile(title: "Open note", types: ["note"]) {
+            if let text = readFile(path) {
+                for line in text.lines() {
+                    if line.hasPrefix("title=") {
+                        title = line.substring(from: 6, to: line.count)
+                    } else if line.hasPrefix("body=") {
+                        body = line.substring(from: 5, to: line.count)
+                    }
+                }
+                status = "Opened"
+            } else {
+                status = "Couldn't read the file"
+            }
+        }
+    }
+}
+```
+
+A few things to notice:
+
+- `types: ["note"]` makes the open dialog show only `.note` files, and makes
+  the save dialog add `.note` when the user types a name without it. Write
+  extensions without the dot. You can list several; the first one is the one
+  added when saving.
+- `name:` suggests a file name in the save dialog.
+- If the user cancels, the dialog returns `nil`, so the `if let` does
+  nothing.
+- The file format is up to you. Here each line is `key=value`, which is easy
+  to write with string interpolation and to read back with
+  [`lines`](/reference/stdlib/#lines), [`hasPrefix`](/reference/stdlib/#contains-hasprefix-and-hassuffix)
+  and [`substring`](/reference/stdlib/#substring). A saved note looks like
+  this:
+
+  ```text
+  title=Groceries
+  body=milk, eggs
+  ```
+
+  This simple format holds one line per field, which is why the note's text
+  is a single-line `TextField`.
+
+The dialogs are for apps: call them from something the user does, like a
+button or a [keyboard shortcut](/ui/shortcuts/). In a
+[headless test](/ui/testing/#file-dialogs), no dialog opens; the test script
+says what each dialog returns instead. See
+[File dialogs](/reference/stdlib/#file-dialogs) for the details.
 
 ## Environment variables
 

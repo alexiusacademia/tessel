@@ -79,6 +79,8 @@ opens a window as usual.
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
 | `key enter` | Presses a key, optionally with modifiers (see below). |
 | `scroll 0 120` | Scrolls the scroll view (or code editor) under the middle of the window down by 120 points. A negative number scrolls up. |
+| `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
+| `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |
 | `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due. |
 | `repeat 20 key down` | Runs a command several times. |
 | `snapshot out.png` | Renders the window to a PNG file, at twice the size in pixels (like a Retina screen). |
@@ -154,6 +156,30 @@ click "Check"
 wait 0
 tree
 ```
+
+### File dialogs
+
+A headless run never opens a window, so it can't show an
+[open or save dialog](/ui/async/#documents-and-custom-file-types) either.
+Instead, `answer` says in advance what the next `openFile` or `saveFile`
+call returns:
+
+```text
+answer "tests/notes/groceries.note"
+click "Save…"
+answer cancel
+click "Open…"
+tree
+```
+
+Here the save dialog "chooses" `tests/notes/groceries.note`, and the open
+dialog is cancelled. Each `answer` is used by one dialog, in order, so you can
+queue several before a click that opens more than one. A dialog with no
+`answer` waiting returns `nil`, like a cancelled one.
+
+The path is returned exactly as written, and a relative path is relative to
+the folder the app was started from. Unlike the real save dialog, `answer`
+doesn't add a missing extension.
 
 ### Output
 

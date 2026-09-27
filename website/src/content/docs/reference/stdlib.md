@@ -1,12 +1,12 @@
 ---
 title: Standard library
-description: Every built-in Tessel function, and every property and method of String, lists and dictionaries.
+description: Every built-in Tessel function, including math and file dialogs, and every property and method of Float, String, lists and dictionaries.
 ---
 
 This page lists everything built into Tessel that isn't a view or a
-modifier: functions like `print` and `readFile`, conversions, and the
-properties and methods of `String`, lists (`[T]`) and dictionaries
-(`[K: V]`). The outputs shown in comments come from running the examples.
+modifier: functions like `print` and `readFile`, conversions, math, file
+dialogs, and the properties and methods of `Float`, `String`, lists (`[T]`)
+and dictionaries (`[K: V]`). The outputs shown in comments come from running the examples.
 
 ## Calling built-in functions
 
@@ -111,6 +111,51 @@ print(label.count)              // 3
 ```
 
 Usually string interpolation is simpler: `"{value}"` gives the same text.
+
+## Math
+
+```tessel
+print(sqrt(16.0))               // 4.0
+print(pow(2.0, 10.0))           // 1024.0
+print(sin(pi / 2.0))            // 1.0
+print(max(0, 2.5))              // 2.5
+print(abs(-4))                  // 4
+```
+
+Math functions take their arguments **without labels**, in the order shown.
+
+| Function | Returns |
+|---|---|
+| `sqrt(x)` | The square root of `x`. |
+| `pow(x, power)` | `x` raised to `power`: `pow(2.0, 3.0)` is `8.0`. |
+| `exp(x)` | *e* raised to `x`. |
+| `log(x)` | The natural logarithm (base *e*) of `x`. |
+| `log10(x)` | The base-10 logarithm of `x`. |
+| `sin(x)`, `cos(x)`, `tan(x)` | The sine, cosine and tangent of the angle `x`. |
+| `asin(x)`, `acos(x)`, `atan(x)` | The angle whose sine, cosine or tangent is `x`. |
+| `atan2(y, x)` | The angle from the positive x axis to the point (`x`, `y`), from `-pi` to `pi`. Note that `y` comes first. |
+| `floor(x)` | `x` rounded down: `floor(-2.7)` is `-3.0`. |
+| `ceil(x)` | `x` rounded up: `ceil(2.1)` is `3.0`. |
+| `round(x)` | `x` rounded to the nearest whole number; halves round away from zero, so `round(2.5)` is `3.0` and `round(-2.5)` is `-3.0`. |
+| `abs(x)` | `x` without its sign. |
+| `min(a, b)` | The smaller of `a` and `b`. |
+| `max(a, b)` | The larger of `a` and `b`. |
+| `pi` | The constant π, `3.141592653589793`. |
+
+- All of these take and return a `Float`, except `abs`, `min` and `max`: they
+  work on `Int`s or `Float`s, and return the same type. Both values of `min`
+  and `max` must have the same type. A whole-number literal next to a `Float`
+  is read as a `Float`, so `max(0, x)` works for a `Float` `x`. To mix an
+  `Int` variable with a `Float`, convert it with [`Float()`](#float).
+- Whole-number literals are read as `Float`s where a `Float` is expected, so
+  `sqrt(16)` works too.
+- Angles are in **radians**. To convert from degrees, multiply by
+  `pi / 180.0`: `sin(30.0 * pi / 180.0)`.
+- `floor`, `ceil` and `round` return a `Float`. Wrap them in
+  [`Int()`](#int) to get an `Int`: `Int(round(2.6))` is `3`.
+- `pi` is a value, not a function: write `pi`, not `pi()`.
+- The results follow the usual floating-point rules and never stop the
+  program: `sqrt(-1.0)` is `NaN` ("not a number") and `log(0.0)` is `-inf`.
 
 ## Files
 
@@ -247,6 +292,67 @@ from. Relative paths are relative to this folder.
 print(currentFolder())          // for example /Users/ada/Projects/notes
 ```
 
+## File dialogs
+
+`openFile` and `saveFile` show the system's standard dialog for choosing a
+file, and return the path the user picked. They're meant for
+[apps](/ui/apps-views/): call them from a button's action, a
+[shortcut](/ui/shortcuts/) or another block that runs when the user does
+something. See [Documents and custom file types](/ui/async/#documents-and-custom-file-types)
+for a complete example.
+
+### openFile
+
+```text
+openFile(title: String = "", types: [String] = []) -> String?
+```
+
+Asks the user to pick an existing file. Returns its full path, or `nil` if
+the user cancelled.
+
+```tessel
+Button("Open…") {
+    if let path = openFile(title: "Open a note", types: ["note"]) {
+        text = readFile(path) ?? ""
+    }
+}
+```
+
+- `title` is shown in the dialog's title bar (not on every system).
+- `types` limits the choice to files with these extensions. Write them
+  without the dot: `["note"]`, or `["txt", "md"]` for several. An empty list
+  allows any file.
+
+### saveFile
+
+```text
+saveFile(title: String = "", name: String = "", types: [String] = []) -> String?
+```
+
+Asks the user where to save a file. Returns the chosen path, or `nil` if the
+user cancelled. It doesn't write anything: pass the path to
+[`writeFile`](#writefile).
+
+```tessel
+Button("Save…") {
+    if let path = saveFile(title: "Save the note", name: "Untitled.note", types: ["note"]) {
+        writeFile(path: path, text: text)
+    }
+}
+```
+
+- `name` is the file name the dialog suggests.
+- `types` works as for `openFile`. If the user types a name without an
+  extension, the first extension in `types` is added, so the example above
+  always gives a path ending in `.note`.
+- The system dialog asks the user before replacing an existing file.
+
+:::note
+In a [headless test run](/ui/testing/) no dialog opens. The script's
+[`answer` command](/ui/testing/#file-dialogs) decides what the next dialog
+returns; without one, it returns `nil`, as if the user cancelled.
+:::
+
 ## The environment and other programs
 
 ### environment
@@ -381,6 +487,37 @@ app Reminder {
 
 A delay of `0` (or less) runs `action` as soon as possible, after the current
 code finishes. To repeat, call `after` again from inside `action`.
+
+## Float
+
+A `Float` is a decimal number. The arithmetic operators work on it, and the
+[math functions](#math) take and return `Float`s.
+
+| Member | Returns | |
+|---|---|---|
+| `formatted(decimals: Int)` | `String` | The number as text, with exactly `decimals` digits after the point. |
+
+### formatted
+
+```tessel
+let third = 1.0 / 3.0
+print(third)                            // 0.3333333333333333
+print(third.formatted(decimals: 2))     // 0.33
+print((2.0).formatted(decimals: 3))     // 2.000
+print((0.666).formatted(decimals: 0))   // 1
+let area = pi * 0.5 * 0.5
+print("Area: {area.formatted(decimals: 4)} m²")   // Area: 0.7854 m²
+```
+
+- The number is rounded to `decimals` places. An exact half goes to the even
+  digit, so `(2.5).formatted(decimals: 0)` is `"2"` and
+  `(3.5).formatted(decimals: 0)` is `"4"`. Because most decimal fractions
+  can't be stored exactly, a value like `1.005` may round down.
+- `decimals` can be from 0 to 15; values outside that range are treated as 0
+  or 15. With `0`, there's no decimal point.
+- A result that would be a negative zero, like `-0.00`, is shown as `0.00`.
+- `formatted` is a `Float` method only. For an `Int`, convert first:
+  `Float(count).formatted(decimals: 1)`.
 
 ## String
 

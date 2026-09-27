@@ -66,8 +66,10 @@ catch-all pattern.
 These names are not keywords but are built in and can't be declared again:
 the types `Int`, `Float`, `Bool`, `String`, `Range` and `View`; the enums `Color`,
 `Weight`, `Alignment` and `IconName`; the [built-in views](/reference/views/);
-and the [built-in functions](/reference/stdlib/). Inside methods, `self` is an
-ordinary name that refers to the value the method was called on.
+and the [built-in functions](/reference/stdlib/). The built-in constant
+[`pi`](/reference/stdlib/#math) isn't reserved: a variable or function of your
+own named `pi` hides it. Inside methods, `self` is an ordinary name that
+refers to the value the method was called on.
 
 ### Numbers
 

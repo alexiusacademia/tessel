@@ -54,14 +54,33 @@ A `Float` is a 64-bit floating-point number (a "double" in many languages).
 A number literal with a decimal point is a `Float`.
 
 ```tessel
-let pi = 3.14159
+let price = 9.99
 let half = 0.5
 print(10.0 / 4.0)   // 2.5
 print(2.0 * 3.0)    // 6.0
 ```
 
 When a `Float` is printed or put into a string, a whole value keeps its
-`.0` (so `6.0`, not `6`), which makes it easy to tell from an `Int`.
+`.0` (so `6.0`, not `6`), which makes it easy to tell from an `Int`. To show
+a fixed number of decimals, use `formatted`:
+
+```tessel
+let third = 1.0 / 3.0
+print(third)                          // 0.3333333333333333
+print(third.formatted(decimals: 2))   // 0.33
+```
+
+Math functions like `sqrt`, `pow`, `sin` and `round`, and the constant `pi`,
+are built in:
+
+```tessel
+let radius = 2.0
+let area = pi * pow(radius, 2.0)
+print(area.formatted(decimals: 1))    // 12.6
+print(sqrt(2.0))                      // 1.4142135623730951
+```
+
+See [Math](/reference/stdlib/#math) for the full list.
 
 `Float` arithmetic follows the usual floating-point rules: it never stops the
 program. Dividing by zero gives infinity, which prints as `inf`. And, as in
