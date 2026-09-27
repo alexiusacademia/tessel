@@ -11,7 +11,10 @@ use tessel_compiler::source::SourceMap;
 const USAGE: &str = "usage: tessel <command>
 
 commands:
-  check <path>   check a program for errors; <path> is a .tsl file or a folder
+  check <path> [--format lines]
+                 check a program for errors; <path> is a .tsl file or a folder.
+                 With --format lines, prints one error per line for tools:
+                 file, line, column, end line, end column, message (tab-separated)
   build <path> [-o <output>] [--bundle]
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app)
@@ -26,7 +29,10 @@ fn main() -> ExitCode {
             println!("tessel {}", tessel_compiler::VERSION);
             ExitCode::SUCCESS
         }
-        (Some("check"), Some(path)) => check(Path::new(path)),
+        (Some("check"), Some(path)) => {
+            let lines = args.windows(2).any(|w| w[0] == "--format" && w[1] == "lines");
+            check(Path::new(path), lines)
+        }
         (Some("build"), Some(path)) => {
             let rest = &args[2..];
             let out = rest.iter().position(|a| a == "-o").and_then(|i| rest.get(i + 1)).map(PathBuf::from);
@@ -113,12 +119,25 @@ fn report(diags: &[Diagnostic], sources: &SourceMap) {
     eprintln!("{} found", plural(diags.len(), "error"));
 }
 
-fn check(path: &Path) -> ExitCode {
+fn check(path: &Path, lines: bool) -> ExitCode {
     let (sources, count) = match load(path) {
         Ok(s) => s,
         Err(code) => return code,
     };
     let analysis = tessel_compiler::analyze(&sources, true);
+    if lines {
+        for d in &analysis.diags.list {
+            let file = sources.file(d.span().file);
+            let (line, col) = file.line_col(d.span().lo as usize);
+            let (end_line, end_col) = file.line_col(d.span().hi as usize);
+            let mut message = d.message.replace(['\t', '\n'], " ");
+            if let Some(help) = &d.help {
+                message += &format!(" (help: {})", help.replace(['\t', '\n'], " "));
+            }
+            println!("{}\t{line}\t{col}\t{end_line}\t{end_col}\t{message}", file.name);
+        }
+        return if analysis.diags.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE };
+    }
     if analysis.diags.is_empty() {
         println!("ok: {} checked, no errors", plural(count, "file"));
         ExitCode::SUCCESS
@@ -274,7 +293,13 @@ fn run(path: &Path, program_args: &[String]) -> ExitCode {
     if let Err(code) = build(path, &exe) {
         return code;
     }
-    let status = Command::new(&exe).args(program_args).status();
+    // Programs can find the `tessel` command through TESSEL_EXE (the IDE does).
+    let mut cmd = Command::new(&exe);
+    cmd.args(program_args);
+    if let Ok(me) = std::env::current_exe() {
+        cmd.env("TESSEL_EXE", me);
+    }
+    let status = cmd.status();
     let _ = std::fs::remove_file(&exe);
     match status {
         Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),

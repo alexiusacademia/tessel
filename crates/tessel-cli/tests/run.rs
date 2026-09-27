@@ -41,7 +41,7 @@ fn run_programs() {
             continue;
         }
         let mut cmd = Command::new(&exe);
-        cmd.current_dir(repo());
+        cmd.current_dir(repo()).env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"));
         // UI apps run headless, driven by `<name>.script`.
         if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
             cmd.env("TESSEL_SCRIPT", script);

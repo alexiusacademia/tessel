@@ -65,7 +65,7 @@ A larger example using structs, enums, loops and bindings is in
 
 - **Literals:** `42`, `1_000`, `3.14`, `true`, `"text"`.
 - **Strings** interpolate with `{expr}`: `"Hello, {user.name}!"`. Escapes are
-  `\n \t \" \\ \{`.
+  `\n \r \t \" \\ \{`.
 
 ## 4. Types
 

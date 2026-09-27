@@ -621,6 +621,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_dict_get" | "tsl_dict_remove" => (vec![p, p, p], Some(i8t)),
             "tsl_dict_set" => (vec![p, p, p], None),
             "tsl_after" => (vec![f64t, p, p], None),
+            "tsl_read_file" | "tsl_list_folder" | "tsl_environment" | "tsl_str_lines" => (vec![p], Some(p)),
+            "tsl_write_file" => (vec![p, p], Some(i8t)),
+            "tsl_file_exists" | "tsl_is_folder" | "tsl_delete_file" => (vec![p], Some(i8t)),
+            "tsl_current_folder" => (vec![], Some(p)),
+            "tsl_run_command" => (vec![p, p, p, p, p, p], Some(i)),
+            "tsl_stop_command" => (vec![i], None),
+            "tsl_str_substring" => (vec![p, i, i], Some(p)),
+            "tsl_str_find" => (vec![p, p], Some(i)),
+            "tsl_ui_shortcut" => (vec![p, p, p], None),
             "tsl_fetch" => (vec![p, p, p], None),
             "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
             "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),
@@ -2947,6 +2956,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         r
                     }
                     "trim" => self.call_rt("tsl_str_trim", &[v]).unwrap(),
+                    "lines" => self.call_rt("tsl_str_lines", &[v]).unwrap(),
+                    "substring" => {
+                        let from = a(self, 0, &Ty::Int).unwrap();
+                        let to = a(self, 1, &Ty::Int).unwrap();
+                        self.call_rt("tsl_str_substring", &[v, from, to]).unwrap()
+                    }
+                    "find" => {
+                        let part = a(self, 0, &Ty::Str).unwrap();
+                        let i = self.call_rt("tsl_str_find", &[v, part]).unwrap().into_int_value();
+                        self.release(part, &Ty::Str);
+                        let found = self.b.build_int_compare(IntPredicate::SGE, i, self.i64().const_zero(), "").unwrap();
+                        let opt = Ty::opt(Ty::Int);
+                        let st = self.llty(&opt).unwrap().into_struct_type();
+                        let s = self.b.build_insert_value(st.get_undef(), found, 0, "").unwrap();
+                        self.b.build_insert_value(s, i, 1, "").unwrap().into_struct_value().into()
+                    }
                     "uppercase" => self.call_rt("tsl_str_uppercase", &[v]).unwrap(),
                     "lowercase" => self.call_rt("tsl_str_lowercase", &[v]).unwrap(),
                     "replace" => {
@@ -3067,6 +3092,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.load(&opt, slot)
     }
 
+    /// An optional from a pointer that may be null (runtime results).
+    fn opt_from_ptr(&mut self, p: PointerValue<'ctx>, opt_ty: &Ty) -> Val<'ctx> {
+        let present = self.b.build_is_not_null(p, "").unwrap();
+        let st = self.llty(opt_ty).unwrap().into_struct_type();
+        let s = self.b.build_insert_value(st.get_undef(), present, 0, "").unwrap();
+        self.b.build_insert_value(s, p, 1, "").unwrap().into_struct_value().into()
+    }
+
     /// `void adapter(ptr box, ptr text)`: calls the `fn(String?)` closure in
     /// `box` with the fetched text (owned), or `nil` if `text` is null.
     fn fetch_adapter(&mut self) -> PointerValue<'ctx> {
@@ -3180,6 +3213,65 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let adapter = self.fetch_adapter();
                 self.call_rt("tsl_fetch", &[url, adapter.into(), bx.into()]);
                 self.release(url, &Ty::Str);
+                None
+            }
+            "readFile" | "listFolder" | "environment" => {
+                let s = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+                let f = match name {
+                    "readFile" => "tsl_read_file",
+                    "listFolder" => "tsl_list_folder",
+                    _ => "tsl_environment",
+                };
+                let p = self.call_rt(f, &[s]).unwrap().into_pointer_value();
+                self.release(s, &Ty::Str);
+                Some(self.opt_from_ptr(p, t))
+            }
+            "writeFile" | "fileExists" | "isFolder" | "deleteFile" => {
+                let mut vals = Vec::new();
+                for r in info.args.iter().flatten() {
+                    vals.push(self.expr_as(arg(*r), &Ty::Str).unwrap());
+                }
+                let f = match name {
+                    "writeFile" => "tsl_write_file",
+                    "fileExists" => "tsl_file_exists",
+                    "deleteFile" => "tsl_delete_file",
+                    _ => "tsl_is_folder",
+                };
+                let r = self.call_rt(f, &vals);
+                for v in vals {
+                    self.release(v, &Ty::Str);
+                }
+                Some(self.truthy(r).into())
+            }
+            "currentFolder" => self.call_rt("tsl_current_folder", &[]),
+            "runCommand" => {
+                let path = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+                let list_t = Ty::list(Ty::Str);
+                let args = match info.args[1] {
+                    Some(r) => self.expr_as(arg(r), &list_t).unwrap(),
+                    None => {
+                        let ti = self.type_info(&Ty::Str);
+                        let zero = self.i64().const_zero();
+                        self.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                    }
+                };
+                let out_t = Ty::func(vec![Ty::Str], Ty::Void);
+                let exit_t = Ty::func(vec![Ty::Int], Ty::Void);
+                let on_out = self.expr_as(arg(info.args[2].unwrap()), &out_t).unwrap().into_struct_value();
+                let on_exit = self.expr_as(arg(info.args[3].unwrap()), &exit_t).unwrap().into_struct_value();
+                let mut all = vec![path, args];
+                for c in [on_out, on_exit] {
+                    all.push(self.b.build_extract_value(c, 0, "").unwrap());
+                    all.push(self.b.build_extract_value(c, 1, "").unwrap());
+                }
+                let id = self.call_rt("tsl_run_command", &all);
+                self.release(path, &Ty::Str);
+                self.release(args, &list_t);
+                id
+            }
+            "stopCommand" => {
+                let id = self.expr_as(arg(info.args[0].unwrap()), &Ty::Int).unwrap();
+                self.call_rt("tsl_stop_command", &[id]);
                 None
             }
             "after" => {

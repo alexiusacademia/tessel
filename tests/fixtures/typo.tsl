@@ -1,0 +1,5 @@
+app Typo {
+    state count = 0
+    Text("{cuont}")
+    Button("go") { count += "1" }
+}

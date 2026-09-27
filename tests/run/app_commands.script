@@ -1,0 +1,6 @@
+click "Check"
+wait 0
+tree
+key cmd+k
+key cmd+k
+tree

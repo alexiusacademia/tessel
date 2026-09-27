@@ -46,6 +46,12 @@ impl Callback {
         f(self.env, arg);
     }
 
+    /// Runs a closure taking one `Int`: `void fn(env, i64)`.
+    pub fn call_with_int(&self, arg: i64) {
+        let f: extern "C" fn(*mut Header, i64) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, arg);
+    }
+
     /// Runs a locator: `ptr fn(env)`, giving a pointer to a value's storage.
     pub fn locate(&self) -> *mut u8 {
         let f: extern "C" fn(*mut Header) -> *mut u8 = unsafe { std::mem::transmute(self.f) };
@@ -170,6 +176,8 @@ pub struct Mods {
     pub disabled: bool,
     pub on_tap: Option<Callback>,
     pub tag: Option<Value>,
+    /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows).
+    pub shortcut: Option<(String, Callback)>,
 }
 
 pub struct Node {
@@ -489,6 +497,13 @@ pub unsafe extern "C" fn tsl_ui_on_tap(f: *const c_void, env: *mut Header) {
     modify(|m| m.on_tap = Some(cb));
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env: *mut Header) {
+    let key = unsafe { text_of(key) }.to_lowercase();
+    let cb = Callback::new(f, env);
+    modify(|m| m.shortcut = Some((key, cb)));
+}
+
 /// Tags the last view with a copy of the value at `value` (borrowed).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_tag(value: *const u8, ty: *const TslType) {
@@ -537,6 +552,10 @@ mod tests {
     }
 
     #[test]
+    // Draws with the GPU. GitHub's Windows machines have none (the fallback
+    // crashes), so this runs where CI has one; UI behavior is tested elsewhere
+    // through the view tree, which needs no GPU.
+    #[cfg_attr(not(target_os = "macos"), ignore = "needs a GPU")]
     fn renders_a_counter() {
         let root = Callback::new(counter_ui as *const c_void, std::ptr::null_mut());
         let mut tree = build(&root);

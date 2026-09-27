@@ -69,6 +69,7 @@ impl Builtins {
             "disabled" => vec![P::unlabeled("isDisabled", Ty::Bool).default()],
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
+            "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             _ => return None,
         })
     }
@@ -84,12 +85,31 @@ impl Builtins {
                 params: vec![P::new("seconds", Ty::Float), P::new("action", Ty::func(vec![], Ty::Void))],
                 ret: Ty::Void,
             },
+            "readFile" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::opt(Ty::Str) },
+            "writeFile" => FnSig { params: vec![P::new("path", Ty::Str), P::new("text", Ty::Str)], ret: Ty::Bool },
+            "listFolder" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::opt(Ty::list(Ty::Str)) },
+            "fileExists" | "isFolder" | "deleteFile" => FnSig { params: vec![P::new("path", Ty::Str)], ret: Ty::Bool },
+            "currentFolder" => FnSig { params: vec![], ret: Ty::Str },
+            "environment" => FnSig { params: vec![P::new("name", Ty::Str)], ret: Ty::opt(Ty::Str) },
+            "runCommand" => FnSig {
+                params: vec![
+                    P::new("path", Ty::Str),
+                    P::new("args", Ty::list(Ty::Str)).default(),
+                    P::new("onOutput", Ty::func(vec![Ty::Str], Ty::Void)),
+                    P::new("onExit", Ty::func(vec![Ty::Int], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "stopCommand" => FnSig { params: vec![P::new("id", Ty::Int)], ret: Ty::Void },
             _ => return None,
         })
     }
 }
 
-pub const FUNCTION_NAMES: &[&str] = &["print", "fetch", "after", "Int", "Float", "String"];
+pub const FUNCTION_NAMES: &[&str] = &[
+    "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
+    "isFolder", "deleteFile", "currentFolder", "environment", "runCommand", "stopCommand",
+];
 
 /// A built-in method: its signature and whether it changes the receiver.
 pub struct Method {
@@ -146,6 +166,9 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "split" => method(vec![P::unlabeled("separator", Ty::Str)], Ty::list(Ty::Str)),
             "trim" | "uppercase" | "lowercase" => method(vec![], Ty::Str),
             "replace" => method(vec![P::unlabeled("text", Ty::Str), P::new("with", Ty::Str)], Ty::Str),
+            "lines" => method(vec![], Ty::list(Ty::Str)),
+            "substring" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::Str),
+            "find" => method(vec![P::unlabeled("text", Ty::Str)], Ty::opt(Ty::Int)),
             _ => return None,
         },
         Ty::Dict(k, v) => match name {
@@ -166,12 +189,12 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         ],
         Ty::Str => &[
             "count", "isEmpty", "contains", "hasPrefix", "hasSuffix", "split", "trim", "uppercase", "lowercase",
-            "replace",
+            "replace", "lines", "substring", "find",
         ],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
-            "id", "tag",
+            "id", "tag", "shortcut",
         ],
         _ => &[],
     }

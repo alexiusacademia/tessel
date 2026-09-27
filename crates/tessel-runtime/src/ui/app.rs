@@ -96,17 +96,41 @@ fn next_timer() -> Option<f64> {
     TIMERS.with(|t| t.borrow().iter().map(|x| x.due).fold(None, |m: Option<f64>, d| Some(m.map_or(d, |m| m.min(d)))))
 }
 
-// ===== fetch =====
+// ===== background work: fetch and running commands =====
 
-/// Finished loads, handed from worker threads to the UI thread.
-static FETCHED: Mutex<Vec<(u64, Option<String>)>> = Mutex::new(Vec::new());
-/// Wakes the window's event loop when a load finishes.
+/// Results of background work, handed from worker threads to the UI thread.
+enum Event {
+    Fetched(u64, Option<String>),
+    Line(u64, String),
+    Exited(u64, i32),
+}
+
+static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
+/// Wakes the window's event loop when background work produces something.
 static WAKE: Mutex<Option<EventLoopProxy<()>>> = Mutex::new(None);
+/// Running commands, so `stopCommand` can stop them.
+static CHILDREN: Mutex<Vec<(u64, Arc<Mutex<std::process::Child>>)>> = Mutex::new(Vec::new());
 
 thread_local! {
     /// Completion blocks waiting for their loads, by id.
     static WAITING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
-    static NEXT_FETCH: Cell<u64> = const { Cell::new(0) };
+    /// `onOutput` and `onExit` blocks of running commands, by id.
+    static COMMANDS: RefCell<HashMap<u64, (Callback, Callback)>> = RefCell::new(HashMap::new());
+    static NEXT_ID: Cell<u64> = const { Cell::new(0) };
+}
+
+fn next_id() -> u64 {
+    NEXT_ID.with(|n| {
+        n.set(n.get() + 1);
+        n.get()
+    })
+}
+
+fn post(event: Event) {
+    EVENTS.lock().unwrap().push(event);
+    if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
+        let _ = proxy.send_event(());
+    }
 }
 
 /// Loads `http(s)://…` or `file://…` as text; `None` if it fails.
@@ -125,34 +149,120 @@ fn load(url: &str) -> Option<String> {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_fetch(url: *const Str, f: *const c_void, env: *mut Header) {
     let url = unsafe { crate::str_text(url) }.to_string();
-    let id = NEXT_FETCH.with(|n| {
-        n.set(n.get() + 1);
-        n.get()
-    });
+    let id = next_id();
     WAITING.with(|w| w.borrow_mut().insert(id, Callback::new(f, env)));
-    std::thread::spawn(move || {
-        let body = load(&url);
-        FETCHED.lock().unwrap().push((id, body));
-        if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
-            let _ = proxy.send_event(());
-        }
-    });
+    std::thread::spawn(move || post(Event::Fetched(id, load(&url))));
 }
 
-/// Runs completion blocks for finished loads. Returns whether any ran.
-fn deliver_fetches() -> bool {
-    let done: Vec<(u64, Option<String>)> = std::mem::take(&mut *FETCHED.lock().unwrap());
-    let ran = !done.is_empty();
-    for (id, body) in done {
-        let Some(cb) = WAITING.with(|w| w.borrow_mut().remove(&id)) else { continue };
-        let text = body.map_or(std::ptr::null_mut(), |b| crate::str_new(&b));
-        cb.call_with(text as *mut u8);
+/// `runCommand(path:args:onOutput:onExit:)`: starts a program. Each line it
+/// prints (stdout and stderr) goes to `onOutput` (`void fn(env, String)`),
+/// then its exit code to `onExit` (`void fn(env, Int)`), on the UI thread.
+/// Returns an id for `stopCommand`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_run_command(
+    path: *const Str,
+    args: *const crate::List,
+    out_f: *const c_void,
+    out_env: *mut Header,
+    exit_f: *const c_void,
+    exit_env: *mut Header,
+) -> i64 {
+    let path = unsafe { crate::str_text(path) }.to_string();
+    let n = unsafe { crate::tsl_list_len(args) };
+    let args: Vec<String> = (0..n)
+        .map(|i| unsafe {
+            let p = crate::tsl_list_get(args, i, std::ptr::null()) as *const *const Str;
+            crate::str_text(*p).to_string()
+        })
+        .collect();
+    let id = next_id();
+    COMMANDS.with(|c| c.borrow_mut().insert(id, (Callback::new(out_f, out_env), Callback::new(exit_f, exit_env))));
+    let spawned = std::process::Command::new(&path)
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(e) => {
+            post(Event::Line(id, format!("error: can't start `{path}`: {e}")));
+            post(Event::Exited(id, -1));
+            return id as i64;
+        }
+    };
+    let readers: Vec<_> = [
+        child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>),
+        child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|stream| {
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let mut reader = std::io::BufReader::new(stream);
+            let mut line = Vec::new();
+            while reader.read_until(b'\n', &mut line).unwrap_or(0) > 0 {
+                let text = String::from_utf8_lossy(&line);
+                post(Event::Line(id, text.trim_end_matches(['\n', '\r']).to_string()));
+                line.clear();
+            }
+        })
+    })
+    .collect();
+    let child = Arc::new(Mutex::new(child));
+    CHILDREN.lock().unwrap().push((id, child.clone()));
+    std::thread::spawn(move || {
+        // All output first, then the exit code.
+        for r in readers {
+            let _ = r.join();
+        }
+        let code = child.lock().unwrap().wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+        CHILDREN.lock().unwrap().retain(|(i, _)| *i != id);
+        post(Event::Exited(id, code));
+    });
+    id as i64
+}
+
+/// `stopCommand(id)`: stops a running command (its `onExit` still runs).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_stop_command(id: i64) {
+    let child = CHILDREN.lock().unwrap().iter().find(|(i, _)| *i == id as u64).map(|(_, c)| c.clone());
+    if let Some(c) = child {
+        let _ = c.lock().unwrap().kill();
+    }
+}
+
+/// Runs the blocks for finished background work. Returns whether any ran.
+fn deliver_background() -> bool {
+    let events: Vec<Event> = std::mem::take(&mut *EVENTS.lock().unwrap());
+    let ran = !events.is_empty();
+    for event in events {
+        match event {
+            Event::Fetched(id, body) => {
+                let Some(cb) = WAITING.with(|w| w.borrow_mut().remove(&id)) else { continue };
+                let text = body.map_or(std::ptr::null_mut(), |b| crate::str_new(&b));
+                cb.call_with(text as *mut u8);
+            }
+            Event::Line(id, line) => {
+                let cb = COMMANDS.with(|c| c.borrow().get(&id).map(|(out, _)| out.clone()));
+                if let Some(cb) = cb {
+                    cb.call_with(crate::str_new(&line) as *mut u8);
+                }
+            }
+            Event::Exited(id, code) => {
+                if let Some((_, on_exit)) = COMMANDS.with(|c| c.borrow_mut().remove(&id)) {
+                    on_exit.call_with_int(code as i64);
+                }
+            }
+        }
     }
     ran
 }
 
-fn fetches_waiting() -> usize {
-    WAITING.with(|w| w.borrow().len())
+/// Is background work still going (loads or commands)?
+fn background_busy() -> bool {
+    WAITING.with(|w| !w.borrow().is_empty()) || COMMANDS.with(|c| !c.borrow().is_empty())
 }
 
 // ===== the app model =====
@@ -334,8 +444,32 @@ impl App {
         }
     }
 
+    /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view has one.
+    fn run_shortcut(&mut self, key: &str) -> bool {
+        fn find(n: &Node, key: &str) -> Option<Callback> {
+            if n.mods.hidden || n.layout.style.disabled {
+                return None;
+            }
+            if let Some((k, cb)) = &n.mods.shortcut {
+                if k == key {
+                    return Some(cb.clone());
+                }
+            }
+            n.children.iter().find_map(|c| find(c, key))
+        }
+        let Some(cb) = self.tree.as_ref().and_then(|t| find(t, key)) else { return false };
+        cb.call();
+        self.dirty = true;
+        true
+    }
+
     /// A key press, by name (see the script commands).
     fn key(&mut self, name: &str, mods: Mods) {
+        // Text editing keeps Cmd+A/C/X/V while a field is being edited.
+        let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v");
+        if mods.primary && !editing_key && self.run_shortcut(name) {
+            return;
+        }
         let unit = if mods.primary {
             Unit::Line
         } else if mods.alt {
@@ -509,6 +643,7 @@ pub unsafe extern "C" fn tsl_ui_run(title: *const Str, width: f64, height: f64, 
     };
     TIMERS.with(|t| t.borrow_mut().clear());
     WAITING.with(|w| w.borrow_mut().clear());
+    COMMANDS.with(|c| c.borrow_mut().clear());
     super::release_all_state();
     let _ = std::io::stdout().flush();
     std::process::exit(code);
@@ -581,10 +716,10 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
             }
             "wait" => {
-                // Loads in progress finish first (tests shouldn't depend on timing).
+                // Loads and commands in progress finish first (tests shouldn't depend on timing).
                 let started = Instant::now();
-                while fetches_waiting() > 0 && started.elapsed() < Duration::from_secs(30) {
-                    if deliver_fetches() {
+                while background_busy() && started.elapsed() < Duration::from_secs(60) {
+                    if deliver_background() {
                         app.dirty = true;
                         app.update();
                     } else {
@@ -858,14 +993,14 @@ impl ApplicationHandler for WindowApp {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: ()) {
-        if deliver_fetches() {
+        if deliver_background() {
             self.app.dirty = true;
             self.request_redraw();
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if deliver_fetches() {
+        if deliver_background() {
             self.app.dirty = true;
             self.request_redraw();
         }

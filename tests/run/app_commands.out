@@ -1,0 +1,14 @@
+Root
+  View
+    Button "Check"
+    Text "status: done, exit code 1"
+    Text "line 3: cannot find `cuont` (help: did you mean `count`?)"
+    Text "line 4: expected `Int`, found `String`"
+    Text "shortcut ran 0 times"
+Root
+  View
+    Button "Check"
+    Text "status: done, exit code 1"
+    Text "line 3: cannot find `cuont` (help: did you mean `count`?)"
+    Text "line 4: expected `Int`, found `String`"
+    Text "shortcut ran 2 times"

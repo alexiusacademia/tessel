@@ -320,6 +320,7 @@ impl Lexer<'_> {
                     let e = self.peek(0);
                     let ch = match e {
                         b'n' => Some('\n'),
+                        b'r' => Some('\r'),
                         b't' => Some('\t'),
                         b'"' => Some('"'),
                         b'\\' => Some('\\'),
@@ -336,7 +337,7 @@ impl Lexer<'_> {
                             let len = self.src[self.pos..].chars().next().map_or(0, char::len_utf8);
                             self.pos += len;
                             self.error(esc_lo, self.pos, "unknown escape sequence")
-                                .help("the escapes are \\n, \\t, \\\", \\\\ and \\{");
+                                .help("the escapes are \\n, \\r, \\t, \\\", \\\\ and \\{");
                         }
                     }
                 }

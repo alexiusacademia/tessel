@@ -1,0 +1,33 @@
+// Running a command and a keyboard shortcut: a tiny version of what the IDE does.
+
+struct Problem {
+    line: String
+    message: String
+}
+
+app Commands(width: 520, height: 300) {
+    state problems: [Problem] = []
+    state status = "idle"
+    state shortcutRuns = 0
+
+    Button("Check") { check() }
+    Text("status: {status}")
+    for p in problems {
+        Text("line {p.line}: {p.message}")
+    }
+    Text("shortcut ran {shortcutRuns} times").shortcut("k") { shortcutRuns += 1 }
+
+    fn check() {
+        problems = []
+        status = "checking"
+        let tessel = environment("TESSEL_EXE") ?? "tessel"
+        runCommand(path: tessel, args: ["check", "tests/fixtures/typo.tsl", "--format", "lines"], onOutput: { line in
+            let fields = line.split("\t")
+            if fields.count == 6 {
+                problems.append(Problem(line: fields[1], message: fields[5]))
+            }
+        }) { code in
+            status = "done, exit code {code}"
+        }
+    }
+}

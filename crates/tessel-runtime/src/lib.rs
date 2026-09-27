@@ -342,6 +342,101 @@ pub unsafe extern "C" fn tsl_str_to_float(s: *const Str, out: *mut f64) -> bool 
     }
 }
 
+/// Lines of text, without their line endings (`\n` or `\r\n`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_lines(s: *const Str) -> *mut List {
+    let text = unsafe { str_text(s) };
+    unsafe { str_list(text.lines()) }
+}
+
+/// Characters `from..<to` (clamped to the text), by character index.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_substring(s: *const Str, from: i64, to: i64) -> *mut Str {
+    let text = unsafe { str_text(s) };
+    let from = from.max(0) as usize;
+    let to = to.max(0) as usize;
+    if to <= from {
+        return str_new("");
+    }
+    str_new(&text.chars().skip(from).take(to - from).collect::<String>())
+}
+
+/// Character index of the first occurrence of `part`, or -1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_find(s: *const Str, part: *const Str) -> i64 {
+    let (text, part) = unsafe { (str_text(s), str_text(part)) };
+    match text.find(part) {
+        Some(byte) => text[..byte].chars().count() as i64,
+        None => -1,
+    }
+}
+
+/// A new `[String]` from an iterator of text.
+unsafe fn str_list<'a>(items: impl Iterator<Item = &'a str>) -> *mut List {
+    let mut list = unsafe { tsl_list_new(&TSL_TYPE_STR, 0) };
+    for item in items {
+        let obj = str_new(item);
+        unsafe { tsl_list_push(&mut list, &obj as *const *mut Str as *const u8) };
+    }
+    list
+}
+
+// ===== files and the environment =====
+
+/// The file's text, or null if it can't be read.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_read_file(path: *const Str) -> *mut Str {
+    match std::fs::read_to_string(unsafe { str_text(path) }) {
+        Ok(text) => str_new(&text),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_write_file(path: *const Str, text: *const Str) -> bool {
+    std::fs::write(unsafe { str_text(path) }, unsafe { str_text(text) }).is_ok()
+}
+
+/// Names in a folder, sorted; null if it can't be read.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_folder(path: *const Str) -> *mut List {
+    let Ok(entries) = std::fs::read_dir(unsafe { str_text(path) }) else { return ptr::null_mut() };
+    let mut names: Vec<String> = entries.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect();
+    names.sort();
+    unsafe { str_list(names.iter().map(String::as_str)) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_file_exists(path: *const Str) -> bool {
+    std::path::Path::new(unsafe { str_text(path) }).exists()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_is_folder(path: *const Str) -> bool {
+    std::path::Path::new(unsafe { str_text(path) }).is_dir()
+}
+
+/// Deletes a file (not a folder). Returns whether it worked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_delete_file(path: *const Str) -> bool {
+    std::fs::remove_file(unsafe { str_text(path) }).is_ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_current_folder() -> *mut Str {
+    let dir = std::env::current_dir().map(|d| d.display().to_string()).unwrap_or_default();
+    str_new(&dir)
+}
+
+/// An environment variable, or null if it isn't set.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_environment(name: *const Str) -> *mut Str {
+    match std::env::var(unsafe { str_text(name) }) {
+        Ok(v) => str_new(&v),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_print(s: *const Str) {
     let mut out = std::io::stdout().lock();

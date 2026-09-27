@@ -565,6 +565,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let b = flag(self, a(0));
                 self.call_rt(if name == "hidden" { "tsl_ui_hidden" } else { "tsl_ui_disabled" }, &[b]);
             }
+            "shortcut" => {
+                let key = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
+                let action = self.expr_as(a(1).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_shortcut", &[key], action);
+                self.release(key, &Ty::Str);
+            }
             "onTap" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_tap", &[], action);

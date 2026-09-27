@@ -1,0 +1,27 @@
+// Files, the environment, and string tools.
+
+fn main() {
+    let dir = "tests/run/stdlib_scratch"
+    print(fileExists(dir))
+    print(writeFile(path: "{dir}.txt", text: "first line\r\nsecond line\nthird"))
+    let text = readFile("{dir}.txt") ?? "failed"
+    let lines = text.lines()
+    print(lines.count)
+    print(lines[1])
+    print(text.substring(from: 0, to: 5))
+    print(text.substring(from: 6, to: 100).lines()[0])
+    print(text.find("second") ?? -1)
+    print(text.find("missing") ?? -1)
+    print(readFile("tests/run/no_such_file.txt") ?? "nil")
+    print(fileExists("{dir}.txt"))
+    print(isFolder("tests"))
+    print(isFolder("{dir}.txt"))
+    let names = listFolder("tests/fixtures") ?? []
+    print(names.joined(separator: ","))
+    print(listFolder("no/such/folder") == nil)
+    print(deleteFile("{dir}.txt"))
+    print(fileExists("{dir}.txt"))
+    print(environment("TESSEL_EXE") != nil)
+    print(environment("SURELY_NOT_SET_12345") ?? "unset")
+    print(currentFolder() != "")
+}
