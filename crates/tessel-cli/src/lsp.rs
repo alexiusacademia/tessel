@@ -26,6 +26,7 @@ pub fn run() -> Result<(), String> {
     let caps = serde_json::json!({
         // 1 = the client sends the full text on every change.
         "textDocumentSync": { "openClose": true, "change": 1, "save": true },
+        "hoverProvider": true,
     });
     conn.initialize(caps).map_err(|e| e.to_string())?;
     let mut server = Server { open: HashMap::new(), published: HashMap::new() };
@@ -35,6 +36,14 @@ pub fn run() -> Result<(), String> {
                 if conn.handle_shutdown(&req).map_err(|e| e.to_string())? {
                     break;
                 }
+                let result = match req.method.as_str() {
+                    "textDocument/hover" => serde_json::from_value::<lsp_types::HoverParams>(req.params)
+                        .ok()
+                        .and_then(|p| server.hover(&p))
+                        .map_or(serde_json::Value::Null, |h| serde_json::to_value(h).unwrap()),
+                    _ => serde_json::Value::Null,
+                };
+                let _ = conn.sender.send(Message::Response(lsp_server::Response::new_ok(req.id, result)));
             }
             Message::Notification(n) => server.notification(&conn, n),
             Message::Response(_) => {}
@@ -84,8 +93,34 @@ impl Server {
         self.check_folder(conn, &path);
     }
 
-    /// Checks the program `file` belongs to and publishes diagnostics for each of its files.
-    fn check_folder(&mut self, conn: &Connection, file: &Path) {
+    /// The type of the expression under the cursor.
+    fn hover(&self, p: &lsp_types::HoverParams) -> Option<lsp_types::Hover> {
+        let pos = &p.text_document_position_params;
+        let path = uri_to_path(&pos.text_document.uri)?;
+        let (sources, files) = self.program(&path);
+        let analysis = tessel_compiler::analyze(&sources, false);
+        let file = files.iter().position(|f| *f == path)? as u32;
+        let offset = offset_of(&sources, file, pos.position)?;
+        // The innermost expression with a meaningful type (a method name or a
+        // case name has none of its own; its call or member expression does).
+        use tessel_compiler::types::Ty;
+        let (e, t) = analysis.program.exprs_at(file, offset).into_iter().find_map(|e| {
+            let t = analysis.checked.types.get(&e.id)?;
+            (!matches!(t, Ty::Error | Ty::Void)).then_some((e, t))
+        })?;
+        let snippet = sources.snippet(e.span).lines().next().unwrap_or("").to_string();
+        let shown = if snippet.chars().count() > 40 { String::new() } else { format!("{snippet}: ") };
+        Some(lsp_types::Hover {
+            contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
+                kind: lsp_types::MarkupKind::Markdown,
+                value: format!("```tessel\n{shown}{}\n```", analysis.checked.show(t)),
+            }),
+            range: Some(range(&sources, e.span)),
+        })
+    }
+
+    /// Every file of the program `file` belongs to (its folder), with open files' current text.
+    fn program(&self, file: &Path) -> (SourceMap, Vec<PathBuf>) {
         let folder = file.parent().map(Path::to_path_buf).unwrap_or_default();
         let mut files: Vec<PathBuf> = std::fs::read_dir(&folder)
             .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| is_tsl(p)).collect())
@@ -99,7 +134,6 @@ impl Server {
             files.push(file.to_path_buf());
         }
         files.sort();
-
         let mut sources = SourceMap::new();
         for f in &files {
             let text = match self.open.get(f) {
@@ -108,6 +142,13 @@ impl Server {
             };
             sources.add(f.display().to_string(), text);
         }
+        (sources, files)
+    }
+
+    /// Checks the program `file` belongs to and publishes diagnostics for each of its files.
+    fn check_folder(&mut self, conn: &Connection, file: &Path) {
+        let folder = file.parent().map(Path::to_path_buf).unwrap_or_default();
+        let (sources, files) = self.program(file);
         // Don't insist on an `app` or `main`: a file may be part of a larger program.
         let analysis = tessel_compiler::analyze(&sources, false);
 
@@ -161,6 +202,24 @@ fn to_lsp(d: &TslDiagnostic, sources: &SourceMap, files: &[PathBuf]) -> Diagnost
         related_information: (!related.is_empty()).then_some(related),
         ..Default::default()
     }
+}
+
+/// Byte offset of an LSP position (UTF-16 based) in `file`.
+fn offset_of(sources: &SourceMap, file: u32, pos: Position) -> Option<u32> {
+    let text = &sources.file(file).text;
+    let line_start = if pos.line == 0 {
+        0
+    } else {
+        text.match_indices('\n').nth(pos.line as usize - 1).map(|(i, _)| i + 1)?
+    };
+    let mut units = 0;
+    for (i, c) in text[line_start..].char_indices() {
+        if units >= pos.character as usize || c == '\n' {
+            return Some((line_start + i) as u32);
+        }
+        units += c.len_utf16();
+    }
+    Some(text.len() as u32)
 }
 
 /// LSP positions count UTF-16 code units within a line.

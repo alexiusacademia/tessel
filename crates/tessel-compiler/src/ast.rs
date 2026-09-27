@@ -184,6 +184,126 @@ pub enum ExprKind {
     Error,
 }
 
+impl Program {
+    /// Expressions covering byte `offset` of `file`, innermost first.
+    pub fn exprs_at<'p>(&'p self, file: u32, offset: u32) -> Vec<&'p Expr> {
+        let mut found: Vec<&'p Expr> = Vec::new();
+        let mut visit = |e: &'p Expr| {
+            if e.span.file == file && e.span.lo <= offset && offset < e.span.hi.max(e.span.lo + 1) {
+                found.push(e);
+            }
+        };
+        for item in &self.items {
+            item_exprs(item, &mut visit);
+        }
+        found.sort_by_key(|e| e.span.hi - e.span.lo);
+        found
+    }
+}
+
+fn item_exprs<'a>(item: &'a Item, f: &mut dyn FnMut(&'a Expr)) {
+    let block = |b: &'a Block, f: &mut dyn FnMut(&'a Expr)| block_exprs(b, f);
+    match item {
+        Item::Struct(d) => {
+            for field in &d.fields {
+                if let Some(e) = &field.default {
+                    expr_tree(e, f);
+                }
+            }
+            for m in &d.methods {
+                block(&m.body, f);
+            }
+        }
+        Item::Enum(d) => d.methods.iter().for_each(|m| block(&m.body, f)),
+        Item::Fn(d) => block(&d.body, f),
+        Item::View(d) => block(&d.body, f),
+        Item::App(d) => {
+            for a in &d.args {
+                expr_tree(&a.value, f);
+            }
+            block(&d.body, f);
+        }
+    }
+}
+
+fn block_exprs<'a>(b: &'a Block, f: &mut dyn FnMut(&'a Expr)) {
+    for s in &b.stmts {
+        match s {
+            Stmt::Let(d) | Stmt::Var(d) | Stmt::State(d) => expr_tree(&d.value, f),
+            Stmt::Fn(d) => block_exprs(&d.body, f),
+            Stmt::Assign { target, value, .. } => {
+                expr_tree(target, f);
+                expr_tree(value, f);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(v) = value {
+                    expr_tree(v, f);
+                }
+            }
+            Stmt::For { iter, body, .. } => {
+                expr_tree(iter, f);
+                block_exprs(body, f);
+            }
+            Stmt::Expr(e) => expr_tree(e, f),
+        }
+    }
+}
+
+/// Calls `f` on `e` and every expression inside it.
+fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
+    f(e);
+    match &e.kind {
+        ExprKind::Str(parts) => {
+            for p in parts {
+                if let StrPart::Expr(x) = p {
+                    expr_tree(x, f);
+                }
+            }
+        }
+        ExprKind::List(items) => items.iter().for_each(|x| expr_tree(x, f)),
+        ExprKind::Dict(pairs) => {
+            for (k, v) in pairs {
+                expr_tree(k, f);
+                expr_tree(v, f);
+            }
+        }
+        ExprKind::Unary(_, x) => expr_tree(x, f),
+        ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
+            expr_tree(l, f);
+            expr_tree(r, f);
+        }
+        ExprKind::Call { callee, args, trailing } => {
+            expr_tree(callee, f);
+            for a in args {
+                expr_tree(&a.value, f);
+            }
+            if let Some(t) = trailing {
+                expr_tree(t, f);
+            }
+        }
+        ExprKind::Member { object, .. } => expr_tree(object, f),
+        ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_exprs(body, f),
+        ExprKind::If { cond, then, otherwise } => {
+            match cond {
+                Cond::Expr(c) | Cond::Let(_, c) => expr_tree(c, f),
+            }
+            block_exprs(then, f);
+            match otherwise {
+                Some(Else::Block(b)) => block_exprs(b, f),
+                Some(Else::If(x)) => expr_tree(x, f),
+                None => {}
+            }
+        }
+        ExprKind::Match { subject, arms } => {
+            expr_tree(subject, f);
+            for a in arms {
+                expr_tree(&a.body, f);
+            }
+        }
+        _ => {}
+    }
+}
+
 impl Expr {
     /// Is this part of an optional chain (`a?.b`, `a?.b.c`, `a?.f().g`)?
     /// Accesses after a `?.` apply to the unwrapped value, and the whole

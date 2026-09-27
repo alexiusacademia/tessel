@@ -29,6 +29,34 @@ pub struct Checked {
     pub view_fns: HashMap<(String, String), FnSig>,
 }
 
+impl Checked {
+    /// A type as written in Tessel, like `[Todo]` or `fn(Int) -> Bool`.
+    pub fn show(&self, t: &Ty) -> String {
+        match t {
+            Ty::Error => "?".into(),
+            Ty::Void => "()".into(),
+            Ty::Int => "Int".into(),
+            Ty::Float => "Float".into(),
+            Ty::Bool => "Bool".into(),
+            Ty::Str => "String".into(),
+            Ty::Range => "Range".into(),
+            Ty::View => "View".into(),
+            Ty::Any => "any value".into(),
+            Ty::List(t) => format!("[{}]", self.show(t)),
+            Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
+            Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
+            Ty::Opt(t) => format!("{}?", self.show(t)),
+            Ty::Fn(ps, r) => {
+                let ps: Vec<String> = ps.iter().map(|p| self.show(p)).collect();
+                let ret = if **r == Ty::Void { String::new() } else { format!(" -> {}", self.show(r)) };
+                format!("fn({}){ret}", ps.join(", "))
+            }
+            Ty::Struct(id) => self.structs[*id].name.clone(),
+            Ty::Enum(id) => self.enums[*id].name.clone(),
+        }
+    }
+}
+
 /// What a call expression resolved to.
 #[derive(Clone, Debug)]
 pub enum Callee {
