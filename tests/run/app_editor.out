@@ -1,0 +1,4 @@
+Root
+  View
+    CodeEditor errors [] = "app Hello {\n    Text(\"hi\")   // greeting\n    state n = 0\n    fn go() {\n        n += 1\n    }\n"
+    Button "Clear errors"

@@ -630,6 +630,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_substring" => (vec![p, i, i], Some(p)),
             "tsl_str_find" => (vec![p, p], Some(i)),
             "tsl_ui_shortcut" => (vec![p, p, p], None),
+            "tsl_ui_code_editor" => (vec![p, p, p], None),
             "tsl_fetch" => (vec![p, p, p], None),
             "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
             "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),

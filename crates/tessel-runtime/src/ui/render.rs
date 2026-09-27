@@ -27,6 +27,33 @@ impl TextEngine {
         TextEngine { fonts: FontContext::new(), layouts: LayoutContext::new() }
     }
 
+    /// Code: monospaced, not wrapped, with syntax colors.
+    pub fn code_layout(&mut self, text: &str, size: f64) -> parley::Layout<Paint> {
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(StyleProperty::from(GenericFamily::Monospace));
+        b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::Brush(Paint(super::highlight::PLAIN.0)));
+        for (range, color) in super::highlight::highlight(text) {
+            b.push(StyleProperty::Brush(Paint(color.0)), range);
+        }
+        let mut layout = b.build(text);
+        layout.break_all_lines(None);
+        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+        layout
+    }
+
+    /// Monospaced gray text (line numbers).
+    pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> parley::Layout<Paint> {
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(StyleProperty::from(GenericFamily::Monospace));
+        b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::Brush(Paint(color.0)));
+        let mut layout = b.build(text);
+        layout.break_all_lines(None);
+        layout.align(parley::Alignment::End, parley::AlignmentOptions::default());
+        layout
+    }
+
     pub fn layout(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>) -> parley::Layout<Paint> {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
         b.push_default(StyleProperty::from(GenericFamily::SystemUi));
@@ -48,6 +75,8 @@ pub struct Interaction {
     /// The text field being edited.
     pub editing: Option<super::edit::Editing>,
     pub scroll: HashMap<u64, f64>,
+    /// Horizontal scroll of code editors, by key.
+    pub scroll_x: HashMap<u64, f64>,
 }
 
 const ACCENT: Rgba = Rgba([0, 122, 255, 255]);
@@ -59,6 +88,9 @@ const PLACEHOLDER: Rgba = Rgba([160, 160, 166, 255]);
 const SWITCH_ON: Rgba = Rgba([52, 199, 89, 255]);
 const WHITE: Rgba = Rgba([255, 255, 255, 255]);
 const SELECTION: Rgba = Rgba([179, 215, 255, 255]);
+const GUTTER: Rgba = Rgba([245, 245, 247, 255]);
+const ERROR_LINE: Rgba = Rgba([255, 235, 235, 255]);
+const ERROR_MARK: Rgba = Rgba([255, 59, 48, 255]);
 pub const BACKGROUND: Rgba = Rgba([255, 255, 255, 255]);
 
 fn color(c: Rgba) -> Color {
@@ -210,6 +242,58 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
+            Kind::CodeEditor { error_lines, .. } => {
+                let editing = self.ui.editing.as_ref().filter(|e| e.key == n.key);
+                let t_scene = self.t();
+                self.fill(content, 6.0, WHITE);
+                self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(content, 6.0));
+                let gutter = Rect { x: content.x, y: content.y, w: n.layout.gutter, h: content.h };
+                self.fill(gutter, 0.0, GUTTER);
+                let (x0, y0) = code_origin(n);
+                let scroll_y = self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
+                let scroll_x = self.ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
+                if let Some(t) = &n.layout.text {
+                    let lines: Vec<(f64, f64)> = t
+                        .lines()
+                        .map(|l| (l.metrics().block_min_coord as f64, l.metrics().block_max_coord as f64))
+                        .collect();
+                    for &line in error_lines {
+                        let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
+                        let y = y0 - scroll_y + top;
+                        let band = Rect { x: content.x + n.layout.gutter, y, w: content.w - n.layout.gutter, h: bottom - top };
+                        self.fill(band, 0.0, ERROR_LINE);
+                        self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, ERROR_MARK);
+                    }
+                    if let Some(numbers) = &n.layout.placeholder {
+                        self.text(numbers, content.x + 4.0, y0 - scroll_y, None);
+                    }
+                    let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
+                    self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(code_area, 0.0));
+                    if let Some(e) = editing {
+                        let (caret, rects) = super::edit::geometry(t, e);
+                        for r in rects {
+                            let sel = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
+                            self.fill(sel, 1.0, SELECTION);
+                        }
+                        if e.range().is_empty() {
+                            let line_h = lines.first().map_or(16.0, |(a, b)| b - a);
+                            let caret = match caret {
+                                Some(c) => Rect { x: x0 - scroll_x + c.x0, y: y0 - scroll_y + c.y0, w: 1.5, h: c.y1 - c.y0 },
+                                None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
+                            };
+                            self.fill(caret, 0.0, ACCENT);
+                        }
+                    }
+                    self.text(t, x0 - scroll_x, y0 - scroll_y, None);
+                    self.scene.pop_layer();
+                }
+                self.scene.pop_layer();
+                if editing.is_some() {
+                    self.stroke(content, 6.0, 2.0, ACCENT);
+                } else {
+                    self.stroke(content, 6.0, 1.0, FIELD_BORDER);
+                }
+            }
             Kind::Image(_) => {
                 self.fill(content, 8.0, CONTROL);
                 self.stroke(content, 8.0, 1.0, FIELD_BORDER);
@@ -236,6 +320,12 @@ impl Painter<'_> {
             self.scene.pop_layer();
         }
     }
+}
+
+/// Where a code editor's text starts (before scrolling).
+pub fn code_origin(n: &Node) -> (f64, f64) {
+    let content = n.layout.rect.inset(n.mods.padding.unwrap_or(0.0));
+    (content.x + n.layout.gutter + 8.0, content.y + 6.0)
 }
 
 /// Where a text field's text starts (before horizontal scrolling).

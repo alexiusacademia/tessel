@@ -8,6 +8,7 @@
 
 mod app;
 mod edit;
+mod highlight;
 mod layout;
 mod render;
 
@@ -152,6 +153,8 @@ pub enum Kind {
     Button { label: String, action: Callback },
     TextField { placeholder: String, text: Callback },
     Toggle { label: String, is_on: Callback },
+    /// A multi-line code editor with line numbers and Tessel syntax colors.
+    CodeEditor { text: Callback, error_lines: Vec<i64> },
     Picker { selection: Callback },
     VStack(f64),
     HStack(f64),
@@ -338,6 +341,16 @@ pub unsafe extern "C" fn tsl_ui_toggle(label: *const Str, f: *const c_void, env:
     let label = unsafe { text_of(label) };
     let is_on = Callback::new(f, env);
     with_builder(|b| b.leaf(Kind::Toggle { label, is_on }));
+}
+
+/// `CodeEditor(text:errorLines:)`. `error_lines` (an `[Int]`) is borrowed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_code_editor(f: *const c_void, env: *mut Header, error_lines: *const crate::List) {
+    let text = Callback::new(f, env);
+    let n = unsafe { crate::tsl_list_len(error_lines) };
+    let error_lines =
+        (0..n).map(|i| unsafe { *(crate::tsl_list_get(error_lines, i, std::ptr::null()) as *const i64) }).collect();
+    with_builder(|b| b.leaf(Kind::CodeEditor { text, error_lines }));
 }
 
 #[unsafe(no_mangle)]

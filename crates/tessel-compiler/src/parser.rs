@@ -818,6 +818,7 @@ impl<'a> Parser<'a> {
             match piece {
                 StrPiece::Text(t) => parts.push(StrPart::Text(t)),
                 StrPiece::Expr(span) => {
+                    let errors_before = self.diags.list.len();
                     let src = &self.text[span.lo as usize..span.hi as usize];
                     let toks = lex(self.file, src, span.lo as usize, self.diags);
                     let saved_toks = std::mem::replace(&mut self.toks, toks);
@@ -833,6 +834,17 @@ impl<'a> Parser<'a> {
                     };
                     self.toks = saved_toks;
                     self.pos = saved_pos;
+                    // `{…}` that isn't valid code is usually a brace meant literally:
+                    // keep one error and say how to write it.
+                    let e = if self.diags.list.len() > errors_before {
+                        self.diags.list.truncate(errors_before + 1);
+                        self.diags.list[errors_before]
+                            .help("`{…}` in a string inserts a value; to write a brace itself, use \\{");
+                        // Don't check a half-parsed expression (more confusing errors).
+                        self.new_expr(ExprKind::Error, span)
+                    } else {
+                        e
+                    };
                     parts.push(StrPart::Expr(e));
                 }
             }

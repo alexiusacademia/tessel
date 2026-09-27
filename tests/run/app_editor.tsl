@@ -1,0 +1,9 @@
+// CodeEditor: multi-line editing with indentation, line movement and error lines.
+
+app Editor(width: 520, height: 360) {
+    state source = "app Hello \{\n    Text(\"hi\")\n}"
+    state errors: [Int] = [2]
+
+    CodeEditor(text: source, errorLines: errors)
+    Button("Clear errors") { errors = [] }
+}

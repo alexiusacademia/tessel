@@ -47,6 +47,8 @@ pub struct Box {
     /// A text field's placeholder, and whether the field is empty.
     pub placeholder: Option<parley::Layout<Paint>>,
     pub empty: bool,
+    /// For code editors: the width of the line-number gutter.
+    pub gutter: f64,
     /// For scroll views: the height of the content.
     pub content_h: f64,
     /// For pickers: the rectangle of each option.
@@ -164,6 +166,21 @@ impl Layouter<'_> {
                 let size = Size { w: t.width() as f64 + 8.0 + SWITCH.w, h: (t.height() as f64).max(SWITCH.h) };
                 n.layout.text = Some(t);
                 size
+            }
+            Kind::CodeEditor { text, .. } => {
+                let value = read_string(text);
+                let t = self.text.code_layout(&value, 13.0);
+                let count = t.lines().count().max(1);
+                let digits = count.to_string().len().max(2);
+                let numbers: Vec<String> = (1..=count).map(|i| format!("{i:>digits$}")).collect();
+                let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, Rgba([160, 160, 166, 255]));
+                n.layout.gutter = numbers.width() as f64 + 14.0;
+                n.layout.content_h = t.height() as f64 + 12.0;
+                n.layout.text = Some(t);
+                n.layout.placeholder = Some(numbers);
+                let w = if avail.w.is_finite() { avail.w } else { 480.0 };
+                let h = if avail.h.is_finite() { avail.h } else { 320.0 };
+                Size { w: w.max(160.0), h: h.max(80.0) }
             }
             Kind::Spacer => Size::default(),
             Kind::Image(_) => Size { w: 64.0, h: 64.0 },
@@ -358,7 +375,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } => axis == Axis::X,
-        Kind::Scroll => true,
+        Kind::Scroll | Kind::CodeEditor { .. } => true,
         Kind::VStack(_) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
         Kind::HStack(_) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
         Kind::ZStack | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),

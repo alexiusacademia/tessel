@@ -7,15 +7,17 @@
 //! size 320 200          window size in points
 //! click "Add"           click the button / toggle / text / field with this label
 //! click 40 60           click at a point
-//! click toggle 2        click the 2nd view of a kind (toggle, button, field, text)
-//! type hello world      type into the text field being edited
+//! click toggle 2        click the 2nd view of a kind (toggle, button, field,
+//!                       text, editor)
+//! type hello world      type into the text field or code editor being edited
 //! type "two words "     quoted, to keep leading or trailing spaces
 //! key backspace         a key, optionally with modifiers: `key shift+left`,
 //!                       `key alt+backspace`, `key cmd+a` (cmd means Ctrl on
-//!                       Windows). Keys: backspace delete left right home end
-//!                       enter escape, and letters for shortcuts (a c x v)
+//!                       Windows). Keys: backspace delete left right up down
+//!                       home end enter tab escape, and letters for shortcuts
 //! scroll 0 120          scroll the view under the pointer by (dx, dy) points
 //! wait 1.5              let 1.5 seconds pass (fires timers)
+//! repeat 20 key down    run a command several times
 //! snapshot out.png      render to a PNG (at 2x)
 //! dump                  print the laid-out view tree, with positions
 //! tree                  print the view tree without positions
@@ -39,7 +41,7 @@ use winit::window::{Window, WindowId};
 
 use super::edit::{self, Clipboard, Edit, Editing, Unit};
 use super::layout::{read_string, Layouter};
-use super::render::{self, field_origin, Interaction, Painter, TextEngine};
+use super::render::{self, code_origin, field_origin, Interaction, Painter, TextEngine};
 use super::{build, Callback, Kind, Node};
 use crate::{Header, Str};
 
@@ -321,23 +323,96 @@ impl App {
     /// and scrolls the field so the caret stays visible.
     fn follow_caret(&mut self) {
         let Some(e) = self.ui.editing.as_mut() else { return };
-        let node = self.tree.as_ref().and_then(|t| t.find(e.key));
-        let Some(node) = node.filter(|n| matches!(n.kind, Kind::TextField { .. })) else {
+        let Some(node) = self.tree.as_ref().and_then(|t| t.find(e.key)) else {
             self.ui.editing = None;
             return;
         };
-        let Kind::TextField { text, .. } = &node.kind else { unreachable!() };
+        let Some(text) = editable_text(node) else {
+            self.ui.editing = None;
+            return;
+        };
         e.clamp(&read_string(text));
         let Some(layout) = &node.layout.text else { return };
         let (caret, _) = edit::geometry(layout, e);
-        let caret_x = caret.map_or(0.0, |c| c.x0);
-        let visible = (node.layout.rect.w - 16.0).max(1.0);
-        if caret_x - e.scroll > visible {
-            e.scroll = caret_x - visible;
-        } else if caret_x < e.scroll {
-            e.scroll = caret_x;
+        let content = node.layout.rect.inset(node.mods.padding.unwrap_or(0.0));
+        // Scroll so the caret stays visible.
+        let keep = |offset: &mut f64, lo: f64, hi: f64, visible: f64, total: f64| {
+            if hi - *offset > visible {
+                *offset = hi - visible;
+            } else if lo < *offset {
+                *offset = lo;
+            }
+            *offset = offset.min((total - visible).max(0.0)).max(0.0);
+        };
+        match node.kind {
+            Kind::CodeEditor { .. } => {
+                let (cx0, cx1, cy0, cy1) = caret.map_or((0.0, 0.0, 0.0, 16.0), |c| (c.x0, c.x1, c.y0, c.y1));
+                let visible_w = (content.w - node.layout.gutter - 16.0).max(1.0);
+                let visible_h = (content.h - 12.0).max(1.0);
+                let sx = self.ui.scroll_x.entry(e.key).or_insert(0.0);
+                keep(sx, cx0, cx1, visible_w, layout.width() as f64 + 2.0);
+                let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
+                keep(sy, cy0, cy1, visible_h, layout.height() as f64);
+            }
+            _ => {
+                let caret_x = caret.map_or(0.0, |c| c.x0);
+                let visible = (node.layout.rect.w - 16.0).max(1.0);
+                keep(&mut e.scroll, caret_x, caret_x, visible, layout.width() as f64);
+            }
         }
-        e.scroll = e.scroll.min((layout.width() as f64 - visible).max(0.0)).max(0.0);
+    }
+
+    /// Where the text of an editable view starts, and its (x, y) scroll.
+    fn text_origin(&self, node: &Node) -> (f64, f64, f64, f64) {
+        match node.kind {
+            Kind::CodeEditor { .. } => {
+                let (x0, y0) = code_origin(node);
+                let sx = self.ui.scroll_x.get(&node.key).copied().unwrap_or(0.0);
+                let sy = self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
+                (x0, y0, sx, sy)
+            }
+            _ => {
+                let (x0, y0) = field_origin(node);
+                let sx = self.ui.editing.as_ref().filter(|e| e.key == node.key).map_or(0.0, |e| e.scroll);
+                (x0, y0, sx, 0.0)
+            }
+        }
+    }
+
+    fn editing_code(&self) -> bool {
+        let key = self.ui.editing.as_ref().map(|e| e.key);
+        key.and_then(|k| self.node(k)).is_some_and(|n| matches!(n.kind, Kind::CodeEditor { .. }))
+    }
+
+    /// The edited text, and the text of the caret's line up to the caret.
+    fn line_before_caret(&self) -> Option<String> {
+        let e = self.ui.editing.as_ref()?;
+        let text = read_string(editable_text(self.node(e.key)?)?);
+        let caret = e.range().start.min(text.len());
+        let line_start = text[..caret].rfind('\n').map_or(0, |i| i + 1);
+        Some(text[line_start..caret].to_string())
+    }
+
+    /// Types text. In code, Enter keeps the indentation (one more level after
+    /// `{`) and `}` at the start of a line removes one level.
+    fn type_text(&mut self, text: &str) {
+        if self.editing_code() {
+            let before = self.line_before_caret().unwrap_or_default();
+            if text == "\n" {
+                let indent: String = before.chars().take_while(|c| *c == ' ').collect();
+                let extra = if before.trim_end().ends_with('{') { "    " } else { "" };
+                self.edit(Edit::Insert(format!("\n{indent}{extra}")));
+                return;
+            }
+            if text == "}" && before.len() >= 4 && before.chars().all(|c| c == ' ') {
+                if let Some(e) = self.ui.editing.as_mut() {
+                    let caret = e.range().start;
+                    e.anchor = caret - 4;
+                    e.focus = caret;
+                }
+            }
+        }
+        self.edit(Edit::Insert(text.to_string()));
     }
 
     fn scene(&mut self, scale: f64) -> Scene {
@@ -373,7 +448,7 @@ impl App {
             match n.kind {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
                 Kind::Toggle { .. } => Some(Hit::Toggle(n.key)),
-                Kind::TextField { .. } => Some(Hit::Field(n.key)),
+                Kind::TextField { .. } | Kind::CodeEditor { .. } => Some(Hit::Field(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
             }
@@ -402,7 +477,7 @@ impl App {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
             }
-            (Hit::Field(key), Kind::TextField { text, .. }) => {
+            (Hit::Field(key), Kind::TextField { text, .. } | Kind::CodeEditor { text, .. }) => {
                 if self.ui.editing.as_ref().is_none_or(|e| e.key != *key) {
                     self.ui.editing = Some(Editing::new(*key, &read_string(text)));
                 }
@@ -426,7 +501,7 @@ impl App {
     fn edit(&mut self, change: Edit) {
         let Some(mut e) = self.ui.editing.clone() else { return };
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(e.key)) else { return };
-        let (Kind::TextField { text, .. }, Some(layout)) = (&node.kind, &node.layout.text) else { return };
+        let (Some(text), Some(layout)) = (editable_text(node), &node.layout.text) else { return };
         let current = read_string(text);
         if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard) {
             let slot = text.locate() as *mut *mut Str;
@@ -485,6 +560,16 @@ impl App {
             "right" => Edit::Right { unit, extend },
             "home" => Edit::Left { unit: Unit::Line, extend },
             "end" => Edit::Right { unit: Unit::Line, extend },
+            "up" => Edit::Up { extend },
+            "down" => Edit::Down { extend },
+            "enter" if self.editing_code() => {
+                self.type_text("\n");
+                return;
+            }
+            "tab" if self.editing_code() => {
+                self.type_text("    ");
+                return;
+            }
             "a" if mods.primary => Edit::SelectAll,
             "c" if mods.primary => Edit::Copy,
             "x" if mods.primary => Edit::Cut,
@@ -499,25 +584,23 @@ impl App {
         self.edit(change);
     }
 
-    /// A mouse press on a text field: place the caret or select.
+    /// A mouse press on a text field or code editor: place the caret or select.
     fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32) {
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
-        let Kind::TextField { text, .. } = &node.kind else { return };
-        let (x0, y0) = field_origin(node);
+        let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
         if self.ui.editing.as_ref().is_none_or(|e| e.key != key) {
             self.ui.editing = Some(Editing::new(key, &current));
         }
-        let scroll = self.ui.editing.as_ref().map_or(0.0, |e| e.scroll);
-        self.edit(Edit::Click { x: x - x0 + scroll, y: y - y0, extend: shift, clicks });
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        self.edit(Edit::Click { x: x - x0 + sx, y: y - y0 + sy, extend: shift, clicks });
     }
 
     fn drag_field(&mut self, x: f64, y: f64) {
         let Some(key) = self.ui.editing.as_ref().map(|e| e.key) else { return };
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
-        let (x0, y0) = field_origin(node);
-        let scroll = self.ui.editing.as_ref().map_or(0.0, |e| e.scroll);
-        self.edit(Edit::Drag { x: x - x0 + scroll, y: y - y0 });
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        self.edit(Edit::Drag { x: x - x0 + sx, y: y - y0 + sy });
     }
 
     fn scroll(&mut self, x: f64, y: f64, dy: f64) {
@@ -526,7 +609,7 @@ impl App {
                 return None;
             }
             let inner = n.children.iter().rev().find_map(|c| find(c, x, y));
-            inner.or(matches!(n.kind, Kind::Scroll).then_some(n.key))
+            inner.or(matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some(n.key))
         }
         let Some(key) = self.tree.as_ref().and_then(|t| find(t, x, y)) else { return };
         let offset = self.ui.scroll.entry(key).or_insert(0.0);
@@ -561,6 +644,7 @@ impl App {
             let matches = matches!(
                 (&node.kind, kind),
                 (Kind::Toggle { .. }, "toggle") | (Kind::Button { .. }, "button") | (Kind::TextField { .. }, "field") | (Kind::Text(_), "text")
+                    | (Kind::CodeEditor { .. }, "editor")
             );
             if matches && !node.mods.hidden {
                 out.push(node);
@@ -594,6 +678,9 @@ impl App {
                 Kind::Scroll => "Scroll".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
                 Kind::Image(p) => format!("Image {p:?}"),
+                Kind::CodeEditor { text, error_lines } => {
+                    format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
+                }
             };
             let flags = [(n.mods.hidden, " hidden"), (n.mods.disabled, " disabled")]
                 .iter()
@@ -660,7 +747,18 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
     CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(0.0));
     let mut cx = RenderContext::new();
     let mut renderer: Option<Renderer> = None;
+    let mut commands: Vec<String> = Vec::new();
     for cmd in script.split([';', '\n']).map(str::trim).filter(|c| !c.is_empty()) {
+        match cmd.strip_prefix("repeat ").and_then(|r| r.split_once(' ')) {
+            Some((n, inner)) => {
+                for _ in 0..n.parse::<usize>().unwrap_or(1) {
+                    commands.push(inner.to_string());
+                }
+            }
+            None => commands.push(cmd.to_string()),
+        }
+    }
+    for cmd in commands.iter().map(String::as_str) {
         app.update();
         let (word, rest) = cmd.split_once(' ').unwrap_or((cmd, ""));
         let rest = rest.trim();
@@ -676,7 +774,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
-                } else if let [kind @ ("toggle" | "button" | "field" | "text"), n] = words[..] {
+                } else if let [kind @ ("toggle" | "button" | "field" | "text" | "editor"), n] = words[..] {
                     app.find_nth(kind, n.parse().unwrap_or(1))
                 } else {
                     let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
@@ -692,7 +790,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "type" => {
                 let text = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')).unwrap_or(rest);
-                app.edit(Edit::Insert(text.to_string()));
+                app.type_text(text);
             }
             "key" => {
                 let mut mods = Mods::default();
@@ -972,6 +1070,9 @@ impl ApplicationHandler for WindowApp {
                     Key::Named(NamedKey::End) => Some("end"),
                     Key::Named(NamedKey::Enter) => Some("enter"),
                     Key::Named(NamedKey::Escape) => Some("escape"),
+                    Key::Named(NamedKey::ArrowUp) => Some("up"),
+                    Key::Named(NamedKey::ArrowDown) => Some("down"),
+                    Key::Named(NamedKey::Tab) => Some("tab"),
                     _ => None,
                 };
                 match (named, &logical_key) {
@@ -979,7 +1080,7 @@ impl ApplicationHandler for WindowApp {
                     (None, Key::Character(c)) if mods.primary => self.app.key(&c.to_lowercase(), mods),
                     _ => {
                         if let Some(t) = text.filter(|t| !t.chars().any(char::is_control)) {
-                            self.app.edit(Edit::Insert(t.to_string()));
+                            self.app.type_text(&t);
                         }
                     }
                 }
@@ -1015,5 +1116,13 @@ impl ApplicationHandler for WindowApp {
             }
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
+    }
+}
+
+/// The locator of an editable view's text.
+fn editable_text(n: &Node) -> Option<&Callback> {
+    match &n.kind {
+        Kind::TextField { text, .. } | Kind::CodeEditor { text, .. } => Some(text),
+        _ => None,
     }
 }

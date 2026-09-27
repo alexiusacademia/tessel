@@ -4,6 +4,9 @@ fn semicolons() {
 
 fn strings() {
     let s = "unterminated // error: missing its closing
+    let code = "app Hello {\n}" // error: to write a brace itself, use \{
+    let open = "count: {x" // error: never closed
+    let ok = "app Hello \{\n}"
 }
 
 fn operators(a: Bool, b: Bool) {

@@ -1,0 +1,20 @@
+click editor 1
+key cmd+a
+key right
+key up
+key end
+type "   // greeting"
+key enter
+type state n = 0
+key enter
+type fn go() {
+key enter
+type n += 1
+key enter
+type }
+key down
+key home
+key shift+down
+key backspace
+click "Clear errors"
+tree

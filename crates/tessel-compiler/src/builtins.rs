@@ -26,7 +26,7 @@ pub struct Builtins {
 }
 
 pub const VIEW_NAMES: &[&str] =
-    &["Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image"];
+    &["Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image", "CodeEditor"];
 
 impl Builtins {
     pub fn view(&self, name: &str) -> Option<Vec<P>> {
@@ -36,6 +36,7 @@ impl Builtins {
             "Button" => vec![P::unlabeled("label", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             "TextField" => vec![P::unlabeled("placeholder", Ty::Str), P::new("text", Ty::Str).bind()],
             "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
+            "CodeEditor" => vec![P::new("text", Ty::Str).bind(), P::new("errorLines", Ty::list(Ty::Int)).default()],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
                 selection.sets_tag = true;

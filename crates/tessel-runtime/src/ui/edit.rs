@@ -71,6 +71,8 @@ pub enum Edit {
     Delete(Unit),
     Left { unit: Unit, extend: bool },
     Right { unit: Unit, extend: bool },
+    Up { extend: bool },
+    Down { extend: bool },
     SelectAll,
     Copy,
     Cut,
@@ -175,6 +177,14 @@ pub fn apply(text: &str, layout: &Layout<Paint>, e: &mut Editing, edit: Edit, cl
                 (Unit::Line, true) => sel.line_end(layout, extend),
             };
             e.set(s);
+            None
+        }
+        Edit::Up { extend } => {
+            e.set(sel.previous_line(layout, extend));
+            None
+        }
+        Edit::Down { extend } => {
+            e.set(sel.next_line(layout, extend));
             None
         }
         Edit::SelectAll => {

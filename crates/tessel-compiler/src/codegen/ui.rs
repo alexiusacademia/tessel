@@ -464,6 +464,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure(f, &[label], loc);
                 self.release(label, &Ty::Str);
             }
+            "CodeEditor" => {
+                let loc = self.locator(a(0).unwrap());
+                let list_t = Ty::list(Ty::Int);
+                let lines = match a(1) {
+                    Some(x) => self.expr_as(x, &list_t).unwrap(),
+                    None => {
+                        let ti = self.type_info(&Ty::Int);
+                        let zero = self.i64().const_zero();
+                        self.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                    }
+                };
+                let s = loc.into_struct_value();
+                let f = self.b.build_extract_value(s, 0, "").unwrap();
+                let env = self.b.build_extract_value(s, 1, "").unwrap();
+                self.call_rt("tsl_ui_code_editor", &[f, env, lines]);
+                self.release(lines, &list_t);
+            }
             "Picker" => {
                 let loc = self.locator(a(0).unwrap());
                 self.pass_closure("tsl_ui_begin_picker", &[], loc);

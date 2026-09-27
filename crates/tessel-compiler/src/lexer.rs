@@ -360,8 +360,20 @@ impl Lexer<'_> {
                             self.pos = close + 1;
                         }
                         None => {
-                            self.error(open, self.pos, "this `{` in a string is never closed")
+                            self.error(open, open + 1, "this `{` in a string is never closed")
                                 .help("close it with `}`, or write \\{ for a literal brace");
+                            // Treat the rest of the string as text, so one
+                            // missing brace doesn't turn the string into code.
+                            self.pos = open + 1;
+                            while self.pos < self.bytes.len() && !matches!(self.peek(0), b'"' | b'\n') {
+                                if self.peek(0) == b'\\' {
+                                    self.pos += 1;
+                                }
+                                self.pos += 1;
+                            }
+                            if self.peek(0) == b'"' {
+                                self.pos += 1;
+                            }
                             break;
                         }
                     }
