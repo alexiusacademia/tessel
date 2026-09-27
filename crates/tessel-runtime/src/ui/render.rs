@@ -340,6 +340,15 @@ impl Painter<'_> {
             Kind::Divider => {
                 self.fill(r, 0.0, super::COLORS[16]);
             }
+            Kind::Svg { source, .. } => {
+                if let Some(svg) = super::svg::load(source, style.color) {
+                    let s = (content.w / svg.width.max(1.0)).min(content.h / svg.height.max(1.0));
+                    let x = content.x + (content.w - svg.width * s) / 2.0;
+                    let y = content.y + (content.h - svg.height * s) / 2.0;
+                    let t = self.t() * Affine::translate((x, y)) * Affine::scale(s);
+                    self.scene.append(&svg.scene, Some(t));
+                }
+            }
             Kind::Image(_) => {
                 self.fill(content, 8.0, CONTROL);
                 self.stroke(content, 8.0, 1.0, FIELD_BORDER);

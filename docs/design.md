@@ -304,7 +304,33 @@ Text("Hi")
 | `VStack` / `HStack` / `ZStack` | `(spacing: Float = 8, content: View)` |
 | `Spacer` | `Spacer()` — takes the remaining space in a stack |
 | `Scroll` | `Scroll(content: View)` |
-| `Image` | `Image(_ path: String)` |
+| `Image` | `Image(_ path: String)` — PNG, JPEG or SVG files |
+| `Icon` | `Icon(_ name: IconName)` — a built-in icon, e.g. `Icon(.folder)` |
+| `Svg` | `Svg(_ source: String)` — SVG markup written inline |
+| `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int)` |
+| `TabView` | `TabView(selection: bind T, onClose: fn(T)?, content: View)` with `.tabItem(title)` and `.tag(value)` on pages |
+| `Divider` | `Divider()` — a thin separator line |
+
+**Icons.** `IconName` is a built-in enum of commonly used icons (from the
+Lucide set, ISC license): `file`, `fileText`, `fileCode`, `filePlus`,
+`folder`, `folderOpen`, `folderPlus`, `plus`, `minus`, `close`, `check`,
+`trash`, `pencil`, `play`, `stop`, `save`, `search`, `chevronRight`,
+`chevronDown`, `chevronLeft`, `chevronUp`, `settings`, `refresh`, `warning`,
+`info`, `circleCheck`, `circleX`, `copy`, `home`, `user`, `heart`, `star`,
+`arrowLeft`, `arrowRight`, `arrowUp`, `arrowDown`, `menu`, `more`, `sun`,
+`moon`, `download`, `upload`, `link`, `externalLink`, `calendar`, `clock`,
+`bell`, `mail`, `lock`, `eye`, `eyeOff`, `terminal`, `code`, `bug`,
+`package`, `hammer`, `undo`, `redo`, `image`. An icon takes its size from
+`.font(size:)` and its color from `.color(…)`, so it lines up with text:
+
+```tessel
+HStack(spacing: 4) {
+    Icon(.warning).color(.orange)
+    Text("3 problems")
+}
+```
+
+In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
 Common modifiers: `padding`, `frame(width:height:)`, `font`, `color`,
 `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.

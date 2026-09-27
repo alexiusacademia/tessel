@@ -11,6 +11,7 @@ png = "0.18.1"
 pollster = "1.0.1"
 ureq = "3.4.2"
 vello = "0.10"
+vello_svg = "0.11"
 winit = "0.30"
 
 [lib]

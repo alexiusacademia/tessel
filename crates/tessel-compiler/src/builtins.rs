@@ -11,7 +11,10 @@ pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
 
 pub const ALIGNMENTS: &[&str] = &["leading", "center", "trailing"];
 
-/// Built-in enums, registered before user types: Color, Weight, Alignment.
+/// Names of the built-in icons, in order (shared with the runtime).
+pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
+
+/// Built-in enums, registered before user types: Color, Weight, Alignment, IconName.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -19,19 +22,21 @@ pub fn enums() -> Vec<EnumDef> {
         cases: cases.iter().map(|c| CaseDef { name: (*c).into(), fields: Vec::new() }).collect(),
         methods: Vec::new(),
     };
-    vec![simple("Color", COLORS), simple("Weight", WEIGHTS), simple("Alignment", ALIGNMENTS)]
+    let icons: Vec<&str> = ICON_NAMES.lines().map(str::trim).filter(|n| !n.is_empty()).collect();
+    vec![simple("Color", COLORS), simple("Weight", WEIGHTS), simple("Alignment", ALIGNMENTS), simple("IconName", &icons)]
 }
 
 pub struct Builtins {
     pub color: Ty,
     pub weight: Ty,
     pub alignment: Ty,
+    pub icon: Ty,
 }
 
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg",
     ];
 
 impl Builtins {
@@ -61,6 +66,8 @@ impl Builtins {
                 vec![selection, on_close, content()]
             }
             "Divider" => vec![],
+            "Icon" => vec![P::unlabeled("name", self.icon.clone())],
+            "Svg" => vec![P::unlabeled("source", Ty::Str)],
             "VStack" | "HStack" => vec![
                 P::new("spacing", Ty::Float).default(),
                 P::new("alignment", self.alignment.clone()).default(),

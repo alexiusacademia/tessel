@@ -527,6 +527,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "Divider" => {
                 self.call_rt("tsl_ui_divider", &[]);
             }
+            "Icon" => {
+                let i = self.expr(a(0).unwrap()).unwrap();
+                self.call_rt("tsl_ui_icon", &[i]);
+            }
+            "Svg" => {
+                let s = string(self, a(0));
+                self.call_rt("tsl_ui_svg", &[s]);
+                self.release(s, &Ty::Str);
+            }
             "VStack" | "HStack" | "ZStack" | "Scroll" => {
                 let (kind, content) = match name {
                     "VStack" => (0, 2),

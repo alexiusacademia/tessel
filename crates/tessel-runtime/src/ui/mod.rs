@@ -11,6 +11,7 @@ mod edit;
 mod highlight;
 mod layout;
 mod render;
+mod svg;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -163,6 +164,8 @@ pub enum Kind {
     TabView { selection: Callback, close: Option<Callback> },
     /// A hairline separator across its stack.
     Divider,
+    /// An SVG drawing: a built-in icon (with its name), `Svg("…")`, or an SVG file.
+    Svg { source: std::rc::Rc<str>, icon: Option<&'static str> },
     Picker { selection: Callback },
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
@@ -264,6 +267,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Scroll => 14,
         Kind::Spacer => 15,
         Kind::Image(_) => 16,
+        Kind::Svg { .. } => 17,
     }
 }
 
@@ -426,10 +430,30 @@ pub extern "C" fn tsl_ui_spacer() {
     with_builder(|b| b.leaf(Kind::Spacer));
 }
 
+/// `Image("path")`: SVG files are drawn; other formats show a placeholder for now.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
     let path = unsafe { text_of(path) };
-    with_builder(|b| b.leaf(Kind::Image(path)));
+    let svg = path.to_lowercase().ends_with(".svg").then(|| std::fs::read_to_string(&path).ok()).flatten();
+    let kind = match svg {
+        Some(source) => Kind::Svg { source: source.into(), icon: None },
+        None => Kind::Image(path),
+    };
+    with_builder(|b| b.leaf(kind));
+}
+
+/// `Icon(.name)`: a built-in icon, by its index in `IconName`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_icon(index: i32) {
+    let Some(&(name, source)) = svg::ICONS.get(index as usize) else { return };
+    with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: Some(name) }));
+}
+
+/// `Svg("<svg …>")`: SVG source written in the program.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_svg(source: *const Str) {
+    let source = unsafe { text_of(source) };
+    with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: None }));
 }
 
 /// Opens a container: 0 = VStack, 1 = HStack, 2 = ZStack, 3 = Scroll.

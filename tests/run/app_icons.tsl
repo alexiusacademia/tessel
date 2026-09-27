@@ -1,0 +1,26 @@
+// Built-in icons, inline SVG and SVG files.
+
+app Icons(width: 440, height: 260) {
+    state liked = false
+
+    VStack(spacing: 14) {
+        HStack(spacing: 12) {
+            Icon(.folder)
+            Icon(.fileCode).color(.blue)
+            Icon(.play).color(.green)
+            Icon(.stop).color(.red)
+            Icon(.settings).font(size: 24)
+            Icon(.warning).color(.orange).font(size: 24)
+            Icon(.search).font(size: 24).color(.secondary)
+        }
+        HStack(spacing: 8) {
+            Icon(if liked { .heart } else { .star }).color(.pink)
+            Button(if liked { "Unlike" } else { "Like" }) { liked = !liked }
+        }
+        HStack(spacing: 16) {
+            Svg("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' width='40' height='40'><circle cx='20' cy='20' r='18' fill='#34c759'/><path d='M12 20l6 6 10-12' stroke='white' stroke-width='4' fill='none'/></svg>")
+            Image("tests/fixtures/logo.svg").frame(width: 80)
+        }
+    }
+    .padding(16)
+}

@@ -16,8 +16,8 @@ app Counter(width: 320, height: 200) {
 
 **Status:** apps compile to native macOS executables through LLVM and run in
 their own window, drawn by Tessel's own GPU renderer (`wgpu` + `vello`).
-`examples/counter` and `examples/todos` both work. Windows support is
-milestone M5. See [docs/design.md](docs/design.md) for the design and plan.
+Windows builds work too. Apps get about 60 built-in icons (`Icon(.folder)`)
+and can show SVG (`Svg("<svg …>")`, `Image("logo.svg")`). See [docs/design.md](docs/design.md) for the design and plan.
 
 ```tessel
 fn main() {

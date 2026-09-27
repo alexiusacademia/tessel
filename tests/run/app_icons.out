@@ -1,0 +1,34 @@
+Root
+  View
+    VStack
+      HStack
+        Icon folder
+        Icon fileCode
+        Icon play
+        Icon stop
+        Icon settings
+        Icon warning
+        Icon search
+      HStack
+        Icon star
+        Button "Like"
+      HStack
+        Svg
+        Svg
+Root
+  View
+    VStack
+      HStack
+        Icon folder
+        Icon fileCode
+        Icon play
+        Icon stop
+        Icon settings
+        Icon warning
+        Icon search
+      HStack
+        Icon heart
+        Button "Unlike"
+      HStack
+        Svg
+        Svg

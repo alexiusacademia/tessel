@@ -213,6 +213,21 @@ impl Layouter<'_> {
                 }
             }
             Kind::Divider => Size { w: 1.0, h: 1.0 },
+            Kind::Svg { source, icon } => {
+                // Icons follow the text size; other SVGs have their own size,
+                // scaled to fit a `.frame` if there is one (keeping proportions).
+                if icon.is_some() {
+                    let s = (style.size * 1.15).round();
+                    return Size { w: s, h: s };
+                }
+                let Some(svg) = super::svg::load(source, style.color) else { return Size { w: 16.0, h: 16.0 } };
+                let (w, h) = (svg.width.max(1.0), svg.height.max(1.0));
+                if n.mods.width.is_some() || n.mods.height.is_some() {
+                    let s = (avail.w / w).min(avail.h / h);
+                    return Size { w: w * s, h: h * s };
+                }
+                Size { w, h }
+            }
             Kind::Spacer => Size::default(),
             Kind::Image(_) => Size { w: 64.0, h: 64.0 },
             Kind::Picker { .. } => {

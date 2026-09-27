@@ -634,6 +634,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_on_appear" | "tsl_ui_on_submit" => (vec![p, p], None),
             "tsl_ui_begin_tabs" => (vec![p, p, p, p], None),
             "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),
+            "tsl_ui_icon" => (vec![i32t], None),
+            "tsl_ui_svg" => (vec![p], None),
             "tsl_ui_tab_item" => (vec![p], None),
             "tsl_ui_hover_background" => (vec![i32t, f64t], None),
             "tsl_create_folder" => (vec![p], Some(i8t)),

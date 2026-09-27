@@ -882,6 +882,8 @@ impl App {
                     format!("TabView {titles:?} selected {}", n.selected_tab())
                 }
                 Kind::Divider => "Divider".to_string(),
+                Kind::Svg { icon: Some(name), .. } => format!("Icon {name}"),
+                Kind::Svg { .. } => "Svg".to_string(),
                 Kind::CodeEditor { text, error_lines, .. } => {
                     format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
                 }
