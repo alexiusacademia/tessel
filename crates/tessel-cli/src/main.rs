@@ -192,7 +192,9 @@ fn runtime_lib() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // `tessel` may be a symlink (e.g. in /usr/local/bin) to the real one.
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
-    let lib = exe.with_file_name(RUNTIME_LIB);
+    // With the built-in linker, Windows apps use the MinGW build of the runtime.
+    let name = if cfg!(windows) && bundled_sdk().is_some() { "libtessel_runtime.a" } else { RUNTIME_LIB };
+    let lib = exe.with_file_name(name);
     if lib.exists() {
         Ok(lib)
     } else {
@@ -224,7 +226,7 @@ fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, Exit
     };
     let runtime = runtime_lib().map_err(fail)?;
     let obj = std::env::temp_dir().join(format!("tessel-{}.o", std::process::id()));
-    if let Err(diags) = codegen::compile(&analysis.program, &analysis.checked, sources, &obj, true) {
+    if let Err(diags) = codegen::compile(&analysis.program, &analysis.checked, sources, &obj, true, target_triple().as_deref()) {
         report(&diags, sources);
         return Err(ExitCode::FAILURE);
     }
@@ -238,11 +240,21 @@ fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, Exit
     Ok(app_name)
 }
 
+/// The target to compile for: this computer (`None`), except that Windows
+/// apps linked by the built-in linker use the MinGW runtime. TESSEL_TARGET
+/// overrides it, for cross-compiling tests.
+fn target_triple() -> Option<String> {
+    if let Ok(t) = std::env::var("TESSEL_TARGET") {
+        return Some(t);
+    }
+    (cfg!(windows) && bundled_sdk().is_some()).then(|| "x86_64-pc-windows-gnu".to_string())
+}
+
 /// Links a compiled program with the runtime: with the built-in linker when
 /// this `tessel` has one, otherwise with the system's.
 fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<(), String> {
     if let Some(sdk) = bundled_sdk() {
-        return bundled::link(obj, runtime, out, &sdk);
+        return bundled::link(obj, runtime, out, &sdk, gui);
     }
     let output = linker(obj, runtime, out, gui)?.output().map_err(|e| format!("can't run the system linker: {e}"))?;
     if !output.status.success() {
@@ -270,7 +282,7 @@ fn bundled_sdk() -> Option<PathBuf> {
 mod bundled {
     use std::path::Path;
 
-    pub fn link(_: &Path, _: &Path, _: &Path, _: &Path) -> Result<(), String> {
+    pub fn link(_: &Path, _: &Path, _: &Path, _: &Path, _: bool) -> Result<(), String> {
         unreachable!("bundled_sdk() is None without the bundled-linker feature")
     }
 }
@@ -286,8 +298,14 @@ mod bundled {
         fn tessel_lld_free(output: *mut c_char);
     }
 
-    pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path) -> Result<(), String> {
-        let args = args(obj, runtime, out, sdk)?;
+    pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        let args = {
+            let _ = gui;
+            macos_args(obj, runtime, out, sdk)?
+        };
+        #[cfg(not(target_os = "macos"))]
+        let args = mingw_args(obj, runtime, out, sdk, gui);
         let args: Vec<CString> = args.into_iter().map(|a| CString::new(a).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
         let ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
         let mut output: *mut c_char = std::ptr::null_mut();
@@ -308,7 +326,7 @@ mod bundled {
     /// ld64.lld arguments: the program, the runtime, and every system
     /// library in the stub SDK (their stubs list only what Tessel apps use).
     #[cfg(target_os = "macos")]
-    fn args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path) -> Result<Vec<String>, String> {
+    fn macos_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path) -> Result<Vec<String>, String> {
         let path = |p: &Path| p.to_string_lossy().into_owned();
         let sdk_version = std::fs::read_to_string(sdk.join("SDKVersion")).unwrap_or_else(|_| "11.0".into());
         let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" };
@@ -338,9 +356,29 @@ mod bundled {
         Ok(args)
     }
 
+    /// ld.lld arguments in MinGW mode (Windows): the program and the runtime
+    /// with MinGW-w64's C runtime and Windows import libraries from `sdk/`,
+    /// in the order clang's MinGW driver uses.
     #[cfg(not(target_os = "macos"))]
-    fn args(_: &Path, _: &Path, _: &Path, _: &Path) -> Result<Vec<String>, String> {
-        Err("the built-in linker isn't supported on this platform yet".into())
+    fn mingw_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool) -> Vec<String> {
+        let path = |p: &Path| p.to_string_lossy().into_owned();
+        let file = |name: &str| path(&sdk.join(name));
+        let mut args: Vec<String> = vec!["ld.lld".into(), "-m".into(), "i386pep".into()];
+        args.extend(["--subsystem".into(), if gui { "windows" } else { "console" }.into()]);
+        // No debug information: much smaller apps.
+        args.push("--strip-all".into());
+        args.extend(["-o".into(), path(out), file("crt2.o"), file("crtbegin.o")]);
+        args.push(format!("-L{}", path(sdk)));
+        args.extend([path(obj), path(runtime)]);
+        args.extend(super::WINDOWS_LIBS.iter().map(|l| format!("-l{l}")));
+        let builtins = file("libclang_rt.builtins-x86_64.a");
+        for _ in 0..2 {
+            args.extend(["-lunwind", "-lmingw32"].map(String::from));
+            args.push(builtins.clone());
+            args.extend(["-lunwind", "-lmoldname", "-lmingwex", "-lmsvcrt", "-lkernel32"].map(String::from));
+        }
+        args.push(file("crtend.o"));
+        args
     }
 }
 
@@ -404,25 +442,25 @@ fn linker(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<Command, 
     }
 }
 
+/// Windows libraries the runtime needs (windowing, GPU, fonts, networking).
+const WINDOWS_LIBS: &[&str] = &[
+    "kernel32", "advapi32", "bcrypt", "ntdll", "userenv", "ws2_32", "synchronization", "user32", "gdi32", "ole32",
+    "oleaut32", "shell32", "uuid", "dwmapi", "uxtheme", "imm32", "comctl32", "winmm", "dxgi", "d3d12", "d3dcompiler",
+    "opengl32", "propsys", "runtimeobject", "secur32", "crypt32", "ncrypt", "dbghelp", "pathcch",
+];
+
 /// System libraries the runtime needs (windowing, GPU, fonts, networking).
-fn platform_link_args() -> Vec<&'static str> {
+fn platform_link_args() -> Vec<String> {
     if cfg!(windows) {
-        return [
-            "kernel32.lib", "advapi32.lib", "bcrypt.lib", "ntdll.lib", "userenv.lib", "ws2_32.lib",
-            "synchronization.lib", "user32.lib", "gdi32.lib", "ole32.lib", "oleaut32.lib", "shell32.lib",
-            "uuid.lib", "dwmapi.lib", "uxtheme.lib", "imm32.lib", "comctl32.lib", "winmm.lib", "dxgi.lib",
-            "d3d12.lib", "d3dcompiler.lib", "opengl32.lib", "propsys.lib", "runtimeobject.lib", "secur32.lib",
-            "crypt32.lib", "ncrypt.lib", "dbghelp.lib", "pathcch.lib",
-        ]
-        .to_vec();
+        return WINDOWS_LIBS.iter().map(|l| format!("{l}.lib")).collect();
     }
     if cfg!(target_os = "macos") {
         let frameworks = [
             "AppKit", "ApplicationServices", "Carbon", "CoreFoundation", "CoreGraphics", "CoreText", "CoreVideo",
             "Foundation", "Metal", "QuartzCore",
         ];
-        let mut args: Vec<&str> = frameworks.iter().flat_map(|f| ["-framework", *f]).collect();
-        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-mmacosx-version-min=11.0"]);
+        let mut args: Vec<String> = frameworks.iter().flat_map(|f| ["-framework".to_string(), f.to_string()]).collect();
+        args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-mmacosx-version-min=11.0"].map(String::from));
         args
     } else {
         vec![]

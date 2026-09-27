@@ -24,7 +24,9 @@ use inkwell::context::Context;
 use inkwell::intrinsics::Intrinsic;
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
-use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine};
+use inkwell::targets::{
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine, TargetTriple,
+};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType, StructType};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel};
@@ -41,32 +43,47 @@ mod ui;
 const BOX_DATA: u64 = 32;
 
 /// Compiles a checked program with a `fn main()` to a native object file.
+/// The triple for this computer. On macOS, for the oldest supported version
+/// rather than this machine's.
+fn host_triple() -> TargetTriple {
+    let triple = TargetMachine::get_default_triple();
+    let host = triple.as_str().to_string_lossy().to_string();
+    match host.split_once("-apple-darwin") {
+        Some((arch, _)) => TargetTriple::create(&format!("{arch}-apple-macosx11.0.0")),
+        None => triple,
+    }
+}
+
 pub fn compile(
     program: &Program,
     checked: &Checked,
     sources: &SourceMap,
     out: &Path,
     optimize: bool,
+    target_triple: Option<&str>,
 ) -> Result<(), Vec<Diagnostic>> {
-    Target::initialize_native(&InitializationConfig::default()).map_err(|e| vec![internal(e)])?;
-    let mut triple = TargetMachine::get_default_triple();
-    // On macOS, target the oldest supported version rather than this machine's.
-    let host = triple.as_str().to_string_lossy().to_string();
-    if let Some((arch, _)) = host.split_once("-apple-darwin") {
-        triple = inkwell::targets::TargetTriple::create(&format!("{arch}-apple-macosx11.0.0"));
-    }
+    let config = InitializationConfig::default();
+    Target::initialize_x86(&config);
+    Target::initialize_aarch64(&config);
+    let triple = match target_triple {
+        Some(t) => TargetTriple::create(t),
+        None => host_triple(),
+    };
+    let name = triple.as_str().to_string_lossy().to_string();
     let target = Target::from_triple(&triple).map_err(|e| vec![internal(e.to_string())])?;
     let level = if optimize { OptimizationLevel::Default } else { OptimizationLevel::None };
+    // A baseline CPU, not this machine's: apps must run on every computer of
+    // their kind, not just ones as new as the one that built them.
+    let cpu = if name.starts_with("aarch64-apple") || name.starts_with("arm64-apple") {
+        "apple-m1"
+    } else if name.starts_with("aarch64") {
+        "generic"
+    } else {
+        "x86-64"
+    };
     let tm = target
-        .create_target_machine(
-            &triple,
-            &TargetMachine::get_host_cpu_name().to_string(),
-            &TargetMachine::get_host_cpu_features().to_string(),
-            level,
-            RelocMode::PIC,
-            CodeModel::Default,
-        )
-        .ok_or_else(|| vec![internal("can't create a target machine for this computer")])?;
+        .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, CodeModel::Default)
+        .ok_or_else(|| vec![internal(format!("can't create a target machine for `{name}`"))])?;
 
     let ctx = Context::create();
     let module = ctx.create_module("tessel");

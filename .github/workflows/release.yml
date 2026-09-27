@@ -18,6 +18,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   LLVM_VERSION: "22.1.8"
+  LLVM_MINGW_VERSION: "20260922"
 
 jobs:
   package:
@@ -48,7 +49,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          # On Windows, apps use the MinGW-w64 runtime (x86_64-pc-windows-gnullvm)
+          # so the package can include everything linking them needs.
+          targets: ${{ matrix.target }}${{ runner.os == 'Windows' && ',x86_64-pc-windows-gnullvm' || '' }}
 
       # ---- macOS: LLVM's official static build, linked with its own lld ----
 
@@ -113,12 +116,34 @@ jobs:
           tar -xf llvm.tar.xz -C C:\llvm
           Remove-Item llvm.tar.xz
 
+      - name: Cache llvm-mingw (Windows)
+        if: runner.os == 'Windows'
+        id: mingw-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\llvm-mingw
+          key: llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-ucrt-x86_64
+
+      - name: Install llvm-mingw (Windows)
+        if: runner.os == 'Windows' && steps.mingw-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "llvm-mingw-$env:LLVM_MINGW_VERSION-ucrt-x86_64"
+          curl.exe -sSfL -o mingw.zip "https://github.com/mstorsjo/llvm-mingw/releases/download/$env:LLVM_MINGW_VERSION/$name.zip"
+          Expand-Archive mingw.zip -DestinationPath C:\
+          Rename-Item "C:\$name" C:\llvm-mingw
+          Remove-Item mingw.zip
+
       - name: Configure the build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $prefix = "C:\llvm\clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
           "LLVM_SYS_221_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # The MinGW runtime library is built with llvm-mingw's clang (for ring's C code).
+          "CC_x86_64_pc_windows_gnullvm=C:\llvm-mingw\bin\x86_64-w64-mingw32-clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "AR_x86_64_pc_windows_gnullvm=C:\llvm-mingw\bin\llvm-ar.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=C:\llvm-mingw\bin\x86_64-w64-mingw32-clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           # See ci.yml: an empty stand-in for the libxml2 library LLVM lists but doesn't ship.
           if (-not (Test-Path "$prefix\lib\xml2s.lib")) {
             Set-Content -Path stub.c -Value "void tessel_xml2_stub(void) {}"
@@ -131,9 +156,12 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          # On macOS, LLVM's linker is built into tessel (see crates/tessel-cli/build.rs).
-          features="${{ runner.os == 'macOS' && '--features tessel-cli/bundled-linker' || '' }}"
-          cargo build --release --workspace --target ${{ matrix.target }} $features
+          # LLVM's linker is built into tessel (see crates/tessel-cli/build.rs).
+          cargo build --release --workspace --target ${{ matrix.target }} --features tessel-cli/bundled-linker
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The runtime library Windows apps are linked with, for MinGW-w64.
+            cargo build --release -p tessel-runtime --target x86_64-pc-windows-gnullvm
+          fi
 
       - name: Package
         shell: bash
@@ -141,7 +169,10 @@ jobs:
           out="target/${{ matrix.target }}/release"
           mkdir -p dist/pkg
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp "$out/tessel.exe" "$out/tessel_runtime.lib" dist/pkg/
+            cp "$out/tessel.exe" dist/pkg/
+            cp target/x86_64-pc-windows-gnullvm/release/libtessel_runtime.a dist/pkg/
+            # MinGW-w64's C runtime and the Windows import libraries, for the built-in linker.
+            sh install/windows-sdk.sh /c/llvm-mingw dist/pkg/sdk
           else
             cp "$out/tessel" "$out/libtessel_runtime.a" dist/pkg/
             strip -x dist/pkg/tessel
