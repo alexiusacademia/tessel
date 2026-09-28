@@ -296,6 +296,7 @@ pub unsafe extern "C" fn tsl_background(
     COMPUTING.with(|c| c.borrow_mut().insert(id, Callback::new(done_f, done_env)));
     let input = input as usize;
     std::thread::spawn(move || {
+        crate::stack_guard::thread_init();
         let result = worker(input as *mut u8);
         post(Event::Computed(id, result as usize));
     });

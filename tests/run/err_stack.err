@@ -1,0 +1,2 @@
+error: stack overflow: too many function calls inside each other
+ = help: a function that calls itself needs a case where it stops calling itself, like `if n == 0 { return 1 }`

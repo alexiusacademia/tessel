@@ -1,0 +1,10 @@
+// Too many nested calls stop the program with a runtime error, not a silent crash.
+
+fn sumTo(_ n: Int) -> Int {
+    n + sumTo(n - 1)
+}
+
+fn main() {
+    print("start")
+    print(sumTo(10))
+}

@@ -16,6 +16,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod codec;
+mod stack_guard;
 mod stdlib;
 pub mod ui;
 
@@ -1327,6 +1328,7 @@ unsafe extern "C" {
 #[cfg(not(test))]
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
+    stack_guard::install();
     unsafe { tsl_main() };
     // Apps never get here (their event loop ends the process); a program
     // with only `fn main` still runs its timers and background callbacks.

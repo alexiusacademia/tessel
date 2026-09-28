@@ -24,6 +24,10 @@ vello = "0.10"
 vello_svg = "0.11"
 winit = "0.30"
 
+[target.'cfg(unix)'.dependencies]
+# The stack overflow handler (sigaltstack, sigaction, the stack's bounds).
+libc = "0.2"
+
 [lib]
 crate-type = ["staticlib", "rlib"]
 
