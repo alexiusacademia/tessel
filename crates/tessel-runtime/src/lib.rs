@@ -19,7 +19,6 @@ mod codec;
 mod stdlib;
 pub mod ui;
 
-use std::collections::HashMap;
 use std::ffi::{c_char, CStr};
 use std::io::Write;
 use std::ptr;
@@ -42,6 +41,9 @@ pub struct TslType {
     pub eq: Option<unsafe extern "C" fn(*const u8, *const u8) -> bool>,
     pub hash: Option<unsafe extern "C" fn(*const u8) -> u64>,
     pub cmp: Option<unsafe extern "C" fn(*const u8, *const u8) -> i32>,
+    /// Keys the runtime hashes and compares itself, without calling `hash`
+    /// and `eq`: 1 for `Int`, 2 for `String`, 0 for anything else.
+    pub kind: i64,
 }
 
 unsafe extern "C" {
@@ -587,6 +589,7 @@ pub static TSL_TYPE_STR: TslType = TslType {
     eq: Some(str_eq_ptr),
     hash: Some(str_hash_ptr),
     cmp: Some(str_cmp_ptr),
+    kind: 2,
 };
 
 // ===== lists =====
@@ -887,12 +890,78 @@ pub struct Dict {
     inner: *mut DictInner,
 }
 
-/// Entries in insertion order, plus a hash index into them.
+/// Entries in insertion order, and an open-addressing index into them.
+///
+/// Removing a key marks its entry dead (the index still points at it, and
+/// lookups skip it); dead entries are dropped when the index is rebuilt.
 struct DictInner {
     keys: Vec<u8>,
     values: Vec<u8>,
+    hashes: Vec<u64>,
+    live: Vec<bool>,
+    /// Live entries.
     len: usize,
-    index: HashMap<u64, Vec<usize>>,
+    /// Entry numbers (`EMPTY` for a free slot); its length is a power of two.
+    index: Vec<u32>,
+}
+
+const EMPTY: u32 = u32::MAX;
+
+impl DictInner {
+    fn new() -> DictInner {
+        DictInner { keys: Vec::new(), values: Vec::new(), hashes: Vec::new(), live: Vec::new(), len: 0, index: Vec::new() }
+    }
+
+    /// Entries, live and dead.
+    fn used(&self) -> usize {
+        self.hashes.len()
+    }
+}
+
+/// Mixes a hash so that its low bits (which pick the index slot) vary.
+fn mix(h: u64) -> u64 {
+    let h = h.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^ (h >> 29)
+}
+
+fn str_hash(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ bytes.len() as u64;
+    let mut chunks = bytes.chunks_exact(8);
+    for c in &mut chunks {
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(c.try_into().unwrap())).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    for &b in chunks.remainder() {
+        h = (h.rotate_left(5) ^ b as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    h
+}
+
+unsafe fn str_bytes<'a>(s: *const Str) -> &'a [u8] {
+    unsafe { std::slice::from_raw_parts((s as *const u8).add(size_of::<Str>()), (*s).len as usize) }
+}
+
+/// The hash of the key at `key` (Ints and Strings directly, others through their type).
+unsafe fn key_hash(ty: *const TslType, key: *const u8) -> u64 {
+    unsafe {
+        mix(match (*ty).kind {
+            1 => *(key as *const i64) as u64,
+            2 => str_hash(str_bytes(*(key as *const *const Str))),
+            _ => ((*ty).hash.expect("key type has no hash"))(key),
+        })
+    }
+}
+
+unsafe fn key_eq(ty: *const TslType, a: *const u8, b: *const u8) -> bool {
+    unsafe {
+        match (*ty).kind {
+            1 => *(a as *const i64) == *(b as *const i64),
+            2 => {
+                let (x, y) = (*(a as *const *const Str), *(b as *const *const Str));
+                x == y || str_bytes(x) == str_bytes(y)
+            }
+            _ => ((*ty).eq.expect("key type has no eq"))(a, b),
+        }
+    }
 }
 
 unsafe extern "C" fn dict_drop(h: *mut Header) {
@@ -900,7 +969,7 @@ unsafe extern "C" fn dict_drop(h: *mut Header) {
     unsafe {
         let inner = Box::from_raw((*d).inner);
         let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
-        for i in 0..inner.len {
+        for i in (0..inner.used()).filter(|&i| inner.live[i]) {
             elem_release((*d).key, inner.keys.as_ptr().add(i * ks) as *mut u8);
             elem_release((*d).value, inner.values.as_ptr().add(i * vs) as *mut u8);
         }
@@ -914,22 +983,78 @@ pub unsafe extern "C" fn tsl_dict_new(key: *const TslType, value: *const TslType
         let d = new_object(size_of::<Dict>(), dict_drop) as *mut Dict;
         (*d).key = key;
         (*d).value = value;
-        let inner = DictInner { keys: Vec::new(), values: Vec::new(), len: 0, index: HashMap::new() };
-        (*d).inner = Box::into_raw(Box::new(inner));
+        (*d).inner = Box::into_raw(Box::new(DictInner::new()));
         d
     }
 }
 
-unsafe fn dict_find(d: *const Dict, key: *const u8) -> Option<usize> {
+/// The entry holding `key` (with hash `hash`), if any.
+unsafe fn dict_find_hashed(d: *const Dict, key: *const u8, hash: u64) -> Option<usize> {
     unsafe {
         let inner = &*(*d).inner;
+        if inner.index.is_empty() {
+            return None;
+        }
         let ks = (*(*d).key).size as usize;
-        let hash = ((*(*d).key).hash.expect("key type has no hash"))(key);
-        let eq = (*(*d).key).eq.expect("key type has no eq");
-        inner.index.get(&hash)?.iter().copied().find(|&i| eq(inner.keys.as_ptr().add(i * ks), key))
+        let mask = inner.index.len() - 1;
+        let mut pos = hash as usize & mask;
+        loop {
+            let e = inner.index[pos];
+            if e == EMPTY {
+                return None;
+            }
+            let e = e as usize;
+            if inner.hashes[e] == hash && inner.live[e] && key_eq((*d).key, inner.keys.as_ptr().add(e * ks), key) {
+                return Some(e);
+            }
+            pos = (pos + 1) & mask;
+        }
     }
 }
 
+unsafe fn dict_find(d: *const Dict, key: *const u8) -> Option<usize> {
+    unsafe { dict_find_hashed(d, key, key_hash((*d).key, key)) }
+}
+
+/// Drops dead entries and rebuilds the index with room for `extra` more.
+unsafe fn dict_rebuild(d: *mut Dict, extra: usize) {
+    unsafe {
+        let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
+        let inner = &mut *(*d).inner;
+        if inner.len < inner.used() {
+            let mut w = 0;
+            for r in 0..inner.used() {
+                if inner.live[r] {
+                    if w != r {
+                        inner.keys.copy_within(r * ks..(r + 1) * ks, w * ks);
+                        inner.values.copy_within(r * vs..(r + 1) * vs, w * vs);
+                        inner.hashes[w] = inner.hashes[r];
+                    }
+                    w += 1;
+                }
+            }
+            inner.keys.truncate(w * ks);
+            inner.values.truncate(w * vs);
+            inner.hashes.truncate(w);
+            inner.live.clear();
+            inner.live.resize(w, true);
+        }
+        // At most 3/4 full after adding `extra`.
+        let want = ((inner.len + extra) * 4 / 3 + 1).next_power_of_two().max(8);
+        inner.index.clear();
+        inner.index.resize(want, EMPTY);
+        let mask = want - 1;
+        for (e, &h) in inner.hashes.iter().enumerate() {
+            let mut pos = h as usize & mask;
+            while inner.index[pos] != EMPTY {
+                pos = (pos + 1) & mask;
+            }
+            inner.index[pos] = e as u32;
+        }
+    }
+}
+
+/// The dictionary in `slot`, not shared with other values (copy-on-write).
 unsafe fn dict_unique(slot: *mut *mut Dict) -> *mut Dict {
     unsafe {
         let d = *slot;
@@ -941,10 +1066,12 @@ unsafe fn dict_unique(slot: *mut *mut Dict) -> *mut Dict {
         let dst = &mut *(*copy).inner;
         dst.keys = src.keys.clone();
         dst.values = src.values.clone();
+        dst.hashes = src.hashes.clone();
+        dst.live = src.live.clone();
         dst.len = src.len;
         dst.index = src.index.clone();
         let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
-        for i in 0..dst.len {
+        for i in (0..dst.used()).filter(|&i| dst.live[i]) {
             elem_retain((*d).key, dst.keys.as_mut_ptr().add(i * ks));
             elem_retain((*d).value, dst.values.as_mut_ptr().add(i * vs));
         }
@@ -983,19 +1110,31 @@ pub unsafe extern "C" fn tsl_dict_set(slot: *mut *mut Dict, key: *mut u8, value:
     unsafe {
         let d = dict_unique(slot);
         let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
-        let inner = &mut *(*d).inner;
-        if let Some(i) = dict_find(d, key) {
-            let old = inner.values.as_mut_ptr().add(i * vs);
+        let hash = key_hash((*d).key, key);
+        if let Some(i) = dict_find_hashed(d, key, hash) {
+            let old = (*(*d).inner).values.as_mut_ptr().add(i * vs);
             elem_release((*d).value, old);
             ptr::copy_nonoverlapping(value, old, vs);
             elem_release((*d).key, key);
             return;
         }
-        let hash = ((*(*d).key).hash.unwrap())(key);
+        let inner = &mut *(*d).inner;
+        if (inner.used() + 1) * 4 > inner.index.len() * 3 {
+            dict_rebuild(d, 1);
+        }
+        let inner = &mut *(*d).inner;
+        let e = inner.used();
         inner.keys.extend_from_slice(std::slice::from_raw_parts(key, ks));
         inner.values.extend_from_slice(std::slice::from_raw_parts(value, vs));
-        inner.index.entry(hash).or_default().push(inner.len);
+        inner.hashes.push(hash);
+        inner.live.push(true);
         inner.len += 1;
+        let mask = inner.index.len() - 1;
+        let mut pos = hash as usize & mask;
+        while inner.index[pos] != EMPTY {
+            pos = (pos + 1) & mask;
+        }
+        inner.index[pos] = e as u32;
     }
 }
 
@@ -1009,18 +1148,14 @@ pub unsafe extern "C" fn tsl_dict_remove(slot: *mut *mut Dict, key: *const u8, o
         let d = dict_unique(slot);
         let i = dict_find(d, key).unwrap();
         let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
-        let hash_of = (*(*d).key).hash.unwrap();
         let inner = &mut *(*d).inner;
         ptr::copy_nonoverlapping(inner.values.as_ptr().add(i * vs), out, vs);
         elem_release((*d).key, inner.keys.as_mut_ptr().add(i * ks));
-        inner.keys.drain(i * ks..(i + 1) * ks);
-        inner.values.drain(i * vs..(i + 1) * vs);
+        inner.live[i] = false;
         inner.len -= 1;
-        // Rebuild the index: positions after `i` shifted down by one.
-        inner.index.clear();
-        for j in 0..inner.len {
-            let h = hash_of(inner.keys.as_ptr().add(j * ks));
-            inner.index.entry(h).or_default().push(j);
+        // Many dead entries: drop them.
+        if inner.used() > 16 && inner.len < inner.used() / 2 {
+            dict_rebuild(d, 0);
         }
         true
     }
@@ -1033,7 +1168,7 @@ unsafe fn dict_column(d: *const Dict, keys: bool) -> *mut List {
         let inner = &*(*d).inner;
         let mut out = tsl_list_new(ty, inner.len as i64);
         let src = if keys { &inner.keys } else { &inner.values };
-        for i in 0..inner.len {
+        for i in (0..inner.used()).filter(|&i| inner.live[i]) {
             let p = src.as_ptr().add(i * size) as *mut u8;
             elem_retain(ty, p);
             tsl_list_push(&mut out, p);
@@ -1061,7 +1196,7 @@ pub unsafe extern "C" fn tsl_dict_eq(a: *const Dict, b: *const Dict) -> bool {
         }
         let (ks, vs) = ((*(*a).key).size as usize, (*(*a).value).size as usize);
         let veq = (*(*a).value).eq;
-        (0..ia.len).all(|i| {
+        (0..ia.used()).filter(|&i| ia.live[i]).all(|i| {
             let key = ia.keys.as_ptr().add(i * ks);
             match dict_find(b, key) {
                 Some(j) => veq.is_none_or(|eq| eq(ia.values.as_ptr().add(i * vs), ib.values.as_ptr().add(j * vs))),

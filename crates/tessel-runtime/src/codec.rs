@@ -142,6 +142,7 @@ static INT_TYPE: TslType = TslType {
     eq: Some(int_eq),
     hash: Some(int_hash),
     cmp: Some(int_cmp),
+    kind: 1,
 };
 
 // ===== the tree =====

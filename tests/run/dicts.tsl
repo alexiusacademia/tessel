@@ -1,0 +1,60 @@
+// Dictionaries: insertion order through removals, copies, every key kind,
+// equality, and many keys.
+
+enum Hue { red, green, blue }
+
+fn main() {
+    var d: [String: Int] = [:]
+    for w in ["one", "two", "three", "four", "five"] {
+        d[w] = w.count
+    }
+    d["two"] = nil
+    d["four"] = nil
+    d["two"] = 22
+    print(d.keys.joined(separator: " "))
+    print(d.values.map { v in "{v}" }.joined(separator: " "))
+
+    var copy = d
+    copy["one"] = 100
+    copy["six"] = 6
+    print("{d["one"] ?? -1} {copy["one"] ?? -1} {d.count} {copy.count}")
+    print("{d == copy} {d == d}")
+
+    var ints: [Int: String] = [:]
+    for i in 0..100000 {
+        ints[i * 3] = "v{i}"
+    }
+    for i in 0..50000 {
+        ints[i * 6] = nil
+    }
+    var found = 0
+    for k in 0..300000 {
+        if ints[k] != nil {
+            found += 1
+        }
+    }
+    print("{ints.count} {found} {ints[3] ?? "none"} {ints[6] ?? "none"}")
+    print(ints.keys.first ?? -1)
+
+    var flags: [Bool: String] = [true: "yes"]
+    flags[false] = "no"
+    flags[true] = "YES"
+    print("{flags[true] ?? ""} {flags[false] ?? ""} {flags.count}")
+
+    var colors: [Hue: Int] = [:]
+    colors[Hue.red] = 1
+    colors[Hue.blue] = 3
+    colors[Hue.red] = 10
+    print("{colors[Hue.red] ?? 0} {colors[Hue.green] ?? 0} {colors.count}")
+
+    var big: [String: [Int]] = [:]
+    for i in 0..1000 {
+        let key = "k{i % 100}"
+        var list = big[key] ?? []
+        list.append(i)
+        big[key] = list
+    }
+    print("{big.count} {big["k7"]?.count ?? 0} {big.contains("k99")} {big.contains("k100")}")
+    let removed = big.removeValue("k5")
+    print("{removed?.count ?? 0} {big.count}")
+}

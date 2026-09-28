@@ -1109,7 +1109,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let cmp = if payload.is_none() && matches!(t, Ty::Int | Ty::Float | Ty::Str) { self.cmp_helper(&t) } else { null };
         let i = self.i64();
         let p = self.ptr_ty();
-        let ty = self.ctx.struct_type(&[i.into(), i.into(), p.into(), p.into(), p.into(), p.into(), p.into()], false);
+        let ty = self.ctx.struct_type(&[i.into(), i.into(), p.into(), p.into(), p.into(), p.into(), p.into(), i.into()], false);
+        // What the runtime can hash and compare itself (see `TslType::kind`).
+        let kind = match (&t, payload) {
+            (Ty::Int, None) => 1,
+            (Ty::Str, None) => 2,
+            _ => 0,
+        };
         let g = self.module.add_global(ty, None, &format!("tsl_t_{key}"));
         g.set_linkage(Linkage::Private);
         g.set_constant(true);
@@ -1121,6 +1127,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             eq.into(),
             hash.into(),
             cmp.into(),
+            i.const_int(kind, false).into(),
         ]));
         let ptr = g.as_pointer_value();
         self.type_infos.insert(key.to_string(), ptr);
