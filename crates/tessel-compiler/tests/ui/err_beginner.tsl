@@ -1,0 +1,58 @@
+// Mistakes beginners make in code that parses, and the hints they get.
+
+enum Light { red, green }
+
+struct Point {
+    x: Int
+}
+
+interface Scored {
+    fn score() -> Int
+}
+
+fn best<T: Scored>(items: [T]) -> Int {
+    items.count
+}
+
+struct Stack<T> {
+    items: [T] = []
+}
+
+fn next(_ l: Light) -> Light {
+    if l == Light.red {
+        return Light.green
+    }
+    .red // error: `.red` continues the line before it
+}
+
+fn main() {
+    score = 10 // error: can't set `score`: it hasn't been created
+    print(score)
+    for i in 0..5 {
+        i = i + 1 // error: a loop variable is a copy made for each round
+    }
+    var greeting = "hi"
+    greeting.uppercase() // error: the result of `uppercase()` isn't used
+    greeting.count // error: the result of `count` isn't used
+    var xs = [1]
+    xs.append(2)
+    let d = ["a": 1, "b": 2, "a": 3] // error: the key "a" appears twice
+    print(d) // error: a dictionary can't be shown as text directly
+    print(Point(x: 1)) // error: `Point` can't be shown as text directly
+    let n: Int? = 3
+    if n { // error: to check that it has a value, write `x != nil`
+    }
+    var ages = ["Ann": 30]
+    ages["Bob"] = "x" // error: expected `Int`, found `String`
+    ages["Cy"] = nil
+    let m = 5
+    print(m.formatted(decimals: 2)) // error: it's a `Float` method
+    print(best(items: ["a"])) // error: only structs and enums that conform to `Scored`
+    let s = Stack() // error: write the type, like `Stack<Int>(…)`
+    print("hello"[0]) // error: text.character(at: 0)
+}
+
+view Counter {
+    let count = 0
+    Button("+") { count += 1 } // error: values that change are declared with `state`
+}

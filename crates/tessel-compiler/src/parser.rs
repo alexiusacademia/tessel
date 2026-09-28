@@ -583,9 +583,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let cond = self.condition()?;
                 if !self.at(&Tok::LBrace) {
-                    let span = self.span();
-                    self.error(span, "expected `{` after the `while` condition")
-                        .help("the body of a `while` goes in braces: `while n > 0 { … }`");
+                    self.condition_end_error("while");
                     return Err(Reported);
                 }
                 let body = self.block()?;
@@ -632,13 +630,44 @@ impl<'a> Parser<'a> {
             Tok::Var => "a variable name",
             _ => "a state name",
         };
-        let name = self.ident(what)?;
+        let name = match self.peek().clone() {
+            Tok::Int(_) | Tok::Float(_) => {
+                let span = self.span();
+                self.error(span, format!("expected {what}, found a number"))
+                    .help("names start with a letter, like `secondPlace` rather than `2ndPlace`");
+                return Err(Reported);
+            }
+            _ => self.ident(what)?,
+        };
+        if let Tok::Ident(next) = self.peek().clone() {
+            let span = name.span.to(self.span());
+            let joined = format!("{}{}", name.name, capitalized(&next));
+            self.error(span, "a name can't contain spaces")
+                .help(format!("write it as one word, like `{joined}`"));
+            return Err(Reported);
+        }
         let ty = if self.eat(&Tok::Colon) { Some(self.type_expr()?) } else { None };
         if !self.at(&Tok::Eq) {
             let span = self.span();
             let kw_text = keyword_text(&kw.tok);
-            self.error(span, format!("`{}` needs a starting value", name.name))
-                .help(format!("write `{kw_text} {} = …`", name.name));
+            let example = match &ty {
+                Some(TypeExpr::Named(t)) if t.name == "Int" => format!("{kw_text} {}: Int = 0", name.name),
+                Some(TypeExpr::Named(t)) if t.name == "Float" => format!("{kw_text} {}: Float = 0.0", name.name),
+                Some(TypeExpr::Named(t)) if t.name == "String" => format!("{kw_text} {}: String = \"\"", name.name),
+                Some(TypeExpr::Named(t)) if t.name == "Bool" => format!("{kw_text} {}: Bool = false", name.name),
+                Some(TypeExpr::List(..)) | Some(TypeExpr::Dict(..)) => {
+                    let empty = if matches!(ty, Some(TypeExpr::List(..))) { "[]" } else { "[:]" };
+                    format!("{kw_text} {}: … = {empty}", name.name)
+                }
+                Some(TypeExpr::Optional(..)) => format!("{kw_text} {}: … = nil", name.name),
+                _ => format!("{kw_text} {} = …", name.name),
+            };
+            self.error(span, format!("`{}` needs a starting value", name.name)).help(format!("write `{example}`"));
+            // Declared anyway (with its type), so later uses don't report it missing.
+            if ty.is_some() {
+                let value = self.new_expr(ExprKind::Error, span);
+                return Ok(LocalDecl { name, ty, value, span: kw.span.to(self.prev_span()) });
+            }
             return Err(Reported);
         }
         self.bump();
@@ -661,6 +690,12 @@ impl<'a> Parser<'a> {
         let mut lhs = next(self)?;
         while let Some(op) = op_of(self.peek()) {
             self.bump();
+            if op == BinOp::Rem && self.at(&Tok::Eq) {
+                let span = self.prev_span().to(self.span());
+                self.error(span, "Tessel has no `%=`")
+                    .help("write it out: `x = x % 5`");
+                return Err(Reported);
+            }
             self.skip_newlines();
             let rhs = next(self)?;
             let span = lhs.span.to(rhs.span);
@@ -734,6 +769,12 @@ impl<'a> Parser<'a> {
         if !self.eat(&Tok::DotDot) {
             return Ok(lhs);
         }
+        if matches!(self.peek(), Tok::Eq | Tok::Dot | Tok::Lt) {
+            let span = self.prev_span().to(self.span());
+            self.error(span, "ranges in Tessel are written `a..b`, and leave out `b`")
+                .help("`1..6` counts 1, 2, 3, 4, 5; to include the end, write `1..(n + 1)`");
+            return Err(Reported);
+        }
         let rhs = self.coalesce_expr()?;
         let span = lhs.span.to(rhs.span);
         Ok(self.new_expr(ExprKind::Binary(BinOp::Range, Box::new(lhs), Box::new(rhs)), span))
@@ -745,7 +786,22 @@ impl<'a> Parser<'a> {
             return Ok(lhs);
         }
         self.skip_newlines();
+        let parenthesized = self.at(&Tok::LParen);
         let rhs = self.coalesce_expr()?; // right-associative
+        if let (false, ExprKind::Binary(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem), _, _)) =
+            (parenthesized, &rhs.kind)
+        {
+            let sym = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => "/",
+                _ => "%",
+            };
+            self.error(rhs.span, format!("`??` with `{sym}` after it is ambiguous"))
+                .label(format!("this is all the default, so `{sym}` only applies to it"))
+                .help(format!("add parentheses: `(value ?? 0) {sym} 1` to do it to the result, or `value ?? (0 {sym} 1)`"));
+        }
         let span = lhs.span.to(rhs.span);
         Ok(self.new_expr(ExprKind::Binary(BinOp::Coalesce, Box::new(lhs), Box::new(rhs)), span))
     }
@@ -1069,6 +1125,29 @@ impl<'a> Parser<'a> {
         Ok(self.new_expr(kind, span))
     }
 
+    /// After an `if` or `while` condition, something other than `{`: explain
+    /// the likely mistake (`=` for `==`, `and` for `&&`).
+    fn condition_end_error(&mut self, word: &str) {
+        let span = self.span();
+        match self.peek().clone() {
+            Tok::Eq => {
+                self.error(span, format!("`=` changes a value; to compare in an `{word}`, use `==`"))
+                    .label("use `==` here")
+                    .help(format!("write `{word} age == 18 {{ … }}`"));
+            }
+            Tok::Ident(w) if w == "and" || w == "or" => {
+                let op = if w == "and" { "&&" } else { "||" };
+                self.error(span, format!("Tessel writes `{w}` as `{op}`"))
+                    .help(format!("like `{word} a {op} b {{ … }}`"));
+            }
+            _ => {
+                let example = if word == "if" { "if ready { … }" } else { "while n > 0 { … }" };
+                self.error(span, format!("expected `{{` after the `{word}` condition"))
+                    .help(format!("the body of an `{word}` goes in braces: `{example}`"));
+            }
+        }
+    }
+
     /// The condition of `if` or `while`: `x > 0`, or `let x = optional`.
     fn condition(&mut self) -> PResult<Cond> {
         self.with_trailing(false, |p| -> PResult<Cond> {
@@ -1087,9 +1166,7 @@ impl<'a> Parser<'a> {
         let lo = self.bump().span; // if
         let cond = self.condition()?;
         if !self.at(&Tok::LBrace) {
-            let span = self.span();
-            self.error(span, "expected `{` after the `if` condition")
-                .help("the body of an `if` goes in braces: `if ready { … }`");
+            self.condition_end_error("if");
             return Err(Reported);
         }
         let then = self.block()?;
@@ -1198,6 +1275,13 @@ impl<'a> Parser<'a> {
             return Err(Reported);
         }
         self.bump();
+        if let t @ (Tok::Break | Tok::Continue | Tok::Return) = self.peek().clone() {
+            let span = self.span();
+            let word = keyword_text(&t);
+            self.error(span, format!("`{word}` in a match arm goes in braces"))
+                .help(format!("write `-> {{ {word} }}`"));
+            return Err(Reported);
+        }
         let body = if self.at(&Tok::LBrace) {
             // `-> { … }` is a block, not a closure.
             let block = self.block()?;
@@ -1214,6 +1298,11 @@ impl<'a> Parser<'a> {
 /// (`VStack { … }`, `list.filter { … }`), so `x + y {` isn't misread.
 fn is_callable_head(e: &Expr) -> bool {
     matches!(e.kind, ExprKind::Name(_) | ExprKind::Member { .. })
+}
+
+fn capitalized(word: &str) -> String {
+    let mut c = word.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
 fn keyword_text(tok: &Tok) -> String {

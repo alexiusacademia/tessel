@@ -1,2 +1,2 @@
 error: integer overflow
- --> tests/run/err_overflow.tsl:3:10
+ --> tests/run/err_overflow.tsl:3:5

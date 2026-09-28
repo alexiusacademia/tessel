@@ -1,0 +1,50 @@
+// Mistakes beginners make while writing code, and the hints they get.
+
+fn a() {
+    let age = 18
+    if age = 18 { // error: to compare in an `if`, use `==`
+    }
+}
+
+fn b(x: Bool, y: Bool) {
+    while x and y { // error: Tessel writes `and` as `&&`
+    }
+}
+
+fn c() {
+    var x = 7
+    x %= 5 // error: Tessel has no `%=`
+}
+
+fn d() {
+    for i in 1..=5 { // error: ranges in Tessel are written `a..b`
+    }
+}
+
+fn e() {
+    let first name = "Grace" // error: a name can't contain spaces
+}
+
+fn f() {
+    let 2ndPlace = "Ada" // error: names start with a letter
+}
+
+fn g() {
+    var total: Int // error: write `var total: Int = 0`
+    total = 5
+}
+
+enum Command { go, quit }
+
+fn h(c: Command) {
+    for _ in 0..3 {
+        match c {
+            .go -> print("go")
+            .quit -> break // error: `break` in a match arm goes in braces
+        }
+    }
+}
+
+fn i(counts: [String: Int]) -> Int {
+    counts["a"] ?? 0 + 1 // error: `??` with `+` after it is ambiguous
+}

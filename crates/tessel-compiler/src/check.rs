@@ -205,6 +205,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         conforms: Vec::new(),
         loops: 0,
         outer_loops: 0,
+        view_lets: HashSet::new(),
         templates: Vec::new(),
         type_params: Vec::new(),
         specialized: HashMap::new(),
@@ -369,6 +370,8 @@ struct Checker<'a> {
     loops: usize,
     /// Loops outside the closures being checked (which `break` can't leave).
     outer_loops: usize,
+    /// `let`s declared in view bodies (changing one needs `state`, not `var`).
+    view_lets: HashSet<Span>,
     templates: Vec<Template>,
     type_params: Vec<TypeParam>,
     /// Specialized copies made so far, by template and type arguments.
@@ -1274,17 +1277,98 @@ impl Checker<'_> {
                 }
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
-            Stmt::Expr(e) => self.expect_or_discard(e, &Ty::Void),
+            Stmt::Expr(e) => {
+                self.expect_or_discard(e, &Ty::Void);
+                self.unused_result(e);
+            }
+        }
+    }
+
+    /// A built-in method or property whose result is thrown away does
+    /// nothing: text and lists don't change themselves.
+    fn unused_result(&mut self, e: &Expr) {
+        let (recv, name, call) = match &e.kind {
+            ExprKind::Call { .. } => match self.calls.get(&e.id).map(|c| &c.callee) {
+                Some(Callee::Builtin { recv, name }) => (recv.clone(), name.clone(), true),
+                _ => return,
+            },
+            ExprKind::Member { object, name, .. } => {
+                let t = self.types.get(&object.id).cloned().unwrap_or(Ty::Error);
+                (strip_opt(&t).clone(), name.name.clone(), false)
+            }
+            _ => return,
+        };
+        if recv.has_error() || matches!(recv, Ty::View) {
+            return;
+        }
+        let returns_value = match builtins::method_of(&recv, &name) {
+            Some(m) if call => !m.mutating && m.sig.ret != Ty::Void,
+            _ if !call => builtins::property(&recv, &name).is_some(),
+            _ => false,
+        };
+        if !returns_value {
+            return;
+        }
+        let no_args = matches!(&e.kind, ExprKind::Call { args, trailing: None, .. } if args.is_empty());
+        let shown = match (call, no_args) {
+            (true, true) => format!("{name}()"),
+            (true, false) => format!("{name}(…)"),
+            _ => name.clone(),
+        };
+        let d = self.error(e.span, format!("the result of `{shown}` isn't used"));
+        d.label("this makes a new value, and then throws it away");
+        match &e.kind {
+            ExprKind::Call { callee, .. } if matches!(recv, Ty::Str | Ty::List(_) | Ty::Dict(..)) => {
+                if let ExprKind::Member { object, .. } = &callee.kind
+                    && let ExprKind::Name(v) = &object.kind
+                {
+                    let what = match recv {
+                        Ty::Str => "text doesn't change by itself",
+                        Ty::List(_) => "a list doesn't change by itself",
+                        _ => "a dictionary doesn't change by itself",
+                    };
+                    d.help(format!("{what}; store the result: `{v} = {v}.{shown}`"));
+                } else {
+                    d.help("store the result in a variable, or pass it on");
+                }
+            }
+            _ => {
+                d.help("store the result in a variable, or pass it on");
+            }
         }
     }
 
     fn assign(&mut self, target: &Expr, op: AssignOp, value: &Expr, span: Span) {
+        if let ExprKind::Name(n) = &target.kind
+            && self.lookup(n).is_none()
+            && !self.globals.contains_key(n)
+            && n != COMPLETION_MARK
+        {
+            let what = if op == AssignOp::Set { "set" } else { "change" };
+            self.error(target.span, format!("can't {what} `{n}`: it hasn't been created"))
+                .label("not created yet")
+                .help(format!("create it first with `var`, like `var {n} = …`"));
+            // Created here as if with `var`, so its later uses aren't reported too.
+            let t = self.expr(value, None);
+            let t = if op == AssignOp::Set { t } else { Ty::Error };
+            self.declare(&Ident { name: n.clone(), span: target.span }, t, Kind::Var);
+            return;
+        }
         let tt = self.expr(target, None);
         if !tt.has_error()
             && let Err(err) = self.place(target) {
                 self.report_place(err, target.span, "change");
             }
         match op {
+            // `ages["Bob"] = …`: the entry is optional (`= nil` removes it),
+            // but a mismatch is about the value type.
+            AssignOp::Set if matches!(&target.kind, ExprKind::Index(o, _) if matches!(self.types.get(&o.id), Some(Ty::Dict(..)))) => {
+                let found = self.expr(value, Some(&tt));
+                if !self.fits(&found, &tt) {
+                    let inner = strip_opt(&tt).clone();
+                    self.mismatch(value.span, &inner, &found);
+                }
+            }
             AssignOp::Set => {
                 self.expect(value, &tt);
             }
@@ -1315,6 +1399,11 @@ impl Checker<'_> {
             ExprKind::Name(n) => match self.lookup(n) {
                 Some(l) => match l.kind {
                     Kind::Var | Kind::State | Kind::Bind | Kind::LoopPlace | Kind::Field | Kind::SelfValue => Ok(()),
+                    Kind::Let if self.view_lets.contains(&l.span) => Err(PlaceErr::Const {
+                        what: format!("`{n}`, which is a constant"),
+                        decl: l.span,
+                        help: "in a view or app, values that change are declared with `state`, at its top: `state count = 0`",
+                    }),
                     Kind::Let => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a constant"),
                         decl: l.span,
@@ -1328,7 +1417,7 @@ impl Checker<'_> {
                     Kind::LoopLet => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a loop variable"),
                         decl: l.span,
-                        help: "loop over a `var` or `state` list to be able to change its items",
+                        help: "a loop variable is a copy made for each round; to change a number, copy it into a `var` first (to change a list's items, loop over a `var` list)",
                     }),
                     Kind::Fn(..) => Err(PlaceErr::NotPlace),
                 },
@@ -1393,11 +1482,15 @@ impl Checker<'_> {
                             c.content_block(body, false);
                         });
                     }
-                    Stmt::Let(d) => c.local_decl(d, Kind::Let),
+                    Stmt::Let(d) => {
+                        c.view_lets.insert(d.name.span);
+                        c.local_decl(d, Kind::Let);
+                    }
                     Stmt::Var(d) => {
                         c.error(d.span, "`var` can't be used while building a view")
                             .help("use `let` here, or `state` at the top of the view for values that change");
-                        c.local_decl(d, Kind::Let);
+                        // (Declared as a `var`, so changing it isn't reported again.)
+                        c.local_decl(d, Kind::Var);
                     }
                     Stmt::State(_) | Stmt::Fn(_) if top => {}
                     Stmt::State(d) => {
@@ -1596,6 +1689,31 @@ impl Checker<'_> {
                     self.expect(pk, &k);
                     self.expect(pv, &v);
                 }
+                // The same literal key twice: the first value would be lost.
+                let literal = |e: &Expr| match &e.kind {
+                    ExprKind::Int(n) => Some(n.to_string()),
+                    ExprKind::Bool(b) => Some(b.to_string()),
+                    ExprKind::Str(parts) => match parts.as_slice() {
+                        [StrPart::Text(t)] => Some(format!("{t:?}")),
+                        [] => Some("\"\"".into()),
+                        _ => None,
+                    },
+                    ExprKind::DotName(n) => Some(format!(".{n}")),
+                    _ => None,
+                };
+                let mut seen: HashMap<String, Span> = HashMap::new();
+                for (pk, _) in pairs {
+                    if let Some(key) = literal(pk) {
+                        if let Some(first) = seen.get(&key).copied() {
+                            self.error(pk.span, format!("the key {key} appears twice"))
+                                .label("repeated here")
+                                .note_at(first, "first here")
+                                .help("each key can have one value; remove one of them");
+                        } else {
+                            seen.insert(key, pk.span);
+                        }
+                    }
+                }
                 Ty::Dict(Box::new(k), Box::new(v))
             }
             ExprKind::Cast { value, ty, test } => {
@@ -1671,7 +1789,7 @@ impl Checker<'_> {
                     }
                     Ty::Str => {
                         self.error(e.span, "text can't be indexed by number")
-                            .help("use `split`, `contains` or `hasPrefix` instead");
+                            .help("get one character with `text.character(at: 0)`, or all of them as a list with `text.characters`");
                         Ty::Error
                     }
                     t => {
@@ -1712,6 +1830,17 @@ impl Checker<'_> {
             Ty::List(_) => {
                 self.error(span, "a list can't be shown as text directly")
                     .help("show its size with `.count`, or join a `[String]` with `.joined(separator: \", \")`");
+            }
+            Ty::Dict(..) => {
+                self.error(span, "a dictionary can't be shown as text directly")
+                    .help("show its size with `.count`, or loop over its `keys` and show each value");
+            }
+            Ty::Struct(id) => {
+                let (name, field) = (self.structs[*id].name.clone(), self.structs[*id].fields.first().map(|f| f.name.clone()));
+                let d = self.error(span, format!("`{name}` can't be shown as text directly"));
+                if let Some(f) = field {
+                    d.help(format!("show its fields, like \"{{value.{f}}}\", or add a method that describes it"));
+                }
             }
             t => {
                 let what = self.a(t);
@@ -1938,7 +2067,14 @@ impl Checker<'_> {
     fn cond(&mut self, cond: &Cond) {
         match cond {
             Cond::Expr(e) => {
-                self.expect(e, &Ty::Bool);
+                let t = self.expr(e, Some(&Ty::Bool));
+                if let Ty::Opt(_) = t {
+                    let what = self.a(&t);
+                    self.error(e.span, format!("a condition must be `true` or `false`, but this is {what}"))
+                        .help("to check that it has a value, write `x != nil`; to use the value, `if let value = x { … }`");
+                } else if !self.fits(&t, &Ty::Bool) {
+                    self.mismatch(e.span, &Ty::Bool, &t);
+                }
             }
             Cond::Let(name, ty, value) => {
                 // `if let x: T = value`: value is a `T?`.
@@ -2187,6 +2323,10 @@ impl Checker<'_> {
         let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, &name.name) else { return Ty::Error };
         let n = name.name.as_str();
+        if recv == Ty::Void {
+            self.leading_dot(name);
+            return Ty::Error;
+        }
         let t = match &recv {
             Ty::Error => Ty::Error,
             Ty::Struct(id) => {
@@ -2259,6 +2399,14 @@ impl Checker<'_> {
             }
         };
         if wrap { Ty::opt(t) } else { t }
+    }
+
+    /// `.name` on something with no value: almost always a line starting
+    /// with `.` that was meant as an enum case, but continues the line before.
+    fn leading_dot(&mut self, name: &Ident) {
+        let n = &name.name;
+        self.error(name.span, format!("`.{n}` continues the line before it, which has no value"))
+            .help(format!("a line starting with `.` continues the previous line (like a modifier); for an enum case, write the enum's name first, like `Light.{n}` for an enum called `Light`"));
     }
 
     fn no_member(&mut self, name: &Ident, msg: &str, candidates: Vec<String>) {
@@ -2793,6 +2941,10 @@ impl Checker<'_> {
         let ot = self.expr(object, None);
         let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, n) else { return Ty::Error };
+        if recv == Ty::Void {
+            self.leading_dot(name);
+            return Ty::Error;
+        }
         let what = format!("`{n}`");
         let ret = match &recv {
             Ty::Error => Ty::Error,
@@ -2905,6 +3057,11 @@ impl Checker<'_> {
                 None => {
                     let ty = self.a(&recv);
                     let names = builtins::member_names(&recv).iter().map(|s| s.to_string()).collect();
+                    if recv == Ty::Int && builtins::method_of(&Ty::Float, n).is_some() {
+                        let d = self.error(name.span, format!("{ty} has no method `{n}`; it's a `Float` method"));
+                        d.help(format!("convert it first: `Float(value).{n}(…)`"));
+                        return Ty::Error;
+                    }
                     self.no_member(name, &format!("{ty} has no method `{n}`"), names);
                     Ty::Error
                 }
@@ -3310,8 +3467,12 @@ impl Checker<'_> {
             };
             if !ok {
                 let (pname, iname, what) = (self.type_params[k].name.clone(), self.ifaces[c].name.clone(), self.show(a));
-                self.error(span, format!("`{tname}` needs a `{iname}` for `{pname}`, but `{what}` isn't one"))
-                    .help(format!("make `{what}` conform: `struct {what}: {iname} {{ … }}`"));
+                let help = if matches!(a, Ty::Struct(_) | Ty::Enum(_)) && !what.contains('<') {
+                    format!("make `{what}` conform: `struct {what}: {iname} {{ … }}` (or `enum`)")
+                } else {
+                    format!("only structs and enums that conform to `{iname}` can be used here")
+                };
+                self.error(span, format!("`{tname}` needs a `{iname}` for `{pname}`, but `{what}` isn't one")).help(help);
                 return None;
             }
         }
@@ -3509,8 +3670,11 @@ impl Checker<'_> {
                 Some(t) => out.push(t.clone()),
                 None => {
                     let (tname, pname) = (self.template_name(t), self.type_params[k].name.clone());
-                    self.error(span, format!("can't tell what `{pname}` is in this use of `{tname}`"))
-                        .help("give the value a type, like `let items: [Int] = []`, or write it out, like `Stack<Int>()`");
+                    let help = match &*self.templates[t].item {
+                        Item::Fn(_) => format!("give the result a type, like `let x: Int = {tname}(…)`, or pass values that show what `{pname}` is"),
+                        _ => format!("write the type, like `{tname}<Int>(…)`, or give the variable a type: `var x: {tname}<Int> = {tname}(…)`"),
+                    };
+                    self.error(span, format!("can't tell what `{pname}` is in this use of `{tname}`")).help(help);
                     return None;
                 }
             }

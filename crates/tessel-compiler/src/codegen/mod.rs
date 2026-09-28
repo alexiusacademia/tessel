@@ -1750,7 +1750,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             AssignOp::Mul => BinOp::Mul,
             _ => BinOp::Div,
         };
-        let new = self.arith(bop, old, v, &tt, value.span);
+        let new = self.arith(bop, old, v, &tt, target.span.to(value.span));
         self.release(v, &tt);
         self.b.build_store(p, new).unwrap();
         self.release(old, &tt);
