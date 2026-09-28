@@ -32,6 +32,57 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Learn to program',
+					items: [
+						{ label: 'Start here', slug: 'learn' },
+						{
+							label: 'Foundations',
+							collapsed: true,
+							items: [
+								{ label: '1. Your first program', slug: 'learn/01-first-program' },
+								{ label: '2. Values and variables', slug: 'learn/02-values-variables' },
+								{ label: '3. Arithmetic', slug: 'learn/03-arithmetic' },
+								{ label: '4. Making decisions', slug: 'learn/04-decisions' },
+								{ label: '5. Loops', slug: 'learn/05-loops' },
+							],
+						},
+						{
+							label: 'Organizing code and data',
+							collapsed: true,
+							items: [
+								{ label: '6. Functions', slug: 'learn/06-functions' },
+								{ label: '7. Lists', slug: 'learn/07-lists' },
+								{ label: '8. Working with text', slug: 'learn/08-text' },
+								{ label: '9. Dictionaries', slug: 'learn/09-dictionaries' },
+								{ label: '10. Missing values and input', slug: 'learn/10-optionals-input' },
+							],
+						},
+						{
+							label: 'Modeling your world',
+							collapsed: true,
+							items: [
+								{ label: '11. Structs', slug: 'learn/11-structs' },
+								{ label: '12. Enums and match', slug: 'learn/12-enums' },
+								{ label: '13. Functions as values', slug: 'learn/13-closures' },
+								{ label: '14. Interfaces', slug: 'learn/14-interfaces' },
+								{ label: '15. Generics', slug: 'learn/15-generics' },
+							],
+						},
+						{
+							label: 'Building real programs',
+							collapsed: true,
+							items: [
+								{ label: '16. Files and saving data', slug: 'learn/16-files-data' },
+								{ label: '17. Algorithms', slug: 'learn/17-algorithms' },
+								{ label: '18. Project: a to-do list in the terminal', slug: 'learn/18-project-cli' },
+								{ label: '19. Your first app with a window', slug: 'learn/19-first-app' },
+								{ label: '20. Project: a complete app', slug: 'learn/20-project-app' },
+								{ label: '21. Where to go next', slug: 'learn/21-next-steps' },
+							],
+						},
+					],
+				},
+				{
 					label: 'The language',
 					items: [
 						{ label: 'Basics', slug: 'language/basics' },
