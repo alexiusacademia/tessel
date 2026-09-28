@@ -646,14 +646,17 @@ value, and `break` isn't one:
 ```
 
 ```text
-error: expected a value, found `break`
+error: `break` in a match arm goes in braces
   --> todo/main.tsl:32:22
    |
 32 |             .quit -> break
    |                      ^^^^^
+   |
+   = help: write `-> { break }`
 ```
 
-Put it in braces: `.quit -> { break }`. The same goes for assignments.
+Put it in braces, as the help says: `.quit -> { break }`. The same goes for
+assignments.
 
 ### Forgetting a command in the `match`
 

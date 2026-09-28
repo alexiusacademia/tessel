@@ -286,7 +286,28 @@ fn main() {
 6
 ```
 
-There's no `%=` in Tessel. Write `x = x % 5` instead.
+There's no `%=` in Tessel. If you try it, Tessel tells you what to write
+instead:
+
+```tessel
+fn main() {
+    var x = 17
+    x %= 5
+    print(x)
+}
+```
+
+```text
+error: Tessel has no `%=`
+ --> math.tsl:3:7
+  |
+3 |     x %= 5
+  |       ^^
+  |
+  = help: write it out: `x = x % 5`
+
+1 error found
+```
 
 ## Math functions
 
@@ -386,7 +407,10 @@ has. `decimals:` is a **label** that says what the `2` is for. You'll see
 labels like this often.
 
 `formatted` belongs to `Float` only. For an `Int`, convert first, as in the
-last line. See [formatted](/reference/stdlib/#formatted) for details.
+last line. If you forget, Tessel reminds you:
+``error: `Int` has no method `formatted`; it's a `Float` method``, with the
+help ``convert it first: `Float(value).formatted(…)` ``. See
+[formatted](/reference/stdlib/#formatted) for details.
 
 Why so many digits in the first place? Computers store most decimal numbers
 very slightly inaccurately, because they work in binary. For example,

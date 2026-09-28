@@ -231,23 +231,20 @@ fn main() {
 ```
 
 ```text
-error: cannot find `score`
+error: can't set `score`: it hasn't been created
  --> values.tsl:2:5
   |
 2 |     score = 10
-  |     ^^^^^ not found
-
-error: cannot find `score`
- --> values.tsl:3:11
+  |     ^^^^^ not created yet
   |
-3 |     print(score)
-  |           ^^^^^ not found
+  = help: create it first with `var`, like `var score = …`
 
-2 errors found
+1 error found
 ```
 
-The fix is to create the variable the first time: `var score = 10`. After
-that, `score = …` changes it.
+`score = 10` on its own means "change `score` to 10", but there is no
+`score` to change yet. The fix is what the help says: create the variable the
+first time with `var score = 10`. After that, `score = …` changes it.
 
 ## Writing down the type
 
@@ -279,6 +276,8 @@ alone doesn't say what you mean. Above, `5` on its own would be an `Int`, but
 `price: Float` says you want a decimal number, so `price` is `5.0`.
 
 Every `let` and `var` needs a starting value, even when you write the type.
+If you write just `var total: Int`, Tessel says ``error: `total` needs a
+starting value`` and suggests `var total: Int = 0`.
 
 ## Putting values into text
 

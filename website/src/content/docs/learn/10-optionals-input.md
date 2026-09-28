@@ -155,6 +155,37 @@ fn main() {
 Ada has 3 letters
 ```
 
+### Common mistake: an optional as the condition
+
+Some languages let you write `if price { … }` to mean "if there is a price".
+In Tessel, a condition must be a `Bool`, and an optional isn't one:
+
+```tessel
+fn main() {
+    let prices = ["coffee": 3, "tea": 2]
+    let price = prices["tea"]
+    if price {
+        print("We sell tea.")
+    }
+}
+```
+
+```text
+error: a condition must be `true` or `false`, but this is `Int?`
+ --> main.tsl:4:8
+  |
+4 |     if price {
+  |        ^^^^^
+  |
+  = help: to check that it has a value, write `x != nil`; to use the value, `if let value = x { … }`
+
+1 error found
+```
+
+The help gives you both choices, with `x` standing for your value. To only
+check, write `if price != nil`. To use the price inside the block, write
+`if let price = price`.
+
 ## `??`: use a default
 
 You know this one already. `a ?? b` gives the value inside `a` if there is

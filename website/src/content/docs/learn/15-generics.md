@@ -266,7 +266,7 @@ error: can't tell what `T` is in this use of `Stack`
 6 |     var things = Stack()
   |                  ^^^^^^^
   |
-  = help: give the value a type, like `let items: [Int] = []`, or write it out, like `Stack<Int>()`
+  = help: write the type, like `Stack<Int>(…)`, or give the variable a type: `var x: Stack<Int> = Stack(…)`
 ```
 
 Either write it out, `Stack<Int>()`, or give the variable a type,

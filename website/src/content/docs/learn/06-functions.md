@@ -586,8 +586,37 @@ Factorials grow very fast. `factorial(20)` is 2432902008176640000, the
 largest that fits in an `Int`. Ask for `factorial(21)` and the program
 stops with `error: integer overflow`.
 
-If you forget the base case, the function calls itself forever, and the
-program either hangs or crashes. Always check: when does it stop?
+### Common mistake: forgetting the base case
+
+Here's `factorial` without its base case:
+
+```tessel
+fn factorial(_ n: Int) -> Int {
+    n * factorial(n - 1)
+}
+
+fn main() {
+    print(factorial(5))
+}
+```
+
+```text
+error: stack overflow: too many function calls inside each other
+ = help: a function that calls itself needs a case where it stops calling itself, like `if n == 0 { return 1 }`
+```
+
+`factorial(5)` calls `factorial(4)`, which calls `factorial(3)`, then 2, 1,
+0, -1, -2… Nothing ever says "stop", and every call is still waiting for the
+one inside it to finish. The computer keeps a list of the calls that are
+waiting, called the **stack**, and it has room for only so many. When it runs
+out, the program stops with this runtime error.
+
+Sometimes the program doesn't stop at all. If calling itself is the very last
+thing the function does, as in `countdown`, a forgotten base case can make it
+run forever, like the infinite loops in
+[lesson 5](/learn/05-loops/#warning-loops-that-never-end). Stop it with
+**Ctrl+C** (or **Stop** in the IDE). Either way, the fix is the same. Always
+check: when does it stop?
 
 Anything you can do with recursion, you can also do with a loop. Use
 whichever makes the code clearer. For a countdown a `while` loop is just as

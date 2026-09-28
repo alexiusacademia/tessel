@@ -196,20 +196,20 @@ fn main() {
 ```
 
 ```text
-error: expected `{` after the `if` condition
+error: `=` changes a value; to compare in an `if`, use `==`
  --> decide.tsl:3:12
   |
 3 |     if age = 18 {
-  |            ^
+  |            ^ use `==` here
   |
-  = help: the body of an `if` goes in braces: `if ready { … }`
+  = help: write `if age == 18 { … }`
 
 1 error found
 ```
 
-The message doesn't say "use `==`", but look where it points: at the `=`.
-Tessel read `if age` as the condition, and then expected the `{`. When an
-`if` error points at an `=`, you almost always meant `==`.
+A single `=` stores a value, so `if age = 18` would mean "set `age` to 18",
+which is not a question. Tessel spots the mix-up, points at the `=`, and shows
+the fixed line. The same goes for `while`.
 
 ### Common mistake: a condition that isn't a `Bool`
 
@@ -273,6 +273,10 @@ The late show is not for you, sorry.
 
 `||` is two vertical bars. On most keyboards, `|` is above the Enter key or
 next to the left Shift key.
+
+Some languages spell these out as the words `and`, `or` and `not`. Tessel
+doesn't; if you write `if hasTicket and age >= 12`, it says
+``Tessel writes `and` as `&&` `` and points at the word.
 
 `&&` is applied before `||`, just like `*` before `+`. When you mix them, add
 parentheses so it's clear which parts belong together:

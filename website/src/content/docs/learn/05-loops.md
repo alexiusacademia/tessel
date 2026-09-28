@@ -98,6 +98,10 @@ fn main() {
 4 squared is 16
 ```
 
+Some languages write "up to and including" as `1..=4` or `1...4`. Tessel
+doesn't: if you try, it says ``ranges in Tessel are written `a..b`, and leave
+out `b` `` and suggests `1..(n + 1)`.
+
 If the end isn't larger than the start, as in `5..0`, the range is empty and
 the body doesn't run at all. A `for` loop can't count down by itself. To count
 down, calculate the number from the loop variable: see exercise 1.
@@ -219,13 +223,12 @@ error: can't change `i`, which is a loop variable
 2 |     for i in 0..5 {
   |         - declared here
   |
-  = help: loop over a `var` or `state` list to be able to change its items
-
-1 error found
+  = help: the loop sets it for each round; to change the number, copy it into a `var` first: `var x = i`
 ```
 
-(The help line is about lists, which you'll meet later.) If you want to print
-`i + 1`, just print it: `print(i + 1)`. Or change the range.
+Each round, the loop hands you a fresh copy of the next number, so changing
+it wouldn't affect the loop anyway. If you want to print `i + 1`, just print
+it: `print(i + 1)`. Or change the range.
 
 ## Repeating while something is true: `while`
 
@@ -544,7 +547,7 @@ fn main() {
 19! = 121645100408832000
 20! = 2432902008176640000
 error: integer overflow
- --> loops.tsl:4:20
+ --> loops.tsl:4:9
 ```
 
 21! doesn't fit in an `Int`, so the program stops with a runtime error, as you

@@ -29,7 +29,7 @@ fn main() {
     score = 10 // error: can't set `score`: it hasn't been created
     print(score)
     for i in 0..5 {
-        i = i + 1 // error: a loop variable is a copy made for each round
+        i = i + 1 // error: the loop sets it for each round
     }
     var greeting = "hi"
     greeting.uppercase() // error: the result of `uppercase()` isn't used

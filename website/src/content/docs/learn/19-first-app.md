@@ -395,24 +395,10 @@ error: `var` can't be used while building a view
   |     ^^^^^^^^^^^^^
   |
   = help: use `let` here, or `state` at the top of the view for values that change
-
-error: can't change `count`, which is a constant
- --> main.tsl:5:19
-  |
-5 |     Button("+") { count += 1 }
-  |                   ^^^^^
- ::: main.tsl:2:9
-  |
-2 |     var count = 0
-  |         ----- declared here
-  |
-  = help: declare it with `var` to be able to change it
 ```
 
-When there are several errors, start with the **first** one: later errors
-are often just consequences of it. Here the first one says exactly what to
-do: use `state` for values that change. (The second error's advice doesn't
-fit, because it was caused by the first.)
+The help says exactly what to do: values that change are declared with
+`state`, at the top of the app or view.
 
 ### Passing a value where a binding is needed
 

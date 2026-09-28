@@ -43,7 +43,9 @@ from `String` to `Int`". `count` is the number of entries.
 
 All the keys must have the same type, and so must all the values. Keys are
 usually `String`s or `Int`s. Each key can appear only once: a dictionary
-can't have two different prices for `"tea"`.
+can't have two different prices for `"tea"`. If you write the same key twice
+in the brackets, as in `["tea": 2, "tea": 5]`, Tessel stops with
+``the key "tea" appears twice`` and points at both.
 
 ### Empty dictionaries
 
@@ -294,11 +296,13 @@ fn main() {
 ```
 
 ```text
-error: `[String: Int]` can't be shown as text
+error: a dictionary can't be shown as text directly
  --> main.tsl:3:11
   |
 3 |     print(prices)
   |           ^^^^^^
+  |
+  = help: show its size with `.count`, or loop over its `keys` and show each value
 
 1 error found
 ```
@@ -338,8 +342,8 @@ time the word comes up, its count goes up by one.
 
 ### Common mistake: forgetting the parentheses
 
-This line looks almost the same, but gives the wrong answer, and Tessel
-doesn't catch it:
+This line looks almost the same as the one above, but without the
+parentheses:
 
 ```tessel
 fn main() {
@@ -353,13 +357,22 @@ fn main() {
 ```
 
 ```text
-1
+error: `??` with `+` after it is ambiguous
+ --> main.tsl:5:40
+  |
+5 |         counts[word] = counts[word] ?? 0 + 1
+  |                                        ^^^^^ this is all the default, so `+` only applies to it
+  |
+  = help: add parentheses: `(value ?? 0) + 1` to do it to the result, or `value ?? (0 + 1)`
+
+1 error found
 ```
 
-"the" appears three times, but the count is 1. Why? `??` is done *after*
-`+`, just as `+` is done after `*`. So Tessel reads the line as
-`counts[word] ?? (0 + 1)`: "the old count, or if there's none, 1". The old
-count is never increased. Always write the parentheses:
+`??` is done *after* `+`, just as `+` is done after `*`. So without
+parentheses, the line would mean `counts[word] ?? (0 + 1)`: "the old count,
+or if there's none, 1". The old count would never go up, and every word
+would end up with a count of 1. That's almost never what you mean, so Tessel
+asks you to say which one you want. To add one to the count, write
 `(counts[word] ?? 0) + 1`.
 
 ## Worked example: word frequency

@@ -63,24 +63,38 @@ HELLO!
 
 ### Common mistake: throwing the result away
 
-This program looks like it should print `HELLO`, but it doesn't:
+This program looks like it should print `HELLO`:
 
 ```tessel
 fn main() {
-    let greeting = "hello"
+    var greeting = "hello"
     greeting.uppercase()
     print(greeting)
 }
 ```
 
 ```text
-hello
+error: the result of `uppercase()` isn't used
+ --> main.tsl:3:5
+  |
+3 |     greeting.uppercase()
+  |     ^^^^^^^^^^^^^^^^^^^^ this makes a new value, and then throws it away
+  |
+  = help: text doesn't change by itself; store the result: `greeting = greeting.uppercase()`
+
+1 error found
 ```
 
-Tessel doesn't report an error here, which makes this mistake easy to miss.
-`greeting.uppercase()` did make a new, capitalized string, but nothing kept
-it, so it was thrown away. Store the result: `let loud =
-greeting.uppercase()`, or use it directly: `print(greeting.uppercase())`.
+`greeting.uppercase()` makes a new, capitalized string, but it doesn't change
+`greeting`, and nothing on that line keeps the new string. It would be thrown
+away, and the program would print `hello`. Because that's never what you
+want, Tessel stops you. Store the result, as the help shows, or in a new
+constant: `let loud = greeting.uppercase()`. Or use it directly:
+`print(greeting.uppercase())`.
+
+The same goes for properties like `count` and for list methods like
+`sorted()`: a line that works something out and then doesn't use it is an
+error.
 
 ## Measuring text: `count` and `isEmpty`
 
@@ -297,14 +311,16 @@ error: text can't be indexed by number
 3 |     print(word[0])
   |           ^^^^^^^
   |
-  = help: use `split`, `contains` or `hasPrefix` instead
+  = help: get one character with `text.character(at: 0)`, or all of them as a list with `text.characters`
 
 1 error found
 ```
 
-To get one character, use `word.substring(from: 0, to: 1)`, or
-`word.characters[0]` (which works like any list, including stopping the
-program if the index is too big).
+To get one character, use `word.characters[0]` (which works like any list,
+including stopping the program if the index is too big), or
+`word.substring(from: 0, to: 1)`. The help also mentions
+`word.character(at: 0)`: that one gives back a value that might be missing,
+which you'll learn to handle in [lesson 10](/learn/10-optionals-input/).
 
 ## One line at a time
 

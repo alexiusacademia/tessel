@@ -580,7 +580,7 @@ error: `CardRow`'s `card:` changes its value, so it can't be given `card`, which
 18 |                 for card in cards.filter({ c in !c.question.isEmpty }) {
    |                     ---- declared here
    |
-   = help: loop over a `var` or `state` list to be able to change its items
+   = help: loop over a `var` or `state` list to be able to change its items (a list made by `filter` or `sorted` is a new copy)
 ```
 
 `filter` makes a *new* list of copies, so a change to one of its items would

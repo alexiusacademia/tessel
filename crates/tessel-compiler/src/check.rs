@@ -1414,10 +1414,15 @@ impl Checker<'_> {
                         decl: l.span,
                         help: "parameters are copies and can't be changed; copy it into a `var`, or (in a view) declare it as `bind`",
                     }),
+                    Kind::LoopLet if l.ty == Ty::Int => Err(PlaceErr::Const {
+                        what: format!("`{n}`, which is a loop variable"),
+                        decl: l.span,
+                        help: "the loop sets it for each round; to change the number, copy it into a `var` first: `var x = i`",
+                    }),
                     Kind::LoopLet => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a loop variable"),
                         decl: l.span,
-                        help: "a loop variable is a copy made for each round; to change a number, copy it into a `var` first (to change a list's items, loop over a `var` list)",
+                        help: "loop over a `var` or `state` list to be able to change its items (a list made by `filter` or `sorted` is a new copy)",
                     }),
                     Kind::Fn(..) => Err(PlaceErr::NotPlace),
                 },
