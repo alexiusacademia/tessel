@@ -1,0 +1,19 @@
+// Building text: numbers in interpolation (including ones too long for a
+// small buffer), joined, split and concatenation.
+
+fn main() {
+    let lowest = -9223372036854775807 - 1
+    print("{0} {7} {-42} {123456789} {lowest} {9223372036854775807}")
+    let none: [String] = []
+    print("[{none.joined(separator: ", ")}] [{["a"].joined(separator: ", ")}] [{["a", "b", "c"].joined(separator: "--")}]")
+    print("héllo".split("").joined(separator: "|"))
+    print("a,,b,".split(",").count)
+    print("x" + "yz" + "{1.5}")
+    let big = 1e300
+    let tiny = 1e-300
+    let nan = 0.0 / 0.0
+    print("{1.5} {2.0} {-0.25} {1e16} {big} {tiny} {nan} {1.0 / 0.0}")
+    print("{big}".count)
+    print("{tiny}".count)
+    print(String(big).count)
+}

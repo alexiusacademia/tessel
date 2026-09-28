@@ -2272,32 +2272,47 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         if let [StrPart::Text(t)] = parts {
             return self.str_lit(t).into();
         }
+        // An array of (tag, value) pieces for `tsl_str_interpolate`: Strings
+        // by address (tag 0), and Ints (1) and Floats (2, as bits) directly,
+        // so they need no string of their own.
         let n = parts.len() as u32;
-        let arr_ty = self.ptr_ty().array_type(n);
-        let arr = self.alloca(arr_ty.into(), "parts");
+        let i64t = self.i64();
+        let piece_ty = self.ctx.struct_type(&[i64t.into(), i64t.into()], false);
+        let arr_ty = piece_ty.array_type(n);
+        let arr = self.alloca(arr_ty.into(), "pieces");
         let mut owned = Vec::new();
         for (i, part) in parts.iter().enumerate() {
-            let s = match part {
-                StrPart::Text(t) => self.str_lit(t).into(),
+            let (tag, value): (u64, IntValue) = match part {
+                StrPart::Text(t) => {
+                    let p = self.str_lit(t);
+                    (0, self.b.build_ptr_to_int(p, i64t, "").unwrap())
+                }
                 StrPart::Expr(x) => {
                     let t = self.ty(x);
                     let v = self.expr(x).unwrap();
-                    let s = self.stringify(v, &t);
-                    self.hold(s, &Ty::Str);
-                    owned.push(s);
-                    s
+                    match t {
+                        Ty::Int => (1, v.into_int_value()),
+                        Ty::Float => (2, self.b.build_bit_cast(v, i64t, "").unwrap().into_int_value()),
+                        _ => {
+                            let s = self.stringify(v, &t);
+                            self.hold(s, &Ty::Str);
+                            owned.push(s);
+                            (0, self.b.build_ptr_to_int(s.into_pointer_value(), i64t, "").unwrap())
+                        }
+                    }
                 }
             };
-            let slot = unsafe {
-                self.b
-                    .build_gep(arr_ty, arr, &[self.i64().const_zero(), self.i64().const_int(i as u64, false)], "")
-                    .unwrap()
-            };
-            self.b.build_store(slot, s).unwrap();
+            let idx = [self.i64().const_zero(), self.i64().const_int(i as u64, false)];
+            let slot = unsafe { self.b.build_gep(arr_ty, arr, &idx, "").unwrap() };
+            let piece = piece_ty.const_named_struct(&[i64t.const_int(tag, false).into(), i64t.const_zero().into()]);
+            let piece = self.b.build_insert_value(piece, value, 1, "").unwrap();
+            self.b.build_store(slot, piece).unwrap();
         }
         let count = self.i64().const_int(n as u64, false);
         self.unhold(owned.len());
-        let r = self.call_rt("tsl_str_concat", &[arr.into(), count.into()]).unwrap();
+        let p = self.ptr_ty();
+        let f = self.declare_rt("tsl_str_interpolate", &[p.into(), i64t.into()], Some(p.into()));
+        let r = self.b.build_call(f, &[arr.into(), count.into()], "").unwrap().try_as_basic_value().basic().unwrap();
         for s in owned {
             self.release(s, &Ty::Str);
         }

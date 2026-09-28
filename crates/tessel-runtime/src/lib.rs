@@ -248,26 +248,74 @@ pub(crate) unsafe fn str_text<'a>(s: *const Str) -> &'a str {
 
 pub(crate) fn str_new(text: &str) -> *mut Str {
     unsafe {
-        let s = new_object(size_of::<Str>() + text.len(), str_drop) as *mut Str;
-        (*s).len = text.len() as i64;
-        ptr::copy_nonoverlapping(text.as_ptr(), (s as *mut u8).add(size_of::<Str>()), text.len());
+        let (s, bytes) = str_alloc(text.len());
+        ptr::copy_nonoverlapping(text.as_ptr(), bytes, text.len());
+        s
+    }
+}
+
+/// A new string of `len` bytes, and where to write them (they must be
+/// filled in with UTF-8 before the string is used).
+unsafe fn str_alloc(len: usize) -> (*mut Str, *mut u8) {
+    unsafe {
+        let s = new_object(size_of::<Str>() + len, str_drop) as *mut Str;
+        (*s).len = len as i64;
+        (s, (s as *mut u8).add(size_of::<Str>()))
+    }
+}
+
+/// A new string made of `pieces` one after another: one allocation.
+unsafe fn str_join<'a>(pieces: impl Iterator<Item = &'a [u8]> + Clone) -> *mut Str {
+    unsafe {
+        let total = pieces.clone().map(<[u8]>::len).sum();
+        let (s, mut at) = str_alloc(total);
+        for p in pieces {
+            ptr::copy_nonoverlapping(p.as_ptr(), at, p.len());
+            at = at.add(p.len());
+        }
         s
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_str_concat(parts: *const *const Str, n: i64) -> *mut Str {
-    let parts = unsafe { std::slice::from_raw_parts(parts, n as usize) };
-    let mut out = String::new();
-    for &p in parts {
-        out.push_str(unsafe { str_text(p) });
+    unsafe {
+        let parts = std::slice::from_raw_parts(parts, n as usize);
+        str_join(parts.iter().map(|&p| str_text(p).as_bytes()))
     }
-    str_new(&out)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_str_from_int(n: i64) -> *mut Str {
-    str_new(&n.to_string())
+    let mut buf = [0u8; 20];
+    unsafe { str_join(std::iter::once(int_digits(n, &mut buf))) }
+}
+
+/// `n` in decimal, written into the end of `buf`: no temporary String.
+fn int_digits(n: i64, buf: &mut [u8; 20]) -> &[u8] {
+    let mut at = buf.len();
+    let mut v = n.unsigned_abs();
+    loop {
+        at -= 1;
+        buf[at] = b'0' + (v % 10) as u8;
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    if n < 0 {
+        at -= 1;
+        buf[at] = b'-';
+    }
+    &buf[at..]
+}
+
+/// A piece of an interpolated string: a String (`tag` 0, `value` its
+/// address), an Int (1) or a Float (2, `value` its bits).
+#[repr(C)]
+pub struct Piece {
+    tag: i64,
+    value: i64,
 }
 
 /// Floats always show a decimal point (`3.0`), so they read differently from Ints.
@@ -276,6 +324,60 @@ pub fn format_float(x: f64) -> String {
         format!("{x:.1}")
     } else {
         format!("{x}")
+    }
+}
+
+/// A Float as `format_float` writes it, into a buffer on the stack; None if
+/// it doesn't fit (very large or very small numbers are written in full).
+fn float_digits(x: f64, buf: &mut [u8; 40]) -> Option<&[u8]> {
+    use std::io::Write;
+    let mut cur = std::io::Cursor::new(&mut buf[..]);
+    let ok = if x.is_finite() && x.fract() == 0.0 && x.abs() < 1e16 {
+        write!(cur, "{x:.1}")
+    } else {
+        write!(cur, "{x}")
+    };
+    let n = cur.position() as usize;
+    ok.is_ok().then_some(&buf[..n])
+}
+
+/// `"a {b} c"`: the pieces one after another, in one new string. Ints and
+/// Floats are written directly, without a string of their own, and nothing
+/// but the result is allocated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_interpolate(pieces: *const Piece, n: i64) -> *mut Str {
+    unsafe {
+        let pieces = std::slice::from_raw_parts(pieces, n as usize);
+        let (mut ib, mut fb) = ([0u8; 20], [0u8; 40]);
+        // A Float too long for the buffer: the simple way.
+        if pieces.iter().any(|p| p.tag == 2 && float_digits(f64::from_bits(p.value as u64), &mut fb).is_none()) {
+            let texts: Vec<String> = pieces
+                .iter()
+                .map(|p| match p.tag {
+                    1 => p.value.to_string(),
+                    2 => format_float(f64::from_bits(p.value as u64)),
+                    _ => str_text(p.value as *const Str).to_string(),
+                })
+                .collect();
+            return str_join(texts.iter().map(|t| t.as_bytes()));
+        }
+        let text = |p: &Piece, ib: &mut [u8; 20], fb: &mut [u8; 40]| -> &'static [u8] {
+            // (The buffers outlive each use: the bytes are copied before the next piece.)
+            let bytes: &[u8] = match p.tag {
+                1 => int_digits(p.value, ib),
+                2 => float_digits(f64::from_bits(p.value as u64), fb).unwrap_or_default(),
+                _ => str_text(p.value as *const Str).as_bytes(),
+            };
+            std::slice::from_raw_parts(bytes.as_ptr(), bytes.len())
+        };
+        let total: usize = pieces.iter().map(|p| text(p, &mut ib, &mut fb).len()).sum();
+        let (s, mut at) = str_alloc(total);
+        for p in pieces {
+            let bytes = text(p, &mut ib, &mut fb);
+            ptr::copy_nonoverlapping(bytes.as_ptr(), at, bytes.len());
+            at = at.add(bytes.len());
+        }
+        s
     }
 }
 
@@ -358,13 +460,16 @@ pub unsafe extern "C" fn tsl_str_replace(s: *const Str, old: *const Str, new: *c
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_str_split(s: *const Str, sep: *const Str) -> *mut List {
     let (s, sep) = unsafe { (str_text(s), str_text(sep)) };
-    let parts: Vec<String> =
-        if sep.is_empty() { s.chars().map(String::from).collect() } else { s.split(sep).map(String::from).collect() };
-    let list = unsafe { tsl_list_new(&TSL_TYPE_STR, parts.len() as i64) };
-    let mut slot = list;
-    for p in parts {
-        let obj = str_new(&p);
+    let mut slot = unsafe { tsl_list_new(&TSL_TYPE_STR, 4) };
+    let mut push = |p: &str| {
+        let obj = str_new(p);
         unsafe { tsl_list_push(&mut slot, &obj as *const *mut Str as *const u8) };
+    };
+    if sep.is_empty() {
+        let mut b = [0u8; 4];
+        s.chars().for_each(|c| push(c.encode_utf8(&mut b)));
+    } else {
+        s.split(sep).for_each(push);
     }
     slot
 }
@@ -875,8 +980,14 @@ pub unsafe extern "C" fn tsl_list_sorted(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_list_joined(l: *const List, sep: *const Str) -> *mut Str {
     unsafe {
-        let parts: Vec<&str> = (0..(*l).len).map(|i| str_text(*(elem_at(l, i) as *const *const Str))).collect();
-        str_new(&parts.join(str_text(sep)))
+        let sep = str_text(sep).as_bytes();
+        let n = (*l).len;
+        // Each item, with the separator before all but the first.
+        let pieces = (0..n).flat_map(move |i| {
+            let item = str_text(*(elem_at(l, i) as *const *const Str)).as_bytes();
+            [if i == 0 { &[][..] } else { sep }, item]
+        });
+        str_join(pieces)
     }
 }
 
