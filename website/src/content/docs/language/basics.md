@@ -323,8 +323,10 @@ except `??`, which groups to the right.
 | `!` `-` (prefix) |
 | `.` `?.` `()` `[]` |
 
-Because `??` is lower than `+`, `count ?? 0 + 1` means `count ?? (0 + 1)`.
-Use parentheses when in doubt: `(count ?? 0) + 1`.
+Because `??` is lower than `+`, `count ?? 0 + 1` would mean
+`count ?? (0 + 1)`, which is rarely what's meant. So Tessel asks for
+parentheses when `??` is followed by arithmetic: write `(count ?? 0) + 1`, or
+`count ?? (0 + 1)` if that's what you mean.
 
 ## Lines and semicolons
 

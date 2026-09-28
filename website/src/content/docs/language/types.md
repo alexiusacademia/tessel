@@ -117,8 +117,9 @@ print(greeting.uppercase()) // HELLO, ADA!
 list of string properties and methods is on the
 [Collections](/language/collections/#strings) page.
 
-Strings can't be indexed with `[…]`. Use methods like `substring`, `split`,
-`contains` or `hasPrefix` instead.
+Strings can't be indexed with `[…]`. Use `character(at:)` for one
+character, `characters` for all of them as a list, or methods like
+`substring`, `split`, `contains` or `hasPrefix`.
 
 ## Range
 

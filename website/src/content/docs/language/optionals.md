@@ -291,6 +291,7 @@ These are the runtime errors:
 | `index 5 is out of range for a list of 3 items` | Reading, writing, inserting or removing a list item at an index that doesn't exist (including negative indexes) |
 | `integer overflow` | An `Int` result too large or too small to fit, from `+`, `-`, `*`, `/` or `%` |
 | `division by zero` | Dividing an `Int` by zero with `/` or `%` |
+| `stack overflow` | Too many function calls inside each other, usually a function that calls itself without a case that stops it |
 
 `Float` arithmetic never stops the program: dividing a `Float` by zero gives
 infinity.

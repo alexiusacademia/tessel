@@ -242,7 +242,10 @@ cake costs 5
 
 Strings aren't collections you can index or loop over, but they have
 properties and methods for common text work. None of them change the
-string; they return a new value.
+string; they return a new value. So a call whose result isn't used, like
+`name.uppercase()` on a line of its own, does nothing, and Tessel reports it
+as an error: store the result instead, `name = name.uppercase()`. (The same
+goes for list methods that return a new list, like `sorted()`.)
 
 | Member | Type | What it does |
 |---|---|---|
