@@ -926,11 +926,11 @@ fn mix(h: u64) -> u64 {
 
 fn str_hash(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ bytes.len() as u64;
-    let mut chunks = bytes.chunks_exact(8);
-    for c in &mut chunks {
-        h = (h.rotate_left(5) ^ u64::from_le_bytes(c.try_into().unwrap())).wrapping_mul(0x517c_c1b7_2722_0a95);
+    let (chunks, rest) = bytes.as_chunks::<8>();
+    for c in chunks {
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(*c)).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
-    for &b in chunks.remainder() {
+    for &b in rest {
         h = (h.rotate_left(5) ^ b as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
     h
