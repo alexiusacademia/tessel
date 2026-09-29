@@ -35,6 +35,7 @@ pub fn analyze(sources: &SourceMap, require_entry: bool) -> Analysis {
         let parsed = parser::parse_file(id, &file.text, &mut diags, &mut next_id);
         program.items.extend(parsed.items);
     }
+    program.items.extend(tuple_structs());
     add_prelude(&mut program, &mut diags, &mut next_id);
     program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
@@ -52,6 +53,29 @@ fn add_prelude(program: &mut ast::Program, diags: &mut Diagnostics, next_id: &mu
     }
     let prelude = parser::parse_file(source::PRELUDE_FILE, source::PRELUDE, diags, next_id);
     program.items.extend(prelude.items.into_iter().filter(|i| !own.contains(&i.name().name)));
+}
+
+/// The generic structs behind tuples: `(,)<A, B>` with fields `0` and `1`
+/// for pairs, and so on up to `ast::MAX_TUPLE` items.
+fn tuple_structs() -> Vec<ast::Item> {
+    let span = source::Span { file: source::PRELUDE_FILE, lo: 0, hi: 0 };
+    let ident = |name: String| ast::Ident { name, span };
+    (2..=ast::MAX_TUPLE)
+        .map(|n| {
+            let params: Vec<String> = (0..n).map(|i| ((b'A' + i as u8) as char).to_string()).collect();
+            ast::Item::Struct(ast::StructDecl {
+                name: ident(ast::tuple_name(n)),
+                generics: params.iter().map(|p| ast::GenericParam { name: ident(p.clone()), constraint: None }).collect(),
+                conforms: Vec::new(),
+                fields: params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| ast::FieldDecl { name: ident(i.to_string()), ty: ast::TypeExpr::Named(ident(p.clone())), default: None })
+                    .collect(),
+                methods: Vec::new(),
+            })
+        })
+        .collect()
 }
 
 /// Completion suggestions for the caret at byte `offset` in file `file`.

@@ -116,6 +116,7 @@ impl Checked {
             Ty::Any => "any value".into(),
             Ty::List(t) => format!("[{}]", self.show(t)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
+            Ty::Set(t) => format!("Set<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -427,6 +428,7 @@ impl Checker<'_> {
             Ty::Any => "any value".into(),
             Ty::List(t) => format!("[{}]", self.show(t)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
+            Ty::Set(t) => format!("Set<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -507,7 +509,7 @@ impl Checker<'_> {
     /// Every name visible here, for "did you mean" suggestions.
     fn visible_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.scopes.iter().flatten().map(|l| l.name.clone()).collect();
-        names.extend(self.globals.keys().cloned());
+        names.extend(self.globals.keys().filter(|n| !n.starts_with('(')).cloned());
         names.extend(builtins::VIEW_NAMES.iter().chain(builtins::FUNCTION_NAMES).map(|s| s.to_string()));
         names
     }
@@ -722,6 +724,10 @@ impl Checker<'_> {
                 "Data" => Ty::Data,
                 "Range" => Ty::Range,
                 "View" => Ty::View,
+                "Set" => {
+                    self.error(id.span, "`Set` needs the type of its items, like `Set<Int>`");
+                    Ty::Error
+                }
                 "$error" => Ty::Error,
                 name if name.starts_with('$') => Ty::Generic(name[1..].parse().unwrap_or(0)),
                 name => match self.globals.get(name) {
@@ -768,6 +774,7 @@ impl Checker<'_> {
                     }
                 },
             },
+            TypeExpr::Generic(id, args, span) if id.name == "Set" => self.set_type(args, *span),
             TypeExpr::Generic(id, args, span) => self.generic_name_ty(&id.name, args, *span),
             TypeExpr::List(t, _) => Ty::list(self.resolve(t)),
             TypeExpr::Dict(kt, v, _) => {
@@ -1338,13 +1345,14 @@ impl Checker<'_> {
         let d = self.error(e.span, format!("the result of `{shown}` isn't used"));
         d.label("this makes a new value, and then throws it away");
         match &e.kind {
-            ExprKind::Call { callee, .. } if matches!(recv, Ty::Str | Ty::List(_) | Ty::Dict(..)) => {
+            ExprKind::Call { callee, .. } if matches!(recv, Ty::Str | Ty::List(_) | Ty::Dict(..) | Ty::Set(_)) => {
                 if let ExprKind::Member { object, .. } = &callee.kind
                     && let ExprKind::Name(v) = &object.kind
                 {
                     let what = match recv {
                         Ty::Str => "text doesn't change by itself",
                         Ty::List(_) => "a list doesn't change by itself",
+                        Ty::Set(_) => "a set doesn't change by itself",
                         _ => "a dictionary doesn't change by itself",
                     };
                     d.help(format!("{what}; store the result: `{v} = {v}.{shown}`"));
@@ -1473,6 +1481,7 @@ impl Checker<'_> {
         match t {
             Ty::List(el) => (*el, self.place(iter).is_ok()),
             Ty::Range => (Ty::Int, false),
+            Ty::Set(el) => (*el, false),
             Ty::Error => (Ty::Error, false),
             Ty::Dict(..) => {
                 self.error(iter.span, "a dictionary can't be looped over directly")
@@ -1665,6 +1674,15 @@ impl Checker<'_> {
             }
             ExprKind::Name(n) => self.name_expr(n, e.span),
             ExprKind::DotName(n) => self.dot_name(n, e.span, expected, false),
+            // `let seen: Set<Int> = [1, 2]`: a set, written like a list.
+            ExprKind::List(items) if matches!(expected.map(strip_opt), Some(Ty::Set(_))) => {
+                let Some(Ty::Set(t)) = expected.map(strip_opt) else { unreachable!() };
+                let t = (**t).clone();
+                for item in items {
+                    self.expect(item, &t);
+                }
+                Ty::set(t)
+            }
             ExprKind::List(items) => {
                 let elem = match expected.map(strip_opt) {
                     Some(Ty::List(t)) => Some((**t).clone()),
@@ -1833,16 +1851,21 @@ impl Checker<'_> {
         }
     }
 
-    fn check_key(&mut self, t: &Ty, span: Span) {
-        let ok = match t {
-            Ty::Int | Ty::Str | Ty::Bool | Ty::Error => true,
+    /// Can values of `t` be dictionary keys (and set items)?
+    fn is_key(&self, t: &Ty) -> bool {
+        match t {
+            Ty::Int | Ty::Str | Ty::Bool | Ty::Error | Ty::Generic(_) => true,
             Ty::Enum(id) => self.enums[*id].cases.iter().all(|c| c.fields.is_empty()),
+            Ty::Struct(id) => self.structs[*id].fields.iter().all(|f| self.is_key(&f.ty)),
             _ => false,
-        };
-        if !ok {
+        }
+    }
+
+    fn check_key(&mut self, t: &Ty, span: Span) {
+        if !self.is_key(t) {
             let what = self.a(t);
             self.error(span, format!("{what} can't be used as a dictionary key"))
-                .help("keys can be `Int`, `String`, `Bool`, or an enum whose cases have no values");
+                .help("keys can be `Int`, `String`, `Bool`, an enum whose cases have no values, or a tuple or struct of those");
         }
     }
 
@@ -1857,6 +1880,10 @@ impl Checker<'_> {
                 self.error(span, "a list can't be shown as text directly")
                     .help("show its size with `.count`, or join a `[String]` with `.joined(separator: \", \")`");
             }
+            Ty::Set(_) => {
+                self.error(span, "a set can't be shown as text directly")
+                    .help("show its size with `.count`, or turn it into a list with `.sorted()` or `.values`");
+            }
             Ty::Dict(..) => {
                 self.error(span, "a dictionary can't be shown as text directly")
                     .help("show its size with `.count`, or loop over its `keys` and show each value");
@@ -1864,7 +1891,9 @@ impl Checker<'_> {
             Ty::Struct(id) => {
                 let (name, field) = (self.structs[*id].name.clone(), self.structs[*id].fields.first().map(|f| f.name.clone()));
                 let d = self.error(span, format!("`{name}` can't be shown as text directly"));
-                if let Some(f) = field {
+                if is_tuple_name(&name) {
+                    d.help("show its items, like \"{value.0} and {value.1}\"");
+                } else if let Some(f) = field {
                     d.help(format!("show its fields, like \"{{value.{f}}}\", or add a method that describes it"));
                 }
             }
@@ -2364,6 +2393,12 @@ impl Checker<'_> {
                 } else if def.methods.iter().any(|m| m.name == n) {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}()`"));
                     Ty::Error
+                } else if is_tuple_name(&def.name) {
+                    let (sname, count) = (def.name.clone(), def.fields.len());
+                    self.error(name.span, format!("`{sname}` has {count} items, so it has no `.{n}`"))
+                        .label("no such item")
+                        .help(format!("its items are `.0` to `.{}`, counting from 0", count - 1));
+                    Ty::Error
                 } else {
                     let sname = def.name.clone();
                     let names: Vec<String> = def.fields.iter().map(|f| f.name.clone()).collect();
@@ -2371,7 +2406,7 @@ impl Checker<'_> {
                     Ty::Error
                 }
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float | Ty::Int | Ty::Data => match builtins::property(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::property(&recv, n) {
                 Some(t) => t,
                 None if builtins::method_of(&recv, n).is_some() => {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}(…)`"));
@@ -2488,6 +2523,7 @@ impl Checker<'_> {
                 self.method_call(object, name, *optional, args, trailing, span, expected)
             }
             ExprKind::GenericName(n, targs) => match self.generic_name_ty(n, targs, callee.span) {
+                Ty::Set(t) if n == "Set" => self.set_init(Some(*t), args, trailing, span, expected),
                 Ty::Struct(id) => {
                     let name = self.structs[id].name.clone();
                     self.call_name(&name, callee.span, args, trailing, span, expected)
@@ -2621,6 +2657,7 @@ impl Checker<'_> {
                 match n {
                     "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
                     "Data" => return self.data_init(args, trailing, span),
+                    "Set" => return self.set_init(None, args, trailing, span, expected),
                     "background" => return self.background(args, trailing, span),
                     "toJson" | "toBinary" | "fromJson" | "fromBinary" => {
                         return self.codec_call(n, args, trailing, span, expected);
@@ -2784,7 +2821,7 @@ impl Checker<'_> {
     fn saveable(&self, t: &Ty) -> Result<(), String> {
         match t {
             Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error | Ty::Generic(_) => Ok(()),
-            Ty::List(e) | Ty::Opt(e) => self.saveable(e),
+            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => self.saveable(e),
             Ty::Dict(k, v) => {
                 if !matches!(**k, Ty::Str | Ty::Int | Ty::Bool) && !matches!(**k, Ty::Enum(_)) {
                     return Err("dictionary keys must be String, Int, Bool or an enum".into());
@@ -3064,14 +3101,14 @@ impl Checker<'_> {
                 self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                 self.map_call(elem, args, trailing, span)
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {
                         self.mutating_receiver(object, n);
                     }
                     self.args(&what, &m.sig.params, args, trailing, span);
-                    if let (Ty::List(elem), "sorted") = (&recv, n) {
+                    if let (Ty::List(elem) | Ty::Set(elem), "sorted") = (&recv, n) {
                         let by_given = trailing.is_some() || args.iter().any(|a| a.label.is_some());
                         if !by_given && !matches!(**elem, Ty::Int | Ty::Float | Ty::Str | Ty::Error) {
                             let el = self.a(elem);
@@ -3423,8 +3460,13 @@ impl Checker<'_> {
                 params.push(self.type_params.len());
                 self.type_params.push(TypeParam { name: g.name.name.clone(), constraint });
             }
-            self.templates[t].params = params.clone();
-            let args = params.into_iter().map(Ty::Generic).collect();
+            self.templates[t].params = params;
+        }
+        // (Every template's parameters are known before any is checked, as
+        // one may use another: `fn swap<A, B>(p: (A, B))`.)
+        for t in 0..self.templates.len() {
+            let item = self.templates[t].item.clone();
+            let args = self.templates[t].params.iter().copied().map(Ty::Generic).collect();
             self.specialize(t, args, item.name().span);
         }
     }
@@ -3439,6 +3481,7 @@ impl Checker<'_> {
             Ty::Generic(k) => format!("${k}"),
             Ty::List(e) => format!("[{}]", self.type_key(e)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.type_key(k), self.type_key(v)),
+            Ty::Set(e) => format!("Set<{}>", self.type_key(e)),
             Ty::Opt(e) => format!("{}?", self.type_key(e)),
             Ty::Fn(ps, r) => format!(
                 "fn({}) -> {}",
@@ -3456,6 +3499,7 @@ impl Checker<'_> {
             Ty::List(e) => TypeExpr::List(Box::new(self.type_expr_of(e, span)), span),
             Ty::Dict(k, v) => TypeExpr::Dict(Box::new(self.type_expr_of(k, span)), Box::new(self.type_expr_of(v, span)), span),
             Ty::Opt(e) => TypeExpr::Optional(Box::new(self.type_expr_of(e, span)), span),
+            Ty::Set(e) => TypeExpr::Generic(Ident { name: "Set".into(), span }, vec![self.type_expr_of(e, span)], span),
             Ty::Fn(ps, r) => TypeExpr::Fn(
                 ps.iter().map(|p| self.type_expr_of(p, span)).collect(),
                 (**r != Ty::Void).then(|| Box::new(self.type_expr_of(r, span))),
@@ -3470,7 +3514,7 @@ impl Checker<'_> {
     fn contains_generic(t: &Ty) -> bool {
         match t {
             Ty::Generic(_) => true,
-            Ty::List(e) | Ty::Opt(e) => Self::contains_generic(e),
+            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => Self::contains_generic(e),
             Ty::Dict(k, v) => Self::contains_generic(k) || Self::contains_generic(v),
             Ty::Fn(ps, r) => ps.iter().any(Self::contains_generic) || Self::contains_generic(r),
             _ => false,
@@ -3519,7 +3563,11 @@ impl Checker<'_> {
             return None;
         }
         let concrete = !args.iter().any(Self::contains_generic);
-        let name = if concrete {
+        let name = if is_tuple_name(&tname) {
+            // A tuple's copy is named like its type: `(Int, String)`.
+            let parts: Vec<String> = args.iter().map(|a| if concrete { self.show(a) } else { self.type_key(a) }).collect();
+            format!("({})", parts.join(", "))
+        } else if concrete {
             format!("{tname}<{}>", args.iter().map(|a| self.show(a)).collect::<Vec<_>>().join(", "))
         } else {
             key.clone()
@@ -3578,7 +3626,7 @@ impl Checker<'_> {
             (Ty::Generic(k), a) if params.contains(k) => {
                 binds.entry(*k).or_insert_with(|| a.clone());
             }
-            (Ty::List(p), Ty::List(a)) | (Ty::Opt(p), Ty::Opt(a)) => self.unify(p, a, params, binds),
+            (Ty::List(p), Ty::List(a)) | (Ty::Opt(p), Ty::Opt(a)) | (Ty::Set(p), Ty::Set(a)) => self.unify(p, a, params, binds),
             (Ty::Opt(p), a) => self.unify(p, a, params, binds),
             (Ty::Dict(pk, pv), Ty::Dict(ak, av)) => {
                 self.unify(pk, ak, params, binds);
@@ -3610,6 +3658,7 @@ impl Checker<'_> {
         Some(match t {
             Ty::Generic(k) => binds.get(k)?.clone(),
             Ty::List(e) => Ty::list(self.subst(e, binds, span)?),
+            Ty::Set(e) => Ty::set(self.subst(e, binds, span)?),
             Ty::Opt(e) => Ty::opt(self.subst(e, binds, span)?),
             Ty::Dict(k, v) => Ty::Dict(Box::new(self.subst(k, binds, span)?), Box::new(self.subst(v, binds, span)?)),
             Ty::Fn(ps, r) => {
@@ -3700,6 +3749,11 @@ impl Checker<'_> {
         for &k in &tparams {
             match binds.get(&k) {
                 Some(t) => out.push(t.clone()),
+                None if is_tuple_name(&self.template_name(t)) => {
+                    self.error(span, "can't tell the types of this tuple's items")
+                        .help("give it a type, like `let pair: (Int, String?) = (1, nil)`");
+                    return None;
+                }
                 None => {
                     let (tname, pname) = (self.template_name(t), self.type_params[k].name.clone());
                     let help = match &*self.templates[t].item {
@@ -3832,9 +3886,77 @@ impl Checker<'_> {
         self.diags.list.extend(keep);
     }
 
+    /// `Set<T>`, whose items must be able to be dictionary keys.
+    fn set_type(&mut self, targs: &[TypeExpr], span: Span) -> Ty {
+        let [item] = targs else {
+            self.error(span, "`Set` takes one type, like `Set<Int>`");
+            return Ty::Error;
+        };
+        let t = self.resolve(item);
+        if !self.is_key(&t) {
+            let what = self.a(&t);
+            self.error(item.span(), format!("{what} can't be the items of a set"))
+                .help("set items can be `Int`, `String`, `Bool`, an enum whose cases have no values, or a tuple or struct of those");
+            return Ty::Error;
+        }
+        Ty::set(t)
+    }
+
+    /// `Set(list)`, `Set<Int>()`, or `Set()` where the type is known.
+    fn set_init(&mut self, elem: Option<Ty>, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
+        self.set_callee(Callee::BuiltinFn("Set".into()));
+        let elem = elem.or_else(|| match expected.map(strip_opt) {
+            Some(Ty::Set(t)) => Some((**t).clone()),
+            _ => None,
+        });
+        match (args, trailing) {
+            ([], None) => match elem {
+                Some(t) => Ty::set(t),
+                None => {
+                    self.error(span, "can't tell what type this empty set is")
+                        .help("write the type of its items, like `Set<String>()`");
+                    Ty::Error
+                }
+            },
+            ([a], None) if a.label.is_none() => {
+                let lt = match &elem {
+                    Some(t) => self.expect(&a.value, &Ty::list(t.clone())),
+                    None => self.expr(&a.value, None),
+                };
+                if let Some(f) = self.frames.last_mut() {
+                    f.args = vec![Some(ArgRef::Arg(0))];
+                }
+                match lt {
+                    Ty::List(t) if self.is_key(&t) => Ty::set(*t),
+                    Ty::List(t) => {
+                        let what = self.a(&t);
+                        self.error(a.value.span, format!("{what} can't be the items of a set"))
+                            .help("set items can be `Int`, `String`, `Bool`, an enum whose cases have no values, or a tuple or struct of those");
+                        Ty::Error
+                    }
+                    t if t.has_error() => Ty::Error,
+                    t => {
+                        let what = self.a(&t);
+                        self.error(a.value.span, format!("a set is made from a list, and this is {what}"))
+                            .help("write it like `Set([1, 2, 3])`, or `Set<Int>()` for an empty one");
+                        Ty::Error
+                    }
+                }
+            }
+            _ => {
+                self.args_unchecked(args, trailing);
+                self.error(span, "make a set with `Set(list)`, or `Set<Int>()` for an empty one");
+                Ty::Error
+            }
+        }
+    }
+
     /// The type of a generic name with its type arguments written out:
     /// `Stack<Int>` (a struct or enum copy).
     fn generic_name_ty(&mut self, n: &str, targs: &[TypeExpr], span: Span) -> Ty {
+        if n == "Set" {
+            return self.set_type(targs, span);
+        }
         let args: Vec<Ty> = targs.iter().map(|a| self.resolve(a)).collect();
         let t = match self.globals.get(n).copied() {
             Some(Global::GenericStruct(t) | Global::GenericEnum(t)) => t,
@@ -3902,7 +4024,8 @@ impl Checker<'_> {
         let mut globals: Vec<(String, Global)> = self.globals.iter().map(|(n, g)| (n.clone(), *g)).collect();
         globals.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, g) in globals {
-            if !seen.insert(name.clone()) {
+            // Not tuple structs or specialized copies, which can't be written by name.
+            if name.starts_with('(') || name.contains('<') || !seen.insert(name.clone()) {
                 continue;
             }
             let (detail, kind) = match g {
@@ -4071,7 +4194,7 @@ fn fits_with(found: &Ty, expected: &Ty, conforms: &[(Ty, usize, Span)]) -> bool 
 fn equatable(t: &Ty) -> bool {
     match t {
         Ty::Fn(..) | Ty::View | Ty::Any => false,
-        Ty::List(t) | Ty::Opt(t) => equatable(t),
+        Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => equatable(t),
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,
     }

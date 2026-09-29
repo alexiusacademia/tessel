@@ -1366,6 +1366,94 @@ pub unsafe extern "C" fn tsl_dict_eq(a: *const Dict, b: *const Dict) -> bool {
     }
 }
 
+// ===== sets =====
+//
+// A `Set<T>` is a dictionary from its items to `true`.
+
+/// The live keys of `d`, in order (valid until `d` changes).
+unsafe fn live_keys(d: *const Dict) -> Vec<*const u8> {
+    unsafe {
+        let inner = &*(*d).inner;
+        let ks = (*(*d).key).size as usize;
+        (0..inner.used()).filter(|&i| inner.live[i]).map(|i| inner.keys.as_ptr().add(i * ks)).collect()
+    }
+}
+
+/// Adds a copy of `key` (borrowed) to the set in `slot`.
+unsafe fn set_add(slot: *mut *mut Dict, key: *const u8) {
+    unsafe {
+        let ty = (**slot).key;
+        let ks = (*ty).size as usize;
+        let mut buf = vec![0u64; ks.div_ceil(8).max(1)];
+        let kp = buf.as_mut_ptr() as *mut u8;
+        ptr::copy_nonoverlapping(key, kp, ks);
+        elem_retain(ty, kp);
+        let mut yes = [1u64];
+        tsl_dict_set(slot, kp, yes.as_mut_ptr() as *mut u8);
+    }
+}
+
+/// A new set of the items of `a` for which `keep` says so.
+unsafe fn set_where(a: *const Dict, keep: impl Fn(*const u8) -> bool) -> *mut Dict {
+    unsafe {
+        let mut out = tsl_dict_new((*a).key, (*a).value);
+        for k in live_keys(a) {
+            if keep(k) {
+                set_add(&mut out, k);
+            }
+        }
+        out
+    }
+}
+
+/// A set of the items of `list`; `value` is the type of `Bool`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_from_list(list: *const List, value: *const TslType) -> *mut Dict {
+    unsafe {
+        let mut out = tsl_dict_new((*list).elem, value);
+        for i in 0..(*list).len {
+            set_add(&mut out, elem_at(list, i));
+        }
+        out
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_union(a: *const Dict, b: *const Dict) -> *mut Dict {
+    unsafe {
+        let mut out = set_where(a, |_| true);
+        for k in live_keys(b) {
+            set_add(&mut out, k);
+        }
+        out
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_intersection(a: *const Dict, b: *const Dict) -> *mut Dict {
+    unsafe { set_where(a, |k| dict_find(b, k).is_some()) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_subtracting(a: *const Dict, b: *const Dict) -> *mut Dict {
+    unsafe { set_where(a, |k| dict_find(b, k).is_none()) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_is_subset(a: *const Dict, b: *const Dict) -> bool {
+    unsafe { live_keys(a).into_iter().all(|k| dict_find(b, k).is_some()) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_is_superset(a: *const Dict, b: *const Dict) -> bool {
+    unsafe { tsl_set_is_subset(b, a) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_is_disjoint(a: *const Dict, b: *const Dict) -> bool {
+    unsafe { live_keys(a).into_iter().all(|k| dict_find(b, k).is_none()) }
+}
+
 // ===== entry point =====
 
 #[cfg(not(test))]

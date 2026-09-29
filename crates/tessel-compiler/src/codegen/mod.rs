@@ -514,7 +514,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Int => self.i64().into(),
             Ty::Float => self.ctx.f64_type().into(),
             Ty::Bool => self.ctx.bool_type().into(),
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) => self.ptr_ty().into(),
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) => self.ptr_ty().into(),
             // A view value is a closure that emits the view when called.
             Ty::View => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Range => self.ctx.struct_type(&[self.i64().into(), self.i64().into()], false).into(),
@@ -584,6 +584,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Range => "r".into(),
             Ty::List(t) => format!("L{}", self.key(t)),
             Ty::Dict(k, v) => format!("D{}{}", self.key(k), self.key(v)),
+            Ty::Set(t) => format!("Z{}", self.key(t)),
             Ty::Opt(t) => format!("O{}", self.key(t)),
             Ty::Fn(ps, r) => format!("F{}_{}", ps.iter().map(|p| self.key(p)).collect::<String>(), self.key(r)),
             Ty::Struct(id) => format!("S{}{}", self.checked.structs[*id].name.len(), self.checked.structs[*id].name),
@@ -595,7 +596,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn needs_rc(&self, t: &Ty) -> bool {
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
             Ty::Enum(id) => self.has_payload(*id),
             Ty::Struct(id) => self.checked.structs[*id].fields.iter().any(|f| self.needs_rc(&f.ty)),
             Ty::Opt(inner) => self.needs_rc(inner),
@@ -827,7 +828,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_list_eq" | "tsl_list_contains" | "tsl_dict_eq" | "tsl_dict_contains" => (vec![p, p], Some(i8t)),
             "tsl_list_reversed" | "tsl_dict_keys" | "tsl_dict_values" => (vec![p], Some(p)),
             "tsl_list_sorted" => (vec![p, p, p], Some(p)),
-            "tsl_dict_new" => (vec![p, p], Some(p)),
+            "tsl_dict_new" | "tsl_set_from_list" => (vec![p, p], Some(p)),
             "tsl_dict_get" | "tsl_dict_remove" => (vec![p, p, p], Some(i8t)),
             "tsl_dict_set" => (vec![p, p, p], None),
             "tsl_after" => (vec![f64t, p, p], None),
@@ -978,7 +979,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let f = if retain { "tsl_retain" } else { "tsl_release" };
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) => {
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) => {
                 self.call_rt(f, &[v]);
             }
             Ty::Fn(..) | Ty::Enum(_) | Ty::View | Ty::Iface(_) => {
@@ -1245,14 +1246,32 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.in_helper(f, |g| {
             let p = f.get_nth_param(0).unwrap().into_pointer_value();
             let v = g.load(t, p);
-            let h: IntValue = match t {
-                Ty::Str => g.call_rt("tsl_str_hash", &[v]).unwrap().into_int_value(),
-                Ty::Int => v.into_int_value(),
-                _ => g.b.build_int_z_extend(v.into_int_value(), g.i64(), "").unwrap(),
-            };
+            let h = g.hash_value(v, t);
             g.b.build_return(Some(&h)).unwrap();
         });
         f.as_global_value().as_pointer_value()
+    }
+
+    /// The hash of a (borrowed) dictionary key: a number, text, a `Bool`,
+    /// an enum without values, or a struct (a tuple) of those.
+    fn hash_value(&mut self, v: Val<'ctx>, t: &Ty) -> IntValue<'ctx> {
+        match t {
+            Ty::Str => self.call_rt("tsl_str_hash", &[v]).unwrap().into_int_value(),
+            Ty::Int => v.into_int_value(),
+            Ty::Struct(id) => {
+                let fields: Vec<Ty> = self.checked.structs[*id].fields.iter().map(|f| f.ty.clone()).collect();
+                let s = v.into_struct_value();
+                let mut h = self.i64().const_int(0x9E37_79B9, false);
+                for (i, ft) in fields.iter().enumerate() {
+                    let fv = self.b.build_extract_value(s, i as u32, "").unwrap();
+                    let fh = self.hash_value(fv, ft);
+                    let m = self.b.build_int_mul(h, self.i64().const_int(0x100_0000_01B3, false), "").unwrap();
+                    h = self.b.build_xor(m, fh, "").unwrap();
+                }
+                h
+            }
+            _ => self.b.build_int_z_extend(v.into_int_value(), self.i64(), "").unwrap(),
+        }
     }
 
     fn cmp_helper(&mut self, t: &Ty) -> PointerValue<'ctx> {
@@ -1303,7 +1322,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let r = self.call_rt("tsl_list_eq", &[a, b]);
                 self.truthy(r)
             }
-            Ty::Dict(..) => {
+            Ty::Dict(..) | Ty::Set(_) => {
                 let r = self.call_rt("tsl_dict_eq", &[a, b]);
                 self.truthy(r)
             }
@@ -1902,8 +1921,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.b.position_at_end(done);
             return;
         }
-        let Ty::List(elem) = self.ty(iter) else { unreachable!() };
-        let place = self.checked.loop_places.contains(&var.span) && self.is_place(iter);
+        // A set is looped over as a list of its items.
+        let (elem, items) = match self.ty(iter) {
+            Ty::List(elem) => (elem, None),
+            Ty::Set(elem) => {
+                let set = self.expr(iter).unwrap();
+                let items = self.call_rt("tsl_dict_keys", &[set]).unwrap();
+                self.release(set, &Ty::Set(elem.clone()));
+                (elem, Some(items))
+            }
+            _ => unreachable!(),
+        };
+        let place = items.is_none() && self.checked.loop_places.contains(&var.span) && self.is_place(iter);
         let idx = self.alloca(self.i64().into(), "idx");
         self.b.build_store(idx, self.i64().const_zero()).unwrap();
         // Either iterate the live list in place, or a snapshot of it. The
@@ -1930,7 +1959,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         } else if place {
             self.write_ptr(iter)
         } else {
-            let list = self.expr(iter).unwrap();
+            let list = items.unwrap_or_else(|| self.expr(iter).unwrap());
             let slot = self.alloca(self.ptr_ty().into(), "list");
             self.b.build_store(slot, list).unwrap();
             self.push_var(Var { name: String::new(), ty: Ty::List(elem.clone()), store: Store::Slot(slot) });
@@ -2087,6 +2116,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ExprKind::DotName(n) => {
                 let Ty::Enum(id) = t else { unreachable!() };
                 Some(self.enum_value(id, n))
+            }
+            ExprKind::List(items) if matches!(t, Ty::Set(_)) => {
+                let Ty::Set(elem) = &t else { unreachable!() };
+                let (ki, vi) = (self.type_info(elem), self.type_info(&Ty::Bool));
+                let d = self.call_rt("tsl_dict_new", &[ki.into(), vi.into()]).unwrap();
+                let slot = self.spill(&t, d);
+                self.hold_slot(slot, &t);
+                for item in items {
+                    let v = self.expr_as(item, elem).unwrap();
+                    self.set_insert(slot, v, elem);
+                }
+                self.unhold(1);
+                Some(self.load(&t, slot))
             }
             ExprKind::List(items) => {
                 let Ty::List(elem) = &t else { unreachable!() };
@@ -2586,6 +2628,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 }
             }
+            Ty::Set(_) => match name {
+                "count" => self.call_rt("tsl_dict_len", &[v]).unwrap(),
+                "isEmpty" => {
+                    let n = self.call_rt("tsl_dict_len", &[v]).unwrap().into_int_value();
+                    self.b.build_int_compare(IntPredicate::EQ, n, self.i64().const_zero(), "").unwrap().into()
+                }
+                _ => self.call_rt("tsl_dict_keys", &[v]).unwrap(),
+            },
             Ty::Dict(..) => match name {
                 "count" => self.call_rt("tsl_dict_len", &[v]).unwrap(),
                 "isEmpty" => {
@@ -2715,6 +2765,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Adds `v` (owned) to the set in `slot`.
+    fn set_insert(&mut self, slot: PointerValue<'ctx>, v: Val<'ctx>, elem: &Ty) {
+        let kp = self.spill(elem, v);
+        let yes = self.ctx.bool_type().const_int(1, false);
+        let vp = self.spill(&Ty::Bool, yes.into());
+        self.call_rt("tsl_dict_set", &[slot.into(), kp.into(), vp.into()]);
     }
 
     fn if_expr(&mut self, cond: &Cond, then: &Block, otherwise: Option<&Else>, t: &Ty) -> Option<Val<'ctx>> {
@@ -3565,6 +3623,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 }
             }
+            (Ty::Set(elem), "insert" | "remove") => {
+                let elem = (**elem).clone();
+                let slot = slot.unwrap_or_else(|| self.write_ptr(object));
+                let v = self.expr_as(arg(info.args[0].unwrap()), &elem).unwrap();
+                if name == "insert" {
+                    self.set_insert(slot, v, &elem);
+                } else {
+                    let kp = self.spill(&elem, v);
+                    let out = self.alloca(self.ctx.bool_type().into(), "removed");
+                    self.call_rt("tsl_dict_remove", &[slot.into(), kp.into(), out.into()]);
+                    self.release(v, &elem);
+                }
+                None
+            }
             (Ty::Dict(kt, vt), "removeValue") => {
                 let (kt, vt) = ((**kt).clone(), (**vt).clone());
                 let slot = slot.unwrap_or_else(|| self.write_ptr(object));
@@ -3805,12 +3877,30 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 })
             }
-            Ty::Dict(kt, _) => {
+            Ty::Dict(kt, _) | Ty::Set(kt) if name == "contains" => {
                 let key = a(self, 0, kt).unwrap();
                 let p = self.spill(kt, key);
                 let r = self.call_rt("tsl_dict_contains", &[v, p.into()]);
                 self.release(key, kt);
                 Some(self.truthy(r).into())
+            }
+            // `filter` and `sorted` work on the items as a list.
+            Ty::Set(elem) => {
+                let elem = (**elem).clone();
+                let items = self.call_rt("tsl_dict_keys", &[v]).unwrap();
+                let lt = Ty::list(elem.clone());
+                self.hold(items, &lt);
+                let r = self.builtin_on_value(&lt, name, items, info, arg, span);
+                self.unhold(1);
+                self.release(items, &lt);
+                if name == "filter" {
+                    let kept = r.unwrap();
+                    let bi = self.type_info(&Ty::Bool);
+                    let set = self.call_rt("tsl_set_from_list", &[kept, bi.into()]);
+                    self.release(kept, &lt);
+                    return set;
+                }
+                r
             }
             _ => unreachable!(),
         }
@@ -4445,6 +4535,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         span: Span,
     ) -> Option<Val<'ctx>> {
         match name {
+            // `Set(list)`, `Set<Int>()`
+            "Set" => {
+                let Ty::Set(elem) = t else { unreachable!() };
+                let bi = self.type_info(&Ty::Bool);
+                Some(match args.first() {
+                    Some(a) => {
+                        let lt = Ty::list((**elem).clone());
+                        let list = self.expr_as(&a.value, &lt).unwrap();
+                        let set = self.call_rt("tsl_set_from_list", &[list, bi.into()]).unwrap();
+                        self.release(list, &lt);
+                        set
+                    }
+                    None => {
+                        let ki = self.type_info(elem);
+                        self.call_rt("tsl_dict_new", &[ki.into(), bi.into()]).unwrap()
+                    }
+                })
+            }
             "print" | "printError" => {
                 let x = arg(info.args[0].unwrap());
                 let xt = self.ty(x);
@@ -4896,7 +5004,7 @@ fn int_pred(op: BinOp) -> IntPredicate {
 fn crate_equatable(t: &Ty) -> bool {
     match t {
         Ty::Fn(..) | Ty::View | Ty::Any | Ty::Void | Ty::Range => false,
-        Ty::List(t) | Ty::Opt(t) => crate_equatable(t),
+        Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => crate_equatable(t),
         Ty::Dict(k, v) => crate_equatable(k) && crate_equatable(v),
         _ => true,
     }
@@ -4906,6 +5014,7 @@ fn hashable(t: &Ty, g: &Gen) -> bool {
     match t {
         Ty::Int | Ty::Str | Ty::Bool => true,
         Ty::Enum(id) => !g.has_payload(*id),
+        Ty::Struct(id) => g.checked.structs[*id].fields.iter().all(|f| hashable(&f.ty, g)),
         _ => false,
     }
 }

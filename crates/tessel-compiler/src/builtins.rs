@@ -317,7 +317,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
-    "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError",
+    "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -337,8 +337,9 @@ fn mutating(params: Vec<P>, ret: Ty) -> Method {
 /// Properties (no call) of built-in types.
 pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
     Some(match (recv, name) {
-        (Ty::List(_) | Ty::Str | Ty::Dict(..), "count") => Ty::Int,
-        (Ty::List(_) | Ty::Str | Ty::Dict(..), "isEmpty") => Ty::Bool,
+        (Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_), "count") => Ty::Int,
+        (Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_), "isEmpty") => Ty::Bool,
+        (Ty::Set(t), "values") => Ty::list((**t).clone()),
         (Ty::List(t), "first" | "last") => Ty::opt((**t).clone()),
         (Ty::List(_), "indices") => Ty::Range,
         (Ty::Dict(k, _), "keys") => Ty::list((**k).clone()),
@@ -361,7 +362,7 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
 fn equatable(t: &Ty) -> bool {
     match t {
         Ty::Fn(..) | Ty::View | Ty::Any => false,
-        Ty::List(t) | Ty::Opt(t) => equatable(t),
+        Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => equatable(t),
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,
     }
@@ -433,6 +434,19 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "clamped" => method(vec![P::new("min", Ty::Float), P::new("max", Ty::Float)], Ty::Float),
             _ => return None,
         },
+        Ty::Set(t) => {
+            let (t, set) = ((**t).clone(), recv.clone());
+            match name {
+                "contains" => method(vec![P::unlabeled("item", t)], Ty::Bool),
+                "insert" | "remove" => mutating(vec![P::unlabeled("item", t)], Ty::Void),
+                "union" | "intersection" | "subtracting" => method(vec![P::unlabeled("other", set.clone())], set),
+                "isSubset" | "isSuperset" => method(vec![P::new("of", set)], Ty::Bool),
+                "isDisjoint" => method(vec![P::new("with", set)], Ty::Bool),
+                "filter" => method(vec![P::unlabeled("keep", pred(&t))], set),
+                "sorted" => method(vec![P::new("by", Ty::func(vec![t.clone(), t.clone()], Ty::Bool)).default()], Ty::list(t)),
+                _ => return None,
+            }
+        }
         Ty::Dict(k, v) => match name {
             "removeValue" => mutating(vec![P::new("forKey", (**k).clone())], Ty::opt((**v).clone())),
             "contains" => method(vec![P::new("key", (**k).clone())], Ty::Bool),
@@ -459,6 +473,10 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         ],
         Ty::Int => &["isEven", "isOdd", "clamped"],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
+        Ty::Set(_) => &[
+            "count", "isEmpty", "values", "contains", "insert", "remove", "union", "intersection", "subtracting",
+            "isSubset", "isSuperset", "isDisjoint", "filter", "sorted",
+        ],
         Ty::Float => &["formatted", "clamped", "isNaN", "isFinite"],
         Ty::Data => &["count", "isEmpty", "bytes", "text", "base64"],
         Ty::View => &[
@@ -560,6 +578,12 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Str, "words") => rt("tsl_str_words"),
         (Ty::Str, "occurrences") => rt("tsl_str_occurrences"),
         (Ty::Int, "clamped") => rt("tsl_int_clamped"),
+        (Ty::Set(_), "union") => rt("tsl_set_union"),
+        (Ty::Set(_), "intersection") => rt("tsl_set_intersection"),
+        (Ty::Set(_), "subtracting") => rt("tsl_set_subtracting"),
+        (Ty::Set(_), "isSubset") => rt("tsl_set_is_subset"),
+        (Ty::Set(_), "isSuperset") => rt("tsl_set_is_superset"),
+        (Ty::Set(_), "isDisjoint") => rt("tsl_set_is_disjoint"),
         (Ty::Float, "clamped") => rt("tsl_float_clamped"),
         _ => return None,
     })

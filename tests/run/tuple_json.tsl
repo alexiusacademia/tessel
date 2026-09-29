@@ -1,0 +1,12 @@
+struct Route { name: String, stops: [(Float, Float)] }
+fn main() {
+    let r = Route(name: "loop", stops: [(1.5, 2.0), (3.0, 4.25)])
+    let text = toJson(r)
+    print(text)
+    let back: Route? = fromJson(text)
+    if let b = back { print(b.stops[1].1) }
+    let bad: (Int, Int)? = fromJson("[1, 2, 3]")
+    print(bad == nil)
+    let bin: (String, Int)? = fromBinary(toBinary(("b", 7)))
+    print(bin?.0 ?? "")
+}

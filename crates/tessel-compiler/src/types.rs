@@ -18,6 +18,8 @@ pub enum Ty {
     View,
     List(Box<Ty>),
     Dict(Box<Ty>, Box<Ty>),
+    /// `Set<T>`: stored like a `[T: Bool]` dictionary.
+    Set(Box<Ty>),
     Opt(Box<Ty>),
     Fn(Vec<Ty>, Box<Ty>),
     Struct(usize),
@@ -35,6 +37,10 @@ pub enum Ty {
 impl Ty {
     pub fn list(t: Ty) -> Ty {
         Ty::List(Box::new(t))
+    }
+
+    pub fn set(t: Ty) -> Ty {
+        Ty::Set(Box::new(t))
     }
 
     pub fn opt(t: Ty) -> Ty {
@@ -60,7 +66,7 @@ impl Ty {
     pub fn has_error(&self) -> bool {
         match self {
             Ty::Error | Ty::Generic(_) => true,
-            Ty::List(t) | Ty::Opt(t) => t.has_error(),
+            Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => t.has_error(),
             Ty::Dict(k, v) => k.has_error() || v.has_error(),
             Ty::Fn(ps, r) => ps.iter().any(Ty::has_error) || r.has_error(),
             _ => false,

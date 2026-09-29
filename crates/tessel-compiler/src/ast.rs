@@ -23,6 +23,20 @@ pub struct GenericParam {
     pub constraint: Option<Ident>,
 }
 
+/// The most items a tuple can have.
+pub const MAX_TUPLE: usize = 8;
+
+/// The name of the built-in generic struct behind tuples of `n` items:
+/// `(,)` for pairs, `(,,)` for three. (No program can spell it.)
+pub fn tuple_name(n: usize) -> String {
+    format!("({})", ",".repeat(n.saturating_sub(1)))
+}
+
+/// Is `name` a tuple struct, or a copy of one (`(Int, String)`)?
+pub fn is_tuple_name(name: &str) -> bool {
+    name.starts_with('(')
+}
+
 #[derive(Debug, Clone)]
 pub enum Item {
     Struct(StructDecl),

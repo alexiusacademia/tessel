@@ -1,0 +1,26 @@
+struct Cell { row: Int, col: Int }
+
+fn main() {
+    var grid: [(Int, Int): String] = [:]
+    grid[(0, 0)] = "start"
+    grid[(2, 3)] = "goal"
+    grid[(0, 0)] = "begin"
+    print(grid[(0, 0)] ?? "?")
+    print(grid[(2, 3)] ?? "?")
+    print(grid[(3, 2)] ?? "empty")
+    print(grid.count)
+    var seen: [Cell: Bool] = [:]
+    seen[Cell(row: 1, col: 2)] = true
+    print(seen[Cell(row: 1, col: 2)] ?? false)
+    print(seen[Cell(row: 2, col: 1)] ?? false)
+    var names: [(String, Int): Int] = [("a", 1): 10]
+    names[("a", 1)] = 11
+    print(names[("a", 1)] ?? 0)
+    for k in grid.keys {
+        print("{k.0},{k.1}")
+    }
+    let json = toJson((1, "x"))
+    print(json)
+    let back: (Int, String)? = fromJson(json)
+    print(back?.1 ?? "")
+}

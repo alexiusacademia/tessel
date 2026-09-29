@@ -17,12 +17,15 @@ pub struct Parser<'a> {
     next_id: &'a mut ExprId,
     /// Inside `if`/`for`/`match` headers, `x {` is not a trailing block.
     no_trailing: bool,
+    /// Statements that follow the one just parsed (`let (a, b) = pair`
+    /// becomes a `let` of the pair, then one for each name).
+    extra: Vec<Stmt>,
 }
 
 /// Parses one file. `next_id` numbers expressions uniquely across files.
 pub fn parse_file(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut ExprId) -> Program {
     let toks = lex(file, text, 0, diags);
-    let mut p = Parser { toks, pos: 0, file, text, diags, next_id, no_trailing: false };
+    let mut p = Parser { toks, pos: 0, file, text, diags, next_id, no_trailing: false, extra: Vec::new() };
     p.program()
 }
 
@@ -494,6 +497,28 @@ impl<'a> Parser<'a> {
                     TypeExpr::List(Box::new(inner), lo.to(self.prev_span()))
                 }
             }
+            // `(Int, String)`: a tuple; `(fn() -> Int)?` groups.
+            Tok::LParen => {
+                self.bump();
+                let mut items = Vec::new();
+                loop {
+                    items.push(self.type_expr()?);
+                    if !self.eat(&Tok::Comma) || self.at(&Tok::RParen) {
+                        break;
+                    }
+                }
+                self.expect(Tok::RParen)?;
+                let span = lo.to(self.prev_span());
+                if items.len() == 1 {
+                    items.pop().unwrap()
+                } else if items.len() > MAX_TUPLE {
+                    self.error(span, format!("a tuple can have at most {MAX_TUPLE} items"))
+                        .help("use a struct, which also gives each item a name");
+                    return Err(Reported);
+                } else {
+                    TypeExpr::Generic(Ident { name: tuple_name(items.len()), span }, items, span)
+                }
+            }
             Tok::Fn => {
                 self.bump();
                 self.expect(Tok::LParen)?;
@@ -545,6 +570,7 @@ impl<'a> Parser<'a> {
             match self.stmt() {
                 Ok(s) => {
                     stmts.push(s);
+                    stmts.append(&mut self.extra);
                     if !matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
                         let span = self.span();
                         let found = describe(self.peek());
@@ -566,6 +592,7 @@ impl<'a> Parser<'a> {
     fn stmt(&mut self) -> PResult<Stmt> {
         let lo = self.span();
         match self.peek() {
+            Tok::Let | Tok::Var if *self.peek_at(1) == Tok::LParen => self.destructure(),
             Tok::Let => Ok(Stmt::Let(self.local_decl()?)),
             Tok::Var => Ok(Stmt::Var(self.local_decl()?)),
             Tok::State => Ok(Stmt::State(self.local_decl()?)),
@@ -594,7 +621,10 @@ impl<'a> Parser<'a> {
             Tok::For => {
                 self.bump();
                 // `for _ in 0..3`: a loop variable that isn't used.
-                let var = if self.at(&Tok::Underscore) {
+                let names = if self.at(&Tok::LParen) { Some(self.tuple_names()?) } else { None };
+                let var = if let Some((_, span)) = &names {
+                    self.hidden(*span)
+                } else if self.at(&Tok::Underscore) {
                     let span = self.bump().span;
                     Ident { name: "_".into(), span }
                 } else {
@@ -602,7 +632,12 @@ impl<'a> Parser<'a> {
                 };
                 self.expect(Tok::In)?;
                 let iter = self.with_trailing(false, |p| p.expr())?;
-                let body = self.block()?;
+                let mut body = self.block()?;
+                // `for (a, b) in pairs`: each round takes the pair apart first.
+                if let Some((names, _)) = names {
+                    let lets = self.unpack(&var, names, false);
+                    body.stmts.splice(0..0, lets);
+                }
                 Ok(Stmt::For { var, iter, body, span: lo.to(self.prev_span()) })
             }
             _ => {
@@ -621,6 +656,73 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Assign { target, op, value, span: lo.to(self.prev_span()) })
             }
         }
+    }
+
+    /// `(a, b, _)` before `=` or `in`: the names a tuple is taken apart into.
+    fn tuple_names(&mut self) -> PResult<(Vec<Ident>, Span)> {
+        let lo = self.expect(Tok::LParen)?;
+        let mut names = Vec::new();
+        loop {
+            if self.at(&Tok::Underscore) {
+                let span = self.bump().span;
+                names.push(Ident { name: "_".into(), span });
+            } else {
+                names.push(self.ident("a name")?);
+            }
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        self.expect(Tok::RParen)?;
+        let span = lo.to(self.prev_span());
+        if names.len() < 2 {
+            self.error(span, "taking a tuple apart needs at least two names")
+                .help("write `let (a, b) = pair`, or `let a = value` for one value");
+            return Err(Reported);
+        }
+        Ok((names, span))
+    }
+
+    /// A name no program can write, for a value the parser introduces.
+    fn hidden(&mut self, span: Span) -> Ident {
+        Ident { name: format!("$tuple{}_{}", span.lo, span.hi), span }
+    }
+
+    /// `let a = t.0`, `let b = t.1`, … for the names of `let (a, b) = t`.
+    fn unpack(&mut self, tuple: &Ident, names: Vec<Ident>, var: bool) -> Vec<Stmt> {
+        let mut out = Vec::new();
+        for (i, name) in names.into_iter().enumerate() {
+            if name.name == "_" {
+                continue;
+            }
+            let span = name.span;
+            let object = self.new_expr(ExprKind::Name(tuple.name.clone()), span);
+            let member = Ident { name: i.to_string(), span };
+            let value = self.new_expr(ExprKind::Member { object: Box::new(object), name: member, optional: false }, span);
+            let d = LocalDecl { name, ty: None, value, span };
+            out.push(if var { Stmt::Var(d) } else { Stmt::Let(d) });
+        }
+        out
+    }
+
+    /// `let (a, b) = pair` (or `var`): a hidden `let` of the pair, and one
+    /// for each name.
+    fn destructure(&mut self) -> PResult<Stmt> {
+        let kw = self.bump();
+        let (names, span) = self.tuple_names()?;
+        if self.at(&Tok::Colon) {
+            let s = self.span();
+            self.error(s, "the names of a tuple can't have types here")
+                .help("give the value a type instead, or write `let pair: (Int, String) = …` and take it apart after");
+            return Err(Reported);
+        }
+        self.expect(Tok::Eq)?;
+        self.skip_newlines();
+        let value = self.expr()?;
+        let tuple = self.hidden(span);
+        let lets = self.unpack(&tuple, names, kw.tok == Tok::Var);
+        self.extra = lets;
+        Ok(Stmt::Let(LocalDecl { name: tuple, ty: None, value, span: kw.span.to(self.prev_span()) }))
     }
 
     fn local_decl(&mut self) -> PResult<LocalDecl> {
@@ -901,7 +1003,12 @@ impl<'a> Parser<'a> {
                 }
                 Tok::Dot | Tok::QuestionDot => {
                     let optional = self.bump().tok == Tok::QuestionDot;
-                    let name = self.ident("a member name after `.`")?;
+                    // `pair.0`: a tuple's item.
+                    let name = if let Tok::Int(n) = *self.peek() {
+                        Ident { name: n.to_string(), span: self.bump().span }
+                    } else {
+                        self.ident("a member name after `.`")?
+                    };
                     let span = e.span.to(name.span);
                     e = self.new_expr(ExprKind::Member { object: Box::new(e), name, optional }, span);
                 }
@@ -1043,6 +1150,28 @@ impl<'a> Parser<'a> {
             Tok::LParen => {
                 self.bump();
                 let mut inner = self.with_trailing(true, |p| p.expr())?;
+                // `(a, b)`: a tuple.
+                if self.at(&Tok::Comma) {
+                    let mut items = vec![inner];
+                    while self.eat(&Tok::Comma) && !self.at(&Tok::RParen) {
+                        self.skip_newlines();
+                        items.push(self.with_trailing(true, |p| p.expr())?);
+                    }
+                    self.expect(Tok::RParen)?;
+                    let full = span.to(self.prev_span());
+                    if items.len() > MAX_TUPLE {
+                        self.error(full, format!("a tuple can have at most {MAX_TUPLE} items"))
+                            .help("use a struct, which also gives each item a name");
+                        return Err(Reported);
+                    }
+                    let callee = self.new_expr(ExprKind::Name(tuple_name(items.len())), span);
+                    let args = items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, value)| Arg { label: Some(Ident { name: i.to_string(), span: value.span }), value })
+                        .collect();
+                    return Ok(self.new_expr(ExprKind::Call { callee: Box::new(callee), args, trailing: None }, full));
+                }
                 self.expect(Tok::RParen)?;
                 inner.span = span.to(self.prev_span());
                 return Ok(inner);

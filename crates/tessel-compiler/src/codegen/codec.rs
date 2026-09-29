@@ -19,6 +19,7 @@ use inkwell::types::{BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{FunctionValue, IntValue, PointerValue};
 
 use super::{Gen, Val};
+use crate::ast::is_tuple_name;
 use crate::types::Ty;
 
 impl<'ctx, 'a> Gen<'ctx, 'a> {
@@ -164,6 +165,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 });
                 arr
             }
+            // A set is an array of its items.
+            Ty::Set(elem) => {
+                let set = self.load(t, vp);
+                let items = self.call_rt("tsl_dict_keys", &[set]).unwrap();
+                let lt = Ty::list((**elem).clone());
+                let slot = self.spill(&lt, items);
+                let tree = self.encode_via(&lt, slot);
+                self.release(items, &lt);
+                tree
+            }
             Ty::Dict(kt, vt) => {
                 let obj = p(self.tree_call("tsl_tree_object", &[], Some("ptr"), &[]));
                 let d = self.load(t, vp);
@@ -193,6 +204,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(keys, &Ty::list(kt.clone()));
                 self.release(values, &Ty::list(vt.clone()));
                 obj
+            }
+            // A tuple is an array: `[1, "one"]`.
+            Ty::Struct(id) if is_tuple_name(&self.checked.structs[*id].name) => {
+                let arr = p(self.tree_call("tsl_tree_array", &[], Some("ptr"), &[]));
+                let st = self.struct_ty(*id);
+                let fields: Vec<Ty> = self.checked.structs[*id].fields.iter().map(|f| f.ty.clone()).collect();
+                for (i, ft) in fields.iter().enumerate() {
+                    let fp = self.b.build_struct_gep(st, vp, i as u32, "").unwrap();
+                    let item = self.encode_via(ft, fp);
+                    self.tree_call("tsl_tree_push", &["ptr", "ptr"], None, &[arr.into(), item.into()]);
+                }
+                arr
             }
             Ty::Struct(id) => {
                 let obj = p(self.tree_call("tsl_tree_object", &[], Some("ptr"), &[]));
@@ -405,6 +428,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.position_at_end(done);
                 fine
             }
+            Ty::Set(elem) => {
+                let lt = Ty::list((**elem).clone());
+                let tmp = self.alloca(self.ptr_ty().into(), "items");
+                let got = self.decode_via(&lt, h, tmp);
+                let ok = self.alloca(self.ctx.bool_type().into(), "ok");
+                self.b.build_store(ok, got).unwrap();
+                self.if_ok(ok, &mut |g| {
+                    let items = g.b.build_load(g.ptr_ty(), tmp, "").unwrap();
+                    let bi = g.type_info(&Ty::Bool);
+                    let set = g.call_rt("tsl_set_from_list", &[items, bi.into()]).unwrap();
+                    g.b.build_store(out, set).unwrap();
+                    g.release(items, &lt);
+                });
+                got
+            }
             Ty::Dict(kt, vt) => self.decode_dict(t, kt, vt, h, out),
             Ty::Struct(id) => self.decode_struct(*id, h, out),
             Ty::Enum(id) => self.decode_enum(*id, h, out),
@@ -504,11 +542,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         &mut self,
         h: PointerValue<'ctx>,
         fields: &[(String, Ty)],
+        array: bool,
         default: &mut dyn FnMut(&mut Self, usize) -> Option<Val<'ctx>>,
     ) -> (IntValue<'ctx>, Vec<PointerValue<'ctx>>) {
         let ok = self.alloca(self.ctx.bool_type().into(), "ok");
-        let is_obj = self.kind_is(h, 5);
-        self.b.build_store(ok, is_obj).unwrap();
+        if array {
+            // A tuple: an array with exactly its number of items.
+            let is_arr = self.kind_is(h, 4);
+            let n = self.tree_call("tsl_tree_len", &["ptr"], Some("i64"), &[h.into()]).unwrap().into_int_value();
+            let want = self.i64().const_int(fields.len() as u64, false);
+            let same = self.b.build_int_compare(IntPredicate::EQ, n, want, "").unwrap();
+            let fits = self.b.build_and(is_arr, same, "").unwrap();
+            self.b.build_store(ok, fits).unwrap();
+        } else {
+            let is_obj = self.kind_is(h, 5);
+            self.b.build_store(ok, is_obj).unwrap();
+        }
         let mut temps = Vec::new();
         let mut filled = Vec::new();
         for (name, ft) in fields {
@@ -521,8 +570,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for (i, (name, ft)) in fields.iter().enumerate() {
             let (tmp, fill) = (temps[i], filled[i]);
             self.if_ok(ok, &mut |g| {
-                let key = g.str_lit(name);
-                let child = g.tree_call("tsl_tree_field", &["ptr", "ptr"], Some("ptr"), &[h.into(), key.into()]).unwrap().into_pointer_value();
+                let child = if array {
+                    let at = g.i64().const_int(i as u64, false);
+                    g.tree_call("tsl_tree_at", &["ptr", "i64"], Some("ptr"), &[h.into(), at.into()]).unwrap().into_pointer_value()
+                } else {
+                    let key = g.str_lit(name);
+                    g.tree_call("tsl_tree_field", &["ptr", "ptr"], Some("ptr"), &[h.into(), key.into()]).unwrap().into_pointer_value()
+                };
                 let present = g.b.build_is_not_null(child, "").unwrap();
                 let (found, missing, next) = (g.block_named("found"), g.block_named("missing"), g.block_named("field"));
                 g.b.build_conditional_branch(present, found, missing).unwrap();
@@ -662,7 +716,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn decode_struct(&mut self, id: usize, h: PointerValue<'ctx>, out: PointerValue<'ctx>) -> IntValue<'ctx> {
         let fields: Vec<(String, Ty)> = self.checked.structs[id].fields.iter().map(|f| (f.name.clone(), f.ty.clone())).collect();
         let decl = self.struct_decls.get(&id).copied();
-        let (ok, temps) = self.decode_fields(h, &fields, &mut |g, i| {
+        let array = is_tuple_name(&self.checked.structs[id].name);
+        let (ok, temps) = self.decode_fields(h, &fields, array, &mut |g, i| {
             let default = decl?.fields[i].default.as_ref()?;
             let ft = g.checked.structs[id].fields[i].ty.clone();
             g.expr_as(default, &ft)
@@ -746,7 +801,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let (decode_bb, skip) = (self.block_named("payload"), self.block_named("nopayload"));
                 self.b.build_conditional_branch(has_body, decode_bb, skip).unwrap();
                 self.b.position_at_end(decode_bb);
-                let (got, temps) = self.decode_fields(body, fields, &mut |_, _| None);
+                let (got, temps) = self.decode_fields(body, fields, false, &mut |_, _| None);
                 let got_slot = self.alloca(self.ctx.bool_type().into(), "got");
                 self.b.build_store(got_slot, got).unwrap();
                 self.if_ok(got_slot, &mut |g| {

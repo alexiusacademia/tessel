@@ -1,0 +1,38 @@
+fn minMax(_ items: [Int]) -> (Int, Int) {
+    var lo = items[0]
+    var hi = items[0]
+    for x in items {
+        lo = min(lo, x)
+        hi = max(hi, x)
+    }
+    (lo, hi)
+}
+
+fn swap<A, B>(_ p: (A, B)) -> (B, A) {
+    (p.1, p.0)
+}
+
+fn main() {
+    let r = minMax([3, 9, 1, 4])
+    print("min {r.0}, max {r.1}")
+    let (lo, hi) = minMax([5, 2, 8])
+    print(lo + hi)
+    let pairs: [(String, Int)] = [("a", 1), ("b", 2)]
+    for (name, n) in pairs {
+        print("{name}={n}")
+    }
+    let s = swap(("x", 2.5))
+    print(s.0 + 1.0)
+    var p = (1, "one")
+    p.0 += 1
+    print(p.0)
+    print(p == (2, "one"))
+    let nested = ((1, 2), 3)
+    print(nested.0.1)
+    let (_, b) = p
+    print(b)
+    let t3 = (1, true, "z")
+    print(t3.2)
+    let opt: (Int, String)? = nil
+    print(opt?.1 ?? "none")
+}

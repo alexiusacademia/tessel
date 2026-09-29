@@ -290,6 +290,13 @@ impl Lexer<'_> {
             }
         };
         digits(self);
+        // `pair.0.1` is two member accesses, not `pair.` and `0.1`.
+        let member = lo >= 1 && self.src.as_bytes()[lo - 1] == b'.' && (lo < 2 || self.src.as_bytes()[lo - 2] != b'.');
+        if member {
+            let text = &self.src[lo..self.pos];
+            self.push(Tok::Int(text.parse().unwrap_or(0)), lo);
+            return;
+        }
         let mut is_float = self.peek(0) == b'.' && self.peek(1).is_ascii_digit();
         if is_float {
             self.pos += 1;
