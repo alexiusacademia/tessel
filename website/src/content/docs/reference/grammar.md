@@ -59,12 +59,16 @@ if  else  for  while  in  match  return  try  break  continue
 true  false  nil
 ```
 
+`import`, `public` and `private` are keywords only where they begin an
+import or a declaration (or a member, for `private`); elsewhere they can be
+used as names.
+
 `_` is also reserved: it marks an unlabeled parameter, ignores a closure
 parameter, a `for` loop variable or a value in a `match` pattern, and is the
 catch-all pattern.
 
 These names are not keywords but are built in and can't be declared again:
-the types `Int`, `Float`, `Bool`, `String`, `Range` and `View`; the enums `Color`,
+the types `Int`, `Float`, `Bool`, `String`, `Range`, `View` and `Set`; the enums `Color`,
 `Weight`, `Alignment` and `IconName`; the [built-in views](/reference/views/);
 and the [built-in functions](/reference/stdlib/). The built-in constant
 [`pi`](/reference/stdlib/#math) isn't reserved: a variable or function of your
@@ -139,12 +143,22 @@ places (shown as `NL*` in the rules below):
 
 ## Declarations
 
-A program is a folder of `.tsl` files. Each file is a list of declarations:
+A program is a folder of `.tsl` files. Each file is a list of imports and
+declarations:
 
 ```text
-file = NL? (item (NL item)*)? NL? ;
-item = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl ;
+file   = NL? (entry (NL entry)*)? NL? ;
+entry  = import | visibility? item ;
+import = "import" (IDENT | STRING) ;
+visibility = "public" | "private" ;
+item   = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl ;
 ```
+
+`import geometry` loads the module in the folder `geometry` next to the
+file; a string is a path to the folder, relative to the file. `public`
+makes a module's declaration usable by the code that imports the module,
+and `private` limits a declaration to its own file. An `app` can be neither.
+See [Programs and files](/language/programs/#modules).
 
 ### app and view
 
@@ -176,10 +190,11 @@ param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 
 ```text
 struct_decl = "struct" IDENT generics? conforms? "{" members "}" ;
-generics    = "<" IDENT (":" IDENT)? ("," IDENT (":" IDENT)?)* ">" ;
-conforms    = ":" IDENT ("," IDENT)* ;
+generics    = "<" IDENT (":" type_name)? ("," IDENT (":" type_name)?)* ">" ;
+conforms    = ":" type_name ("," type_name)* ;
+type_name   = IDENT ("." IDENT)? ;                  a name, or `module.Name`
 field       = IDENT ":" type ("=" expr)? ;
-members     = (separator* (field | fn_decl))* separator* ;   (for structs)
+members     = (separator* visibility? (field | fn_decl))* separator* ;   (for structs)
 separator   = NL | "," ;
 ```
 
@@ -191,7 +206,7 @@ Fields and methods are separated by line breaks or commas:
 ```text
 enum_decl = "enum" IDENT generics? conforms? "{" members "}" ;
 case      = IDENT params? ;
-members   = (separator* (case | fn_decl))* separator* ;      (for enums)
+members   = (separator* (case | visibility? fn_decl))* separator* ;      (for enums)
 ```
 
 A case may carry values, declared like parameters:
@@ -211,23 +226,25 @@ have default values. See [Interfaces](/language/interfaces/).
 
 ```text
 type      = base_type "?"* ;
-base_type = IDENT                                   named type
-          | IDENT "<" type ("," type)* ">"          generic type
+base_type = type_name                               named type
+          | type_name "<" type ("," type)* ">"      generic type
           | "[" type "]"                            list
           | "[" type ":" type "]"                   dictionary
+          | "(" type ")"                            the same type, grouped
+          | "(" type ("," type)+ ","? ")"           tuple, 2 to 8 items
           | "fn" "(" (type ("," type)* ","?)? ")" ("->" type)? ;   function
 ```
 
 - Named types are `Int`, `Float`, `Bool`, `String`, `Range`, `View`, the
   built-in enums, and your own structs, enums and interfaces. A generic struct
   or enum is written with its type arguments: `Stack<Int>`. See
-  [Generics](/language/generics/).
+  [Generics](/language/generics/). `Set<T>` is the built-in set type.
+- A type from a module is written with the module's name: `geometry.Shape`.
 - In an expression, `Name<…>` is read as a generic type (like `Stack<Int>()`)
   when it starts with a capital letter and the `>` is followed by `(` or `.`;
   otherwise `<` is "less than".
 - `T?` is an optional `T`. In `fn() -> Int?`, the `?` belongs to the return
-  type; there is no way to write an optional function type with a return
-  type, because types can't be put in parentheses.
+  type; an optional function is written in parentheses: `(fn() -> Int)?`.
 - A function type without `->` returns nothing.
 
 ## Blocks and statements
@@ -245,9 +262,11 @@ stmt = local_decl
      | assign_stmt
      | expr ;
 
-local_decl  = ("let" | "var" | "state") IDENT (":" type)? "=" NL* expr ;
+local_decl  = ("let" | "var" | "state") IDENT (":" type)? "=" NL* expr
+            | ("let" | "var") names "=" NL* expr ;       takes a tuple apart
+names       = "(" (IDENT | "_") ("," (IDENT | "_"))+ ")" ;
 return_stmt = "return" expr? ;
-for_stmt    = "for" (IDENT | "_") "in" header_expr block ;
+for_stmt    = "for" (IDENT | "_" | names) "in" header_expr block ;
 while_stmt  = "while" condition block ;
 assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
 ```
@@ -303,8 +322,8 @@ unary_expr  = ("-" | "!" | "try") unary_expr | postfix_expr ;
 postfix_expr = primary postfix* ;
 postfix      = "(" args? ")" closure?          call, optionally with a block after it
              | closure                         block after a name or member (see below)
-             | "." IDENT                       member
-             | "?." IDENT                      optional member
+             | "." (IDENT | INT)               member, or a tuple's item (`.0`)
+             | "?." (IDENT | INT)              optional member
              | "[" expr "]"                    index
              | NL "." IDENT                    member on the next line (see "Lines")
              ;
@@ -316,6 +335,7 @@ primary = INT | FLOAT | STRING | "true" | "false" | "nil"
         | IDENT
         | "." IDENT                            implicit member, like .red or .infinity
         | "(" expr ")"
+        | "(" expr ("," expr)+ ","? ")"        tuple, 2 to 8 items
         | list_literal
         | dict_literal
         | closure
@@ -329,6 +349,9 @@ dict_literal = "[" ":" "]"
 closure        = "{" (closure_params "in")? NL? (stmt (NL stmt)*)? NL? "}" ;
 closure_params = (IDENT | "_") ("," (IDENT | "_"))* ;
 ```
+
+A list literal where a `Set` is expected makes a set:
+`let seen: Set<Int> = [1, 2]`.
 
 - The value of a range `a..b` is the `Int`s from `a` up to, but not
   including, `b`. Its type is `Range`.
@@ -420,7 +443,10 @@ most important rules:
 - A program needs exactly one entry point: one `app`, or a `fn main()` with
   no parameters and no return type, but not both.
 - All top-level names in the program's folder share one namespace and must
-  be unique. `let`, `var` and `state` can't be declared at the top level.
+  be unique (a module's names are separate: they're written `module.name`).
+  `let`, `var` and `state` can't be declared at the top level.
+- Outside a module, only its `public` declarations can be used; a `private`
+  declaration or member can only be used in its own file.
 - `state` can only be declared directly in the body of a `view` or `app`.
 - Functions can be declared at the top level, as methods in a `struct` or
   `enum`, and directly in the body of a `view` or `app`; not inside other

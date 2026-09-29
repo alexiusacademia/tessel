@@ -23,6 +23,8 @@ fields, and empty lists or dictionaries.
 | `Data` | `Data(text: "hi")` | Raw bytes, such as a file's contents |
 | `[T]` | `[1, 2, 3]` | A list of values of type `T` |
 | `[K: V]` | `["ada": 36]` | A dictionary from keys `K` to values `V` |
+| `Set<T>` | `[1, 2]` (where a set is expected) | A set of values, each once |
+| `(A, B)` | `(1, "one")` | A tuple: a few values grouped together |
 | `T?` | `nil`, `5` | An optional: a `T`, or `nil` |
 | `fn(A, B) -> R` | `{ a, b in a + b }` | A function |
 | structs and enums | `Point(x: 1, y: 2)`, `.red` | Types you declare yourself |
@@ -176,12 +178,24 @@ ages["grace"] = 85
 print(ages["ada"] ?? 0)              // 36
 ```
 
-Keys can be `Int`, `String`, `Bool`, or an enum whose cases carry no
-values. Looking up a key gives an optional, because the key might be
-missing.
+Keys can be `Int`, `String`, `Bool`, an enum whose cases carry no values,
+or a tuple or struct made of those. Looking up a key gives an optional,
+because the key might be missing.
 
-Lists and dictionaries have many methods; see
-[Collections](/language/collections/).
+## Sets and tuples
+
+`Set<T>` holds values without order and without repeats, and `(A, B)` is a
+tuple, a few values of any types grouped together:
+
+```tessel
+var seen: Set<Int> = [1, 2, 2]   // 2 values
+seen.insert(3)
+let pair = (1, "one")            // (Int, String)
+print(pair.1)                    // one
+```
+
+Lists, dictionaries and sets have many methods, and tuples can be taken
+apart with `let (a, b) = pair`; see [Collections](/language/collections/).
 
 ## Optionals
 

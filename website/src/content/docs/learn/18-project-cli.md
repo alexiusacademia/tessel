@@ -565,6 +565,14 @@ tessel check todo
 ok: 4 files checked, no errors
 ```
 
+:::tip[Going further: modules]
+All four files share one set of names. When a part of a program is worth
+keeping separate, or you'd like to use it in another program too, it can
+become a **module**: a folder of its own that other code brings in with
+`import`, using only the names the module marks `public`
+(`storage.loadTasks(…)`). See [Modules](/language/programs/#modules).
+:::
+
 ## Trying it out
 
 Put a whole session in a file, `session.txt`, one command per line:

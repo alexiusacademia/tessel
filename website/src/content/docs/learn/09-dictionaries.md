@@ -442,6 +442,85 @@ How it works:
 - Finding the most common word uses the "best so far" pattern from lesson 7:
   look at every entry, and remember the one with the highest count.
 
+## Sets: keys without values
+
+Sometimes you only need to know *whether* something is there, not a value
+for it: the letters a player has guessed, the pages you've visited, the
+people who said yes. A **set** holds values like that. Each value appears
+once, and asking "is it in there?" is fast.
+
+A set's type is written `Set<String>`, and you create one like a list,
+where a set is expected:
+
+```tessel
+fn main() {
+    var guessed: Set<String> = []
+    for letter in ["e", "a", "e", "t", "a"] {
+        if guessed.contains(letter) {
+            print("You already tried {letter}")
+        } else {
+            guessed.insert(letter)
+        }
+    }
+    print("Letters tried: {guessed.count}")
+}
+```
+
+```text
+You already tried e
+You already tried a
+Letters tried: 3
+```
+
+`insert` adds a value (adding one that's already there does nothing), and
+`remove` takes one out; both need a `var`. `contains`, `count` and
+`isEmpty` work like on a list, and `for x in set` goes through the values.
+
+Sets can also be combined. `intersection` keeps what's in both,
+`union` what's in either, and `subtracting` what's in the first but not the
+second:
+
+```tessel
+fn main() {
+    let alice: Set<String> = ["pizza", "curry", "tacos"]
+    let bob: Set<String> = ["tacos", "sushi", "pizza"]
+    let both = alice.intersection(bob)
+    print("Both like: {both.sorted().joined(separator: ", ")}")
+    let either = alice.union(bob)
+    print("Choices: {either.count}")
+}
+```
+
+```text
+Both like: pizza, tacos
+Choices: 4
+```
+
+A set has no order of its own, so `sorted()` turns it into a sorted list
+when you want to show it.
+
+### Common mistake: an empty set without a type
+
+Like an empty list, an empty set needs its type:
+
+```tessel
+fn main() {
+    var seen = Set()
+}
+```
+
+```text
+error: can't tell what type this empty set is
+ --> main.tsl:2:16
+  |
+2 |     var seen = Set()
+  |                ^^^^^
+  |
+  = help: write the type of its items, like `Set<String>()`
+```
+
+Write `var seen = Set<String>()`, or `var seen: Set<String> = []`.
+
 ## Lists or dictionaries?
 
 Both hold many values. Which should you use?
@@ -464,6 +543,9 @@ Use a **dictionary** when:
 A quick test: if you find yourself looping through a list to find the item
 with a particular name, a dictionary with that name as the key is probably
 a better fit.
+
+And use a **set** when you only need to know whether something is there,
+each value once.
 
 ## Exercises
 
@@ -636,10 +718,14 @@ after changing it, you must store it back.
   in it. Loop over `keys` (or `keys.sorted()`) to go through every entry.
 - To count things: `counts[key] = (counts[key] ?? 0) + 1`, with the
   parentheses.
+- A **set** (`Set<String>`) holds values once each, without order:
+  `insert`, `remove`, `contains`, and `union`/`intersection`/`subtracting`
+  to combine two.
 - Use a list for things in order, a dictionary for things you look up by
-  name.
+  name, a set for "is it there?".
 
-For every dictionary method, see [Dictionary](/reference/stdlib/#dictionary)
+For every dictionary and set method, see
+[Dictionary](/reference/stdlib/#dictionary) and [Set](/reference/stdlib/#set)
 in the standard library reference.
 
 **Next:** [10. Missing values and input](/learn/10-optionals-input/)

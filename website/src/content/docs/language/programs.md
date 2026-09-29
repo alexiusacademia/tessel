@@ -1,11 +1,12 @@
 ---
 title: Programs and files
-description: How a Tessel program is organized - a single .tsl file or a folder of files sharing one namespace, with an app or fn main as its entry point.
+description: How a Tessel program is organized - a single .tsl file or a folder of files sharing one namespace, modules with import, public and private, and an app or fn main as its entry point.
 ---
 
 A Tessel program is either **one `.tsl` file**, or **a folder of `.tsl`
-files**. There are no import statements, packages or modules to set up: all
-the files in the folder form one program.
+files**. All the files in the folder form one program, with nothing to set
+up. Code you want to keep apart, or share between programs, goes in a
+[module](#modules): another folder, which the program `import`s.
 
 ## One file
 
@@ -69,7 +70,8 @@ file, and the order of the files and of the declarations in them doesn't
 matter. The file names are up to you; `main.tsl` is just a convention.
 
 Only files ending in `.tsl` directly inside the folder are part of the
-program. Files in subfolders are not included.
+program. Files in subfolders are not included, unless the program imports
+the subfolder as a [module](#modules).
 
 :::caution
 If you run a single file from a multi-file program, like
@@ -221,6 +223,8 @@ own.
 - **Functions inside a view stay there.** A `fn` declared inside a `view` or
   the `app` belongs to it and can use its `state`; other files can't call it.
   Put functions that others need at the top level of a file.
+- **Unless it's `private`.** A declaration marked
+  [`private`](#private-declarations) can only be used in its own file.
 
 ### Organizing a program
 
@@ -234,6 +238,8 @@ own.
 - Each `.tsl` file directly inside the folder is part of the program. Keep
   experiments and old versions outside the folder (or rename them to another
   extension), or they'll be compiled too.
+- When a part of the program grows large or is useful elsewhere, move it
+  into a [module](#modules) with a small `public` surface.
 
 The [Tessel IDE](/start/ide/) works on a folder in the same way: its
 explorer shows the files, **Check** and **Run** use the whole folder, and
@@ -273,6 +279,158 @@ be redeclared either.
 Names inside a struct or enum (fields, cases and methods) belong to that
 type, so two types can both have a method called `describe` without any
 conflict.
+
+## Private declarations
+
+`private` before a top-level declaration, or before a field or method, means
+only its own file can use it. It keeps helpers from being used by accident,
+and says to the reader "this is a detail of this file":
+
+```tessel
+// account.tsl
+struct Account {
+    owner: String
+    private balance: Int = 0
+
+    fn deposit(_ amount: Int) {
+        balance += checked(amount)
+    }
+
+    fn summary() -> String {
+        "{owner}: {balance}"
+    }
+}
+
+private fn checked(_ amount: Int) -> Int {
+    max(amount, 0)
+}
+```
+
+Another file can call `deposit` and `summary`, but using `balance` or
+`checked` there is an error:
+
+```text
+error: field `balance` is private to the file that declares `Account`
+```
+
+A private name is still a top-level name of the program, so it must be
+unique like any other.
+
+## Modules
+
+A **module** is a folder of `.tsl` files that other code imports. Use one
+to keep a part of a program to itself (its data model, a set of shared
+views), or to share code between programs.
+
+```text
+shapes-app/
+  main.tsl
+  geometry/
+    shapes.tsl
+    math.tsl
+```
+
+`import geometry` at the top of a file loads the folder `geometry` next to
+that file. The module's declarations are then used by their full name,
+`geometry.` and the name, so it's always clear where a name comes from:
+
+```tessel
+// main.tsl
+import geometry
+
+fn main() {
+    let shapes: [geometry.Shape] = [geometry.Circle(radius: 1.0), geometry.Square(side: 2.0)]
+    print(geometry.totalArea(shapes))
+}
+```
+
+```text
+7.141592653589793
+```
+
+### `public`: what a module shares
+
+Only declarations marked `public` can be used outside the module. The rest
+are the module's own details, which its files share with each other as
+usual:
+
+```tessel
+// geometry/shapes.tsl
+public interface Shape {
+    fn area() -> Float
+}
+
+public struct Circle: Shape {
+    radius: Float
+    fn area() -> Float { pi * square(radius) }
+}
+
+public struct Square: Shape {
+    side: Float
+    fn area() -> Float { square(side) }
+}
+```
+
+```tessel
+// geometry/math.tsl
+public fn totalArea(_ shapes: [Shape]) -> Float {
+    var total = 0.0
+    for s in shapes {
+        total += s.area()
+    }
+    total
+}
+
+// Not public: only the module's files can use it.
+fn square(_ x: Float) -> Float { x * x }
+```
+
+Inside the module, names are written without `geometry.` (`Shape`,
+`square`). The fields and methods of a public struct or enum can be used
+wherever the type can, except the ones marked `private`.
+
+Using something that isn't public says so:
+
+```text
+error: `square` isn't public in module `geometry`
+  = help: to use it outside the module, add `public` before its declaration in math.tsl
+```
+
+### What a module sees
+
+A module sees its own declarations, the built-in ones, and the modules it
+imports itself. It doesn't see the program that imports it, which keeps
+it independent, so the same module works in any program.
+
+Everything from a module keeps its full name: its types in type
+annotations (`[geometry.Shape]`, `geometry.Stack<Int>`), and interfaces
+after `:` (`struct Hexagon: geometry.Shape`). Enum cases work as usual:
+`geometry.Kind.round`, or `.round` where the type is known. A module can
+declare a name the program also uses, like `square` above, without any
+conflict.
+
+Each file imports what it uses. A module is loaded once, however many files
+import it.
+
+### Sharing a module between programs
+
+`import` also takes a path to a folder, relative to the importing file. The
+module's name is the folder's name:
+
+```tessel
+import "../shared/textkit"
+
+fn main() {
+    print(textkit.shout("hello"))
+}
+```
+
+This way several programs can use one copy of the code. (There's no
+package manager yet: the folder is found on disk.)
+
+A module can't have an `app`: that belongs to the program. Put the views
+the program needs in the module, mark them `public`, and show them from the
+program's `app`.
 
 ## The entry point
 

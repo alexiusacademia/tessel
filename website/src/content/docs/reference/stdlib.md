@@ -2038,7 +2038,8 @@ stop the program with an error, like `remove(at:)`.
 
 A dictionary `[K: V]` maps keys to values. Write one as `["a": 1, "b": 2]`;
 an empty one needs its type from context: `var ages: [String: Int] = [:]`.
-Keys can be `Int`, `String`, `Bool`, or an enum whose cases have no values.
+Keys can be `Int`, `String`, `Bool`, an enum whose cases have no values, or
+a tuple or struct made of those.
 
 | Member | Returns | |
 |---|---|---|
@@ -2080,6 +2081,41 @@ for fruit in stock.keys {
     print("{fruit}: {stock[fruit] ?? 0}")
 }
 ```
+
+## Set
+
+A set `Set<T>` holds values without order and without repeats. Write one
+as a list where a set is expected (`let seen: Set<Int> = [1, 2]`), make one
+from a list with `Set(list)`, or an empty one with `Set<Int>()`. Items can
+be the same types as dictionary keys. `for x in set` goes through the items
+in the order they were first added. Two sets are `==` when they have the
+same items. JSON writes a set as an array. See
+[Collections](/language/collections/#sets).
+
+| Member | Returns | |
+|---|---|---|
+| `count` | `Int` | Number of items. |
+| `isEmpty` | `Bool` | Whether there are no items. |
+| `values` | `[T]` | The items, in the order they were first added. |
+| `contains(_ item: T)` | `Bool` | Whether the item is in the set. |
+| `insert(_ item: T)` | | Adds the item (nothing happens if it's there). Changes the set. |
+| `remove(_ item: T)` | | Removes the item (nothing happens if it isn't there). Changes the set. |
+| `union(_ other: Set<T>)` | `Set<T>` | The items in either set. |
+| `intersection(_ other: Set<T>)` | `Set<T>` | The items in both sets. |
+| `subtracting(_ other: Set<T>)` | `Set<T>` | The items that aren't in `other`. |
+| `isSubset(of: Set<T>)` | `Bool` | Whether every item is also in the other set. |
+| `isSuperset(of: Set<T>)` | `Bool` | Whether every item of the other set is in this one. |
+| `isDisjoint(with: Set<T>)` | `Bool` | Whether no item is in both. |
+| `filter(_ keep: fn(T) -> Bool)` | `Set<T>` | The items for which `keep` is true. |
+| `sorted(by: fn(T, T) -> Bool = …)` | `[T]` | The items as a sorted list; without `by:`, only for `Int`, `Float` and `String` items. |
+
+## Tuples
+
+A tuple groups 2 to 8 values: its type is written `(Int, String)`, a value
+`(1, "one")`, and its items are `.0`, `.1` and so on. `let (a, b) = pair`
+takes one apart. Tuples compare with `==`, can be dictionary keys and set
+items when their items can, and JSON writes them as arrays. See
+[Collections](/language/collections/#tuples).
 
 ## Reasons for failures
 

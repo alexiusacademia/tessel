@@ -1,10 +1,12 @@
 ---
 title: Collections and strings
-description: Working with lists, dictionaries and strings in Tessel - literals, indexing, and every built-in property and method.
+description: Working with lists, dictionaries, sets, tuples and strings in Tessel - literals, indexing, and every built-in property and method.
 ---
 
-Tessel has two collection types, **lists** (`[T]`) and **dictionaries**
-(`[K: V]`), and a set of methods for working with them and with strings.
+Tessel has three collection types, **lists** (`[T]`), **dictionaries**
+(`[K: V]`) and **sets** (`Set<T>`), plus **tuples** (`(Int, String)`) for a
+few values grouped together, and methods for working with them and with
+strings.
 
 Like all Tessel values, collections are copied when you assign them or pass
 them to a function, so changing one copy never changes another. See
@@ -178,8 +180,8 @@ print(ages.count)         // 3
 An empty dictionary is written `[:]` and needs its type:
 `var cache: [String: Int] = [:]`.
 
-Keys can be `Int`, `String`, `Bool`, or an enum whose cases carry no
-values. Values can be any type.
+Keys can be `Int`, `String`, `Bool`, an enum whose cases carry no values,
+or a [tuple](#tuples) or struct made of those. Values can be any type.
 
 ### Reading and writing
 
@@ -237,6 +239,143 @@ for item in prices.keys {
 tea costs 3
 cake costs 5
 ```
+
+## Sets
+
+A set holds values without order and without repeats. It answers "is this
+in there?" quickly, however many items it has. Write one like a list,
+where a set is expected:
+
+```tessel
+var tags: Set<String> = ["red", "blue", "red"]
+print(tags.count)                 // 2
+print(tags.contains("blue"))      // true
+tags.insert("green")
+tags.remove("red")
+print(tags.sorted().joined(separator: ", "))   // blue, green
+```
+
+Inserting a value that's already there does nothing, and so does removing
+one that isn't. `Set(list)` makes a set from a list, and `Set<Int>()` an
+empty one:
+
+```tessel
+let words = "the cat saw the other cat".split(" ")
+let unique = Set(words)
+print(unique.count)    // 4
+var empty = Set<Int>()
+empty.insert(7)
+print(empty.isEmpty)   // false
+```
+
+The items of a set can be the same types as dictionary keys: `Int`,
+`String`, `Bool`, an enum whose cases carry no values, or a tuple or struct
+made of those.
+
+### Combining sets
+
+```tessel
+let mine: Set<String> = ["tea", "cake", "jam"]
+let yours: Set<String> = ["cake", "scones"]
+print(mine.union(yours).count)                  // 4
+print(mine.intersection(yours).sorted()[0])     // cake
+print(mine.subtracting(yours).sorted().joined(separator: ", "))  // jam, tea
+print(yours.isSubset(of: mine))                 // false
+print(mine.isDisjoint(with: ["bread"]))         // true
+```
+
+### Set properties and methods
+
+| Member | Type | What it does |
+|---|---|---|
+| `count` | `Int` | the number of items |
+| `isEmpty` | `Bool` | `true` if there are no items |
+| `values` | `[T]` | the items as a list, in the order they were first added |
+| `contains(x)` | `Bool` | `true` if `x` is in the set |
+| `insert(x)` | | adds `x` |
+| `remove(x)` | | removes `x` |
+| `union(other)` | `Set<T>` | the items in either set |
+| `intersection(other)` | `Set<T>` | the items in both sets |
+| `subtracting(other)` | `Set<T>` | the items not in `other` |
+| `isSubset(of: other)` | `Bool` | every item is also in `other` |
+| `isSuperset(of: other)` | `Bool` | every item of `other` is in this set |
+| `isDisjoint(with: other)` | `Bool` | no item is in both |
+| `filter { x in … }` | `Set<T>` | the items the block keeps |
+| `sorted()` | `[T]` | the items as a sorted list (`sorted(by:)` for your own order) |
+
+`insert` and `remove` change the set, so it needs a `var`. Two sets are
+`==` when they have the same items, in any order.
+
+### Looping over a set
+
+A `for` loop goes through the items in the order they were first added:
+
+```tessel
+let primes: Set<Int> = [2, 3, 5, 7]
+var total = 0
+for p in primes {
+    total += p
+}
+print(total)   // 17
+```
+
+## Tuples
+
+A tuple groups a few values, of any types, without declaring a struct. Its
+type lists the types in parentheses, and its items are numbered from 0:
+`.0`, `.1`, and so on. A function can return several values this way:
+
+```tessel
+fn minMax(_ numbers: [Int]) -> (Int, Int) {
+    var lo = numbers[0]
+    var hi = numbers[0]
+    for n in numbers {
+        lo = min(lo, n)
+        hi = max(hi, n)
+    }
+    (lo, hi)
+}
+
+fn main() {
+    let range = minMax([4, 9, 1, 7])
+    print("from {range.0} to {range.1}")   // from 1 to 9
+    let (lo, hi) = minMax([10, 20])
+    print(hi - lo)                         // 10
+}
+```
+
+`let (lo, hi) = …` takes a tuple apart into names (`var (a, b) = …` makes
+variables). A `for` loop can take each item apart too, and `_` skips an
+item:
+
+```tessel
+let scores: [(String, Int)] = [("Ada", 90), ("Alan", 85)]
+for (name, score) in scores {
+    print("{name}: {score}")
+}
+var point = (3, 4)
+point.0 += 1
+print(point == (4, 4))     // true
+let (_, y) = point
+print(y)                   // 4
+```
+
+Tuples are compared with `==` item by item. A tuple of key types can be a
+dictionary key or a set item, which is handy for grid positions. JSON
+writes a tuple as an array:
+
+```tessel
+var walls: Set<(Int, Int)> = [(0, 1), (2, 2)]
+walls.insert((5, 3))
+print(walls.contains((2, 2)))    // true
+var names: [(Int, Int): String] = [:]
+names[(0, 0)] = "start"
+print(names[(0, 0)] ?? "")       // start
+print(toJson([(1, "one"), (2, "two")]))   // [[1,"one"],[2,"two"]]
+```
+
+A tuple can have 2 to 8 items. When the items deserve names, or the value
+is used in many places, a [struct](/language/structs-enums/) is clearer.
 
 ## Strings
 

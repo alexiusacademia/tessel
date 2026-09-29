@@ -1275,6 +1275,12 @@ impl<'a> Parser<'a> {
                     }
                     self.expect(Tok::RParen)?;
                     let full = span.to(self.prev_span());
+                    // `(x,)` is just `x`.
+                    if items.len() == 1 {
+                        let mut inner = items.pop().unwrap();
+                        inner.span = full;
+                        return Ok(inner);
+                    }
                     if items.len() > MAX_TUPLE {
                         self.error(full, format!("a tuple can have at most {MAX_TUPLE} items"))
                             .help("use a struct, which also gives each item a name");

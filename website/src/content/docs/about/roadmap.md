@@ -30,8 +30,10 @@ language may still change. This page is an honest list of where things stand.
   another thread (`background`), all with completion blocks that run on the
   UI thread. They work in programs with only `fn main` too.
 - **Language:** structs, enums with values, interfaces, generics, closures, optionals,
-  `for` and `while` loops with `break` and `continue`, and programs split
-  over any number of files.
+  errors with `Result` and `try`, tuples and sets, `for` and `while` loops
+  with `break` and `continue`, and programs split over any number of files,
+  with modules (`import`, `public`, `private`) for code shared between
+  programs.
 - **Standard library:** files and folders, JSON and binary encoding of your
   own types, `Data` for raw bytes, dates and times, random numbers, the
   clipboard, reading standard input and writing to standard error, and many
@@ -81,7 +83,7 @@ These are the next areas of work. None of them has a date.
 | Hot reload | Keep the running app's state when its code changes. |
 | App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
-| Language | Tuples and sets. |
+| Language | Packages: installing shared modules by name, with versions. |
 | Packaging | App icons, code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 

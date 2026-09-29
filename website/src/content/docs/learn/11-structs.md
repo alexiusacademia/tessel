@@ -460,6 +460,55 @@ the loop variable *is* the item in the list, not a copy. So inside
 `for todo in todos { … }` you can write `todo.done = true` and the list
 changes. You'll use this in the next example.
 
+## Tuples: a quick group without a name
+
+Sometimes a few values belong together only for a moment, like the two
+answers of a division. Declaring a struct for that is more than you need. A
+**tuple** groups values without a declaration: write them in parentheses,
+`(3, 2)`, and write its type the same way, `(Int, Int)`. Its items are
+numbered from 0: `.0`, `.1`, and so on.
+
+```tessel
+fn divide(_ a: Int, by: Int) -> (Int, Int) {
+    (a / by, a % by)
+}
+
+fn main() {
+    let result = divide(17, by: 5)
+    print("17 / 5 is {result.0}, remainder {result.1}")
+
+    let (whole, rest) = divide(20, by: 6)
+    print("{whole} and {rest} left over")
+}
+```
+
+```text
+17 / 5 is 3, remainder 2
+3 and 2 left over
+```
+
+`let (whole, rest) = …` takes the tuple apart into two names. A `for` loop
+can do the same with each item of a list of tuples:
+
+```tessel
+fn main() {
+    let moves: [(String, Int)] = [("up", 3), ("right", 2), ("up", 1)]
+    for (direction, steps) in moves {
+        print("{direction} {steps}")
+    }
+}
+```
+
+```text
+up 3
+right 2
+up 1
+```
+
+Tuples are handy for returning two or three values, or for pairs in a list.
+When the values deserve names (`result.0` doesn't say what it is), or you
+pass them around a lot, a struct is clearer: `book.title` beats `book.0`.
+
 ## Worked example: a small library
 
 Let's put it together. A `Library` is a struct too: it holds a list of
@@ -777,6 +826,9 @@ comparison.
   compares all the fields.
 - Lists of structs work like any list. Change an item in place through the
   list, `todos[0].done = true`, not through a copy.
+- A **tuple** groups a few values without a declaration: `(17, "Ada")` is
+  an `(Int, String)`. Read its items with `.0`, `.1`, or take it apart with
+  `let (a, b) = pair`.
 
 For the full details, see [Structs and enums](/language/structs-enums/) and
 [Values and copying](/language/values/).
