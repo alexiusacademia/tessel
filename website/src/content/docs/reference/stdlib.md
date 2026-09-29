@@ -2081,6 +2081,121 @@ for fruit in stock.keys {
 }
 ```
 
+## Reasons for failures
+
+The functions in this section return a [`Result`](/language/errors/) or an
+`Error?` instead of an optional, so a failure comes with a message that says
+why. They're built in; you don't import anything.
+
+### Result and Error
+
+```text
+struct Error { message: String }
+
+enum Result<T> {
+    ok(value: T)
+    failure(error: Error)
+}
+```
+
+`Error("reason")` makes an error; the label is optional. `Result` has these
+helpers:
+
+| Method | Returns |
+| --- | --- |
+| `value()` | `T?`: the value, or `nil` on failure |
+| `error()` | `Error?`: the error, or `nil` on success |
+| `isOk()` | `Bool` |
+| `valueOr(_ fallback: T)` | the value, or `fallback` on failure |
+
+`try` unwraps a `Result` (or checks an `Error?`) and passes a failure on to
+the caller. See [Errors](/language/errors/).
+
+### readText
+
+```text
+readText(_ path: String) -> Result<String>
+```
+
+Like [`readFile`](#readfile), but a failure says why, for example
+`can't read notes.txt: there's no such file or folder`.
+
+### writeText
+
+```text
+writeText(path: String, text: String) -> Error?
+```
+
+Like [`writeFile`](#writefile); `nil` means it worked.
+
+### appendText
+
+```text
+appendText(path: String, text: String) -> Error?
+```
+
+Like [`appendFile`](#appendfile); `nil` means it worked.
+
+### readBytes
+
+```text
+readBytes(_ path: String) -> Result<Data>
+```
+
+Like [`readData`](#readdata), with a reason on failure.
+
+### writeBytes
+
+```text
+writeBytes(path: String, data: Data) -> Error?
+```
+
+Like [`writeData`](#writedata); `nil` means it worked.
+
+### parseInt
+
+```text
+parseInt(_ text: String) -> Result<Int>
+```
+
+Parses a whole number, ignoring spaces around it. On failure the message
+is `"abc" isn't a whole number`.
+
+### parseFloat
+
+```text
+parseFloat(_ text: String) -> Result<Float>
+```
+
+Parses a number. On failure the message is `"abc" isn't a number`.
+
+### decodeJson
+
+```text
+decodeJson<T>(_ text: String) -> Result<T>
+```
+
+Like [`fromJson`](#fromjson), with the type given by the result you assign
+to. The reason is either `this isn't valid JSON: …` or `the JSON doesn't have
+the shape of this type`.
+
+```tessel
+struct Point { x: Int, y: Int }
+
+let r: Result<Point> = decodeJson("\{\"x\": 1}")
+if let e = r.error() {
+    print(e.message)    // the JSON doesn't have the shape of this type
+}
+```
+
+### decodeBinary
+
+```text
+decodeBinary<T>(_ data: Data) -> Result<T>
+```
+
+Like [`fromBinary`](#frombinary), with a reason on failure.
+
 ## Runtime errors
 
 A few mistakes can only be found while the program runs. They stop the

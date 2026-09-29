@@ -194,7 +194,7 @@ print(nickname ?? "no nickname")
 ```
 
 You can't use an optional as if it were a plain value. You unwrap it first
-with `if let`, `??` or `?.`. See [Optionals and errors](/language/optionals/).
+with `if let`, `??` or `?.`. See [Optionals](/language/optionals/) and [Errors](/language/errors/).
 
 ## Function types
 

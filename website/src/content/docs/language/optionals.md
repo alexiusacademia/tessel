@@ -1,6 +1,6 @@
 ---
-title: Optionals and errors
-description: How Tessel represents missing values with optionals (T?, nil, if let, ??, ?.), how functions report failure, and what happens on a runtime error.
+title: Optionals
+description: How Tessel represents missing values with optionals (T?, nil, if let, ??, ?.), how functions report that something is missing, and what happens on a runtime error.
 ---
 
 Sometimes a value might be missing: a dictionary may not have the key you
@@ -255,8 +255,9 @@ if let text = readFile("notes.txt") {
 ```
 
 :::note
-An optional says *that* something failed, not *why*. Error values with a
-reason are planned for a later version.
+An optional says *that* something failed, not *why*. When the caller needs
+the reason, return a `Result` instead, and use `readText` rather than
+`readFile`. See [Errors](/language/errors/).
 :::
 
 ## Runtime errors

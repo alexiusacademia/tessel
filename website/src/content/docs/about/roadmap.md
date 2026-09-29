@@ -60,8 +60,6 @@ These are the main gaps you may run into today.
   supported.
 - **Appearance:** no dark mode, no animations, and no accessibility support
   (screen readers) yet.
-- **Errors:** a function that fails returns `nil`, which says that it failed
-  but not why.
 - **Network:** WebSocket messages are text only (a binary message arrives
   as text), and there's no way to cancel a request or download once
   started.
@@ -83,7 +81,7 @@ These are the next areas of work. None of them has a date.
 | Hot reload | Keep the running app's state when its code changes. |
 | App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
-| Language | Errors that carry a reason, tuples and sets. |
+| Language | Tuples and sets. |
 | Packaging | App icons, code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 

@@ -777,7 +777,7 @@ too low and what you know is too high. With it, you never need more than
 - Test programs that read input by piping text in:
   `printf '5\n7\n' | tessel run add.tsl`.
 
-For more, see [Optionals and errors](/language/optionals/) in the language
+For more, see [Optionals](/language/optionals/) and [Errors](/language/errors/) in the language
 guide, and [readLine](/reference/stdlib/#readline),
 [readInput](/reference/stdlib/#readinput) and
 [printError](/reference/stdlib/#printerror) in the standard library

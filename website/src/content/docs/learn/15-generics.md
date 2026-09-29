@@ -280,34 +280,47 @@ In lesson 10 you used optionals for "this might not have worked": `Int("ten")`
 gives `nil`. But `nil` doesn't say *what* went wrong. Was the text empty? Not
 a number? A number that's too big?
 
-A generic enum solves this neatly. A `Result<T>` is either `ok` with a value
-of type `T`, or a `failure` with a message explaining the problem:
+A generic enum solves this neatly, and it's so useful that Tessel has one
+built in, called `Result`. Its declaration is short:
 
 ```tessel
-enum Result<T> {
-    ok(value: T)
-    failure(message: String)
+struct Error {
+    message: String
 }
 
+enum Result<T> {
+    ok(value: T)
+    failure(error: Error)
+}
+```
+
+A `Result<T>` is either `ok` with a value of type `T`, or a `failure` with an
+`Error` explaining the problem. Because it's built in, you don't write this
+declaration yourself: every program can already use `Result` and `Error`.
+(`Error("…")` creates one; its label, `message:`, is optional.)
+
+Here's a function that reads an age and says what's wrong when it can't:
+
+```tessel
 fn parseAge(text: String) -> Result<Int> {
     let trimmed = text.trim()
     if let n = Int(trimmed) {
         if n < 0 {
-            return .failure(message: "an age can't be negative")
+            return .failure(error: Error("an age can't be negative"))
         }
         if n > 150 {
-            return .failure(message: "{n} is too old to be true")
+            return .failure(error: Error("{n} is too old to be true"))
         }
         return .ok(value: n)
     }
-    Result.failure(message: "\"{trimmed}\" is not a number")
+    Result.failure(error: Error("\"{trimmed}\" is not a number"))
 }
 
 fn main() {
     for input in ["42", " 7 ", "-3", "200", "ten"] {
         match parseAge(text: input) {
             .ok(age) -> print("Age: {age}")
-            .failure(message) -> print("Problem: {message}")
+            .failure(e) -> print("Problem: {e.message}")
         }
     }
 }
@@ -328,21 +341,79 @@ Why this is nice:
 - The caller **must** handle both cases. `match` won't let you forget the
   failure.
 - The same `Result` works for any type: a `Result<Float>`, a
-  `Result<Book>`. You write the enum once.
+  `Result<Book>`. It's one generic enum, used everywhere.
 
 Notice the last line of `parseAge` starts with `Result.failure`, not
-`.failure`. As in lesson 12, a line starting with `.` would continue the line
+`.failure` (and further down, lines start with `Result.ok`). As in lesson 12, a line starting with `.` would continue the line
 before it. After `return` on the same line, `.failure(…)` is fine.
+
+Your own generic enums work exactly the same way: `enum Tree<T> { leaf(value:
+T), … }` and so on. (If you declare your own enum called `Result`, or your
+own `Error`, it replaces the built-in ones.)
+
+### Passing a failure on with `try`
+
+Often a function can't do anything useful about a failure except report it
+to *its* caller. Writing a `match` for that each time is tedious, so Tessel
+has `try`:
+
+```tessel
+fn parseAge(text: String) -> Result<Int> {
+    let n = try parseInt(text)
+    if n < 0 {
+        return .failure(error: Error("an age can't be negative"))
+    }
+    Result.ok(value: n)
+}
+
+fn ageNextYear(text: String) -> Result<Int> {
+    let age = try parseAge(text: text)
+    Result.ok(value: age + 1)
+}
+
+fn main() {
+    for input in ["41", "-3", "ten"] {
+        match ageNextYear(text: input) {
+            .ok(age) -> print("Next year: {age}")
+            .failure(e) -> print("Problem: {e.message}")
+        }
+    }
+}
+```
+
+```text
+Next year: 42
+Problem: an age can't be negative
+Problem: "ten" isn't a whole number
+```
+
+`try something` means: if `something` is `ok`, give me its value; if it's a
+failure, stop here and return that failure. So `try` only works inside a
+function that itself returns a `Result`. (In `fn main`, a failure is printed
+as an error and the program stops.)
+
+`parseInt` is one of Tessel's functions that return a `Result`: it gives the
+number, or explains why the text isn't one. `readText` does the same for
+files; you'll use it in [lesson 16](/learn/16-files-data/). For the whole
+story, see [Errors](/language/errors/).
 
 ### Common mistake: using a Result as if it were the value
 
 A `Result<Int>` isn't an `Int`. It *might contain* one. So this doesn't work:
 
 ```tessel
-let answer = safeDivide(a: 10, b: 2)
+let answer = parseAge(text: "42")
 print(answer + 1)
 ```
 
+```text
+error: can't use `+` on `Result<Int>` and `Int`
+  --> main.tsl:14:11
+   |
+14 |     print(answer + 1)
+   |           ^^^^^^^^^^
+   |
+   = help: arithmetic works on two numbers of the same type
 ```text
 error: can't use `+` on `Result<Int>` and `Int`
   --> main.tsl:15:11
@@ -353,8 +424,9 @@ error: can't use `+` on `Result<Int>` and `Int`
    = help: arithmetic works on two numbers of the same type
 ```
 
-Use `match` to get the value out, and decide what to do if there isn't one.
-That's the whole point: you can't accidentally ignore the error.
+Use `match` to get the value out and decide what to do if there isn't one,
+or `try` to pass the failure on, or `valueOr(0)` for a fallback. That's the
+whole point: you can't accidentally ignore the error.
 
 ## Constraints
 
@@ -631,14 +703,9 @@ and a list of numbers.
 <summary>Solution</summary>
 
 ```tessel
-enum Result<T> {
-    ok(value: T)
-    failure(message: String)
-}
-
 fn itemAt<T>(items: [T], index: Int) -> Result<T> {
     if index < 0 || index >= items.count {
-        return .failure(message: "there is no item {index}, the list has {items.count}")
+        return .failure(error: Error("there is no item {index}, the list has {items.count}"))
     }
     Result.ok(value: items[index])
 }
@@ -648,12 +715,12 @@ fn main() {
     for i in [1, 5] {
         match itemAt(items: colors, index: i) {
             .ok(color) -> print("Item {i} is {color}")
-            .failure(message) -> print("Oops: {message}")
+            .failure(e) -> print("Oops: {e.message}")
         }
     }
     match itemAt(items: [10, 20], index: 0) {
         .ok(n) -> print(n * 2)
-        .failure(message) -> print(message)
+        .failure(e) -> print(e.message)
     }
 }
 ```
@@ -726,7 +793,7 @@ fn main() {
   as if it had been written for that type.
 - **Generic structs** like `Stack<T>` and `Pair<A, B>` hold values of any
   type. Write `Stack<Int>()`, or give the variable a type.
-- A generic enum like `Result<T>` (`ok` or `failure`) reports errors with a
+- The built-in generic enum `Result<T>` (`ok` or `failure` with an `Error`), and `try`, report errors with a
   reason, and `match` makes sure the caller handles them.
 - A **constraint**, `<T: Scored>`, allows only types that conform to an
   interface, so you can use that interface's methods on `T`.

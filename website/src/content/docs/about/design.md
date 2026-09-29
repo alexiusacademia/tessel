@@ -160,22 +160,27 @@ if let value = Int("42") {
 A value that may be missing has an optional type, like `User?`, and is
 either a value or `nil`. You have to check it before using it, with
 `if let`, `?.` or `??`. There's no force-unwrap operator, so a missing value
-can't crash your program. See [Optionals and errors](/language/optionals/).
+can't crash your program. See [Optionals](/language/optionals/) and [Errors](/language/errors/).
 
-### 9. Errors are optionals
+### 9. Errors are values: optionals and `Result`
 
 ```tessel
-if let text = readFile(path: "notes.txt") {
-    print(text)
-} else {
-    print("Could not load the file")
+fn loadSettings() -> Result<Settings> {
+    let text = try readText("settings.json")
+    decodeJson(text)
 }
 ```
 
-A function that can fail returns an optional, and `nil` means it failed.
-This reuses the optional machinery instead of adding exceptions or a
-separate error type. The downside is that `nil` says *that* something
-failed, not *why*; a richer error type may come later.
+A value that may simply be missing is an optional. When the caller needs to
+know *why* something failed, the function returns a `Result<T>`, which holds
+either a value or an `Error` with a message. `try` unwraps a success and
+passes a failure on to the caller, so the happy path reads straight down.
+In `fn main`, `try` prints the reason and stops the program.
+
+There are no exceptions: a function's type says whether it can fail, and
+the caller can't ignore it. `Result` and `Error` are ordinary Tessel types
+from a small built-in prelude, not special machinery.
+See [Errors](/language/errors/).
 
 Mistakes in the program itself, such as an index out of range, integer
 overflow or division by zero, are different: they stop the program with a
@@ -208,8 +213,6 @@ See [Files, commands and the network](/ui/async/).
 
 A few questions are not settled yet:
 
-- **Error reasons.** If optionals turn out to be too limiting, a
-  `Result`-style type that carries a reason may be added.
 - **Styling and themes.** Whether themes should be a value passed down the
   view tree, or stay modifiers only.
 

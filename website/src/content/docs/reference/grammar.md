@@ -279,7 +279,7 @@ From lowest to highest precedence:
 | 5 | `??` | right |
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `%` | left |
-| 8 | prefix `-` `!` | prefix |
+| 8 | prefix `-` `!` `try` | prefix |
 | 9 | call `f(…)`, block after a call, `.name`, `?.name`, `[index]` | left |
 
 For example, `a ?? b + 1` means `a ?? (b + 1)`, `0..n + 1` means
@@ -298,7 +298,7 @@ range_expr  = coalesce_expr (".." coalesce_expr)? ;
 coalesce_expr = add_expr ("??" NL* coalesce_expr)? ;
 add_expr    = mul_expr (("+" | "-") NL* mul_expr)* ;
 mul_expr    = unary_expr (("*" | "/" | "%") NL* unary_expr)* ;
-unary_expr  = ("-" | "!") unary_expr | postfix_expr ;
+unary_expr  = ("-" | "!" | "try") unary_expr | postfix_expr ;
 
 postfix_expr = primary postfix* ;
 postfix      = "(" args? ")" closure?          call, optionally with a block after it

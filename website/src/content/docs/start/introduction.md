@@ -105,7 +105,7 @@ everything declared in the others. See [Programs and files](/language/programs/)
 like `String?`, and you must check it before you use it. Functions that can
 fail, like turning text into a number with `Int("42")` or reading a file,
 return an optional: `nil` means it didn't work.
-See [Optionals and errors](/language/optionals/).
+See [Optionals](/language/optionals/) and [Errors](/language/errors/).
 
 **Compiled to native code.** The Tessel compiler checks your types, then
 uses LLVM to produce machine code. Memory is managed with reference counting,

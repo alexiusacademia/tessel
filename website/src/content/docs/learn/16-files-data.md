@@ -101,6 +101,56 @@ no such file
 `?? ""` is often the simplest choice: "the file's text, or nothing if there
 isn't one yet".
 
+### Finding out why: `readText`
+
+`readFile` tells you *that* reading failed, but not *why*. The file might not
+exist, or you might not have permission to read it, or it might be a folder.
+When the reason matters (to show the user, say), use `readText` instead. It
+returns a `Result<String>`, the built-in enum from
+[lesson 15](/learn/15-generics/#generic-enums-a-clean-way-to-report-errors):
+
+```tessel
+fn main() {
+    match readText("missing.txt") {
+        .ok(text) -> print(text)
+        .failure(e) -> print(e.message)
+    }
+}
+```
+
+```text
+can't read missing.txt: there's no such file or folder
+```
+
+And inside a function that returns a `Result`, `try` passes the reason on to
+the caller:
+
+```tessel
+fn wordCount(path: String) -> Result<Int> {
+    let text = try readText(path)
+    Result.ok(value: text.words().count)
+}
+
+fn main() {
+    writeFile(path: "note.txt", text: "three short words")
+    for path in ["note.txt", "missing.txt"] {
+        match wordCount(path: path) {
+            .ok(n) -> print("{path}: {n} words")
+            .failure(e) -> print(e.message)
+        }
+    }
+}
+```
+
+```text
+note.txt: 3 words
+can't read missing.txt: there's no such file or folder
+```
+
+`writeText` and `appendText` work the same way for writing. Since they have
+no value to give back, they return an `Error?`: `nil` if it worked, or the
+reason it didn't. `try writeText(path: p, text: t)` passes that on too.
+
 ### Adding to a file
 
 To add text at the end of a file instead of replacing it, use `appendFile`.
@@ -306,6 +356,37 @@ file it left behind. That's what saving data is for.
 The pattern `readFile(…) ?? "[]"` then `fromJson(text) ?? []` means: if
 there's no file yet, or it can't be read as a list of pets, start with an
 empty list. Your program works the very first time, with no special case.
+
+`fromJson` gives `nil` when the text isn't what you expected, without saying
+why. Its partner `decodeJson` returns a `Result` instead, with a reason:
+
+```tessel
+struct Pet {
+    name: String
+    age: Int
+}
+
+fn main() {
+    let texts = ["[\{\"name\": \"Rex\", \"age\": 3}]", "[\{\"name\": \"Rex\"}]", "[\{\"name\": \"Rex\""]
+    for text in texts {
+        let result: Result<[Pet]> = decodeJson(text)
+        match result {
+            .ok(pets) -> print("{pets.count} pet(s)")
+            .failure(e) -> print(e.message)
+        }
+    }
+}
+```
+
+```text
+1 pet(s)
+the JSON doesn't have the shape of this type
+this isn't valid JSON: EOF while parsing an object at line 1 column 15
+```
+
+The second text is valid JSON, but its pet has no `age`. The third isn't
+complete JSON at all. (Here the `Result<[Pet]>` type on `result` tells
+`decodeJson` what to read, just as with `fromJson`.)
 
 If the text doesn't fit the type, for example a number where the struct
 expects text, `fromJson` gives `nil`. Note the `\{` in these strings: a
@@ -812,6 +893,8 @@ Your points?
   relative to the current folder; one starting with `/` is a full path.
 - `writeFile(path:text:)` replaces a file, `appendFile(path:text:)` adds to
   its end, and both return whether they worked.
+- `readText(path)` returns a `Result<String>` with the reason if it fails;
+  `decodeJson` does the same for JSON.
 - `readFile(path)` returns a `String?`: `nil` if there's no file. Use
   `if let` or `??` for the first run.
 - `fileExists`, `createFolder` and `listFolder` look after folders;
