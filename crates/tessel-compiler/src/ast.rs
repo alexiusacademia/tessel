@@ -13,6 +13,21 @@ pub struct Program {
     pub items: Vec<Item>,
     /// The next unused expression id (generic code is copied with new ids).
     pub next_id: ExprId,
+    /// `import …` lines (of one file, as parsed).
+    pub imports: Vec<Import>,
+    /// Name spans of declarations and members marked `public` / `private`.
+    pub public: std::collections::HashSet<Span>,
+    pub private: std::collections::HashSet<Span>,
+}
+
+/// `import geometry` or `import "../shared/geometry"`.
+#[derive(Debug, Clone)]
+pub struct Import {
+    /// The folder, as written (a name, or a quoted path).
+    pub path: String,
+    /// Written as a quoted path.
+    pub quoted: bool,
+    pub span: Span,
 }
 
 /// A type parameter of a generic declaration: `T`, or `T: Shape`.

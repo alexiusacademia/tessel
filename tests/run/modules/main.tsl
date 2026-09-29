@@ -1,0 +1,26 @@
+import geometry
+import textutil
+
+// The module's `square` is its own; this one is the program's.
+fn square(_ n: Int) -> Int { n * n }
+
+fn main() {
+    let c = geometry.Circle(radius: 1.0)
+    let shapes: [geometry.Shape] = [c, geometry.Rect(width: 2.0, height: 3.0)]
+    print(geometry.total(shapes))
+    let k = geometry.kind(c)
+    print(k == geometry.Kind.round)
+    print(k == .round)
+    var s = geometry.Stack<Int>()
+    s.push(4)
+    print(s.top() ?? 0)
+    print(textutil.shout("hi"))
+    print(square(3))
+    let p = geometry.Point(x: 2, y: 3)
+    print(p.sum())
+    print(toJson(p))
+    let back: geometry.Point? = fromJson("\{\"x\": 7, \"y\": 1}")
+    print(back?.x ?? 0)
+    let geometry = 5
+    print(geometry + 1)
+}

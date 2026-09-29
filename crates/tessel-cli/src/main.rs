@@ -187,11 +187,11 @@ fn report(diags: &[Diagnostic], sources: &SourceMap) {
 }
 
 fn check(path: &Path, lines: bool) -> ExitCode {
-    let (sources, count) = match load(path) {
+    let (mut sources, count) = match load(path) {
         Ok(s) => s,
         Err(code) => return code,
     };
-    let analysis = tessel_compiler::analyze(&sources, true);
+    let analysis = tessel_compiler::analyze(&mut sources, true);
     if lines {
         for d in &analysis.diags.list {
             let file = sources.file(d.span().file);
@@ -251,17 +251,17 @@ fn runtime_lib() -> Result<PathBuf, String> {
 
 /// Compiles and links a program. Returns the `app`'s name, if it has one.
 fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
-    let (sources, _) = load(path)?;
+    let (mut sources, _) = load(path)?;
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
         if let Err(e) = std::fs::create_dir_all(parent) {
             eprintln!("tessel: can't create `{}`: {e}", parent.display());
             return Err(ExitCode::FAILURE);
         }
     }
-    build_sources(&sources, out)
+    build_sources(&mut sources, out)
 }
 
-fn build_sources(sources: &SourceMap, out: &Path) -> Result<Option<String>, ExitCode> {
+fn build_sources(sources: &mut SourceMap, out: &Path) -> Result<Option<String>, ExitCode> {
     let analysis = tessel_compiler::analyze(sources, true);
     if !analysis.diags.is_empty() {
         report(&analysis.diags.list, sources);
@@ -539,7 +539,7 @@ fn ide(folder: &Path) -> ExitCode {
             sources.add(format!("ide/{name}"), *text);
         }
         let tmp = dir.join(format!("building{}", std::env::consts::EXE_SUFFIX));
-        if let Err(code) = build_sources(&sources, &tmp) {
+        if let Err(code) = build_sources(&mut sources, &tmp) {
             return code;
         }
         if let Err(e) = std::fs::rename(&tmp, &exe) {
@@ -605,7 +605,7 @@ mod tests {
         for (name, text) in IDE_SOURCES {
             sources.add(format!("ide/{name}"), *text);
         }
-        let analysis = tessel_compiler::analyze(&sources, true);
+        let analysis = tessel_compiler::analyze(&mut sources, true);
         assert!(analysis.diags.is_empty(), "the IDE doesn't check: {:?}", analysis.diags.list);
     }
 }

@@ -1,0 +1,8 @@
+private fn secret() -> Int { 1 }
+
+struct Account {
+    name: String
+    private balance: Int = 0
+}
+
+fn helper() -> Float { geometry.total([]) } // error: `geometry` isn't imported in this file

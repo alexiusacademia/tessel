@@ -1,0 +1,20 @@
+fn pair() -> (Int, String) {
+    (1, 2) // error: expected `String`, found `Int`
+}
+
+fn main() {
+    let p = pair()
+    print(p.2) // error: `(Int, String)` has 2 items, so it has no `.2`
+    let (a, b, c) = p // error: has 2 items
+    print("{p}") // error: `(Int, String)` can't be shown as text directly
+    let x = (nil, 1) // error: can't tell the types of this tuple's items
+    let q: (Int, Int) = (1, 2, 3) // error: expected `(Int, Int)`, found `(Int, Int, Int)`
+    let s: Set<Int> = [1, 2]
+    print("{s}") // error: a set can't be shown as text directly
+    let e = Set() // error: can't tell what type this empty set is
+    let f: Set<[Int]> = [] // error: `[Int]` can't be the items of a set
+    let g: Set = [1] // error: `Set` needs the type of its items
+    s.insert(3) // error: can't call `insert` on `s`, which is a constant
+    let words = Set("abc") // error: a set is made from a list
+    s.union([4]) // error: the result of `union(…)` isn't used
+}

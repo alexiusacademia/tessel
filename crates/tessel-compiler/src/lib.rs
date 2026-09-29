@@ -9,6 +9,7 @@ pub mod codegen;
 pub mod diag;
 pub mod generics;
 pub mod lexer;
+pub mod modules;
 pub mod parser;
 pub mod source;
 pub mod types;
@@ -25,16 +26,18 @@ pub struct Analysis {
     pub diags: Diagnostics,
 }
 
-/// Parses every file in `sources` and type-checks them together as one
-/// program. `require_entry` reports an error if there is no `app` or `fn main()`.
-pub fn analyze(sources: &SourceMap, require_entry: bool) -> Analysis {
+/// Parses every file in `sources` (and the modules they import, which are
+/// added to it) and type-checks them together as one program.
+/// `require_entry` reports an error if there is no `app` or `fn main()`.
+pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     let mut diags = Diagnostics::default();
-    let mut program = ast::Program::default();
     let mut next_id = 0;
+    let mut root = Vec::new();
     for (id, file) in sources.files() {
-        let parsed = parser::parse_file(id, &file.text, &mut diags, &mut next_id);
-        program.items.extend(parsed.items);
+        root.push((id, parser::parse_file(id, &file.text, &mut diags, &mut next_id)));
     }
+    // (Adds the files of imported modules to `sources`.)
+    let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
     add_prelude(&mut program, &mut diags, &mut next_id);
     program.next_id = next_id;
@@ -109,7 +112,7 @@ pub fn complete(sources: &SourceMap, file: u32, offset: usize) -> Completion {
                 map.add(f.name.clone(), f.text.clone());
             }
         }
-        analyze(&map, false).checked.completion
+        analyze(&mut map, false).checked.completion
     };
     let marked = format!("{}{}{}", &text[..start], check::COMPLETION_MARK, &text[end..]);
     if let Some(items) = with(&marked) {

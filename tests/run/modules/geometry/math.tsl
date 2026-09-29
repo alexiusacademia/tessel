@@ -1,0 +1,22 @@
+fn square(_ x: Float) -> Float { x * x }
+
+public fn total(_ shapes: [Shape]) -> Float {
+    var sum = 0.0
+    for s in shapes {
+        sum += s.area()
+    }
+    sum
+}
+
+public struct Stack<T> {
+    items: [T] = []
+    fn push(_ x: T) { items.append(x) }
+    fn top() -> T? { items.last }
+}
+
+public struct Point {
+    x: Int
+    y: Int
+    private fn secretSum() -> Int { x + y }
+    fn sum() -> Int { secretSum() }
+}

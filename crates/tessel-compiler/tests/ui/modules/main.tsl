@@ -1,0 +1,11 @@
+import geometry
+import missing // error: can't find module `missing`
+
+fn main() {
+    print(geometry.square(2.0)) // error: `square` isn't public in module `geometry`
+    let c = Circle(radius: 1.0) // error: write `geometry.Circle`
+    print(secret()) // error: `secret` is private to other.tsl
+    print(Account(name: "a").balance) // error: field `balance` is private
+    let g = geometry.Circel(radius: 1.0) // error: did you mean `geometry.Circle`?
+    let m = geometry // error: `geometry` is a module
+}

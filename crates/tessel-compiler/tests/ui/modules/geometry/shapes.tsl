@@ -1,0 +1,4 @@
+public struct Circle { radius: Float }
+fn square(_ x: Float) -> Float { x * x }
+public fn usesProgram() -> Int { secret() } // error: `secret` belongs to the program
+public fn notImported() -> Float { textutil.pi } // error: cannot find `textutil`

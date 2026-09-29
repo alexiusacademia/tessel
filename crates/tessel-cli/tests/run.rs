@@ -17,13 +17,14 @@ fn run_programs() {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "tsl"))
+        // A program is a file, or a folder of files (with modules in it).
+        .filter(|p| p.extension().is_some_and(|e| e == "tsl") || p.join("main.tsl").is_file())
         .collect();
     paths.sort();
     assert!(!paths.is_empty());
     for path in paths {
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
-        let rel = format!("tests/run/{name}.tsl");
+        let rel = if path.is_dir() { format!("tests/run/{name}") } else { format!("tests/run/{name}.tsl") };
         let exe = std::env::temp_dir().join(format!("tessel-test-{name}-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
         let built = Command::new(env!("CARGO_BIN_EXE_tessel"))
             .args(["build", &rel, "-o"])

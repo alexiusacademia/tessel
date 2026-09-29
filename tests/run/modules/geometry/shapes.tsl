@@ -1,0 +1,20 @@
+public interface Shape {
+    fn area() -> Float
+}
+
+public struct Circle: Shape {
+    radius: Float
+    fn area() -> Float { pi * square(radius) }
+}
+
+public struct Rect: Shape {
+    width: Float
+    height: Float
+    fn area() -> Float { width * height }
+}
+
+public enum Kind { round, boxy }
+
+public fn kind(_ shape: Shape) -> Kind {
+    if shape is Circle { Kind.round } else { .boxy }
+}

@@ -20,12 +20,14 @@ pub struct Parser<'a> {
     /// Statements that follow the one just parsed (`let (a, b) = pair`
     /// becomes a `let` of the pair, then one for each name).
     extra: Vec<Stmt>,
+    public: std::collections::HashSet<Span>,
+    private: std::collections::HashSet<Span>,
 }
 
 /// Parses one file. `next_id` numbers expressions uniquely across files.
 pub fn parse_file(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut ExprId) -> Program {
     let toks = lex(file, text, 0, diags);
-    let mut p = Parser { toks, pos: 0, file, text, diags, next_id, no_trailing: false, extra: Vec::new() };
+    let mut p = Parser { toks, pos: 0, file, text, diags, next_id, no_trailing: false, extra: Vec::new(), public: Default::default(), private: Default::default() };
     p.program()
 }
 
@@ -172,11 +174,84 @@ impl<'a> Parser<'a> {
 
     // ----- declarations -----
 
+    /// `public` or `private` (words that are only keywords here), before a
+    /// declaration or a member.
+    fn visibility(&mut self) -> Option<(bool, Span)> {
+        let Tok::Ident(word) = self.peek() else { return None };
+        let public = match word.as_str() {
+            "public" => true,
+            "private" => false,
+            _ => return None,
+        };
+        if !matches!(self.peek_at(1), Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::Ident(_)) {
+            return None;
+        }
+        Some((public, self.bump().span))
+    }
+
+    fn mark(&mut self, vis: Option<(bool, Span)>, name: Span) {
+        match vis {
+            Some((true, _)) => {
+                self.public.insert(name);
+            }
+            Some((false, _)) => {
+                self.private.insert(name);
+            }
+            None => {}
+        }
+    }
+
+    /// `import geometry` or `import "../shared/geometry"`.
+    fn import(&mut self) -> PResult<Import> {
+        let lo = self.bump().span; // import
+        match self.peek().clone() {
+            Tok::Ident(name) => {
+                let span = self.bump().span;
+                Ok(Import { path: name, quoted: false, span: lo.to(span) })
+            }
+            Tok::Str(pieces) => {
+                let span = self.bump().span;
+                match pieces.as_slice() {
+                    [StrPiece::Text(t)] => Ok(Import { path: t.clone(), quoted: true, span: lo.to(span) }),
+                    _ => {
+                        self.error(span, "the folder of an `import` must be plain text")
+                            .help("write it like `import \"../shared/geometry\"`");
+                        Err(Reported)
+                    }
+                }
+            }
+            _ => {
+                let what = "a module name, like `import geometry`, or a folder, like `import \"../shared/geometry\"`";
+                Err(self.unexpected(what))
+            }
+        }
+    }
+
     fn program(&mut self) -> Program {
         let mut items = Vec::new();
+        let mut imports = Vec::new();
         loop {
             self.skip_newlines();
             let start = self.pos;
+            if matches!(self.peek(), Tok::Ident(w) if w == "import") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Str(_)) {
+                match self.import() {
+                    Ok(i) => {
+                        imports.push(i);
+                        if !matches!(self.peek(), Tok::Newline | Tok::Eof) {
+                            self.unexpected("end of line");
+                            self.recover_item();
+                        }
+                    }
+                    Err(Reported) => self.recover_item(),
+                }
+                continue;
+            }
+            let vis = self.visibility();
+            if let Some((_, span)) = vis
+                && matches!(self.peek(), Tok::App)
+            {
+                self.error(span, "an `app` can't be `public` or `private`");
+            }
             let item = match self.peek() {
                 Tok::Eof => break,
                 Tok::Struct => self.struct_decl().map(Item::Struct),
@@ -196,6 +271,7 @@ impl<'a> Parser<'a> {
             };
             match item {
                 Ok(item) => {
+                    self.mark(vis, item.name().span);
                     items.push(item);
                     if !matches!(self.peek(), Tok::Newline | Tok::Eof) {
                         self.unexpected("end of line");
@@ -210,7 +286,13 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        Program { items, next_id: 0 }
+        Program {
+            items,
+            next_id: 0,
+            imports,
+            public: std::mem::take(&mut self.public),
+            private: std::mem::take(&mut self.private),
+        }
     }
 
     fn struct_decl(&mut self) -> PResult<StructDecl> {
@@ -222,10 +304,14 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         self.members(|p| {
+            let vis = p.visibility();
             if p.at(&Tok::Fn) {
-                methods.push(p.fn_decl()?);
+                let m = p.fn_decl()?;
+                p.mark(vis, m.name.span);
+                methods.push(m);
             } else {
                 let name = p.ident("a field name")?;
+                p.mark(vis, name.span);
                 if !p.at(&Tok::Colon) {
                     let span = p.span();
                     p.error(span, format!("field `{}` needs a type", name.name))
@@ -251,9 +337,15 @@ impl<'a> Parser<'a> {
         let mut cases = Vec::new();
         let mut methods = Vec::new();
         self.members(|p| {
+            let vis = p.visibility();
             if p.at(&Tok::Fn) {
-                methods.push(p.fn_decl()?);
+                let m = p.fn_decl()?;
+                p.mark(vis, m.name.span);
+                methods.push(m);
             } else {
+                if let Some((_, span)) = vis {
+                    p.error(span, "enum cases can't be `public` or `private`").help("they're visible wherever the enum is");
+                }
                 let name = p.ident("a case name")?;
                 let fields = if p.at(&Tok::LParen) { p.params()? } else { Vec::new() };
                 cases.push(CaseDecl { name, fields });
@@ -271,7 +363,7 @@ impl<'a> Parser<'a> {
         }
         loop {
             let name = self.ident("a type parameter name, like `T`")?;
-            let constraint = if self.eat(&Tok::Colon) { Some(self.ident("an interface name")?) } else { None };
+            let constraint = if self.eat(&Tok::Colon) { Some(self.qualified_ident("an interface name")?) } else { None };
             out.push(GenericParam { name, constraint });
             if !self.eat(&Tok::Comma) {
                 break;
@@ -317,12 +409,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// A name, or a name in a module: `geometry.Shape`.
+    fn qualified_ident(&mut self, what: &str) -> PResult<Ident> {
+        let mut id = self.ident(what)?;
+        while self.at(&Tok::Dot) && matches!(self.peek_at(1), Tok::Ident(_)) {
+            self.bump();
+            let next = self.ident(what)?;
+            id = Ident { name: format!("{}.{}", id.name, next.name), span: id.span.to(next.span) };
+        }
+        Ok(id)
+    }
+
     /// `: Shape, Named` after a struct or enum name.
     fn conformances(&mut self) -> PResult<Vec<Ident>> {
         let mut out = Vec::new();
         if self.eat(&Tok::Colon) {
             loop {
-                out.push(self.ident("an interface name")?);
+                out.push(self.qualified_ident("an interface name")?);
                 if !self.eat(&Tok::Comma) {
                     break;
                 }
@@ -477,7 +580,7 @@ impl<'a> Parser<'a> {
         let lo = self.span();
         let mut ty = match self.peek() {
             Tok::Ident(_) => {
-                let name = self.ident("a type")?;
+                let name = self.qualified_ident("a type")?;
                 if self.at(&Tok::Lt) {
                     let args = self.type_args()?;
                     TypeExpr::Generic(name, args, lo.to(self.prev_span()))
@@ -1009,6 +1112,19 @@ impl<'a> Parser<'a> {
                     } else {
                         self.ident("a member name after `.`")?
                     };
+                    // `geometry.Stack<Int>(…)`: a generic type in a module.
+                    if let ExprKind::Name(module) = &e.kind
+                        && !optional
+                        && self.at(&Tok::Lt)
+                        && name.name.starts_with(char::is_uppercase)
+                        && self.type_args_ahead()
+                    {
+                        let full = format!("{module}.{}", name.name);
+                        let args = self.type_args()?;
+                        let span = e.span.to(self.prev_span());
+                        e = self.new_expr(ExprKind::GenericName(full, args), span);
+                        continue;
+                    }
                     let span = e.span.to(name.span);
                     e = self.new_expr(ExprKind::Member { object: Box::new(e), name, optional }, span);
                 }

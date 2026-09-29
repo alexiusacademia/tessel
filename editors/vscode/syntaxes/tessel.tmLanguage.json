@@ -63,7 +63,8 @@
     "keyword": {
       "patterns": [
         { "name": "keyword.control.tessel", "match": "\\b(if|else|for|while|in|match|return|try|break|continue)\\b" },
-        { "name": "storage.modifier.tessel", "match": "\\b(bind)\\b" },
+        { "name": "keyword.other.import.tessel", "match": "^\\s*import\\b" },
+        { "name": "storage.modifier.tessel", "match": "\\b(bind)\\b|^\\s*(public|private)\\b" },
         { "name": "storage.type.tessel", "match": "\\b(app|view|struct|enum|interface|fn|let|var|state)\\b" }
       ]
     },

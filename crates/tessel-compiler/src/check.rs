@@ -230,6 +230,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         fn_items: Vec::new(),
         template_copy: false,
         next_id: 0,
+        private: program.private.clone(),
+        public: program.public.clone(),
     };
     c.next_id = program.next_id;
     let ids = c.collect(&program.items, require_entry);
@@ -404,6 +406,10 @@ struct Checker<'a> {
     /// Set while a generic declaration is registered for checking on its own.
     template_copy: bool,
     next_id: ExprId,
+    /// Name spans of members marked `private` (usable only in their own file).
+    private: HashSet<Span>,
+    /// Name spans of declarations marked `public`.
+    public: HashSet<Span>,
 }
 
 impl Checker<'_> {
@@ -471,6 +477,16 @@ impl Checker<'_> {
         d.label(label);
         if let Some(h) = help {
             d.help(h);
+        }
+    }
+
+    /// A `private` member (declared at `decl`) used at `at`, in another file.
+    fn check_private_member(&mut self, what: &str, owner: &str, decl: Span, at: Span) {
+        let mask = crate::source::FILE_MASK;
+        if self.private.contains(&decl) && decl.file & mask != at.file & mask {
+            self.error(at, format!("{what} is private to the file that declares `{owner}`"))
+                .note_at(decl, "declared here")
+                .help("remove `private` from it to use it in other files");
         }
     }
 
@@ -1219,6 +1235,9 @@ impl Checker<'_> {
                         result = match expected {
                             Some(t) => {
                                 c.expect_or_discard(e, t);
+                                if *t == Ty::Void {
+                                    c.unused_result(e);
+                                }
                                 t.clone()
                             }
                             None => c.expr(e, None),
@@ -1695,6 +1714,8 @@ impl Checker<'_> {
                         }
                         Ty::list(t)
                     }
+                    // A type that's already wrong: no more errors.
+                    (None, None) if expected.is_some_and(Ty::has_error) => Ty::Error,
                     (None, None) => {
                         self.error(e.span, "can't tell what type this empty list is")
                             .help("give it a type, like `var names: [String] = []`");
@@ -1716,6 +1737,7 @@ impl Checker<'_> {
                 };
                 let (k, v) = match (kv, pairs.first()) {
                     (Some(kv), _) => kv,
+                    (None, None) if expected.is_some_and(Ty::has_error) => return Ty::Error,
                     (None, None) => {
                         self.error(e.span, "can't tell what type this empty dictionary is")
                             .help("give it a type, like `var ages: [String: Int] = [:]`");
@@ -1907,6 +1929,10 @@ impl Checker<'_> {
     fn name_expr(&mut self, n: &str, span: Span) -> Ty {
         if n == COMPLETION_MARK {
             self.complete_names();
+            return Ty::Error;
+        }
+        if let Some(module) = n.strip_suffix(COMPLETION_MARK).and_then(|m| m.strip_suffix('.')) {
+            self.complete_module(module);
             return Ty::Error;
         }
         if let Some(l) = self.lookup(n) {
@@ -2389,7 +2415,9 @@ impl Checker<'_> {
             Ty::Struct(id) => {
                 let def = &self.structs[*id];
                 if let Some(f) = def.fields.iter().find(|f| f.name == n) {
-                    f.ty.clone()
+                    let (t, decl, owner) = (f.ty.clone(), f.span, def.name.clone());
+                    self.check_private_member(&format!("field `{n}`"), &owner, decl, name.span);
+                    t
                 } else if def.methods.iter().any(|m| m.name == n) {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}()`"));
                     Ty::Error
@@ -2558,6 +2586,11 @@ impl Checker<'_> {
             self.complete_names();
             return Ty::Error;
         }
+        if let Some(module) = n.strip_suffix(COMPLETION_MARK).and_then(|m| m.strip_suffix('.')) {
+            self.args_unchecked(args, trailing);
+            self.complete_module(module);
+            return Ty::Error;
+        }
         if self.lookup(n).is_none() {
             match self.globals.get(n).copied() {
                 Some(Global::GenericFn(t) | Global::GenericStruct(t)) => {
@@ -2618,6 +2651,14 @@ impl Checker<'_> {
                 // The prelude's `Error("reason")` needs no label.
                 if Some(id) == self.prelude_error() && args.first().is_some_and(|a| a.label.is_none()) {
                     params[0].unlabeled = true;
+                }
+                for a in args {
+                    let Some(l) = &a.label else { continue };
+                    let field = self.structs[id].fields.iter().find(|f| f.name == l.name).map(|f| f.span);
+                    if let Some(decl) = field {
+                        let owner = self.structs[id].name.clone();
+                        self.check_private_member(&format!("field `{}`", l.name), &owner, decl, l.span);
+                    }
                 }
                 self.args(&what, &params, args, trailing, span);
                 Ty::Struct(id)
@@ -3035,6 +3076,7 @@ impl Checker<'_> {
                 };
                 match methods.iter().find(|m| m.name == n) {
                     Some(m) => {
+                        self.check_private_member(&format!("method `{n}`"), &owner, m.span, name.span);
                         self.set_callee(Callee::Method { owner: recv.clone(), name: n.to_string() });
                         if m.mutating && !optional {
                             self.mutating_receiver(object, n);
@@ -4025,7 +4067,8 @@ impl Checker<'_> {
         globals.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, g) in globals {
             // Not tuple structs or specialized copies, which can't be written by name.
-            if name.starts_with('(') || name.contains('<') || !seen.insert(name.clone()) {
+            // (Nor other modules' declarations, which are written `module.name`.)
+            if name.starts_with('(') || name.contains(['<', '.']) || !seen.insert(name.clone()) {
                 continue;
             }
             let (detail, kind) = match g {
@@ -4066,6 +4109,37 @@ impl Checker<'_> {
     }
 
     /// `object.` — the members of its type, or the cases of an enum.
+    /// The public declarations of a module, after `geometry.`.
+    fn complete_module(&mut self, module: &str) {
+        use SuggestionKind as K;
+        let prefix = format!("{module}.");
+        let mut found: Vec<(String, Global)> = self
+            .globals
+            .iter()
+            .filter(|(n, _)| n.starts_with(&prefix) && !n.contains('<'))
+            .filter(|(n, _)| self.user_spans.get(*n).is_some_and(|s| self.public.contains(s)))
+            .map(|(n, g)| (n.clone(), *g))
+            .collect();
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        let items = found
+            .into_iter()
+            .map(|(n, g)| {
+                let label = &n[prefix.len()..];
+                let (detail, kind) = match g {
+                    Global::Fn(i) => (self.sig_text(&self.fns[i].params, &self.fns[i].ret), K::Function),
+                    Global::View(i) => (format!("view {}", self.sig_text(&self.views[i], &Ty::Void)), K::View),
+                    Global::Struct(_) | Global::GenericStruct(_) => ("struct".to_string(), K::Type),
+                    Global::Enum(_) | Global::GenericEnum(_) => ("enum".to_string(), K::Type),
+                    Global::Iface(_) => ("interface".to_string(), K::Type),
+                    Global::GenericFn(_) => ("generic function".to_string(), K::Function),
+                    Global::App => (String::new(), K::Type),
+                };
+                Self::item(label, detail, kind)
+            })
+            .collect();
+        self.suggest(items);
+    }
+
     fn complete_member(&mut self, object: &Expr) {
         if let ExprKind::Name(tn) = &object.kind
             && self.lookup(tn).is_none()

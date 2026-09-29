@@ -19,7 +19,7 @@ use lsp_types::{
     Uri,
 };
 use tessel_compiler::diag::Diagnostic as TslDiagnostic;
-use tessel_compiler::source::{SourceMap, Span};
+use tessel_compiler::source::{SourceMap, Span, FILE_MASK, PRELUDE_FILE};
 
 pub fn run() -> Result<(), String> {
     let (conn, io) = Connection::stdio();
@@ -97,8 +97,8 @@ impl Server {
     fn hover(&self, p: &lsp_types::HoverParams) -> Option<lsp_types::Hover> {
         let pos = &p.text_document_position_params;
         let path = uri_to_path(&pos.text_document.uri)?;
-        let (sources, files) = self.program(&path);
-        let analysis = tessel_compiler::analyze(&sources, false);
+        let (mut sources, files) = self.program(&path);
+        let analysis = tessel_compiler::analyze(&mut sources, false);
         let file = files.iter().position(|f| *f == path)? as u32;
         let offset = offset_of(&sources, file, pos.position)?;
         // The innermost expression with a meaningful type (a method name or a
@@ -148,14 +148,18 @@ impl Server {
     /// Checks the program `file` belongs to and publishes diagnostics for each of its files.
     fn check_folder(&mut self, conn: &Connection, file: &Path) {
         let folder = file.parent().map(Path::to_path_buf).unwrap_or_default();
-        let (sources, files) = self.program(file);
+        let (mut sources, files) = self.program(file);
         // Don't insist on an `app` or `main`: a file may be part of a larger program.
-        let analysis = tessel_compiler::analyze(&sources, false);
+        let analysis = tessel_compiler::analyze(&mut sources, false);
 
         let mut by_file: BTreeMap<PathBuf, Vec<Diagnostic>> = files.iter().map(|f| (f.clone(), Vec::new())).collect();
         for d in &analysis.diags.list {
-            let path = files[d.span().file as usize].clone();
-            by_file.entry(path).or_default().push(to_lsp(d, &sources, &files));
+            // (Errors in the prelude aren't shown in any file.)
+            if d.span().file & FILE_MASK == PRELUDE_FILE {
+                continue;
+            }
+            let path = PathBuf::from(&sources.file(d.span().file).name);
+            by_file.entry(path).or_default().push(to_lsp(d, &sources));
         }
         // Clear files that had errors before but aren't in the program any more.
         let previous = self.published.insert(folder, by_file.keys().cloned().collect()).unwrap_or_default();
@@ -175,7 +179,7 @@ fn is_tsl(p: &Path) -> bool {
     p.extension().is_some_and(|e| e == "tsl")
 }
 
-fn to_lsp(d: &TslDiagnostic, sources: &SourceMap, files: &[PathBuf]) -> Diagnostic {
+fn to_lsp(d: &TslDiagnostic, sources: &SourceMap) -> Diagnostic {
     let mut message = d.message.clone();
     if !d.primary.text.is_empty() {
         message += &format!(" ({})", d.primary.text);
@@ -187,7 +191,7 @@ fn to_lsp(d: &TslDiagnostic, sources: &SourceMap, files: &[PathBuf]) -> Diagnost
         .secondary
         .iter()
         .filter_map(|l| {
-            let uri = path_to_uri(&files[l.span.file as usize])?;
+            let uri = path_to_uri(Path::new(&sources.file(l.span.file).name))?;
             Some(DiagnosticRelatedInformation {
                 location: Location { uri, range: range(sources, l.span) },
                 message: l.text.clone(),

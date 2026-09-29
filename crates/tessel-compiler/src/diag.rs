@@ -38,6 +38,12 @@ impl Diagnostic {
         self
     }
 
+    /// `help`, for a diagnostic being built by value.
+    pub fn with_help(mut self, text: impl Into<String>) -> Diagnostic {
+        self.help(text);
+        self
+    }
+
     pub fn help(&mut self, text: impl Into<String>) -> &mut Diagnostic {
         self.help = Some(text.into());
         self

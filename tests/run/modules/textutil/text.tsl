@@ -1,0 +1,1 @@
+public fn shout(_ s: String) -> String { s.uppercase() + "!" }
