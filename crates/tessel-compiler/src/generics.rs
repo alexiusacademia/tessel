@@ -200,7 +200,7 @@ impl Copier<'_> {
                     self.expr(v);
                 }
             }
-            ExprKind::Unary(_, x) => self.expr(x),
+            ExprKind::Unary(_, x) | ExprKind::Try(x) => self.expr(x),
             ExprKind::Cast { value, ty, .. } => {
                 self.expr(value);
                 self.ty(ty);

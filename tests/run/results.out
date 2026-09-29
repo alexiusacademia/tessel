@@ -1,0 +1,11 @@
+loaded Ada at volume 5
+couldn't load: volume 11 is too loud
+couldn't load: the JSON doesn't have the shape of this type
+couldn't load: this isn't valid JSON: EOF while parsing an object at line 1 column 7
+couldn't load: can't read missing.json: there's no such file or folder
+12
+"two" isn't a whole number
+saved
+can't write no/such/folder/n.txt: there's no such file or folder
+true
+13

@@ -1,0 +1,57 @@
+// Errors with reasons: Result<T>, Error, try, and the prelude's functions that
+// say why they failed. (Writes a few small files in the current folder.)
+
+struct Settings {
+    name: String
+    volume: Int = 5
+}
+
+fn loadSettings(path: String) -> Result<Settings> {
+    let text = try readText(path)
+    let settings: Settings = try decodeJson(text)
+    if settings.volume > 10 {
+        return Result.failure(error: Error("volume {settings.volume} is too loud"))
+    }
+    Result.ok(value: settings)
+}
+
+fn total(texts: [String]) -> Result<Int> {
+    var sum = 0
+    for t in texts {
+        sum += try parseInt(t) * 2
+    }
+    Result.ok(value: sum)
+}
+
+fn save(path: String, n: Int) -> Error? {
+    try writeText(path: path, text: "{n}")
+    try appendText(path: path, text: "\n")
+    nil
+}
+
+fn describe(_ r: Result<Settings>) -> String {
+    match r {
+        .ok(s) -> "loaded {s.name} at volume {s.volume}"
+        .failure(e) -> "couldn't load: {e.message}"
+    }
+}
+
+fn main() {
+    writeFile(path: "good.json", text: "\{\"name\": \"Ada\"}")
+    writeFile(path: "loud.json", text: "\{\"name\": \"Max\", \"volume\": 11}")
+    writeFile(path: "bad.json", text: "\{\"name\": 3}")
+    writeFile(path: "broken.json", text: "\{\"name\"")
+    for p in ["good.json", "loud.json", "bad.json", "broken.json", "missing.json"] {
+        print(describe(loadSettings(path: p)))
+    }
+    print(total(texts: ["1", "2", "3"]).valueOr(-1))
+    print(total(texts: ["1", "two"]).error()?.message ?? "")
+    print(save(path: "n.txt", n: 7)?.message ?? "saved")
+    print(save(path: "no/such/folder/n.txt", n: 7)?.message ?? "saved")
+    print(parseFloat("2.5").isOk())
+    let n = try parseInt("12")
+    print(n + 1)
+    for f in ["good.json", "loud.json", "bad.json", "broken.json", "n.txt"] {
+        deleteFile(f)
+    }
+}

@@ -33,7 +33,7 @@ use inkwell::{AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel};
 
 use crate::ast::*;
 use crate::builtins;
-use crate::check::{ArgRef, CallInfo, Callee, Checked};
+use crate::check::{ArgRef, CallInfo, Callee, Checked, TryTarget};
 use crate::diag::Diagnostic;
 use crate::source::{SourceMap, Span};
 use crate::types::{FnSig, Ty};
@@ -2072,6 +2072,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let t = self.ty(e);
         match &e.kind {
             ExprKind::GenericName(..) => unreachable!("checked: a generic type isn't a value"),
+            ExprKind::Try(inner) => self.try_expr(e, inner),
             ExprKind::Int(n) => Some(if t == Ty::Float {
                 self.ctx.f64_type().const_float(*n as f64).into()
             } else {
@@ -4012,6 +4013,117 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// Returns `v` from the current function, releasing what's held and
+    /// every variable in scope, as `return` does.
+    fn early_return(&mut self, v: Option<Val<'ctx>>) {
+        self.release_held(0);
+        self.release_all_scopes();
+        match v {
+            Some(v) => self.b.build_return(Some(&v)).unwrap(),
+            None => self.b.build_return(None).unwrap(),
+        };
+        self.continue_dead();
+    }
+
+    fn case_index(&self, id: usize, name: &str) -> usize {
+        self.checked.enums[id].cases.iter().position(|c| c.name == name).expect("Result has this case")
+    }
+
+    /// `try x`: the value of a `Result` (none for an `Error?`), or the failure
+    /// goes where the checker says (returned, or `fn main` exits with 1).
+    fn try_expr(&mut self, e: &Expr, inner: &Expr) -> Option<Val<'ctx>> {
+        let it = self.ty(inner);
+        let v = self.expr(inner).unwrap();
+        let s = v.into_struct_value();
+        let (fail_bb, ok_bb) = (self.block_named("failed"), self.block_named("ok"));
+        // Whether it failed, and (in the failed block) the `Error`, owned.
+        let result_id = match it {
+            Ty::Enum(id) => Some(id),
+            _ => None,
+        };
+        let failed = match result_id {
+            Some(id) => {
+                let tag = self.b.build_extract_value(s, 0, "").unwrap().into_int_value();
+                let f = self.ctx.i32_type().const_int(self.case_index(id, "failure") as u64, false);
+                self.b.build_int_compare(IntPredicate::EQ, tag, f, "failed").unwrap()
+            }
+            None => self.b.build_extract_value(s, 0, "").unwrap().into_int_value(),
+        };
+        self.b.build_conditional_branch(failed, fail_bb, ok_bb).unwrap();
+
+        self.b.position_at_end(fail_bb);
+        let err_ty = match &it {
+            Ty::Opt(inner) => (**inner).clone(),
+            _ => {
+                let id = result_id.unwrap();
+                self.checked.enums[id].cases[self.case_index(id, "failure")].fields[0].ty.clone()
+            }
+        };
+        let err = match result_id {
+            Some(id) => {
+                let pt = self.payload_ty(id, self.case_index(id, "failure"));
+                let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+                let data = self.box_data(bx);
+                let fp = self.b.build_struct_gep(pt, data, 0, "").unwrap();
+                let err = self.load(&err_ty, fp);
+                self.retain(err, &err_ty);
+                self.release(v, &it);
+                err
+            }
+            // The `Error?`'s value moves out.
+            None => self.b.build_extract_value(s, 1, "").unwrap(),
+        };
+        match self.checked.tries.get(&e.id).cloned().expect("checked: a try has a target") {
+            TryTarget::Result(rt) => {
+                let Ty::Enum(rid) = rt else { unreachable!() };
+                let case = self.case_index(rid, "failure");
+                let pt = self.payload_ty(rid, case);
+                let info = self.payload_info(rid, case);
+                let bx = self.call_rt("tsl_box_new", &[info.into()]).unwrap().into_pointer_value();
+                let data = self.box_data(bx);
+                let fp = self.b.build_struct_gep(pt, data, 0, "").unwrap();
+                self.b.build_store(fp, err).unwrap();
+                let st = self.llty(&rt).unwrap().into_struct_type();
+                let tag = self.ctx.i32_type().const_int(case as u64, false);
+                let r = self.b.build_insert_value(st.get_undef(), tag, 0, "").unwrap();
+                let r = self.b.build_insert_value(r, bx, 1, "").unwrap().into_struct_value();
+                self.early_return(Some(r.into()));
+            }
+            TryTarget::ErrorOpt(rt) => {
+                let some = self.some(&rt, err);
+                self.early_return(Some(some));
+            }
+            TryTarget::Exit => {
+                // `error: <message>` on stderr, and exit status 1.
+                let msg = self.b.build_extract_value(err.into_struct_value(), 0, "").unwrap();
+                let p = self.ptr_ty();
+                let print = self.declare_rt("tsl_print_to", &[self.i8().into(), p.into(), p.into()], None);
+                let (prefix, empty, newline) = (self.str_lit("error: "), self.str_lit(""), self.str_lit("\n"));
+                let one = self.i8().const_int(1, false);
+                self.b.build_call(print, &[one.into(), prefix.into(), empty.into()], "").unwrap();
+                self.b.build_call(print, &[one.into(), msg.into(), newline.into()], "").unwrap();
+                self.call_rt_generic("tsl_exit", &[(self.i64().const_int(1, false).into(), Ty::Int)], &Ty::Void);
+                self.b.build_unreachable().unwrap();
+                self.continue_dead();
+            }
+        }
+
+        // (Nothing follows the failure path: close the block `return` left.)
+        self.b.build_unreachable().unwrap();
+        self.b.position_at_end(ok_bb);
+        let id = result_id?;
+        let ok = self.case_index(id, "ok");
+        let vt = self.checked.enums[id].cases[ok].fields[0].ty.clone();
+        let pt = self.payload_ty(id, ok);
+        let bx = self.b.build_extract_value(s, 1, "").unwrap().into_pointer_value();
+        let data = self.box_data(bx);
+        let fp = self.b.build_struct_gep(pt, data, 0, "").unwrap();
+        let value = self.load(&vt, fp);
+        self.retain(value, &vt);
+        self.release(v, &it);
+        Some(value)
+    }
+
     /// The method table of `ty` for interface `iface`: its methods, in the
     /// order the interface lists them.
     fn vtable(&mut self, ty: &Ty, iface: usize) -> PointerValue<'ctx> {
@@ -5029,7 +5141,7 @@ fn for_each_child<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 f(v);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => f(x),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => f(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             f(l);
             f(r);

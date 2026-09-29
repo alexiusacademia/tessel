@@ -1,0 +1,26 @@
+fn noResult(text: String) -> Int {
+    try parseInt(text) // error: this function doesn't return a `Result`
+}
+
+fn onOptional(text: String) -> Result<Int> {
+    let n = try Int(text) // error: `try` works on a `Result` or an `Error?`
+    Result.ok(value: n)
+}
+
+fn inBlock(texts: [String]) -> Result<Int> {
+    let f: fn(String) = { t in
+        let n = try parseInt(t) // error: this function doesn't return a `Result`
+    }
+    Result.ok(value: 1)
+}
+
+fn fine(text: String) -> Result<Int> {
+    let n = try parseInt(text)
+    let e = Error("no")
+    let labeled = Error(message: "also fine")
+    Result.ok(value: n + e.message.count + labeled.message.count)
+}
+
+fn main() {
+    print(fine(text: "1").valueOr(0))
+}

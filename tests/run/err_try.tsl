@@ -1,0 +1,8 @@
+// `try` in fn main: a failure is reported, and the program exits with status 1.
+
+fn main() {
+    let n = try parseInt("12")
+    print(n + 1)
+    let m = try parseInt("oops")
+    print("not reached {m}")
+}

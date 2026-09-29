@@ -1,0 +1,14 @@
+// A program with its own Result has no prelude: `try` explains why it can't be used.
+
+enum Result<T> {
+    ok(value: T)
+    failure(message: String)
+}
+
+fn parse(text: String) -> Result<Int> {
+    Result.failure(message: "no")
+}
+
+fn main() {
+    let n = try parse(text: "1") // error: this program declares its own
+}

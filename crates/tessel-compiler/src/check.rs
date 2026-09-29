@@ -31,6 +31,8 @@ pub struct Checked {
     pub ifaces: Vec<IfaceDef>,
     /// The type each `is` / `as?` checks for.
     pub cast_targets: HashMap<ExprId, Ty>,
+    /// Where each `try` sends a failure.
+    pub tries: HashMap<ExprId, TryTarget>,
     /// Which struct or enum conforms to which interface.
     pub conforms: Vec<(Ty, usize)>,
     /// What fits where the completion mark is (see `complete`), if the
@@ -44,6 +46,16 @@ pub struct Checked {
 /// The identifier `tessel complete` puts where the caret is, so the checker
 /// can say what fits there.
 pub const COMPLETION_MARK: &str = "__tessel_complete__";
+
+/// Where a failure goes from `try`: returned (as the enclosing function's
+/// `Result` type, or as its `Error?`), or, in `fn main`, reported with an
+/// exit status of 1.
+#[derive(Clone, Debug)]
+pub enum TryTarget {
+    Result(Ty),
+    ErrorOpt(Ty),
+    Exit,
+}
 
 /// A completion suggestion.
 #[derive(Clone, Debug, PartialEq)]
@@ -84,7 +96,7 @@ impl SuggestionKind {
 }
 
 const KEYWORDS: &[&str] = &[
-    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "while", "break", "continue", "fn", "struct", "enum", "interface", "view",
+    "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "try", "while", "break", "continue", "fn", "struct", "enum", "interface", "view",
     "app", "true", "false", "nil",
 ];
 
@@ -206,6 +218,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         loops: 0,
         outer_loops: 0,
         view_lets: HashSet::new(),
+        in_main: false,
+        tries: HashMap::new(),
         templates: Vec::new(),
         type_params: Vec::new(),
         specialized: HashMap::new(),
@@ -247,6 +261,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         conforms: c.conforms.iter().map(|(t, i, _)| (t.clone(), *i)).collect(),
         ifaces: c.ifaces,
         cast_targets: c.cast_targets,
+        tries: c.tries,
         completion: c.completion,
         instances: c.instances,
     }
@@ -372,6 +387,9 @@ struct Checker<'a> {
     outer_loops: usize,
     /// `let`s declared in view bodies (changing one needs `state`, not `var`).
     view_lets: HashSet<Span>,
+    /// Checking `fn main`'s own body (where `try` exits on a failure).
+    in_main: bool,
+    tries: HashMap<ExprId, TryTarget>,
     templates: Vec<Template>,
     type_params: Vec<TypeParam>,
     /// Specialized copies made so far, by template and type arguments.
@@ -1067,7 +1085,9 @@ impl Checker<'_> {
                 }
                 Item::Fn(f) => {
                     let sig = self.fns[id.unwrap()].clone();
+                    self.in_main = f.name.name == "main";
                     self.fn_body(f, &sig);
+                    self.in_main = false;
                 }
                 Item::View(v) => {
                     let sig = self.views[id.unwrap()].clone();
@@ -1721,6 +1741,7 @@ impl Checker<'_> {
                 }
                 Ty::Dict(Box::new(k), Box::new(v))
             }
+            ExprKind::Try(inner) => self.try_expr(e, inner, expected),
             ExprKind::Cast { value, ty, test } => {
                 let vt = self.expr(value, None);
                 let target = self.resolve(ty);
@@ -2256,6 +2277,7 @@ impl Checker<'_> {
             }
         }
         let loops = std::mem::take(&mut self.loops);
+        let in_main = std::mem::take(&mut self.in_main);
         self.outer_loops += loops;
         let t = self.with_scope(|c| {
             for (i, p) in params.iter().enumerate() {
@@ -2278,6 +2300,7 @@ impl Checker<'_> {
         });
         self.outer_loops -= loops;
         self.loops = loops;
+        self.in_main = in_main;
         t
     }
 
@@ -2551,11 +2574,15 @@ impl Checker<'_> {
             }
             Some(Global::Struct(id)) => {
                 self.set_callee(Callee::StructInit(id));
-                let params: Vec<ParamSig> = self.structs[id]
+                let mut params: Vec<ParamSig> = self.structs[id]
                     .fields
                     .iter()
                     .map(|f| ParamSig { has_default: f.has_default, ..ParamSig::new(&f.name, f.ty.clone()) })
                     .collect();
+                // The prelude's `Error("reason")` needs no label.
+                if Some(id) == self.prelude_error() && args.first().is_some_and(|a| a.label.is_none()) {
+                    params[0].unlabeled = true;
+                }
                 self.args(&what, &params, args, trailing, span);
                 Ty::Struct(id)
             }
@@ -3718,6 +3745,80 @@ impl Checker<'_> {
         Some((c.fields.clone(), Ty::Enum(id)))
     }
 
+    /// The prelude's `Error` struct, if the program uses it.
+    fn prelude_error(&self) -> Option<usize> {
+        match self.globals.get("Error") {
+            Some(Global::Struct(id)) if self.structs[*id].span.file == crate::source::PRELUDE_FILE => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// The prelude's `Result` template, if the program uses it.
+    fn prelude_result(&self) -> Option<usize> {
+        match self.globals.get("Result") {
+            Some(Global::GenericEnum(t)) if self.templates[*t].item.name().span.file == crate::source::PRELUDE_FILE => Some(*t),
+            _ => None,
+        }
+    }
+
+    /// Is `t` a `Result<…>` (of the prelude)? Its value type if so.
+    fn result_value(&self, t: &Ty) -> Option<Ty> {
+        let tpl = self.prelude_result()?;
+        let (t2, args) = self.instance_of.get(&self.show(t))?;
+        (*t2 == tpl).then(|| args[0].clone())
+    }
+
+    /// `try x`: `x` is a `Result<T>` (giving a `T`) or an `Error?` (giving
+    /// nothing); a failure is returned from the enclosing function, which
+    /// must return a `Result` or `Error?` (or is `fn main`, which exits).
+    fn try_expr(&mut self, e: &Expr, inner: &Expr, expected: Option<&Ty>) -> Ty {
+        let (Some(tpl), Some(err_id)) = (self.prelude_result(), self.prelude_error()) else {
+            self.expr(inner, None);
+            self.error(e.span, "`try` works with the built-in `Result` and `Error`, but this program declares its own")
+                .help("rename your own `Result` or `Error` to use `try`");
+            return Ty::Error;
+        };
+        let err_opt = Ty::opt(Ty::Struct(err_id));
+        // `let n: Int = try parseInt(s)`: the call is expected to give a `Result<Int>`.
+        let want = match expected {
+            Some(t) if !t.has_error() && *t != Ty::Void && *t != Ty::Any => {
+                self.specialize(tpl, vec![t.clone()], inner.span).and_then(|n| match self.globals.get(&n) {
+                    Some(Global::Enum(i)) => Some(Ty::Enum(*i)),
+                    _ => None,
+                })
+            }
+            _ => None,
+        };
+        let it = self.expr(inner, want.as_ref());
+        let result = if it.has_error() {
+            Ty::Error
+        } else if let Some(v) = self.result_value(&it) {
+            v
+        } else if it == err_opt {
+            Ty::Void
+        } else {
+            let what = self.a(&it);
+            self.error(inner.span, format!("`try` works on a `Result` or an `Error?`, and this is {what}"))
+                .help("for an optional, use `if let` or `??` instead");
+            return Ty::Error;
+        };
+        let target = match self.returns.last() {
+            _ if self.in_main && self.returns.len() == 1 => Some(TryTarget::Exit),
+            Some(r) if self.result_value(r).is_some() => Some(TryTarget::Result(r.clone())),
+            Some(r) if *r == err_opt => Some(TryTarget::ErrorOpt(r.clone())),
+            Some(r) if r.has_error() => None,
+            _ => {
+                self.error(e.span, "`try` passes a failure on, but this function doesn't return a `Result`")
+                    .help("make it return one, like `-> Result<Int>`, or handle the failure here with `match`, `valueOr(…)` or `if let x = r.value()`");
+                None
+            }
+        };
+        if let Some(target) = target {
+            self.tries.insert(e.id, target);
+        }
+        result
+    }
+
     /// Checks the arguments of a call that failed before they were matched
     /// to parameters, so errors inside them are still found.
     fn args_unchecked(&mut self, args: &[Arg], trailing: Option<&Expr>) {
@@ -3823,7 +3924,7 @@ impl Checker<'_> {
                 items.push(Self::item(n, detail, K::View));
             }
         }
-        for n in builtins::FUNCTION_NAMES {
+        for n in builtins::FUNCTION_NAMES.iter().filter(|n| !n.starts_with("__")) {
             if seen.insert(n.to_string()) {
                 let detail = self.builtins.function(n).map(|s| self.sig_text(&s.params, &s.ret)).unwrap_or_default();
                 items.push(Self::item(n, detail, K::Function));
@@ -4074,7 +4175,7 @@ fn expr_mutates(e: &Expr, roots: &HashSet<String>) -> bool {
         ExprKind::Str(parts) => parts.iter().any(|p| matches!(p, StrPart::Expr(x) if m(x))),
         ExprKind::List(items) => items.iter().any(m),
         ExprKind::Dict(pairs) => pairs.iter().any(|(k, v)| m(k) || m(v)),
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => m(x),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => m(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => m(l) || m(r),
         ExprKind::Member { object, .. } => m(object),
         ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_mutates(body, roots),

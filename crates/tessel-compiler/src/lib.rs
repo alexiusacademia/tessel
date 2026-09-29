@@ -35,10 +35,23 @@ pub fn analyze(sources: &SourceMap, require_entry: bool) -> Analysis {
         let parsed = parser::parse_file(id, &file.text, &mut diags, &mut next_id);
         program.items.extend(parsed.items);
     }
+    add_prelude(&mut program, &mut diags, &mut next_id);
     program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
     diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
     Analysis { program, checked, diags }
+}
+
+/// Adds the prelude's declarations (see `prelude.tsl`) that the program
+/// doesn't declare itself. A program with its own `Error` or `Result` gets
+/// none of them, since they all use those two.
+fn add_prelude(program: &mut ast::Program, diags: &mut Diagnostics, next_id: &mut ast::ExprId) {
+    let own: std::collections::HashSet<String> = program.items.iter().map(|i| i.name().name.clone()).collect();
+    if own.contains("Error") || own.contains("Result") {
+        return;
+    }
+    let prelude = parser::parse_file(source::PRELUDE_FILE, source::PRELUDE, diags, next_id);
+    program.items.extend(prelude.items.into_iter().filter(|i| !own.contains(&i.name().name)));
 }
 
 /// Completion suggestions for the caret at byte `offset` in file `file`.

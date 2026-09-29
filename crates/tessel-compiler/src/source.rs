@@ -64,6 +64,18 @@ impl SourceFile {
 /// The bits of `Span::file` that say which file it is.
 pub const FILE_MASK: u32 = 0xFFFF;
 
+/// The file number of the prelude (`prelude.tsl`), which every program
+/// includes; it isn't one of a `SourceMap`'s own files.
+pub const PRELUDE_FILE: u32 = FILE_MASK;
+
+/// The declarations every program has (`Error`, `Result`, `readText`, …).
+pub const PRELUDE: &str = include_str!("prelude.tsl");
+
+fn prelude_file() -> &'static SourceFile {
+    static FILE: std::sync::OnceLock<SourceFile> = std::sync::OnceLock::new();
+    FILE.get_or_init(|| SourceFile::new("prelude.tsl".into(), PRELUDE.into()))
+}
+
 /// All source files of one program.
 #[derive(Default)]
 pub struct SourceMap {
@@ -84,7 +96,10 @@ impl SourceMap {
     /// generic code carry a copy number in the high bits, so their spans
     /// differ from the original's; see `generics`.)
     pub fn file(&self, id: u32) -> &SourceFile {
-        &self.files[(id & FILE_MASK) as usize]
+        match id & FILE_MASK {
+            PRELUDE_FILE => prelude_file(),
+            i => &self.files[i as usize],
+        }
     }
 
     pub fn files(&self) -> impl Iterator<Item = (u32, &SourceFile)> {

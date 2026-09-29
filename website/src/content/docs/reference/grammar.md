@@ -55,7 +55,7 @@ an identifier (see below).
 ```text
 app  view  struct  enum  interface  fn
 let  var  state  bind
-if  else  for  while  in  match  return  break  continue
+if  else  for  while  in  match  return  try  break  continue
 true  false  nil
 ```
 

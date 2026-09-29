@@ -1,0 +1,129 @@
+// The prelude: declarations every Tessel program has. A program can declare
+// its own `Error` or `Result` instead (then none of this is included), or
+// its own function with one of these names (then that one isn't).
+
+/// Why something failed.
+struct Error {
+    message: String
+}
+
+/// A value, or the reason there isn't one. `try` gives the value, or passes
+/// the failure on.
+enum Result<T> {
+    ok(value: T)
+    failure(error: Error)
+
+    /// The value, or nil if it failed.
+    fn value() -> T? {
+        match self {
+            .ok(v) -> v
+            .failure(_) -> nil
+        }
+    }
+
+    /// Why it failed, or nil if it worked.
+    fn error() -> Error? {
+        match self {
+            .ok(_) -> nil
+            .failure(e) -> e
+        }
+    }
+
+    fn isOk() -> Bool {
+        match self {
+            .ok(_) -> true
+            .failure(_) -> false
+        }
+    }
+
+    /// The value, or `fallback` if it failed.
+    fn valueOr(_ fallback: T) -> T {
+        match self {
+            .ok(v) -> v
+            .failure(_) -> fallback
+        }
+    }
+}
+
+/// The text of a file, or why it couldn't be read.
+fn readText(_ path: String) -> Result<String> {
+    __clearError()
+    if let text = readFile(path) {
+        return Result.ok(value: text)
+    }
+    Result.failure(error: Error(message: __lastError()))
+}
+
+/// Writes text to a file (replacing it): nil if it worked, else why not.
+fn writeText(path: String, text: String) -> Error? {
+    __clearError()
+    if writeFile(path: path, text: text) {
+        return nil
+    }
+    Error(message: __lastError())
+}
+
+/// Adds text to the end of a file (creating it): nil if it worked, else why not.
+fn appendText(path: String, text: String) -> Error? {
+    __clearError()
+    if appendFile(path: path, text: text) {
+        return nil
+    }
+    Error(message: __lastError())
+}
+
+/// The bytes of a file, or why it couldn't be read.
+fn readBytes(_ path: String) -> Result<Data> {
+    __clearError()
+    if let data = readData(path) {
+        return Result.ok(value: data)
+    }
+    Result.failure(error: Error(message: __lastError()))
+}
+
+/// Writes bytes to a file: nil if it worked, else why not.
+fn writeBytes(path: String, data: Data) -> Error? {
+    __clearError()
+    if writeData(path: path, data: data) {
+        return nil
+    }
+    Error(message: __lastError())
+}
+
+/// A whole number from text, or why it isn't one.
+fn parseInt(_ text: String) -> Result<Int> {
+    if let n = Int(text.trim()) {
+        return Result.ok(value: n)
+    }
+    Result.failure(error: Error(message: "\"{text}\" isn't a whole number"))
+}
+
+/// A number from text, or why it isn't one.
+fn parseFloat(_ text: String) -> Result<Float> {
+    if let x = Float(text.trim()) {
+        return Result.ok(value: x)
+    }
+    Result.failure(error: Error(message: "\"{text}\" isn't a number"))
+}
+
+/// A value read from JSON, or why it couldn't be.
+fn decodeJson<T>(_ text: String) -> Result<T> {
+    __clearError()
+    let decoded: T? = fromJson(text)
+    if let value = decoded {
+        return Result.ok(value: value)
+    }
+    let why = __lastError()
+    Result.failure(error: Error(message: if why == "" { "the JSON doesn't have the shape of this type" } else { why }))
+}
+
+/// A value read from binary data (made by `toBinary`), or why it couldn't be.
+fn decodeBinary<T>(_ data: Data) -> Result<T> {
+    __clearError()
+    let decoded: T? = fromBinary(data)
+    if let value = decoded {
+        return Result.ok(value: value)
+    }
+    let why = __lastError()
+    Result.failure(error: Error(message: if why == "" { "the data doesn't have the shape of this type" } else { why }))
+}

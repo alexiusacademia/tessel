@@ -109,16 +109,21 @@ pub unsafe extern "C" fn tsl_data_ints(d: *const Str) -> *mut List {
 /// `readData(path)`: the file's bytes, or null if it can't be read.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_read_data(path: *const Str) -> *mut Str {
-    match std::fs::read(unsafe { str_text(path) }) {
+    let path = unsafe { str_text(path) };
+    match std::fs::read(path) {
         Ok(bytes) => data_new(&bytes),
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            crate::file_error("read", path, &e);
+            std::ptr::null_mut()
+        }
     }
 }
 
 /// `writeData(path:data:)`: whether it worked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_write_data(path: *const Str, data: *const Str) -> bool {
-    std::fs::write(unsafe { str_text(path) }, unsafe { data_bytes(data) }).is_ok()
+    let path = unsafe { str_text(path) };
+    std::fs::write(path, unsafe { data_bytes(data) }).map_err(|e| crate::file_error("write", path, &e)).is_ok()
 }
 
 unsafe extern "C" fn int_eq(a: *const u8, b: *const u8) -> bool {
@@ -379,7 +384,10 @@ pub unsafe extern "C" fn tsl_tree_to_binary(h: *mut Tree) -> *mut Str {
 pub unsafe extern "C" fn tsl_json_parse(s: *const Str) -> *mut Tree {
     match serde_json::from_str::<Tree>(unsafe { str_text(s) }) {
         Ok(v) => owned(v),
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            crate::set_error(format!("this isn't valid JSON: {e}"));
+            std::ptr::null_mut()
+        }
     }
 }
 
@@ -388,7 +396,10 @@ pub unsafe extern "C" fn tsl_json_parse(s: *const Str) -> *mut Tree {
 pub unsafe extern "C" fn tsl_binary_parse(d: *const Str) -> *mut Tree {
     match rmp_serde::from_slice::<Tree>(unsafe { data_bytes(d) }) {
         Ok(v) => owned(v),
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            crate::set_error(format!("this isn't valid binary data: {e}"));
+            std::ptr::null_mut()
+        }
     }
 }
 

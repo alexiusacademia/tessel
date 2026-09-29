@@ -541,15 +541,60 @@ pub(crate) unsafe fn str_list<'a>(items: impl Iterator<Item = &'a str>) -> *mut 
 /// The file's text, or null if it can't be read.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_read_file(path: *const Str) -> *mut Str {
-    match std::fs::read_to_string(unsafe { str_text(path) }) {
+    let path = unsafe { str_text(path) };
+    match std::fs::read_to_string(path) {
         Ok(text) => str_new(&text),
-        Err(_) => ptr::null_mut(),
+        Err(e) => {
+            file_error("read", path, &e);
+            ptr::null_mut()
+        }
     }
+}
+
+// ===== why the last operation failed =====
+
+thread_local! {
+    static LAST_ERROR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Records why something failed, for `__lastError()` (behind `readText`,
+/// `parseInt` and the other functions that return a `Result`).
+pub(crate) fn set_error(message: String) {
+    LAST_ERROR.with(|e| *e.borrow_mut() = message);
+}
+
+/// Records why a file operation (`verb`: "read", "write", …) on `path` failed.
+pub(crate) fn file_error(verb: &str, path: &str, e: &std::io::Error) {
+    use std::io::ErrorKind;
+    let why = match e.kind() {
+        ErrorKind::NotFound => format!("can't {verb} {path}: there's no such file or folder"),
+        ErrorKind::PermissionDenied => format!("can't {verb} {path}: no permission"),
+        ErrorKind::AlreadyExists => format!("can't {verb} {path}: it already exists"),
+        ErrorKind::InvalidData => format!("can't {verb} {path}: it isn't text (UTF-8)"),
+        ErrorKind::IsADirectory => format!("can't {verb} {path}: it's a folder"),
+        ErrorKind::NotADirectory => format!("can't {verb} {path}: part of the path isn't a folder"),
+        ErrorKind::StorageFull => format!("can't {verb} {path}: the disk is full"),
+        _ => format!("can't {verb} {path}: {e}"),
+    };
+    set_error(why);
+}
+
+/// `__lastError()`: why the last operation that records reasons failed.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_last_error() -> *mut Str {
+    LAST_ERROR.with(|e| str_new(&e.borrow()))
+}
+
+/// `__clearError()`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_clear_error() {
+    set_error(String::new());
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_write_file(path: *const Str, text: *const Str) -> bool {
-    std::fs::write(unsafe { str_text(path) }, unsafe { str_text(text) }).is_ok()
+    let path = unsafe { str_text(path) };
+    std::fs::write(path, unsafe { str_text(text) }).map_err(|e| file_error("write", path, &e)).is_ok()
 }
 
 /// Names in a folder, sorted; null if it can't be read.
@@ -574,19 +619,22 @@ pub unsafe extern "C" fn tsl_is_folder(path: *const Str) -> bool {
 /// Creates a folder (and any missing parents). Returns whether it worked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_create_folder(path: *const Str) -> bool {
-    std::fs::create_dir_all(unsafe { str_text(path) }).is_ok()
+    let path = unsafe { str_text(path) };
+    std::fs::create_dir_all(path).map_err(|e| file_error("create", path, &e)).is_ok()
 }
 
 /// Renames or moves a file or folder. Returns whether it worked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_rename_file(from: *const Str, to: *const Str) -> bool {
-    std::fs::rename(unsafe { str_text(from) }, unsafe { str_text(to) }).is_ok()
+    let from = unsafe { str_text(from) };
+    std::fs::rename(from, unsafe { str_text(to) }).map_err(|e| file_error("rename", from, &e)).is_ok()
 }
 
 /// Deletes a file (not a folder). Returns whether it worked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_delete_file(path: *const Str) -> bool {
-    std::fs::remove_file(unsafe { str_text(path) }).is_ok()
+    let path = unsafe { str_text(path) };
+    std::fs::remove_file(path).map_err(|e| file_error("delete", path, &e)).is_ok()
 }
 
 #[unsafe(no_mangle)]

@@ -824,6 +824,14 @@ impl<'a> Parser<'a> {
     }
 
     fn unary_expr(&mut self) -> PResult<Expr> {
+        // `try f(x)`: applies to the call (or value) right after it, so
+        // `try parseInt(s) + 1` adds 1 to the number.
+        if self.at(&Tok::Try) {
+            let lo = self.bump().span;
+            let operand = self.unary_expr()?;
+            let span = lo.to(operand.span);
+            return Ok(self.new_expr(ExprKind::Try(Box::new(operand)), span));
+        }
         let op = match self.peek() {
             Tok::Minus => UnaryOp::Neg,
             Tok::Bang => UnaryOp::Not,

@@ -220,6 +220,9 @@ pub enum ExprKind {
     List(Vec<Expr>),
     Dict(Vec<(Expr, Expr)>),
     Unary(UnaryOp, Box<Expr>),
+    /// `try result`: the value of a `Result` (or nothing, for an `Error?`), or
+    /// else the enclosing function returns the failure.
+    Try(Box<Expr>),
     /// `shape is Circle` (`test` true) and `shape as? Circle`.
     Cast { value: Box<Expr>, ty: TypeExpr, test: bool },
     Binary(BinOp, Box<Expr>, Box<Expr>),
@@ -327,7 +330,7 @@ fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 expr_tree(v, f);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => expr_tree(x, f),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => expr_tree(x, f),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             expr_tree(l, f);
             expr_tree(r, f);

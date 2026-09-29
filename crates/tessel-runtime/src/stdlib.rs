@@ -405,13 +405,15 @@ pub extern "C" fn tsl_make_date(y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_append_file(path: *const Str, s: *const Str) -> u8 {
     use std::io::Write;
-    let file = std::fs::OpenOptions::new().create(true).append(true).open(unsafe { text(path) });
-    file.and_then(|mut f| f.write_all(unsafe { text(s) }.as_bytes())).is_ok() as u8
+    let path = unsafe { text(path) };
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(path);
+    file.and_then(|mut f| f.write_all(unsafe { text(s) }.as_bytes())).map_err(|e| crate::file_error("write", path, &e)).is_ok() as u8
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_copy_file(from: *const Str, to: *const Str) -> u8 {
-    std::fs::copy(unsafe { text(from) }, unsafe { text(to) }).is_ok() as u8
+    let from = unsafe { text(from) };
+    std::fs::copy(from, unsafe { text(to) }).map_err(|e| crate::file_error("copy", from, &e)).is_ok() as u8
 }
 
 #[unsafe(no_mangle)]
