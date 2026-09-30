@@ -18,11 +18,16 @@ you:
   every change, before you save.
 - **Types on hover.** Hover over an expression to see its type, for example
   `draft: String` or `todos: [Todo]`.
+- **Code completion.** Suggestions as you type, the same as in the
+  [Tessel IDE](/start/ide/): the fields and methods after `todo.`, the cases
+  after `.` where an enum is expected, a module's public names after
+  `geometry.`, and the variables, functions, types, views and keywords
+  visible elsewhere. Press Ctrl+Space to ask for them.
 - Comment toggling (`//`), bracket matching, auto-closing of brackets and
   quotes, and automatic indentation after `{`.
 
-Errors and hover types come from `tessel lsp`, so the extension needs the
-`tessel` command (see [Installation](/start/installation/)).
+Errors, hover types and completions come from `tessel lsp`, so the
+extension needs the `tessel` command (see [Installation](/start/installation/)).
 
 ### Installing
 
@@ -46,7 +51,7 @@ The extension has one setting:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `tessel.path` | `tessel` | The `tessel` command used for error checking and hover. |
+| `tessel.path` | `tessel` | The `tessel` command used for errors, hover and completion. |
 
 If `tessel` isn't on your `PATH`, set `tessel.path` to the full path of the
 executable, for example `/Users/you/tessel/target/release/tessel`. The value
@@ -83,8 +88,9 @@ eglot or lsp-mode), can use it. Configure it to:
 - for files ending in `.tsl`.
 
 The server sends diagnostics (errors) when a file is opened, changed, saved
-or closed, and answers hover requests with the type of the expression under
-the cursor. It doesn't offer completion, go-to-definition or formatting yet.
+or closed, answers hover requests with the type of the expression under
+the cursor, and answers completion requests (typing `.` asks for them too).
+It doesn't offer go-to-definition, rename or formatting yet.
 
 For syntax highlighting, the extension's TextMate grammar,
 `editors/vscode/syntaxes/tessel.tmLanguage.json`, works in any editor that

@@ -67,8 +67,8 @@ These are the main gaps you may run into today.
   started.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS, but apps
   have no custom icon and aren't code signed.
-- **Editor support:** the language server reports errors and shows types on
-  hover, but doesn't offer completion or go-to-definition.
+- **Editor support:** the language server reports errors, shows types on
+  hover and completes code, but doesn't offer go-to-definition or rename.
 - **Installation:** packages exist for Apple silicon Macs and 64-bit
   Windows only (no Intel Macs yet). The macOS package is signed and
   notarized; the Windows one isn't signed yet, so Windows SmartScreen may

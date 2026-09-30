@@ -1,6 +1,7 @@
 //! `tessel lsp`: a language server for editors (Language Server Protocol).
 //!
-//! It reports the same errors as `tessel check` while you type. A program is
+//! It reports the same errors as `tessel check` while you type, shows types
+//! on hover, and suggests completions (the same as the Tessel IDE's). A program is
 //! every `.tsl` file in a folder, so on each change the whole folder is
 //! checked, with open (possibly unsaved) files taking the place of the saved
 //! versions.
@@ -27,6 +28,7 @@ pub fn run() -> Result<(), String> {
         // 1 = the client sends the full text on every change.
         "textDocumentSync": { "openClose": true, "change": 1, "save": true },
         "hoverProvider": true,
+        "completionProvider": { "triggerCharacters": ["."] },
     });
     conn.initialize(caps).map_err(|e| e.to_string())?;
     let mut server = Server { open: HashMap::new(), published: HashMap::new() };
@@ -41,6 +43,10 @@ pub fn run() -> Result<(), String> {
                         .ok()
                         .and_then(|p| server.hover(&p))
                         .map_or(serde_json::Value::Null, |h| serde_json::to_value(h).unwrap()),
+                    "textDocument/completion" => serde_json::from_value::<lsp_types::CompletionParams>(req.params)
+                        .ok()
+                        .and_then(|p| server.completion(&p))
+                        .map_or(serde_json::Value::Null, |c| serde_json::to_value(c).unwrap()),
                     _ => serde_json::Value::Null,
                 };
                 let _ = conn.sender.send(Message::Response(lsp_server::Response::new_ok(req.id, result)));
@@ -117,6 +123,44 @@ impl Server {
             }),
             range: Some(range(&sources, e.span)),
         })
+    }
+
+    /// What could go at the cursor: the same suggestions as the IDE's editor.
+    fn completion(&self, p: &lsp_types::CompletionParams) -> Option<lsp_types::CompletionList> {
+        use lsp_types::{CompletionItem, CompletionItemKind as K, CompletionTextEdit, TextEdit};
+        use tessel_compiler::check::SuggestionKind as S;
+        let pos = &p.text_document_position;
+        let path = uri_to_path(&pos.text_document.uri)?;
+        let (sources, files) = self.program(&path);
+        let file = files.iter().position(|f| *f == path)? as u32;
+        let offset = offset_of(&sources, file, pos.position)?;
+        let c = tessel_compiler::complete(&sources, file, offset as usize);
+        // The suggestion replaces the word typed so far.
+        let replace = Range { start: position(&sources, file, c.start), end: pos.position };
+        let items = c
+            .items
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| CompletionItem {
+                kind: Some(match s.kind {
+                    S::Variable => K::VARIABLE,
+                    S::Field => K::FIELD,
+                    S::Method | S::Modifier => K::METHOD,
+                    S::Function => K::FUNCTION,
+                    S::View => K::CLASS,
+                    S::Type => K::STRUCT,
+                    S::Case => K::ENUM_MEMBER,
+                    S::Keyword => K::KEYWORD,
+                }),
+                detail: (!s.detail.is_empty()).then(|| s.detail.clone()),
+                // Keep the checker's order (closest names first).
+                sort_text: Some(format!("{i:05}")),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit { range: replace, new_text: s.label.clone() })),
+                label: s.label,
+                ..Default::default()
+            })
+            .collect();
+        Some(lsp_types::CompletionList { is_incomplete: false, items })
     }
 
     /// Every file of the program `file` belongs to (its folder), with open files' current text.
@@ -299,6 +343,32 @@ mod tests {
         let uri = path_to_uri(&p).unwrap();
         assert_eq!(uri.as_str(), "file:///Users/me/My%20Apps/todo%20list.tsl");
         assert_eq!(uri_to_path(&uri).unwrap(), p);
+    }
+
+    #[test]
+    fn completes_members_of_unsaved_text() {
+        let dir = std::env::temp_dir().join(format!("tessel-lsp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("main.tsl");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let text = "struct Doc {\n    path: String\n    line: Int = 0\n}\nfn main() {\n    let doc = Doc(path: \"a\")\n    print(doc.pa)\n}\n";
+        let server = Server { open: HashMap::from([(path.clone(), text.to_string())]), published: HashMap::new() };
+        let uri = path_to_uri(&path).unwrap();
+        let params = lsp_types::CompletionParams {
+            text_document_position: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position: Position { line: 6, character: 16 },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+        let list = server.completion(&params).unwrap();
+        let labels: Vec<&str> = list.items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["path", "line"]);
+        let Some(lsp_types::CompletionTextEdit::Edit(edit)) = &list.items[0].text_edit else { panic!() };
+        assert_eq!(edit.range.start, Position { line: 6, character: 14 });
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
