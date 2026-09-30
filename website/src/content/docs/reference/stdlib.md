@@ -53,9 +53,13 @@ print("Name: ", terminator: "")   // no line break: the answer goes on the same 
 - A `Float` always shows a decimal point (`2.0`), so it reads differently
   from an `Int`.
 - An enum value prints as its case name, and a range as `start..end`.
-- Lists, dictionaries, structs and optionals can't be printed directly.
-  Print a property instead (`list.count`), join a `[String]` with
-  [`joined`](#joined), or give an optional a default with `??`.
+- Lists, dictionaries, sets and tuples print as they're written in code:
+  `[1, 2]`, `["tea": 3]`, `(1, "one")`, with text inside them in quotes and
+  `nil` for a missing value. Their items must be printable this way
+  (numbers, text, `Bool`s, enums, and lists, dictionaries, sets and tuples
+  of those).
+- Structs and optionals can't be printed directly. Print a field instead,
+  or give an optional a default with `??`.
 - In an app, the output goes to the terminal the app was started from (or to
   the console of the [Tessel IDE](/start/ide/)).
 
@@ -1800,6 +1804,7 @@ empty list needs its type from context: `var names: [String] = []`.
 | `unique()` | `[T]` | Without repeated items. |
 | `shuffled()` | `[T]` | The items in random order. |
 | `randomElement()` | `T?` | A random item, or `nil` if empty. |
+| `enumerated()` | `[(Int, T)]` | Each item with its index: `for (i, x) in list.enumerated()`. |
 | `appendAll(_ items: [T])` | | Adds all of `items` at the end. Changes the list. |
 | `removeFirst()` | `T` | Removes and returns the first item. Changes the list. |
 | `removeLast()` | `T` | Removes and returns the last item. Changes the list. |
@@ -2073,12 +2078,30 @@ print(ages.keys.joined(separator: ","))       // Linus
 Replacing a value keeps its place; removing an entry and adding it again
 moves it to the end.
 
-A dictionary can't be looped over directly; loop over `keys` or `values`:
+A `for` loop over a dictionary gives each entry as a `(key, value)` tuple,
+in order:
 
 ```tessel
 let stock = ["apples": 3, "pears": 0]
-for fruit in stock.keys {
-    print("{fruit}: {stock[fruit] ?? 0}")
+for (fruit, count) in stock {
+    print("{fruit}: {count}")
+}
+```
+
+## zip
+
+```text
+zip(_ a: [A], _ b: [B]) -> [(A, B)]
+```
+
+Pairs up the items at the same positions of two lists, as long as the
+shorter list:
+
+```tessel
+let names = ["Ada", "Alan"]
+let scores = [90, 85, 70]
+for (name, score) in zip(names, scores) {
+    print("{name}: {score}")       // Ada: 90, then Alan: 85
 }
 ```
 

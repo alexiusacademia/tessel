@@ -260,8 +260,27 @@ coffee, tea, cake
 (`sum()` adds up a list of numbers. It's one of the list methods from lesson
 7.)
 
-You can't loop over a dictionary directly, but you can loop over its keys,
-and look up each value:
+A `for` loop over a dictionary gives each entry's key and value:
+
+```tessel
+fn main() {
+    let prices = ["coffee": 3, "tea": 2, "cake": 4]
+    for (item, price) in prices {
+        print("{item}: {price} dollars")
+    }
+}
+```
+
+```text
+coffee: 3 dollars
+tea: 2 dollars
+cake: 4 dollars
+```
+
+`(item, price)` gives the two parts of each entry their own names. The
+entries come in the order they were first added.
+
+You can also loop over just the keys, and look up each value:
 
 ```tessel
 fn main() {
@@ -284,9 +303,10 @@ used. But Tessel can't know that, so you still need it.
 To go through the keys in alphabetical order, sort them first:
 `for item in prices.keys.sorted()`.
 
-### Common mistake: printing a dictionary
+### Printing a dictionary
 
-Like a list, a whole dictionary can't be printed at once:
+`print` shows a whole dictionary as you'd write it, in the order the
+entries were added:
 
 ```tessel
 fn main() {
@@ -296,18 +316,11 @@ fn main() {
 ```
 
 ```text
-error: a dictionary can't be shown as text directly
- --> main.tsl:3:11
-  |
-3 |     print(prices)
-  |           ^^^^^^
-  |
-  = help: show its size with `.count`, or loop over its `keys` and show each value
-
-1 error found
+["coffee": 3, "tea": 2]
 ```
 
-Loop over the keys and print each entry, as above.
+An empty dictionary shows as `[:]`. For a nicer list, loop over it, as
+above.
 
 ## Counting things
 
@@ -715,7 +728,8 @@ after changing it, you must store it back.
 - `dict[key] = value` adds or replaces an entry. `dict[key] = nil` or
   `removeValue(forKey:)` removes one. The dictionary must be a `var`.
 - `count`, `isEmpty`, `contains(key:)`, `keys` and `values` tell you what's
-  in it. Loop over `keys` (or `keys.sorted()`) to go through every entry.
+  in it. `for (key, value) in dict` goes through every entry; loop over
+  `keys.sorted()` for alphabetical order.
 - To count things: `counts[key] = (counts[key] ?? 0) + 1`, with the
   parentheses.
 - A **set** (`Set<String>`) holds values once each, without order:

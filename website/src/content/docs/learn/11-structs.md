@@ -505,6 +505,11 @@ right 2
 up 1
 ```
 
+`print(("up", 3))` shows a tuple as you'd write it, `("up", 3)`. And you've
+already met tuples without their name: `for (i, day) in days.enumerated()`
+in lesson 7 and `for (item, price) in prices` in lesson 9 take tuples apart.
+`zip(names, scores)` makes a list of pairs from two lists.
+
 Tuples are handy for returning two or three values, or for pairs in a list.
 When the values deserve names (`result.0` doesn't say what it is), or you
 pass them around a lot, a struct is clearer: `book.title` beats `book.0`.

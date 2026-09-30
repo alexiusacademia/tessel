@@ -104,6 +104,7 @@ These leave the list alone and return a result.
 | `sorted()` | a new list in ascending order (for `[Int]`, `[Float]` and `[String]`) |
 | `sorted(by: { a, b in … })` | a new list, where the block returns `true` if `a` should come before `b` |
 | `reversed()` | a new list in the opposite order |
+| `enumerated()` | a list of `(index, item)` [tuples](#tuples): `for (i, x) in list.enumerated()` |
 | `contains(item)` | `true` if an item is equal to `item` |
 | `first(where: { x in … })` | the first item for which the block returns `true`, or `nil` |
 | `last(where: { x in … })` | the last such item, or `nil` |
@@ -226,12 +227,13 @@ print(groups["fruit"]?.count ?? 0) // 2
 
 ### Looping over a dictionary
 
-Loop over `keys` or `values`:
+A `for` loop gives each entry as a `(key, value)` [tuple](#tuples), in the
+order the keys were first added:
 
 ```tessel
 let prices = ["tea": 3, "cake": 5]
-for item in prices.keys {
-    print("{item} costs {prices[item] ?? 0}")
+for (item, price) in prices {
+    print("{item} costs {price}")
 }
 ```
 
@@ -358,6 +360,14 @@ point.0 += 1
 print(point == (4, 4))     // true
 let (_, y) = point
 print(y)                   // 4
+```
+
+`zip(a, b)` pairs up two lists item by item, as long as the shorter one:
+
+```tessel
+let names = ["Ada", "Alan"]
+let ages = [36, 41, 29]
+print(zip(names, ages))        // [("Ada", 36), ("Alan", 41)]
 ```
 
 Tuples are compared with `==` item by item. A tuple of key types can be a

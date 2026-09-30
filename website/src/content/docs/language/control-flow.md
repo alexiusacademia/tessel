@@ -151,13 +151,12 @@ for i in 0..names.count {
 
 ### Looping over a dictionary
 
-A dictionary can't be looped over directly. Loop over its `keys` or its
-`values` instead. Both come in the order the keys were first added:
+A loop over a dictionary gives each entry's key and value, in the order the
+keys were first added:
 
 ```tessel
 let stock = ["apples": 3, "pears": 0]
-for name in stock.keys {
-    let count = stock[name] ?? 0
+for (name, count) in stock {
     print("{name}: {count}")
 }
 ```

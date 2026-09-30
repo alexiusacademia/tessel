@@ -253,6 +253,27 @@ fn main() {
 3. Wed: 25 degrees
 ```
 
+When you need each item's position but only one list, `enumerated()` gives
+both at once:
+
+```tessel
+fn main() {
+    let days = ["Mon", "Tue", "Wed"]
+    for (i, day) in days.enumerated() {
+        print("{i + 1}. {day}")
+    }
+}
+```
+
+```text
+1. Mon
+2. Tue
+3. Wed
+```
+
+`(i, day)` takes each position and item apart into two names; you'll see
+how this works (it's a *tuple*) in lesson 11.
+
 ## Going out of range
 
 What happens if you ask for an index that doesn't exist? Tessel can't know
@@ -416,31 +437,28 @@ There are many more methods, such as `sum()`, `min()`, `max()`,
 `index(of:)` and `shuffled()`. The [List reference](/reference/stdlib/#list)
 lists them all.
 
-### Common mistake: printing a whole list
+### Printing a whole list
 
-`print` shows one value at a time, so it can't show a list directly:
+`print` shows a whole list the way you'd write it in code, and so does
+`{…}` in text:
 
 ```tessel
 fn main() {
     let scores = [72, 95, 58]
     print(scores)
+    let names = ["Ada", "Alan"]
+    print("Players: {names}")
 }
 ```
 
 ```text
-error: a list can't be shown as text directly
- --> main.tsl:3:11
-  |
-3 |     print(scores)
-  |           ^^^^^^
-  |
-  = help: show its size with `.count`, or join a `[String]` with `.joined(separator: ", ")`
-
-1 error found
+[72, 95, 58]
+Players: ["Ada", "Alan"]
 ```
 
-Loop over the list and print each item, or, for a list of strings, use
-`joined`.
+Text inside a list is shown in quotes, so you can tell `["a b"]` (one item)
+from `["a", "b"]` (two). To show the items your own way, loop over them, or
+join a list of strings with `joined(separator: ", ")`.
 
 ## Lists are values: copies are separate
 
