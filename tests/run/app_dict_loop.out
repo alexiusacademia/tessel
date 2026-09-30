@@ -1,0 +1,5 @@
+Root
+  View
+    VStack
+      Text "Ada is 36"
+      Text "Alan is 41"

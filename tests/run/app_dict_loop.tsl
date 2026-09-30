@@ -1,0 +1,10 @@
+struct Todo { title: String }
+
+app Demo {
+    state ages = ["Ada": 36, "Alan": 41]
+    VStack {
+        for (name, age) in ages {
+            Text("{name} is {age}")
+        }
+    }
+}

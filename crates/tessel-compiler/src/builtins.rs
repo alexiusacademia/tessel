@@ -317,7 +317,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
-    "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set",
+    "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -460,7 +460,7 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
 pub fn member_names(recv: &Ty) -> &'static [&'static str] {
     match recv {
         Ty::List(_) => &[
-            "count", "isEmpty", "first", "last", "append", "insert", "remove", "removeAll", "filter", "contains",
+            "count", "isEmpty", "first", "last", "append", "insert", "remove", "removeAll", "filter", "contains", "enumerated",
             "reversed", "map", "sorted", "joined", "index", "lastIndex", "firstIndex", "any", "all", "sum", "min",
             "max", "prefix", "suffix", "dropFirst", "dropLast", "slice", "unique", "shuffled", "randomElement",
             "removeFirst", "removeLast", "appendAll", "indices",

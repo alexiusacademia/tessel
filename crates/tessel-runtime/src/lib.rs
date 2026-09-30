@@ -286,6 +286,30 @@ pub unsafe extern "C" fn tsl_str_concat(parts: *const *const Str, n: i64) -> *mu
     }
 }
 
+/// Text as it's written in code, in quotes: how a String inside a list or
+/// tuple is shown (`["a", "b \"c\""]`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_quoted(s: *const Str) -> *mut Str {
+    unsafe {
+        let text = str_text(s);
+        let mut out = String::with_capacity(text.len() + 2);
+        out.push('"');
+        for c in text.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\t' => out.push_str("\\t"),
+                '\r' => out.push_str("\\r"),
+                '{' => out.push_str("\\{"),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+        str_join(std::iter::once(out.as_bytes()))
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_str_from_int(n: i64) -> *mut Str {
     let mut buf = [0u8; 20];

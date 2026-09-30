@@ -1502,11 +1502,8 @@ impl Checker<'_> {
             Ty::Range => (Ty::Int, false),
             Ty::Set(el) => (*el, false),
             Ty::Error => (Ty::Error, false),
-            Ty::Dict(..) => {
-                self.error(iter.span, "a dictionary can't be looped over directly")
-                    .help("loop over its `.keys` or `.values`");
-                (Ty::Error, false)
-            }
+            // Each entry as a `(key, value)` tuple: `for (name, age) in ages`.
+            Ty::Dict(k, v) => (self.tuple_ty(vec![*k, *v], iter.span), false),
             Ty::Opt(_) => {
                 self.error(iter.span, "this might be `nil`, so it can't be looped over")
                     .help("unwrap it first with `if let`, or give a default with `?? []`");
@@ -1891,6 +1888,25 @@ impl Checker<'_> {
         }
     }
 
+    /// Can a value of `t` be shown inside a list, dictionary, set or tuple?
+    fn shows_inside(&self, t: &Ty) -> bool {
+        match t {
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => true,
+            Ty::Opt(x) | Ty::List(x) | Ty::Set(x) => self.shows_inside(x),
+            Ty::Dict(k, v) => self.shows_inside(k) && self.shows_inside(v),
+            Ty::Struct(id) if is_tuple_name(&self.structs[*id].name) => {
+                self.structs[*id].fields.iter().all(|f| self.shows_inside(&f.ty))
+            }
+            _ => false,
+        }
+    }
+
+    fn not_shown_inside(&mut self, t: &Ty, span: Span) {
+        let what = self.a(t);
+        self.error(span, format!("{what} can't be shown as text directly, because of what it holds"))
+            .help("lists, dictionaries, sets and tuples of numbers, text, `Bool`s and enums can be shown; for structs, show their fields, like `items.map { x in x.name }`");
+    }
+
     fn showable(&mut self, t: &Ty, span: Span) {
         match t {
             Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => {}
@@ -1898,24 +1914,15 @@ impl Checker<'_> {
                 self.error(span, "this might be `nil`, so it can't be shown as text directly")
                     .help("give it a default with `??`, like \"{name ?? \"none\"}\"");
             }
-            Ty::List(_) => {
-                self.error(span, "a list can't be shown as text directly")
-                    .help("show its size with `.count`, or join a `[String]` with `.joined(separator: \", \")`");
-            }
-            Ty::Set(_) => {
-                self.error(span, "a set can't be shown as text directly")
-                    .help("show its size with `.count`, or turn it into a list with `.sorted()` or `.values`");
-            }
-            Ty::Dict(..) => {
-                self.error(span, "a dictionary can't be shown as text directly")
-                    .help("show its size with `.count`, or loop over its `keys` and show each value");
-            }
+            Ty::List(_) | Ty::Dict(..) | Ty::Set(_) if self.shows_inside(t) => {}
+            Ty::Struct(id) if is_tuple_name(&self.structs[*id].name) && self.shows_inside(t) => {}
+            // (A collection or tuple of something that can't be shown.)
+            Ty::List(_) | Ty::Dict(..) | Ty::Set(_) => self.not_shown_inside(t, span),
+            Ty::Struct(id) if is_tuple_name(&self.structs[*id].name) => self.not_shown_inside(t, span),
             Ty::Struct(id) => {
                 let (name, field) = (self.structs[*id].name.clone(), self.structs[*id].fields.first().map(|f| f.name.clone()));
                 let d = self.error(span, format!("`{name}` can't be shown as text directly"));
-                if is_tuple_name(&name) {
-                    d.help("show its items, like \"{value.0} and {value.1}\"");
-                } else if let Some(f) = field {
+                if let Some(f) = field {
                     d.help(format!("show its fields, like \"{{value.{f}}}\", or add a method that describes it"));
                 }
             }
@@ -2704,6 +2711,7 @@ impl Checker<'_> {
                         return self.codec_call(n, args, trailing, span, expected);
                     }
                     "abs" | "min" | "max" => return self.numeric_fn(n, args, trailing, span),
+                    "zip" => return self.zip(args, trailing, span),
                     "print" | "printError" => {
                         let sig = self.builtins.function(n).unwrap();
                         self.args(&what, &sig.params, args, trailing, span);
@@ -3142,6 +3150,16 @@ impl Checker<'_> {
             Ty::List(elem) if n == "map" => {
                 self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                 self.map_call(elem, args, trailing, span)
+            }
+            // `list.enumerated()`: each item with its position, `[(Int, T)]`.
+            Ty::List(elem) if n == "enumerated" => {
+                self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                if !args.is_empty() || trailing.is_some() {
+                    self.args_unchecked(args, trailing);
+                    self.error(span, "`enumerated()` takes nothing");
+                }
+                let pair = self.tuple_ty(vec![Ty::Int, (**elem).clone()], span);
+                Ty::list(pair)
             }
             Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
                 Some(m) => {
@@ -3926,6 +3944,50 @@ impl Checker<'_> {
         let keep: Vec<Diagnostic> =
             self.diags.list.drain(mark..).filter(|d| d.message.starts_with("cannot find")).collect();
         self.diags.list.extend(keep);
+    }
+
+    /// The tuple type of `items`: `(Int, String)`.
+    fn tuple_ty(&mut self, items: Vec<Ty>, span: Span) -> Ty {
+        if items.iter().any(Ty::has_error) {
+            return Ty::Error;
+        }
+        let Some(Global::GenericStruct(t)) = self.globals.get(&tuple_name(items.len())).copied() else { return Ty::Error };
+        match self.specialize(t, items, span).and_then(|name| self.globals.get(&name).copied()) {
+            Some(Global::Struct(id)) => Ty::Struct(id),
+            _ => Ty::Error,
+        }
+    }
+
+    /// `zip(a, b)`: pairs of the items at the same positions of two lists,
+    /// as long as the shorter one.
+    fn zip(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        let ([a, b], None) = (args, trailing) else {
+            self.args_unchecked(args, trailing);
+            self.error(span, "write it as `zip(firstList, secondList)`");
+            return Ty::Error;
+        };
+        if a.label.is_some() || b.label.is_some() {
+            self.error(span, "`zip` takes its two lists without labels: `zip(names, ages)`");
+        }
+        let mut elems = Vec::new();
+        for x in [a, b] {
+            match self.expr(&x.value, None) {
+                Ty::List(e) => elems.push(*e),
+                t if t.has_error() => elems.push(Ty::Error),
+                t => {
+                    let what = self.a(&t);
+                    self.error(x.value.span, format!("`zip` pairs up two lists, and this is {what}"));
+                    elems.push(Ty::Error);
+                }
+            }
+        }
+        if let Some(f) = self.frames.last_mut() {
+            f.args = vec![Some(ArgRef::Arg(0)), Some(ArgRef::Arg(1))];
+        }
+        match self.tuple_ty(elems, span) {
+            Ty::Error => Ty::Error,
+            t => Ty::list(t),
+        }
     }
 
     /// `Set<T>`, whose items must be able to be dictionary keys.

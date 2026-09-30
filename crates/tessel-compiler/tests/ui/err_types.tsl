@@ -15,7 +15,7 @@ fn types() {
     print(name.count) // error: might be `nil`
     let j = name?.count ?? 0
     if 1 { } // error: expected `Bool`, found `Int`
-    print("{[1]}") // error: a list can't be shown as text
+    print("{[{ 1 }]}") // error: `[fn() -> Int]` can't be shown as text directly, because of what it holds
 }
 
 fn needsValue() -> Int {

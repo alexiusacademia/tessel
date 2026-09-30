@@ -1,0 +1,26 @@
+enum Suit { hearts, spades }
+struct Card { rank: Int }
+fn main() {
+    print([1, 2, 3])
+    print(["a", "b \"c\"", "\{x}"])
+    let empty: [Int] = []
+    print(empty)
+    print(["tea": 3, "cake": 5])
+    let none: [String: Int] = [:]
+    print(none)
+    let s: Set<Int> = [3, 1, 2]
+    print(s)
+    print((1, "one"))
+    print(((1, 2), [true, false]))
+    let opts: [Int?] = [1, nil, 3]
+    print(opts)
+    print([Suit.hearts, .spades])
+    print([[1.5, 2.0], []])
+    print("scores: {[90, 85]}")
+    let pair = (2, "x")
+    print("pair is {pair}")
+    print(String([1, 2]))
+    print([0..3])
+    let nested: [String: [Int]] = ["a": [1, 2]]
+    print(nested)
+}

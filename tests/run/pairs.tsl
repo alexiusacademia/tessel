@@ -1,0 +1,33 @@
+struct Todo { title: String }
+fn main() {
+    let names = ["Ada", "Alan", "Grace"]
+    for (i, name) in names.enumerated() {
+        print("{i + 1}. {name}")
+    }
+    print(names.enumerated())
+    let ages = ["Ada": 36, "Alan": 41]
+    for (name, age) in ages {
+        print("{name} is {age}")
+    }
+    for entry in ages {
+        print(entry.0)
+    }
+    let scores = [90, 85, 70, 60]
+    for (name, score) in zip(names, scores) {
+        print("{name}: {score}")
+    }
+    print(zip([1, 2], ["a", "b", "c"]))
+    let todos = [Todo(title: "a"), Todo(title: "b")]
+    for (i, t) in todos.enumerated() {
+        print("{i} {t.title}")
+    }
+    let empty: [String: Int] = [:]
+    for (k, v) in empty {
+        print(k)
+    }
+    var total = 0
+    for (_, age) in ages {
+        total += age
+    }
+    print(total)
+}

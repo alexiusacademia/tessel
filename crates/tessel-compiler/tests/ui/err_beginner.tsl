@@ -37,7 +37,7 @@ fn main() {
     var xs = [1]
     xs.append(2)
     let d = ["a": 1, "b": 2, "a": 3] // error: the key "a" appears twice
-    print(d) // error: a dictionary can't be shown as text directly
+    print([d: 1]) // error: `[String: Int]` can't be used as a dictionary key
     print(Point(x: 1)) // error: `Point` can't be shown as text directly
     let n: Int? = 3
     if n { // error: to check that it has a value, write `x != nil`

@@ -1,0 +1,15 @@
+1. Ada
+2. Alan
+3. Grace
+[(0, "Ada"), (1, "Alan"), (2, "Grace")]
+Ada is 36
+Alan is 41
+Ada
+Alan
+Ada: 90
+Alan: 85
+Grace: 70
+[(1, "a"), (2, "b")]
+0 a
+1 b
+77
