@@ -1,4 +1,4 @@
-// Starts `tessel lsp` so VS Code shows Tessel's errors as you type.
+// Starts `tessel lsp`, which gives VS Code Tessel's errors, types on hover and completion.
 const vscode = require("vscode");
 const { LanguageClient } = require("vscode-languageclient/node");
 

@@ -39,7 +39,7 @@ for the build.
 cd editors/vscode
 npm install
 npm run package
-code --install-extension tessel-0.1.0.vsix
+code --install-extension tessel-0.2.0.vsix
 ```
 
 You can also install the `.vsix` from inside VS Code: open the Extensions

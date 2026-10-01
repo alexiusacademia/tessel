@@ -1,10 +1,31 @@
 {
   "name": "tessel",
   "displayName": "Tessel",
-  "description": "Syntax highlighting and error checking for the Tessel language",
-  "version": "0.1.0",
-  "publisher": "tessel",
+  "description": "Tessel language support: syntax highlighting, errors as you type, types on hover and code completion",
+  "version": "0.2.0",
+  "publisher": "alexiusacademia",
   "license": "MIT",
+  "icon": "icon.png",
+  "keywords": [
+    "tessel",
+    "tsl",
+    "gui",
+    "language",
+    "lsp"
+  ],
+  "homepage": "https://tessel-lang.syncster.dev",
+  "bugs": {
+    "url": "https://github.com/alexiusacademia/tessel/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexiusacademia/tessel",
+    "directory": "editors/vscode"
+  },
+  "galleryBanner": {
+    "color": "#1E1E2E",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -38,7 +59,7 @@
         "tessel.path": {
           "type": "string",
           "default": "tessel",
-          "description": "Path to the `tessel` command (used for error checking as you type)."
+          "description": "Path to the `tessel` command, used for errors, hover and completion."
         }
       }
     }
@@ -47,15 +68,12 @@
   "activationEvents": [
     "onLanguage:tessel"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alexiusacademia/tessel"
-  },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
   "scripts": {
-    "package": "npx --yes @vscode/vsce package --allow-missing-repository"
+    "package": "npx --yes @vscode/vsce package",
+    "publish": "npx --yes @vscode/vsce publish"
   },
   "capabilities": {
     "untrustedWorkspaces": {

@@ -1,0 +1,7 @@
+*.vsix
+.gitignore
+node_modules/**/*.md
+node_modules/**/*.map
+node_modules/**/*.d.ts
+node_modules/**/*.ts
+!node_modules/**/*.js
