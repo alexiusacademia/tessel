@@ -72,11 +72,35 @@ pub struct ReplAnalysis {
     pub last_expr: Option<source::Span>,
 }
 
+/// What to do with the value of a REPL entry's last expression.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ReplShow {
+    /// Nothing (it's computed, and dropped).
+    No,
+    /// Print it, as `print` does.
+    Print,
+    /// Print it as JSON (for what `print` can't show: structs, optionals).
+    Json,
+}
+
+/// `name(arg)`, where `arg` is in the source (so places in it stay right).
+fn call(name: &str, arg: ast::Expr, next_id: &mut ast::ExprId) -> ast::Expr {
+    let span = arg.span;
+    let mut id = || {
+        *next_id += 1;
+        *next_id - 1
+    };
+    let callee = ast::Expr { id: id(), kind: ast::ExprKind::Name(name.into()), span };
+    let args = vec![ast::Arg { label: None, value: arg }];
+    ast::Expr { id: id(), kind: ast::ExprKind::Call { callee: Box::new(callee), args, trailing: None }, span }
+}
+
 /// Like `analyze`, for a REPL session: file `entry` of `sources` is what was
 /// just typed (declarations and statements), and the other files are the
 /// declarations typed before. `vars` are the session's variables, which the
-/// entry's statements can use.
-pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar]) -> ReplAnalysis {
+/// entry's statements can use. `show` says what becomes of the value of a
+/// last expression.
+pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show: ReplShow) -> ReplAnalysis {
     let mut diags = Diagnostics::default();
     let mut next_id = 0;
     let mut root = Vec::new();
@@ -91,11 +115,17 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar]) -> Re
             root.push((id, parser::parse_file(id, &file.text, &mut diags, &mut next_id)));
         }
     }
-    let (stmts, decls, span) = found.expect("the entry is one of the files");
+    let (mut stmts, decls, span) = found.expect("the entry is one of the files");
     let last_expr = match stmts.last() {
         Some(ast::Stmt::Expr(e)) => Some(e.span),
         _ => None,
     };
+    if show != ReplShow::No && last_expr.is_some() {
+        if let Some(ast::Stmt::Expr(e)) = stmts.pop() {
+            let shown = if show == ReplShow::Json { call("toJson", e, &mut next_id) } else { e };
+            stmts.push(ast::Stmt::Expr(call("print", shown, &mut next_id)));
+        }
+    }
     // The statements become the body of a function whose parameters are the
     // session's variables (so they have their types, and their names resolve).
     let params: Vec<String> = vars.iter().map(|v| format!("{}: {}", v.name, v.ty)).collect();

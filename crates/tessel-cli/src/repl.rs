@@ -16,7 +16,7 @@ use tessel_compiler::jit::Jit;
 use tessel_compiler::parser::{self, DeclKind, ReplDecl};
 use tessel_compiler::source::SourceMap;
 use tessel_compiler::types::Ty;
-use tessel_compiler::{analyze_repl, ReplAnalysis, ReplVar};
+use tessel_compiler::{analyze_repl, ReplAnalysis, ReplShow, ReplVar};
 // (Linked for the functions in RUNTIME_SYMBOLS.)
 use tessel_runtime as _;
 
@@ -214,28 +214,26 @@ impl Session {
         let (vars, dropped): (Vec<ReplVar>, Vec<ReplVar>) =
             self.vars.iter().cloned().partition(|v| !changed.iter().any(|c| mentions(&v.ty, c)));
 
-        let analyze = |text: &str| {
-            let (mut sources, id) = self.sources(&declared, text);
-            let analysis = analyze_repl(&mut sources, id, &vars);
+        let analyze = |show: ReplShow| {
+            let (mut sources, id) = self.sources(&declared, entry);
+            let analysis = analyze_repl(&mut sources, id, &vars, show);
             (sources, analysis)
         };
-        let (mut sources, mut analysis) = analyze(entry);
+        let (mut sources, mut analysis) = analyze(ReplShow::No);
         if !analysis.analysis.diags.is_empty() {
             for d in &analysis.analysis.diags.list {
                 eprintln!("{}", render(d, &sources, self.color));
             }
+            self.index += 1;
             return;
         }
         // The value of a last expression is shown: printed as `print` would,
         // or as JSON (structs, optionals), or else only its type is.
         let result = analysis.analysis.checked.repl.as_ref().map_or(Ty::Void, |r| r.result.clone());
         let mut show_type = None;
-        if let (Some(span), false) = (analysis.last_expr, result == Ty::Void) {
-            let (lo, hi) = (span.lo as usize, span.hi as usize);
-            let shown = ["print(", "print(toJson("].iter().find_map(|open| {
-                let close = ")".repeat(open.matches('(').count());
-                let text = format!("{}{open}{}{close}{}", &entry[..lo], &entry[lo..hi], &entry[hi..]);
-                let (s, a) = analyze(&text);
+        if analysis.last_expr.is_some() && result != Ty::Void {
+            let shown = [ReplShow::Print, ReplShow::Json].into_iter().find_map(|show| {
+                let (s, a) = analyze(show);
                 a.analysis.diags.is_empty().then_some((s, a))
             });
             match shown {
@@ -256,6 +254,7 @@ impl Session {
                 for d in &diags {
                     eprintln!("{}", render(d, &sources, self.color));
                 }
+                self.index += 1;
                 return;
             }
         };
@@ -264,6 +263,7 @@ impl Session {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("error: can't load the compiled code: {e}");
+                self.index += 1;
                 return;
             }
         };
