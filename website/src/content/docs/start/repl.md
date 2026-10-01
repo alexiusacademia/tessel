@@ -101,6 +101,29 @@ it, so the variables holding them are removed. The REPL tells you:
 note: `p` is gone, because its type (`Point`) was declared again
 ```
 
+## Modules
+
+Start the REPL in your project's folder to try out its
+[modules](/language/programs/#modules). An `import` stays for the rest of the
+session:
+
+```text
+> import geometry
+> let c = geometry.Circle(radius: 2)
+> c.area()
+12.56636
+> :vars
+let c: geometry.Circle
+```
+
+As in a file, `import geometry` looks for the folder `geometry` next to
+where you are, `import "../shared/geometry"` takes a path, and only what the
+module marks `public` can be used. The module's files are read again with
+every entry, so a change you save there is picked up by the next line you
+type. When that happens, variables holding values of types that aren't built
+in are removed (as when you declare a type again), since the module's types
+may no longer be what they were.
+
 ## Several lines
 
 A line that opens a bracket (`{`, `(` or `[`) goes on until the bracket is
@@ -203,6 +226,7 @@ Commands start with a colon:
 | Command | What it does |
 |---|---|
 | `:vars` | Lists the variables so far, with their types. |
+| `:keywords` | Lists Tessel's keywords: the words you can't use as names. |
 | `:help` | Shows a short summary. |
 | `:quit` | Leaves. |
 
@@ -238,6 +262,8 @@ script a few checks.
   be called at the prompt like any other.
 - **Statements can be anywhere.** In a file, code that runs has to be inside
   a function; at the prompt, you just type it.
+- **One file at a time isn't loaded.** There's no command to read a `.tsl`
+  file into the session; put shared code in a module and `import` it.
 - **Nothing is saved.** The session is gone when you leave. Copy what's worth
   keeping into a `.tsl` file.
 
