@@ -260,14 +260,16 @@ pub fn geometry(layout: &Layout<Paint>, e: &Editing) -> (Option<parley::Bounding
 mod tests {
     use super::*;
     use crate::ui::render::TextEngine;
-    use crate::ui::COLORS;
+    use crate::ui::Rgba;
+
+    const COLOR: Rgba = Rgba([0, 0, 0, 255]);
 
     fn run(text: &str, e: &mut Editing, edits: Vec<Edit>) -> String {
         let mut text = text.to_string();
         let mut engine = TextEngine::new();
         let mut clip = Clipboard::Memory(String::new());
         for edit in edits {
-            let layout = engine.layout(&text, 14.0, 400.0, COLORS[0], None);
+            let layout = engine.layout(&text, 14.0, 400.0, COLOR, None);
             if let Some(t) = apply(&text, &layout, e, edit, &mut clip, false) {
                 text = t;
             }
@@ -305,7 +307,7 @@ mod tests {
     #[test]
     fn paste_keeps_lines_only_when_multiline() {
         let mut engine = TextEngine::new();
-        let layout = engine.layout("", 14.0, 400.0, COLORS[0], None);
+        let layout = engine.layout("", 14.0, 400.0, COLOR, None);
         let mut clip = Clipboard::Memory("a\r\nb\nc".into());
         let one = apply("", &layout, &mut Editing::new(1, ""), Edit::Paste, &mut clip, false);
         let many = apply("", &layout, &mut Editing::new(1, ""), Edit::Paste, &mut clip, true);

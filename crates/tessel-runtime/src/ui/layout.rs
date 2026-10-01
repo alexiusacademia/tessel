@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 
 use super::render::{Paint, TextEngine};
-use super::{Kind, Node, Rgba, COLORS};
+use super::theme::{self, theme};
+use super::{Kind, Node, Rgba};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -108,11 +109,13 @@ pub struct Style {
     pub disabled: bool,
     /// How lines of text line up: 0 leading, 1 center, 2 trailing.
     pub text_align: u8,
+    /// `.animation(seconds)`: how long changes take; 0 for at once.
+    pub animation: f64,
 }
 
 impl Default for Style {
     fn default() -> Style {
-        Style { size: 14.0, weight: 400.0, color: COLORS[0], disabled: false, text_align: 0 }
+        Style { size: 14.0, weight: 400.0, color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0 }
     }
 }
 
@@ -131,6 +134,9 @@ const GROUP_SPACING: f64 = 8.0;
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
     pub scroll: &'a HashMap<u64, f64>,
+    /// Text an input method is composing: the view it's for, the part of the
+    /// view's text it will replace, and the text so far.
+    pub composing: Option<(u64, std::ops::Range<usize>, &'a str)>,
 }
 
 impl Layouter<'_> {
@@ -146,7 +152,19 @@ impl Layouter<'_> {
             color: n.mods.color.unwrap_or(parent.color),
             disabled: parent.disabled || n.mods.disabled,
             text_align: n.mods.text_align.unwrap_or(parent.text_align),
+            animation: n.mods.animation.unwrap_or(parent.animation),
         }
+    }
+
+    /// The text an editable view shows: its own, with text being composed
+    /// in place of the selection.
+    fn shown_text(&self, key: u64, mut text: String) -> String {
+        if let Some((k, range, composed)) = &self.composing {
+            if *k == key && text.get(range.clone()).is_some() {
+                text.replace_range(range.clone(), composed);
+            }
+        }
+        text
     }
 
     fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> parley::Layout<Paint> {
@@ -217,7 +235,7 @@ impl Layouter<'_> {
                 size
             }
             Kind::TextField { placeholder, text } => {
-                let value = read_string(text);
+                let value = self.shown_text(n.key, read_string(text));
                 let placeholder = placeholder.clone();
                 let ph = self.text_layout(&placeholder, style, None);
                 let t = self.text_layout(&value, style, None);
@@ -239,12 +257,12 @@ impl Layouter<'_> {
                 size
             }
             Kind::CodeEditor { text, .. } => {
-                let value = read_string(text);
+                let value = self.shown_text(n.key, read_string(text));
                 let t = self.text.code_layout(&value, 13.0);
                 let count = t.lines().count().max(1);
                 let digits = count.to_string().len().max(2);
                 let numbers: Vec<String> = (1..=count).map(|i| format!("{i:>digits$}")).collect();
-                let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, Rgba([160, 160, 166, 255]));
+                let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, theme().line_number);
                 n.layout.gutter = numbers.width() as f64 + 14.0;
                 n.layout.content_h = t.height() as f64 + 12.0;
                 n.layout.text = Some(t);
@@ -289,8 +307,18 @@ impl Layouter<'_> {
                 }
                 Size { w, h }
             }
+            Kind::Image { picture: Some(p), .. } => {
+                // A picture has its own size (a point for each pixel), made
+                // smaller to fit the space there is. A `.frame` scales it to
+                // fit, larger too (keeping proportions).
+                let (w, h) = (p.width.max(1.0), p.height.max(1.0));
+                let s = (avail.w / w).min(avail.h / h);
+                let framed = n.mods.width.is_some() || n.mods.height.is_some();
+                let s = if framed && s.is_finite() { s } else { s.min(1.0) };
+                Size { w: w * s, h: h * s }
+            }
             Kind::Spacer => Size::default(),
-            Kind::Image(_) => Size { w: 64.0, h: 64.0 },
+            Kind::Image { .. } => Size { w: 64.0, h: 64.0 },
             Kind::Picker { .. } => {
                 let mut w = 0.0;
                 let mut h: f64 = 0.0;
@@ -397,7 +425,7 @@ impl Layouter<'_> {
         // alignment. Text and SVGs are centered by default; stacks lay out
         // their children across the whole frame unless an alignment is given.
         let align = match &n.kind {
-            Kind::Text(_) | Kind::Svg { .. } => Some(n.mods.frame_align.unwrap_or(1)),
+            Kind::Text(_) | Kind::Svg { .. } | Kind::Image { picture: Some(_), .. } => Some(n.mods.frame_align.unwrap_or(1)),
             Kind::VStack(..) | Kind::HStack(..) | Kind::ZStack(_) => n.mods.frame_align,
             _ => None,
         };

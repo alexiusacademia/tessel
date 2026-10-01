@@ -1,0 +1,22 @@
+// `.animation`: views move and fade to their new places over time; a view
+// that appears fades in; scrolling and views outside `.animation` don't wait.
+
+app Animation(width: 300, height: 200) {
+    state wide = false
+    state extra = false
+
+    VStack(spacing: 10, alignment: .leading) {
+        VStack(spacing: 10, alignment: .leading) {
+            Text("Bar").frame(width: if wide { 200 } else { 100 }, height: 20).background(.blue)
+            Text("Below")
+            if extra {
+                Text("Extra")
+            }
+        }
+        .animation(1)
+        Text("Plain").frame(width: if wide { 200 } else { 100 }, height: 20)
+        Button("Widen") { wide = !wide }
+        Button("More") { extra = !extra }
+    }
+    .padding(16)
+}

@@ -1,0 +1,20 @@
+Root
+  View
+    VStack
+      TextField "First name" = "Grace Brewster"
+      TextField "Last name" = "Hopper-Smith"
+      TextField "Secret" = "hidden" hidden
+      TextField "Locked" = "locked" disabled
+      Button "Save"
+      TextField "City" = "Paris" composing "´"
+      Text "Grace Brewster Hopper-Smith, Paris"
+Root
+  View
+    VStack
+      TextField "First name" = "Grace Brewster"
+      TextField "Last name" = "Hopper-Smith"
+      TextField "Secret" = "hidden" hidden
+      TextField "Locked" = "locked" disabled
+      Button "Save"
+      TextField "City" = "Pariés"
+      Text "Grace Brewster Hopper-Smith, Pariés"

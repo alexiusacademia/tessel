@@ -11,6 +11,7 @@ use vello::util::RenderContext;
 use vello::{wgpu, AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 
 use super::layout::Rect;
+use super::theme::{self, theme};
 use super::{Kind, Node, Rgba};
 
 /// Text color carried through parley layouts.
@@ -32,7 +33,7 @@ impl TextEngine {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
         b.push_default(StyleProperty::from(GenericFamily::Monospace));
         b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::Brush(Paint(super::highlight::PLAIN.0)));
+        b.push_default(StyleProperty::Brush(Paint(theme().colors[theme::PRIMARY].0)));
         for (range, color) in super::highlight::highlight(text) {
             b.push(StyleProperty::Brush(Paint(color.0)), range);
         }
@@ -101,6 +102,38 @@ pub struct Interaction {
     pub history: HashMap<u64, super::edit::History>,
     /// The code editor's completion list, laid out, when one shows.
     pub popup: Option<Popup>,
+    /// Text an input method is composing in the view being edited.
+    pub composing: Option<Composing>,
+    pub anim: super::anim::Animations,
+}
+
+/// Text being composed with an input method (for Chinese, Japanese, accents
+/// typed with dead keys, …): shown at the caret, underlined, and not part of
+/// the view's text until it's committed.
+pub struct Composing {
+    pub text: String,
+    /// The input method's caret, as a byte offset into `text`.
+    pub caret: Option<usize>,
+}
+
+impl Interaction {
+    /// The text being composed in view `key`, and the part of the view's
+    /// text it takes the place of (the selection).
+    pub fn composing_in(&self, key: u64) -> Option<(std::ops::Range<usize>, &Composing)> {
+        let e = self.editing.as_ref().filter(|e| e.key == key)?;
+        Some((e.range(), self.composing.as_ref()?))
+    }
+
+    /// The selection of view `key` as it's drawn, if it's being edited:
+    /// while text is composed, a caret inside that text.
+    pub fn shown_editing(&self, key: u64) -> Option<super::edit::Editing> {
+        let mut e = self.editing.clone().filter(|e| e.key == key)?;
+        if let Some((range, c)) = self.composing_in(key) {
+            let caret = range.start + c.caret.unwrap_or(c.text.len()).min(c.text.len());
+            (e.anchor, e.focus) = (caret, caret);
+        }
+        Some(e)
+    }
 }
 
 /// A code editor's completion list, drawn over everything else.
@@ -133,20 +166,6 @@ impl Popup {
     }
 }
 
-const ACCENT: Rgba = Rgba([0, 122, 255, 255]);
-const CONTROL: Rgba = Rgba([232, 232, 237, 255]);
-const CONTROL_HOVER: Rgba = Rgba([221, 221, 227, 255]);
-const CONTROL_PRESSED: Rgba = Rgba([205, 205, 212, 255]);
-const FIELD_BORDER: Rgba = Rgba([199, 199, 204, 255]);
-const PLACEHOLDER: Rgba = Rgba([160, 160, 166, 255]);
-const SWITCH_ON: Rgba = Rgba([52, 199, 89, 255]);
-const WHITE: Rgba = Rgba([255, 255, 255, 255]);
-const SELECTION: Rgba = Rgba([179, 215, 255, 255]);
-const GUTTER: Rgba = Rgba([245, 245, 247, 255]);
-const ERROR_LINE: Rgba = Rgba([255, 235, 235, 255]);
-const ERROR_MARK: Rgba = Rgba([255, 59, 48, 255]);
-pub const BACKGROUND: Rgba = Rgba([255, 255, 255, 255]);
-
 fn color(c: Rgba) -> Color {
     Color::from_rgba8(c.0[0], c.0[1], c.0[2], c.0[3])
 }
@@ -160,11 +179,26 @@ pub struct Painter<'a> {
     pub ui: &'a Interaction,
     /// Points to pixels.
     pub scale: f64,
+    /// How far the view being drawn is from where layout put it (while it's
+    /// animated to its place), in points.
+    pub offset: (f64, f64),
 }
 
 impl Painter<'_> {
     fn t(&self) -> Affine {
-        Affine::scale(self.scale)
+        Affine::scale(self.scale) * Affine::translate(self.offset)
+    }
+
+    /// Underlines the text an input method is composing in view `n`, whose
+    /// text is drawn at (x, y).
+    fn underline_composing(&mut self, n: &Node, layout: &parley::Layout<Paint>, x: f64, y: f64) {
+        let Some((range, c)) = self.ui.composing_in(n.key) else { return };
+        let mut span = super::edit::Editing::new(n.key, "");
+        (span.anchor, span.focus) = (range.start, range.start + c.text.len());
+        for r in super::edit::geometry(layout, &span).1 {
+            let line = Rect { x: x + r.x0, y: y + r.y1 - 1.0, w: r.x1 - r.x0, h: 1.0 };
+            self.fill(line, 0.0, n.layout.style.color);
+        }
     }
 
     /// Draws `svg` centered in `r`, scaled to fit.
@@ -222,13 +256,13 @@ impl Painter<'_> {
         let r = p.rect;
         let shadow = Rect { x: r.x, y: r.y + 3.0, w: r.w, h: r.h };
         self.fill(shadow.inset(-2.0), 8.0, Rgba([0, 0, 0, 22]));
-        self.fill(r, 6.0, WHITE);
+        self.fill(r, 6.0, theme().popup);
         let t = self.t();
         self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(r, 6.0));
         for (i, row) in p.rows.iter().enumerate() {
             let y = r.y + 4.0 + i as f64 * p.row_h;
             if p.selected == Some(i) {
-                self.fill(Rect { x: r.x + 4.0, y, w: r.w - 8.0, h: p.row_h }, 4.0, SELECTION);
+                self.fill(Rect { x: r.x + 4.0, y, w: r.w - 8.0, h: p.row_h }, 4.0, theme().selection);
             }
             let badge = Rect { x: r.x + 8.0, y: y + (p.row_h - 16.0) / 2.0, w: 16.0, h: 16.0 };
             self.fill(badge, 4.0, row.badge_color);
@@ -241,29 +275,35 @@ impl Painter<'_> {
             self.text(&row.detail, dx, dy, None);
         }
         self.scene.pop_layer();
-        self.stroke(r, 6.0, 1.0, FIELD_BORDER);
+        self.stroke(r, 6.0, 1.0, theme().field_border);
     }
 
     pub fn paint(&mut self, n: &Node) {
         if n.mods.hidden {
             return;
         }
-        let r = n.layout.rect;
+        // While the view is animated, its frame (background, border) is drawn
+        // where it is now, and its content moved along with it.
+        let placed = n.layout.rect;
+        let shown = self.ui.anim.shown(n.key);
+        let r = shown.map_or(placed, |s| s.rect);
+        let outer = std::mem::replace(&mut self.offset, (0.0, 0.0));
         let style = n.layout.style;
         let dim = if style.disabled && !n.children.is_empty() { 1.0 } else if style.disabled { 0.4 } else { 1.0 };
-        let alpha = n.mods.opacity.unwrap_or(1.0) * dim;
+        let alpha = shown.map_or(n.mods.opacity.unwrap_or(1.0), |s| s.opacity) * dim;
         let layered = alpha < 1.0;
         if layered {
             let t = self.t();
             self.scene.push_layer(Fill::NonZero, Mix::Normal, alpha as f32, t, &rounded(r, 0.0));
         }
-        if let Some((c, radius)) = n.mods.background {
+        if let Some((c, radius)) = shown.map_or(n.mods.background, |s| s.background) {
             self.fill(r, radius, c);
         }
         if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hover_background == Some(n.key)) {
             self.fill(r, radius, c);
         }
-        let content = r.inset_by(n.mods.padding);
+        self.offset = (r.x - placed.x, r.y - placed.y);
+        let content = placed.inset_by(n.mods.padding);
         let hovered = self.ui.hovered == Some(n.key) && !style.disabled;
         let pressed = self.ui.pressed == Some(n.key) && !style.disabled;
         match &n.kind {
@@ -275,23 +315,24 @@ impl Painter<'_> {
             }
             Kind::Button { .. } => {
                 if n.mods.background.is_none() {
-                    let bg = if pressed { CONTROL_PRESSED } else if hovered { CONTROL_HOVER } else { CONTROL };
+                    let bg = if pressed { theme().control_pressed } else if hovered { theme().control_hover } else { theme().control };
                     self.fill(content, 7.0, bg);
                 }
                 if let Some(t) = &n.layout.text {
                     let x = content.x + (content.w - t.width() as f64) / 2.0;
                     let y = content.y + (content.h - t.height() as f64) / 2.0;
-                    let tint = if n.mods.color.is_none() { Some(ACCENT) } else { None };
+                    let tint = if n.mods.color.is_none() { Some(theme().accent) } else { None };
                     self.text(t, x, y, tint);
                 }
             }
             Kind::TextField { .. } => {
-                let editing = self.ui.editing.as_ref().filter(|e| e.key == n.key);
-                self.fill(content, 6.0, WHITE);
+                let editing = self.ui.shown_editing(n.key);
+                let editing = editing.as_ref();
+                self.fill(content, 6.0, theme().field);
                 if editing.is_some() {
-                    self.stroke(content, 6.0, 2.0, ACCENT);
+                    self.stroke(content, 6.0, 2.0, theme().accent);
                 } else {
-                    self.stroke(content, 6.0, 1.0, FIELD_BORDER);
+                    self.stroke(content, 6.0, 1.0, theme().field_border);
                 }
                 if let (Some(t), Some(ph)) = (&n.layout.text, &n.layout.placeholder) {
                     let (x0, y0) = field_origin(n);
@@ -303,54 +344,61 @@ impl Painter<'_> {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
                             let sel = Rect { x: x0 - scroll + r.x0, y: y0 + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
-                            self.fill(sel, 2.0, SELECTION);
+                            self.fill(sel, 2.0, theme().selection);
                         }
                         let caret = match caret {
                             Some(c) => Rect { x: x0 - scroll + c.x0, y: y0 + c.y0, w: 1.5, h: c.y1 - c.y0 },
                             None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
                         };
                         if e.range().is_empty() {
-                            self.fill(caret, 0.0, ACCENT);
+                            self.fill(caret, 0.0, theme().accent);
                         }
                     }
                     if n.layout.empty {
-                        self.text(ph, x0, y0, Some(PLACEHOLDER));
+                        self.text(ph, x0, y0, Some(theme().placeholder));
                     } else {
                         self.text(t, x0 - scroll, y0, None);
+                        self.underline_composing(n, t, x0 - scroll, y0);
                     }
                     self.scene.pop_layer();
                 }
             }
             Kind::Toggle { is_on, .. } => {
-                let on = unsafe { *is_on.locate() } & 1 != 0;
+                // How far on it's drawn: it slides from one side to the other.
+                let on = self.ui.anim.toggle(n.key, unsafe { *is_on.locate() } & 1 != 0);
                 let sw = Rect { x: content.x + content.w - 38.0, y: content.y + (content.h - 22.0) / 2.0, w: 38.0, h: 22.0 };
-                self.fill(sw, 11.0, if on { SWITCH_ON } else { CONTROL_PRESSED });
-                let knob_x = if on { sw.x + sw.w - 11.0 } else { sw.x + 11.0 };
+                let (off_color, on_color) = (theme().control_pressed, theme().switch_on);
+                let track = Rgba(std::array::from_fn(|i| {
+                    (off_color.0[i] as f64 + (on_color.0[i] as f64 - off_color.0[i] as f64) * on).round() as u8
+                }));
+                self.fill(sw, 11.0, track);
+                let knob_x = sw.x + 11.0 + (sw.w - 22.0) * on;
                 let t = self.t();
-                self.scene.fill(Fill::NonZero, t, color(WHITE), None, &Circle::new((knob_x, sw.y + 11.0), 9.0));
+                self.scene.fill(Fill::NonZero, t, color(Rgba([255, 255, 255, 255])), None, &Circle::new((knob_x, sw.y + 11.0), 9.0));
                 if let Some(label) = &n.layout.text {
                     self.text(label, content.x, content.y + (content.h - label.height() as f64) / 2.0, None);
                 }
             }
             Kind::Picker { selection } => {
-                self.fill(content, 8.0, CONTROL);
+                self.fill(content, 8.0, theme().control);
                 let current = selection.locate();
                 for (c, seg) in n.children.iter().zip(&n.layout.segments) {
                     let selected = c.mods.tag.as_ref().is_some_and(|tag| tag.equals(current));
                     if selected {
-                        self.fill(*seg, 6.0, WHITE);
-                        self.stroke(*seg, 6.0, 0.5, FIELD_BORDER);
+                        self.fill(*seg, 6.0, theme().segment);
+                        self.stroke(*seg, 6.0, 0.5, theme().field_border);
                     }
                     self.paint(c);
                 }
             }
             Kind::CodeEditor { error_lines, .. } => {
-                let editing = self.ui.editing.as_ref().filter(|e| e.key == n.key);
+                let editing = self.ui.shown_editing(n.key);
+                let editing = editing.as_ref();
                 let t_scene = self.t();
-                self.fill(content, 6.0, WHITE);
+                self.fill(content, 6.0, theme().field);
                 self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(content, 6.0));
                 let gutter = Rect { x: content.x, y: content.y, w: n.layout.gutter, h: content.h };
-                self.fill(gutter, 0.0, GUTTER);
+                self.fill(gutter, 0.0, theme().gutter);
                 let (x0, y0) = code_origin(n);
                 let scroll_y = self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
                 let scroll_x = self.ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
@@ -363,8 +411,8 @@ impl Painter<'_> {
                         let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
                         let y = y0 - scroll_y + top;
                         let band = Rect { x: content.x + n.layout.gutter, y, w: content.w - n.layout.gutter, h: bottom - top };
-                        self.fill(band, 0.0, ERROR_LINE);
-                        self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, ERROR_MARK);
+                        self.fill(band, 0.0, theme().error_line);
+                        self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, theme().error_mark);
                     }
                     if let Some(numbers) = &n.layout.placeholder {
                         self.text(numbers, content.x + 4.0, y0 - scroll_y, None);
@@ -375,7 +423,7 @@ impl Painter<'_> {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
                             let sel = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
-                            self.fill(sel, 1.0, SELECTION);
+                            self.fill(sel, 1.0, theme().selection);
                         }
                         if e.range().is_empty() {
                             let line_h = lines.first().map_or(16.0, |(a, b)| b - a);
@@ -383,43 +431,44 @@ impl Painter<'_> {
                                 Some(c) => Rect { x: x0 - scroll_x + c.x0, y: y0 - scroll_y + c.y0, w: 1.5, h: c.y1 - c.y0 },
                                 None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
                             };
-                            self.fill(caret, 0.0, ACCENT);
+                            self.fill(caret, 0.0, theme().accent);
                         }
                     }
                     self.text(t, x0 - scroll_x, y0 - scroll_y, None);
+                    self.underline_composing(n, t, x0 - scroll_x, y0 - scroll_y);
                     self.scene.pop_layer();
                 }
                 self.scene.pop_layer();
                 if editing.is_some() {
-                    self.stroke(content, 6.0, 2.0, ACCENT);
+                    self.stroke(content, 6.0, 2.0, theme().accent);
                 } else {
-                    self.stroke(content, 6.0, 1.0, FIELD_BORDER);
+                    self.stroke(content, 6.0, 1.0, theme().field_border);
                 }
             }
             Kind::TabView { .. } => {
                 let bar = Rect { x: content.x, y: content.y, w: content.w, h: super::layout::TAB_BAR };
-                self.fill(bar, 0.0, super::COLORS[14]);
-                self.fill(Rect { x: bar.x, y: bar.y + bar.h - 1.0, w: bar.w, h: 1.0 }, 0.0, super::COLORS[16]);
+                self.fill(bar, 0.0, theme().colors[theme::SIDEBAR]);
+                self.fill(Rect { x: bar.x, y: bar.y + bar.h - 1.0, w: bar.w, h: 1.0 }, 0.0, theme().colors[theme::SEPARATOR]);
                 let selected = n.selected_tab();
                 for (i, tab) in n.layout.tabs.iter().enumerate() {
                     let r = tab.rect;
                     let hovered = self.ui.pointer.is_some_and(|(x, y)| r.contains(x, y));
                     if i == selected {
-                        self.fill(r, 0.0, WHITE);
-                        self.fill(Rect { x: r.x, y: r.y, w: r.w, h: 2.0 }, 0.0, ACCENT);
+                        self.fill(r, 0.0, theme().colors[theme::BACKGROUND]);
+                        self.fill(Rect { x: r.x, y: r.y, w: r.w, h: 2.0 }, 0.0, theme().accent);
                     } else if hovered {
-                        self.fill(r, 0.0, super::COLORS[13]);
+                        self.fill(r, 0.0, theme().colors[theme::LIGHT_GRAY]);
                     }
-                    self.fill(Rect { x: r.x + r.w - 1.0, y: r.y, w: 1.0, h: r.h }, 0.0, super::COLORS[16]);
-                    let tint = if i == selected { None } else { Some(super::COLORS[1]) };
+                    self.fill(Rect { x: r.x + r.w - 1.0, y: r.y, w: 1.0, h: r.h }, 0.0, theme().colors[theme::SEPARATOR]);
+                    let tint = if i == selected { None } else { Some(theme().colors[theme::SECONDARY]) };
                     let ty = r.y + (r.h - tab.title.height() as f64) / 2.0;
                     self.text(&tab.title, r.x + 14.0, ty, tint);
                     if let (Some(c), true) = (tab.close, i == selected || hovered) {
                         let over = self.ui.pointer.is_some_and(|(x, y)| c.contains(x, y));
                         if over {
-                            self.fill(c, 4.0, super::COLORS[13]);
+                            self.fill(c, 4.0, theme().colors[theme::LIGHT_GRAY]);
                         }
-                        self.svg("close", Rect { x: c.x + c.w / 2.0 - 6.0, y: c.y + c.h / 2.0 - 6.0, w: 12.0, h: 12.0 }, super::COLORS[1]);
+                        self.svg("close", Rect { x: c.x + c.w / 2.0 - 6.0, y: c.y + c.h / 2.0 - 6.0, w: 12.0, h: 12.0 }, theme().colors[theme::SECONDARY]);
                     }
                 }
                 if let Some(c) = n.children.get(selected) {
@@ -427,16 +476,22 @@ impl Painter<'_> {
                 }
             }
             Kind::Divider => {
-                self.fill(r, 0.0, super::COLORS[16]);
+                self.fill(placed, 0.0, theme().colors[theme::SEPARATOR]);
             }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
                     self.draw_svg(&svg, n.layout.content);
                 }
             }
-            Kind::Image(_) => {
-                self.fill(content, 8.0, CONTROL);
-                self.stroke(content, 8.0, 1.0, FIELD_BORDER);
+            Kind::Image { picture: Some(p), .. } => {
+                let c = n.layout.content;
+                let s = (c.w / p.width.max(1.0)).min(c.h / p.height.max(1.0));
+                let t = self.t() * Affine::translate((c.x, c.y)) * Affine::scale(s);
+                self.scene.draw_image(&p.image, t);
+            }
+            Kind::Image { .. } => {
+                self.fill(content, 8.0, theme().control);
+                self.stroke(content, 8.0, 1.0, theme().field_border);
             }
             Kind::Scroll => {
                 let t = self.t();
@@ -448,6 +503,7 @@ impl Painter<'_> {
             }
             _ => {}
         }
+        self.offset = (0.0, 0.0);
         if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. }) {
             for c in &n.children {
                 self.paint(c);
@@ -459,6 +515,7 @@ impl Painter<'_> {
         if layered {
             self.scene.pop_layer();
         }
+        self.offset = outer;
     }
 }
 
@@ -494,7 +551,7 @@ pub fn renderer(device: &wgpu::Device) -> Renderer {
 }
 
 pub fn params(width: u32, height: u32) -> RenderParams {
-    RenderParams { base_color: color(BACKGROUND), width, height, antialiasing_method: AaConfig::Area }
+    RenderParams { base_color: color(theme().colors[theme::BACKGROUND]), width, height, antialiasing_method: AaConfig::Area }
 }
 
 /// Renders a scene off-screen and saves it as a PNG.

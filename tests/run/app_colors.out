@@ -1,0 +1,54 @@
+Root
+  View
+    VStack
+      Text "Light"
+      HStack
+        View
+          Text "default"
+        View
+          Text "brand"
+        View
+          Text "teal"
+        View
+          Text "faded"
+      HStack
+        Text "secondary"
+        Text "card"
+        Text "sidebar"
+        Text "window"
+      HStack
+        Button "Button"
+        TextField "Name" = ""
+        Toggle "" = true
+        Picker
+          Text "S"
+          Text "M"
+      Divider
+      Text "rgb red"
+Root
+  View
+    VStack
+      Text "Dark"
+      HStack
+        View
+          Text "default"
+        View
+          Text "brand"
+        View
+          Text "teal"
+        View
+          Text "faded"
+      HStack
+        Text "secondary"
+        Text "card"
+        Text "sidebar"
+        Text "window"
+      HStack
+        Button "Button"
+        TextField "Name" = ""
+        Toggle "" = true
+        Picker
+          Text "S"
+          Text "M"
+      Divider
+      Text "rgb red"

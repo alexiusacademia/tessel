@@ -1,0 +1,13 @@
+animations on
+dump
+click "Widen"
+dump
+wait 0.5
+dump
+wait 0.5
+dump
+click "More"
+wait 0.5
+dump
+wait 1
+dump

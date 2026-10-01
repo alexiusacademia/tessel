@@ -1,0 +1,18 @@
+// PNG and JPEG files in `Image`: their own size, scaled by a frame, and a
+// placeholder for a file that's missing.
+
+app Images(width: 420, height: 260) {
+    VStack(spacing: 12) {
+        HStack(spacing: 12) {
+            Image("tests/pictures/photo.jpg")
+            Image("tests/pictures/tiles.png")
+            Image("tests/pictures/missing.png")
+        }
+        HStack(spacing: 12) {
+            Image("tests/pictures/photo.jpg").frame(width: 60)
+            Image("tests/pictures/photo.jpg").frame(height: 100)
+            Image("tests/pictures/tiles.png").frame(width: 96, height: 60)
+        }
+    }
+    .padding(16)
+}

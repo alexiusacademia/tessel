@@ -1,0 +1,21 @@
+key tab
+type Grace
+key tab
+type Hopper
+key tab
+type Arlington
+key tab
+type Grace Brewster
+key shift+tab
+type Paris
+key shift+tab
+key right
+type -Smith
+click "City"
+key left
+compose "´"
+tree
+type é
+compose "~"
+compose ""
+tree

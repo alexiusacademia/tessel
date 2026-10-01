@@ -6,12 +6,15 @@
 //! keeps what must survive rebuilds (view `state`, focus, scroll offsets)
 //! keyed by each view's position in the tree.
 
+mod anim;
 mod app;
 mod edit;
 mod highlight;
+mod image;
 mod layout;
 mod render;
 mod svg;
+mod theme;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,6 +24,7 @@ use std::hash::{Hash, Hasher};
 use crate::{tsl_release, tsl_retain, Header, Str, TslType};
 
 pub use app::{run_until_idle, tsl_ui_run};
+pub use theme::tsl_is_dark_mode;
 
 // ===== callbacks =====
 
@@ -132,27 +136,6 @@ impl Drop for Value {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rgba(pub [u8; 4]);
 
-/// Colors in the order of the `Color` enum.
-pub const COLORS: [Rgba; 17] = [
-    Rgba([29, 29, 31, 255]),    // primary
-    Rgba([110, 110, 115, 255]), // secondary
-    Rgba([142, 142, 147, 255]), // gray
-    Rgba([255, 59, 48, 255]),   // red
-    Rgba([255, 149, 0, 255]),   // orange
-    Rgba([255, 204, 0, 255]),   // yellow
-    Rgba([52, 199, 89, 255]),   // green
-    Rgba([0, 122, 255, 255]),   // blue
-    Rgba([175, 82, 222, 255]),  // purple
-    Rgba([255, 45, 85, 255]),   // pink
-    Rgba([255, 255, 255, 255]), // white
-    Rgba([0, 0, 0, 255]),       // black
-    Rgba([0, 0, 0, 0]),         // clear
-    Rgba([229, 229, 234, 255]), // lightGray
-    Rgba([243, 243, 246, 255]), // sidebar
-    Rgba([214, 228, 252, 255]), // highlight
-    Rgba([216, 216, 222, 255]), // separator
-];
-
 /// Font weights in the order of the `Weight` enum.
 pub const WEIGHTS: [f32; 4] = [400.0, 500.0, 600.0, 700.0];
 
@@ -189,7 +172,8 @@ pub enum Kind {
     ZStack(u8),
     Scroll,
     Spacer,
-    Image(String),
+    /// A PNG or JPEG file; without a picture (a missing file), a placeholder box.
+    Image { path: String, picture: Option<std::rc::Rc<image::Picture>> },
 }
 
 #[derive(Default)]
@@ -230,6 +214,9 @@ pub struct Mods {
     pub tab_title: Option<String>,
     /// `.hoverBackground(color, radius:)`: drawn while the mouse is over the view.
     pub hover_background: Option<(Rgba, f64)>,
+    /// `.animation(seconds)`: how long changes to the view and the views
+    /// inside it take (0 for at once); inherited.
+    pub animation: Option<f64>,
 }
 
 pub struct Node {
@@ -293,7 +280,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::ZStack(_) => 13,
         Kind::Scroll => 14,
         Kind::Spacer => 15,
-        Kind::Image(_) => 16,
+        Kind::Image { .. } => 16,
         Kind::Svg { .. } => 17,
     }
 }
@@ -481,14 +468,17 @@ pub extern "C" fn tsl_ui_spacer() {
     with_builder(|b| b.leaf(Kind::Spacer));
 }
 
-/// `Image("path")`: SVG files are drawn; other formats show a placeholder for now.
+/// `Image("path")`: an SVG, PNG or JPEG file.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
     let path = unsafe { text_of(path) };
     let svg = path.to_lowercase().ends_with(".svg").then(|| std::fs::read_to_string(&path).ok()).flatten();
     let kind = match svg {
         Some(source) => Kind::Svg { source: source.into(), icon: None },
-        None => Kind::Image(path),
+        None => {
+            let picture = image::load(&path);
+            Kind::Image { path, picture }
+        }
     };
     with_builder(|b| b.leaf(kind));
 }
@@ -560,6 +550,11 @@ pub unsafe extern "C" fn tsl_ui_begin_tabs(f: *const c_void, env: *mut Header, c
 pub extern "C" fn tsl_ui_text_alignment(align: i32) {
     let (h, _) = align_2d(align.clamp(0, 8) as u8);
     modify(|m| m.text_align = Some(h));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_animation(seconds: f64) {
+    modify(|m| m.animation = Some(seconds.max(0.0)));
 }
 
 #[unsafe(no_mangle)]
@@ -659,18 +654,21 @@ pub extern "C" fn tsl_ui_font(size: f64, has_size: u8, weight: i32, has_weight: 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_color(color: i32) {
-    modify(|m| m.color = Some(COLORS[color as usize]));
+pub unsafe extern "C" fn tsl_ui_color(color: i32, values: *const Header) {
+    let c = unsafe { theme::color(color, values) };
+    modify(|m| m.color = Some(c));
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_background(color: i32, radius: f64) {
-    modify(|m| m.background = Some((COLORS[color as usize], radius)));
+pub unsafe extern "C" fn tsl_ui_background(color: i32, values: *const Header, radius: f64) {
+    let c = unsafe { theme::color(color, values) };
+    modify(|m| m.background = Some((c, radius)));
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_border(color: i32, width: f64, radius: f64) {
-    modify(|m| m.border = Some((COLORS[color as usize], width, radius)));
+pub unsafe extern "C" fn tsl_ui_border(color: i32, values: *const Header, width: f64, radius: f64) {
+    let c = unsafe { theme::color(color, values) };
+    modify(|m| m.border = Some((c, width, radius)));
 }
 
 #[unsafe(no_mangle)]
@@ -757,8 +755,9 @@ pub unsafe extern "C" fn tsl_ui_tab_item(title: *const Str) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_hover_background(color: i32, radius: f64) {
-    modify(|m| m.hover_background = Some((COLORS[color as usize], radius)));
+pub unsafe extern "C" fn tsl_ui_hover_background(color: i32, values: *const Header, radius: f64) {
+    let c = unsafe { theme::color(color, values) };
+    modify(|m| m.hover_background = Some((c, radius)));
 }
 
 #[unsafe(no_mangle)]
@@ -824,7 +823,7 @@ mod tests {
         let mut tree = build(&root);
         let mut text = render::TextEngine::new();
         let scroll = HashMap::new();
-        layout::Layouter { text: &mut text, scroll: &scroll }.run(&mut tree, 320.0, 260.0);
+        layout::Layouter { text: &mut text, scroll: &scroll, composing: None }.run(&mut tree, 320.0, 260.0);
         let vstack = &tree.children[0];
         assert!(matches!(vstack.kind, Kind::VStack(..)));
         // Centered horizontally in the window, and the text field stretches.
@@ -835,7 +834,7 @@ mod tests {
 
         let mut scene = vello::Scene::new();
         let ui = render::Interaction::default();
-        render::Painter { scene: &mut scene, ui: &ui, scale: 2.0 }.paint(&tree);
+        render::Painter { scene: &mut scene, ui: &ui, scale: 2.0, offset: (0.0, 0.0) }.paint(&tree);
         let path = std::env::temp_dir().join("tessel-runtime-counter.png");
         let mut cx = vello::util::RenderContext::new();
         render::render_png(&mut cx, &mut None, &scene, 640, 520, path.to_str().unwrap());

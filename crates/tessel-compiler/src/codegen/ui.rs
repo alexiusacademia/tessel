@@ -316,9 +316,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         let w = size("width", 640.0);
         let h = size("height", 480.0);
+        // The `Appearance` case's tag; 0 is `.system`.
+        let appearance = match arg("appearance") {
+            Some(a) => self.expr_as(&a.value, &builtins::Builtins::standard().appearance).unwrap(),
+            None => self.ctx.i32_type().const_zero().into(),
+        };
         let root = self.view_builds[&app.name.name].as_global_value().as_pointer_value();
         let null = self.ptr_ty().const_null();
-        self.call_rt("tsl_ui_run", &[title, w, h, root.into(), null.into()]);
+        self.call_rt("tsl_ui_run", &[title, w, h, appearance, root.into(), null.into()]);
         self.b.build_unreachable().unwrap();
         self.stack.pop();
     }
@@ -655,6 +660,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             g.to_c_bool(b)
         };
         let int = |g: &mut Self, x: &Expr| g.expr(x).unwrap();
+        // Calls a runtime function with a `Color` (its case's tag, and the box
+        // of an `.rgb` or `.rgba` color's values), then `rest`.
+        let colored = |g: &mut Self, rt: &str, x: &Expr, rest: &[Val<'ctx>]| {
+            let t = builtins::Builtins::standard().color;
+            let v = g.expr_as(x, &t).unwrap();
+            let s = v.into_struct_value();
+            let mut vals = vec![g.b.build_extract_value(s, 0, "").unwrap(), g.b.build_extract_value(s, 1, "").unwrap()];
+            vals.extend_from_slice(rest);
+            g.call_rt(rt, &vals);
+            g.release(v, &t);
+        };
         match name {
             "padding" => {
                 // Arguments: amount, horizontal, vertical, top, leading, bottom,
@@ -687,19 +703,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.call_rt("tsl_ui_font", &[size, has_size.into(), weight, has_weight.into()]);
             }
             "color" => {
-                let c = int(self, a(0).unwrap());
-                self.call_rt("tsl_ui_color", &[c]);
+                colored(self, "tsl_ui_color", a(0).unwrap(), &[]);
             }
             "background" => {
-                let c = int(self, a(0).unwrap());
                 let r = float(self, a(1), 0.0);
-                self.call_rt("tsl_ui_background", &[c, r]);
+                colored(self, "tsl_ui_background", a(0).unwrap(), &[r]);
             }
             "border" => {
-                let c = int(self, a(0).unwrap());
                 let w = float(self, a(1), 1.0);
                 let r = float(self, a(2), 0.0);
-                self.call_rt("tsl_ui_border", &[c, w, r]);
+                colored(self, "tsl_ui_border", a(0).unwrap(), &[w, r]);
             }
             "frame" => {
                 let mut dims = Vec::new();
@@ -753,15 +766,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "autofocus" => {
                 self.call_rt("tsl_ui_autofocus", &[]);
             }
+            "animation" => {
+                let seconds = float(self, a(0), 0.25);
+                self.call_rt("tsl_ui_animation", &[seconds]);
+            }
             "tabItem" => {
                 let title = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
                 self.call_rt("tsl_ui_tab_item", &[title]);
                 self.release(title, &Ty::Str);
             }
             "hoverBackground" => {
-                let c = int(self, a(0).unwrap());
                 let r = float(self, a(1), 0.0);
-                self.call_rt("tsl_ui_hover_background", &[c, r]);
+                colored(self, "tsl_ui_hover_background", a(0).unwrap(), &[r]);
             }
             "onTap" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();

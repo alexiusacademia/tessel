@@ -24,6 +24,11 @@
 //!                       for loads, commands and background work to finish
 //! repeat 20 key down    run a command several times
 //! snapshot out.png      render to a PNG (at 2x)
+//! compose "ni"          text an input method is composing (not yet typed);
+//!                       `type` then commits what it became
+//! appearance dark       switch to the dark (or `light`) appearance
+//! animations on         animate as a window does (headless runs don't,
+//!                       unless asked); `wait` then shows views on their way
 //! dump                  print the laid-out view tree, with positions
 //! tree                  print the view tree without positions
 //! ```
@@ -40,8 +45,8 @@ use std::time::{Duration, Instant};
 use vello::util::{RenderContext, RenderSurface};
 use vello::{wgpu, Renderer, Scene};
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::dpi::{LogicalPosition, LogicalSize};
+use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
@@ -49,6 +54,7 @@ use winit::window::{Window, WindowId};
 use super::edit::{self, Clipboard, Edit, Editing, Unit};
 use super::layout::{read_string, Layouter, Rect};
 use super::render::{self, code_origin, field_origin, Interaction, Painter, TextEngine};
+use super::theme::{self, theme};
 use super::{build, Callback, Kind, Node, Rgba};
 use crate::{Header, Str};
 
@@ -454,6 +460,8 @@ struct App {
     title: String,
     width: f64,
     height: f64,
+    /// What the app asked for: 0 follows the system, 1 light, 2 dark.
+    appearance: i32,
     tree: Option<Node>,
     text: TextEngine,
     ui: Interaction,
@@ -550,10 +558,71 @@ impl App {
             self.run_on_appear();
             self.sync_editor_lines();
         }
+        if self.ui.editing.is_none() {
+            self.ui.composing = None;
+        }
+        let composing = self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
         let tree = self.tree.as_mut().unwrap();
-        Layouter { text: &mut self.text, scroll: &self.ui.scroll }.run(tree, self.width, self.height);
+        Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run(tree, self.width, self.height);
         self.follow_caret();
         self.layout_popup();
+        let tree = self.tree.as_ref().unwrap();
+        self.ui.anim.step(tree, now(), (self.width, self.height), &self.ui.scroll);
+    }
+
+    /// Text an input method is composing (empty when it's done or given up).
+    fn compose(&mut self, text: String, caret: Option<usize>) {
+        self.ui.composing = (self.ui.editing.is_some() && !text.is_empty()).then_some(render::Composing { text, caret });
+    }
+
+    /// Where the caret is in the window, for the input method's own window.
+    fn caret_rect(&self) -> Option<Rect> {
+        let e = self.ui.editing.as_ref()?;
+        let node = self.node(e.key)?;
+        let layout = node.layout.text.as_ref()?;
+        let at = self.ui.shown_editing(e.key)?;
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        let c = edit::geometry(layout, &at).0?;
+        Some(Rect { x: x0 - sx + c.x0, y: y0 - sy + c.y0, w: c.x1 - c.x0, h: c.y1 - c.y0 })
+    }
+
+    /// Tab and Shift+Tab: edits the next (or previous) text field or code
+    /// editor, with a field's text selected.
+    fn focus_next(&mut self, back: bool) {
+        fn fields<'n>(n: &'n Node, out: &mut Vec<&'n Node>) {
+            if n.mods.hidden || n.layout.style.disabled {
+                return;
+            }
+            if editable_text(n).is_some() {
+                out.push(n);
+            }
+            for c in n.visible_children() {
+                fields(c, out);
+            }
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            fields(t, &mut found);
+        }
+        let count = found.len();
+        if count == 0 {
+            return;
+        }
+        let current = self.ui.editing.as_ref().and_then(|e| found.iter().position(|n| n.key == e.key));
+        let next = match (current, back) {
+            (Some(i), false) => (i + 1) % count,
+            (Some(i), true) => (i + count - 1) % count,
+            (None, false) => 0,
+            (None, true) => count - 1,
+        };
+        let node = found[next];
+        let mut e = Editing::new(node.key, &editable_text(node).map(read_string).unwrap_or_default());
+        if matches!(node.kind, Kind::TextField { .. }) {
+            e.anchor = 0;
+        }
+        self.ui.editing = Some(e);
+        self.ui.composing = None;
+        self.completing.asked = None;
     }
 
     // ===== code completion =====
@@ -710,8 +779,8 @@ impl App {
                 index,
                 badge: self.text.mono_line(letter, 11.0, 700.0, Rgba([255, 255, 255, 255])),
                 badge_color,
-                label: self.text.mono_line(&s.label, 13.0, 400.0, Rgba([29, 29, 31, 255])),
-                detail: self.text.layout(&detail, 11.5, 400.0, Rgba([142, 142, 147, 255]), None),
+                label: self.text.mono_line(&s.label, 13.0, 400.0, theme().colors[theme::PRIMARY]),
+                detail: self.text.layout(&detail, 11.5, 400.0, theme().colors[theme::GRAY], None),
             };
             widest = widest.max(row.label.width() as f64 + row.detail.width() as f64);
             rows.push(row);
@@ -743,7 +812,13 @@ impl App {
         };
         e.clamp(&read_string(text));
         let Some(layout) = &node.layout.text else { return };
-        let (caret, _) = edit::geometry(layout, e);
+        // While text is composed, the caret is inside it.
+        let mut at = e.clone();
+        if let Some(c) = &self.ui.composing {
+            let caret = e.range().start + c.caret.unwrap_or(c.text.len()).min(c.text.len());
+            (at.anchor, at.focus) = (caret, caret);
+        }
+        let (caret, _) = edit::geometry(layout, &at);
         let content = node.layout.rect.inset_by(node.mods.padding);
         // Scroll so the caret stays visible.
         let keep = |offset: &mut f64, lo: f64, hi: f64, visible: f64, total: f64| {
@@ -890,6 +965,7 @@ impl App {
     /// Types text. In code, Enter keeps the indentation (one more level after
     /// `{`) and `}` at the start of a line removes one level.
     fn type_text(&mut self, text: &str) {
+        self.ui.composing = None;
         if self.editing_code() {
             let before = self.line_before_caret().unwrap_or_default();
             if text == "\n" {
@@ -916,7 +992,7 @@ impl App {
         self.update();
         let mut scene = Scene::new();
         let tree = self.tree.as_ref().unwrap();
-        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale };
+        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0) };
         painter.paint(tree);
         painter.paint_popup();
         scene
@@ -1169,6 +1245,10 @@ impl App {
                 self.type_text("    ");
                 return;
             }
+            "tab" => {
+                self.focus_next(mods.shift);
+                return;
+            }
             "a" if mods.primary => Edit::SelectAll,
             "c" if mods.primary => Edit::Copy,
             "x" if mods.primary => Edit::Cut,
@@ -1295,15 +1375,17 @@ impl App {
     }
 
     fn dump(&self, positions: bool) -> String {
-        fn visit(n: &Node, depth: usize, out: &mut String, positions: bool) {
-            let r = n.layout.rect;
+        fn visit(n: &Node, depth: usize, out: &mut String, positions: bool, ui: &Interaction) {
+            // Where it's drawn now, which is on the way to its place while it's animated.
+            let r = ui.anim.shown(n.key).map_or(n.layout.rect, |s| s.rect);
             let what = match &n.kind {
                 Kind::Root => "Root".to_string(),
                 Kind::Group => "View".to_string(),
                 Kind::Text(s) => format!("Text {s:?}"),
                 Kind::Button { label, .. } => format!("Button {label:?}"),
                 Kind::TextField { text, placeholder } => {
-                    format!("TextField {placeholder:?} = {:?}", read_string(text))
+                    let composing = ui.composing_in(n.key).map(|(_, c)| format!(" composing {:?}", c.text)).unwrap_or_default();
+                    format!("TextField {placeholder:?} = {:?}{composing}", read_string(text))
                 }
                 Kind::Toggle { label, is_on } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
                 Kind::Picker { .. } => "Picker".to_string(),
@@ -1312,7 +1394,7 @@ impl App {
                 Kind::ZStack(_) => "ZStack".to_string(),
                 Kind::Scroll => "Scroll".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
-                Kind::Image(p) => format!("Image {p:?}"),
+                Kind::Image { path, .. } => format!("Image {path:?}"),
                 Kind::TabView { .. } => {
                     let titles: Vec<&str> = n.children.iter().map(|c| c.mods.tab_title.as_deref().unwrap_or("")).collect();
                     format!("TabView {titles:?} selected {}", n.selected_tab())
@@ -1334,17 +1416,17 @@ impl App {
             // A tab view shows only its selected page.
             if let Kind::TabView { .. } = n.kind {
                 if let Some(c) = n.children.get(n.selected_tab()) {
-                    visit(c, depth + 1, out, positions);
+                    visit(c, depth + 1, out, positions, ui);
                 }
                 return;
             }
             for c in &n.children {
-                visit(c, depth + 1, out, positions);
+                visit(c, depth + 1, out, positions, ui);
             }
         }
         let mut out = String::new();
         if let Some(t) = &self.tree {
-            visit(t, 0, &mut out, positions);
+            visit(t, 0, &mut out, positions, &self.ui);
         }
         out
     }
@@ -1356,13 +1438,22 @@ impl App {
 /// calls `build` (a `{f, env}` closure; ownership is taken) whenever the UI
 /// needs to be described again. Never returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_run(title: *const Str, width: f64, height: f64, f: *const c_void, env: *mut Header) -> ! {
+pub unsafe extern "C" fn tsl_ui_run(
+    title: *const Str,
+    width: f64,
+    height: f64,
+    appearance: i32,
+    f: *const c_void,
+    env: *mut Header,
+) -> ! {
     let title = unsafe { crate::str_text(title) }.to_string();
+    theme::set_dark(appearance == 2);
     let app = App {
         root: Callback::new(f, env),
         title,
         width,
         height,
+        appearance,
         tree: None,
         text: TextEngine::new(),
         ui: Interaction::default(),
@@ -1528,6 +1619,16 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
                 CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(end));
             }
+            "compose" => {
+                let text = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')).unwrap_or(rest);
+                app.compose(text.to_string(), None);
+            }
+            "animations" => app.ui.anim.enabled = rest == "on",
+            "appearance" => {
+                if theme::set_dark(rest == "dark") {
+                    app.dirty = true;
+                }
+            }
             "snapshot" => {
                 let scale = 2.0;
                 let scene = app.scene(scale);
@@ -1571,6 +1672,10 @@ struct WindowApp {
     selecting: bool,
     /// For double and triple clicks: when and where the last click was, and the count.
     last_click: Option<(Instant, (f64, f64), u32)>,
+    /// Whether input methods are on (they are while text is edited), and
+    /// where the caret was last reported to them.
+    ime: bool,
+    ime_caret: Option<Rect>,
 }
 
 fn run_window(app: App) -> i32 {
@@ -1592,7 +1697,10 @@ fn run_window(app: App) -> i32 {
         mods: Mods::default(),
         selecting: false,
         last_click: None,
+        ime: false,
+        ime_caret: None,
     };
+    w.app.ui.anim.enabled = true;
     let code = match event_loop.run_app(&mut w) {
         Ok(()) => 0,
         Err(e) => {
@@ -1636,6 +1744,29 @@ impl WindowApp {
         surface.blitter.copy(&dev.device, &mut encoder, &surface.target_view, &view);
         dev.queue.submit([encoder.finish()]);
         frame.present();
+        // The input method shows its candidates next to the caret.
+        let caret = self.app.caret_rect();
+        if let (Some(c), true) = (caret, caret != self.ime_caret) {
+            window.set_ime_cursor_area(LogicalPosition::new(c.x, c.y), LogicalSize::new(c.w.max(1.0), c.h));
+        }
+        self.ime_caret = caret;
+        if self.app.ui.anim.running {
+            window.request_redraw();
+        }
+    }
+
+    /// Input methods are on while a text field or code editor is edited.
+    fn sync_ime(&mut self) {
+        let editing = self.app.ui.editing.is_some();
+        if editing != self.ime {
+            self.ime = editing;
+            if let Some(w) = &self.window {
+                w.set_ime_allowed(editing);
+            }
+            if !editing {
+                self.app.ui.composing = None;
+            }
+        }
     }
 
     fn request_redraw(&self) {
@@ -1652,7 +1783,13 @@ impl ApplicationHandler for WindowApp {
         }
         let attrs = Window::default_attributes()
             .with_title(self.app.title.clone())
-            .with_inner_size(LogicalSize::new(self.app.width, self.app.height));
+            .with_inner_size(LogicalSize::new(self.app.width, self.app.height))
+            // The title bar's appearance; `None` follows the system.
+            .with_theme(match self.app.appearance {
+                1 => Some(winit::window::Theme::Light),
+                2 => Some(winit::window::Theme::Dark),
+                _ => None,
+            });
         // The app's icon is icon group 1 in its .exe (`tessel build` puts it
         // there): show it in the title bar and the taskbar.
         #[cfg(windows)]
@@ -1671,6 +1808,9 @@ impl ApplicationHandler for WindowApp {
                 return;
             }
         };
+        if self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
+            self.app.dirty = true;
+        }
         let size = window.inner_size();
         let surface = pollster::block_on(self.cx.create_surface(
             window.clone(),
@@ -1703,6 +1843,12 @@ impl ApplicationHandler for WindowApp {
                 self.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { .. } => self.request_redraw(),
+            WindowEvent::ThemeChanged(t) => {
+                if self.app.appearance == 0 && theme::set_dark(t == winit::window::Theme::Dark) {
+                    self.app.dirty = true;
+                }
+                self.request_redraw();
+            }
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::ModifiersChanged(m) => {
                 let m = m.state();
@@ -1769,6 +1915,14 @@ impl ApplicationHandler for WindowApp {
                 }
                 self.request_redraw();
             }
+            WindowEvent::Ime(Ime::Preedit(text, caret)) => {
+                self.app.compose(text, caret.map(|(_, end)| end));
+                self.request_redraw();
+            }
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                self.app.type_text(&text);
+                self.request_redraw();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let dy = match delta {
                     MouseScrollDelta::LineDelta(_, y) => -y as f64 * 40.0,
@@ -1806,6 +1960,7 @@ impl ApplicationHandler for WindowApp {
             }
             _ => {}
         }
+        self.sync_ime();
         if self.app.dirty {
             self.request_redraw();
         }

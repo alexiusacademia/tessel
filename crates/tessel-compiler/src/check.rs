@@ -1079,6 +1079,7 @@ impl Checker<'_> {
                         ParamSig::new("title", Ty::Str).default(),
                         ParamSig::new("width", Ty::Float).default(),
                         ParamSig::new("height", Ty::Float).default(),
+                        ParamSig::new("appearance", self.builtins.appearance.clone()).default(),
                     ];
                     self.with_scope(|c| c.args("`app`", &params, &app.args, None, app.args_span));
                     self.view_body(&[], &[], &app.body, &app.name);

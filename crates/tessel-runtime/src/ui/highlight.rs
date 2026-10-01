@@ -5,16 +5,8 @@
 
 use std::ops::Range;
 
+use super::theme::theme;
 use super::Rgba;
-
-pub const PLAIN: Rgba = Rgba([29, 29, 31, 255]);
-const KEYWORD: Rgba = Rgba([155, 35, 147, 255]);
-const STRING: Rgba = Rgba([196, 26, 22, 255]);
-const NUMBER: Rgba = Rgba([28, 0, 207, 255]);
-const COMMENT: Rgba = Rgba([93, 108, 121, 255]);
-const TYPE: Rgba = Rgba([11, 79, 121, 255]);
-const CALL: Rgba = Rgba([50, 109, 116, 255]);
-const CASE: Rgba = Rgba([57, 0, 160, 255]);
 
 const KEYWORDS: &[&str] = &[
     "app", "view", "struct", "enum", "interface", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
@@ -24,6 +16,7 @@ const KEYWORDS: &[&str] = &[
 /// Colored ranges (byte offsets) for `text`. Text not covered is plain.
 pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
     let b = text.as_bytes();
+    let colors = &theme().code;
     let mut out = Vec::new();
     let mut i = 0;
     let ident = |c: u8| c == b'_' || c.is_ascii_alphanumeric();
@@ -34,7 +27,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
             }
-            out.push((start..i, COMMENT));
+            out.push((start..i, colors.comment));
         } else if c == b'"' {
             i += 1;
             // Strings run to the closing quote or the end of the line; `{…}`
@@ -46,7 +39,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
                     continue;
                 }
                 if b[i] == b'{' {
-                    out.push((seg..i + 1, STRING));
+                    out.push((seg..i + 1, colors.string));
                     let inner_start = i + 1;
                     let mut depth = 0;
                     i += 1;
@@ -73,12 +66,12 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             if i < b.len() && b[i] == b'"' {
                 i += 1;
             }
-            out.push((seg..i.min(b.len()), STRING));
+            out.push((seg..i.min(b.len()), colors.string));
         } else if c.is_ascii_digit() {
             while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_' || (b[i] == b'.' && b.get(i + 1).is_some_and(u8::is_ascii_digit))) {
                 i += 1;
             }
-            out.push((start..i, NUMBER));
+            out.push((start..i, colors.number));
         } else if ident(c) {
             while i < b.len() && ident(b[i]) {
                 i += 1;
@@ -86,13 +79,13 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             let word = &text[start..i];
             let after_dot = start > 0 && b[start - 1] == b'.' && !(start > 1 && ident(b[start - 2]) || start > 1 && b[start - 2] == b')');
             let color = if KEYWORDS.contains(&word) {
-                Some(KEYWORD)
+                Some(colors.keyword)
             } else if c.is_ascii_uppercase() {
-                Some(TYPE)
+                Some(colors.type_name)
             } else if after_dot {
-                Some(CASE)
+                Some(colors.case)
             } else if b.get(i) == Some(&b'(') || (start > 0 && b[start - 1] == b'.' && b.get(i) == Some(&b'(')) {
-                Some(CALL)
+                Some(colors.call)
             } else {
                 None
             };
@@ -117,13 +110,14 @@ mod tests {
 
     #[test]
     fn colors_the_main_token_kinds() {
+        let colors = &theme().code;
         let src = "app Counter {\n    state count = 0 // start\n    Text(\"Count: {count + 1}\").font(weight: .bold)\n}";
-        assert_eq!(colored(src, KEYWORD), ["app", "state"]);
-        assert_eq!(colored(src, TYPE), ["Counter", "Text"]);
-        assert_eq!(colored(src, NUMBER), ["0", "1"]);
-        assert_eq!(colored(src, COMMENT), ["// start"]);
-        assert_eq!(colored(src, STRING), ["\"Count: {", "}\""]);
-        assert_eq!(colored(src, CASE), ["bold"]);
-        assert_eq!(colored(src, CALL), ["font"]);
+        assert_eq!(colored(src, colors.keyword), ["app", "state"]);
+        assert_eq!(colored(src, colors.type_name), ["Counter", "Text"]);
+        assert_eq!(colored(src, colors.number), ["0", "1"]);
+        assert_eq!(colored(src, colors.comment), ["// start"]);
+        assert_eq!(colored(src, colors.string), ["\"Count: {", "}\""]);
+        assert_eq!(colored(src, colors.case), ["bold"]);
+        assert_eq!(colored(src, colors.call), ["font"]);
     }
 }

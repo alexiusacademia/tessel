@@ -1,0 +1,46 @@
+// Colors of your own (`.rgb`, `.rgba`), the window's `.background`, and the
+// light and dark appearances.
+
+view Swatch(label: String, tint: Color = .blue) {
+    Text(label)
+        .color(.white)
+        .padding(horizontal: 10, vertical: 4)
+        .background(tint, radius: 8)
+}
+
+app Colors(width: 420, height: 300) {
+    state name = ""
+    state on = true
+    state size = "M"
+
+    let brand: Color = .rgb(255, 136, 0)
+    let card: Color = if isDarkMode() { .rgb(44, 44, 46) } else { .rgb(250, 246, 240) }
+
+    VStack(spacing: 12) {
+        Text(if isDarkMode() { "Dark" } else { "Light" }).font(size: 20, weight: .bold)
+        HStack(spacing: 8) {
+            Swatch(label: "default")
+            Swatch(label: "brand", tint: brand)
+            Swatch(label: "teal", tint: Color.rgb(0, 150, 136))
+            Swatch(label: "faded", tint: .rgba(255, 45, 85, 0.5))
+        }
+        HStack(spacing: 8) {
+            Text("secondary").color(.secondary)
+            Text("card").padding(8).background(card, radius: 6).border(.separator, radius: 6)
+            Text("sidebar").padding(8).background(.sidebar, radius: 6)
+            Text("window").padding(8).background(.background).border(.rgb(300, -5, 128), width: 2)
+        }
+        HStack(spacing: 8) {
+            Button("Button") {}
+            TextField("Name", text: name).frame(width: 110)
+            Toggle(isOn: on)
+            Picker(selection: size) {
+                Text("S").tag("S")
+                Text("M").tag("M")
+            }
+        }
+        Divider()
+        Text("{brand} {Color.red}").color(.gray)
+    }
+    .padding(16)
+}

@@ -5,8 +5,11 @@ use crate::types::{CaseDef, EnumDef, FieldDef, FnSig, ParamSig as P, StructDef, 
 
 pub const COLORS: &[&str] = &[
     "primary", "secondary", "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink", "white", "black",
-    "clear", "lightGray", "sidebar", "highlight", "separator",
+    "clear", "lightGray", "sidebar", "highlight", "separator", "background",
 ];
+
+/// How an app looks: like the system (the default), or always light or dark.
+pub const APPEARANCES: &[&str] = &["system", "light", "dark"];
 
 pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
 
@@ -18,7 +21,8 @@ pub const ALIGNMENTS: &[&str] =
 /// Names of the built-in icons, in order (shared with the runtime).
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
 
-/// Built-in enums, registered before user types: Color, Weight, Alignment, IconName.
+/// Built-in enums, registered before user types: Color, Weight, Alignment,
+/// IconName, Appearance.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -27,7 +31,21 @@ pub fn enums() -> Vec<EnumDef> {
         methods: Vec::new(),
     };
     let icons: Vec<&str> = ICON_NAMES.lines().map(str::trim).filter(|n| !n.is_empty()).collect();
-    vec![simple("Color", COLORS), simple("Weight", WEIGHTS), simple("Alignment", ALIGNMENTS), simple("IconName", &icons)]
+    // After its named cases (the runtime relies on the order), `Color` has
+    // `.rgb(red, green, blue)` (each 0 to 255) and `.rgba(…, opacity)` (0 to 1).
+    let mut color = simple("Color", COLORS);
+    let channels = || vec![P::unlabeled("red", Ty::Int), P::unlabeled("green", Ty::Int), P::unlabeled("blue", Ty::Int)];
+    color.cases.push(CaseDef { name: "rgb".into(), fields: channels() });
+    let mut with_opacity = channels();
+    with_opacity.push(P::unlabeled("opacity", Ty::Float));
+    color.cases.push(CaseDef { name: "rgba".into(), fields: with_opacity });
+    vec![
+        color,
+        simple("Weight", WEIGHTS),
+        simple("Alignment", ALIGNMENTS),
+        simple("IconName", &icons),
+        simple("Appearance", APPEARANCES),
+    ]
 }
 
 /// Built-in structs, registered before user types: `HttpResponse` is struct 0.
@@ -67,12 +85,13 @@ pub struct Builtins {
     pub weight: Ty,
     pub alignment: Ty,
     pub icon: Ty,
+    pub appearance: Ty,
 }
 
 impl Builtins {
-    /// The built-in enums are always the first four (see `enums`).
+    /// The built-in enums are always the first five (see `enums`).
     pub fn standard() -> Builtins {
-        Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2), icon: Ty::Enum(3) }
+        Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2), icon: Ty::Enum(3), appearance: Ty::Enum(4) }
     }
 }
 
@@ -170,6 +189,7 @@ impl Builtins {
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "tabItem" => vec![P::unlabeled("title", Ty::Str)],
             "autofocus" => vec![],
+            "animation" => vec![P::unlabeled("seconds", Ty::Float).default()],
             "textAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
             "hoverBackground" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
             _ => return None,
@@ -219,6 +239,7 @@ impl Builtins {
             "abs" => FnSig { params: vec![P::unlabeled("x", Ty::Any)], ret: Ty::Any },
             "min" | "max" => FnSig { params: vec![P::unlabeled("a", Ty::Any), P::unlabeled("b", Ty::Any)], ret: Ty::Any },
             "now" | "randomFloat" => FnSig { params: vec![], ret: Ty::Float },
+            "isDarkMode" => FnSig { params: vec![], ret: Ty::Bool },
             "formatDate" => FnSig {
                 params: vec![P::unlabeled("time", Ty::Float), P::new("format", Ty::Str).default()],
                 ret: Ty::Str,
@@ -318,6 +339,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
+    "isDarkMode",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -482,7 +504,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
-            "textAlignment",
+            "textAlignment", "animation",
         ],
         _ => &[],
     }
@@ -529,6 +551,7 @@ const fn rt_d(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
 pub fn runtime_fn(name: &str) -> Option<RtCall> {
     Some(match name {
         "now" => rt("tsl_now"),
+        "isDarkMode" => rt("tsl_is_dark_mode"),
         "randomFloat" => rt("tsl_random_float"),
         "formatDate" => rt_d("tsl_format_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd HH:mm")]),
         "parseDate" => rt_d("tsl_parse_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd")]),

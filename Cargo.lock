@@ -1167,6 +1167,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2770,6 +2772,7 @@ version = "0.1.8"
 dependencies = [
  "arboard",
  "chrono",
+ "image",
  "libc",
  "parley",
  "png",
