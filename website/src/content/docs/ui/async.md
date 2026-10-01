@@ -390,6 +390,11 @@ app Downloader(width: 360, height: 160) {
 arrives (when the server says how big the file is). `done` gets whether it
 worked. A failed download leaves no partial file behind.
 
+Both `request` and `download` return an id. To give one up while it's under
+way (the user pressed Cancel, or left the page that needed it), pass the id to
+[`cancelRequest`](/reference/stdlib/#cancelrequest). Its `done` block then
+never runs, and a cancelled download leaves no file.
+
 ## WebSockets
 
 A WebSocket is a connection that stays open, so the server can send messages
@@ -442,6 +447,10 @@ app Chat(width: 360, height: 400) {
 the connection ends, for whatever reason: you closed it, the server did, or
 it couldn't connect in the first place. Messages are text; send JSON with
 `toJson` to exchange structured data.
+
+For servers that speak in bytes rather than text, give `openWebSocket` an
+`onData:` block, which gets each binary message as `Data`, and send with
+[`sendWebSocketData`](/reference/stdlib/#sendwebsocketdata).
 
 ## Running code later with `after`
 

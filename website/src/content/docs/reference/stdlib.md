@@ -845,7 +845,8 @@ print(formatDate(deadline, format: "EEEE, d MMMM yyyy"))   // Thursday, 31 Decem
 let days = Int((deadline - start) / 86400.0)
 ```
 
-Dates are shown and read in the computer's time zone.
+Dates are shown and read in the computer's time zone, unless you name
+another one (see [Time zones](#time-zones)).
 
 ### now
 
@@ -865,25 +866,30 @@ print("took {(now() - started).formatted(decimals: 2)} seconds")
 
 ```text
 date(year: Int, month: Int, day: Int,
-     hour: Int = 0, minute: Int = 0, second: Int = 0) -> Float
+     hour: Int = 0, minute: Int = 0, second: Int = 0, timeZone: String = "") -> Float
 ```
 
-The time of a calendar date, in the computer's time zone. Months and days
-count from 1. A date that doesn't exist, like 30 February, gives `NaN` (see
-[`isNaN`](#float)).
+The time of a calendar date, in the computer's time zone or the one named.
+Months and days count from 1. A date that doesn't exist, like 30 February,
+gives `NaN` (see [`isNaN`](#float)).
 
 ```tessel
 let t = date(year: 2026, month: 3, day: 7, hour: 9, minute: 5)
 print(formatDate(t))            // 2026-03-07 09:05
+let launch = date(year: 2026, month: 3, day: 7, hour: 9, timeZone: "Asia/Tokyo")
 ```
+
+A time the clocks skip (when they're set forward for summer time) gives the
+moment an hour later; a time they show twice (when they're set back) gives
+the first of the two.
 
 ### formatDate
 
 ```text
-formatDate(_ time: Float, format: String = "yyyy-MM-dd HH:mm") -> String
+formatDate(_ time: Float, format: String = "yyyy-MM-dd HH:mm", timeZone: String = "") -> String
 ```
 
-A time as text. `format` is a pattern where these letters are replaced;
+A time as text, in the computer's time zone or the one named. `format` is a pattern where these letters are replaced;
 anything else is copied as it is:
 
 | Pattern | Means | Example |
@@ -907,6 +913,9 @@ anything else is copied as it is:
 | `ss` | Second, two digits | `30` |
 | `s` | Second | `30` |
 | `a` | AM or PM | `AM` |
+| `SSS` | Thousandths of a second | `250` |
+| `Z` | How far the zone is from UTC | `+0100` |
+| `ZZZZZ` | The same, with a colon | `+01:00` |
 | `'text'` | The text as it is | `at` |
 | `''` | A single quote | `'` |
 
@@ -923,15 +932,25 @@ print(formatDate(t, format: "d MMM 'at' HH:mm"))      // 7 Mar at 09:05
 Month and weekday names are in English. Put words in single quotes, like
 `'at'`, so their letters aren't replaced.
 
+The format `"iso"` gives the form used on the internet and in JSON
+(ISO 8601): the date, a `T`, the time, and how far the zone is from UTC.
+
+```tessel
+print(formatDate(t, format: "iso", timeZone: "Europe/Paris"))   // 2026-03-07T09:05:30+01:00
+print(formatDate(t, format: "iso", timeZone: "UTC"))            // 2026-03-07T08:05:30Z
+```
+
 ### parseDate
 
 ```text
-parseDate(_ text: String, format: String = "yyyy-MM-dd") -> Float?
+parseDate(_ text: String, format: String = "yyyy-MM-dd", timeZone: String = "") -> Float?
 ```
 
 Reads a time from text written in `format` (the same patterns as
 [`formatDate`](#formatdate)), or `nil` if the text doesn't match. Without an
-hour, the time is midnight.
+hour, the time is midnight. The text is taken to be in the computer's time
+zone, or the one named, unless it says itself how far from UTC it is (with
+`Z` or `ZZZZZ` in the format).
 
 ```tessel
 let day = parseDate("2026-03-07")
@@ -941,6 +960,147 @@ print(parseDate("tomorrow") == nil)     // true
 
 The whole text must match: `parseDate("2026-03-07 09:05")` is `nil`, because
 the default format has no time.
+
+The format `"iso"` reads the internet's form, as servers and JSON usually
+send it: with a distance from UTC (`+01:00`, or `Z` for none), with or
+without fractions of a second. Without a distance, or with only a date, the
+`timeZone:` counts.
+
+```tessel
+let sent = parseDate("2026-03-07T09:05:30+01:00", format: "iso")
+let utc = parseDate("2026-03-07T08:05:30.250Z", format: "iso")
+let noon = parseDate("2026-03-07 12:00", format: "yyyy-MM-dd HH:mm", timeZone: "Asia/Tokyo")
+```
+
+### dateParts
+
+```text
+dateParts(_ time: Float, timeZone: String = "") -> DateParts
+```
+
+What the calendar and the clock say at a moment: a `DateParts` struct.
+
+| Field | Type | |
+|---|---|---|
+| `year` | `Int` | |
+| `month` | `Int` | 1 for January to 12. |
+| `day` | `Int` | The day of the month, from 1. |
+| `hour` | `Int` | 0 to 23. |
+| `minute` | `Int` | |
+| `second` | `Int` | |
+| `weekday` | `Int` | 1 for Monday to 7 for Sunday. |
+| `dayOfYear` | `Int` | 1 for 1 January. |
+
+```tessel
+let today = dateParts(now())
+if today.weekday >= 6 {
+    print("It's the weekend")
+}
+print("Day {today.dayOfYear} of {today.year}")
+```
+
+### addToDate
+
+```text
+addToDate(_ time: Float, years: Int = 0, months: Int = 0, days: Int = 0,
+          hours: Int = 0, minutes: Int = 0, seconds: Int = 0, timeZone: String = "") -> Float
+```
+
+A time that's some years, months or days later on the calendar (or earlier,
+with negative numbers), and then some hours, minutes and seconds later.
+
+```tessel
+let due = addToDate(now(), days: 14)
+let renewal = addToDate(start, years: 1)
+let reminder = addToDate(meeting, minutes: -15)
+```
+
+Adding `86400.0` seconds isn't always the next day at the same time, and a
+month isn't a fixed number of days; `addToDate` follows the calendar:
+
+- A day later is the same time of day, even when the clocks change in
+  between (that day is 23 or 25 hours long).
+- A month after 31 January is the last day of February: the day is brought
+  back into a shorter month.
+- Hours, minutes and seconds are simply that much time later.
+
+### daysBetween
+
+```text
+daysBetween(_ from: Float, _ to: Float, timeZone: String = "") -> Int
+```
+
+How many days later `to` is than `from` on the calendar: how many times the
+date changes between them. It's negative if `to` is earlier. Two minutes
+that cross midnight are a day apart; 23 hours within one date are not.
+
+```tessel
+let left = daysBetween(now(), deadline)
+print(if left == 0 { "Due today" } else { "{left} days left" })
+```
+
+### Time zones
+
+Every date function has a `timeZone:` argument. Left out, it's the
+computer's time zone. Otherwise it's one of:
+
+| Time zone | Example | |
+|---|---|---|
+| A name | `"Europe/Paris"`, `"America/New_York"`, `"Asia/Tokyo"` | A region and a city, from the time zone database that computers share. It knows that region's summer time, now and in the past. |
+| `"UTC"` | | The time the others are counted from. |
+| A distance from UTC | `"+05:30"`, `"-08:00"`, `"+2"` | Always that far, with no summer time. |
+
+```tessel
+let t = now()
+print(formatDate(t, format: "HH:mm", timeZone: "Asia/Tokyo"))
+print(formatDate(t, format: "HH:mm", timeZone: "America/New_York"))
+```
+
+A time itself has no time zone: it's one moment everywhere. The zone only
+decides what the calendar and the clock say at that moment.
+
+A time zone that doesn't exist is treated like a date that doesn't:
+`formatDate` gives `""`, `parseDate` gives `nil`, `date` and `addToDate`
+give `NaN`, and `dateParts`, `daysBetween` and `timeZoneOffset` give zeros.
+Check a name that comes from outside the program with
+[`timeZones`](#timezones).
+
+### timeZones
+
+```text
+timeZones() -> [String]
+```
+
+The names of all time zones, in alphabetical order: about 600 of them. Use
+it to offer a choice, or to check a name:
+
+```tessel
+if timeZones().contains(name) {
+    zone = name
+}
+```
+
+### localTimeZone
+
+```text
+localTimeZone() -> String
+```
+
+The name of the computer's time zone, like `"Europe/Paris"`, or `""` if it
+can't be found out.
+
+### timeZoneOffset
+
+```text
+timeZoneOffset(_ time: Float, timeZone: String = "") -> Int
+```
+
+How many seconds the zone's clocks are ahead of UTC at that moment (negative
+if they're behind). It depends on the moment, because of summer time.
+
+```tessel
+let hours = timeZoneOffset(now(), timeZone: "America/New_York") / 3600   // -5, or -4 in summer
+```
 
 ## The system and other programs
 
@@ -1171,11 +1331,12 @@ For other methods (like POST), headers, or the status code, use
 
 ```text
 request(url: String, method: String = "GET", headers: [String: String] = [:],
-        body: String = "", done: fn(HttpResponse))
+        body: String = "", done: fn(HttpResponse)) -> Int
 ```
 
 Sends an HTTP request in the background, then calls `done` with the
-response.
+response. It returns an id, for [`cancelRequest`](#cancelrequest); most
+programs don't need it.
 
 ```tessel
 struct Todo {
@@ -1237,12 +1398,13 @@ request(url: "https://example.com/api/todos") { response in
 ### download
 
 ```text
-download(url: String, to: String, progress: fn(Float)? = nil, done: fn(Bool))
+download(url: String, to: String, progress: fn(Float)? = nil, done: fn(Bool)) -> Int
 ```
 
 Downloads a URL straight into a file, which suits large files. `progress`,
 if given, is called now and then with how much has arrived, from `0.0` to
-`1.0`. `done` is called at the end with whether it worked.
+`1.0`. `done` is called at the end with whether it worked. It returns an id,
+for [`cancelRequest`](#cancelrequest).
 
 ```tessel
 app Downloader {
@@ -1271,17 +1433,61 @@ app Downloader {
 - `http://`, `https://` and `file://` URLs can be downloaded; `file://`
   copies a local file.
 
+### cancelRequest
+
+```text
+cancelRequest(_ id: Int)
+```
+
+Gives up a [`request`](#request) or a [`download`](#download) that's under
+way. Its `done` block is never called (nor `progress`), and a cancelled
+download leaves no file behind, not even a partial one.
+
+```tessel
+app Downloader {
+    state loading: Int? = nil
+    state status = ""
+
+    if let id = loading {
+        Button("Cancel") {
+            cancelRequest(id)
+            loading = nil
+            status = "Cancelled"
+        }
+    } else {
+        Button("Download") {
+            loading = download(url: "https://example.com/big.zip", to: "big.zip") { ok in
+                loading = nil
+                status = if ok { "Done" } else { "Download failed" }
+            }
+        }
+    }
+    Text(status)
+}
+```
+
+- Since `done` isn't called, do your own tidying up where you cancel, as
+  the example does.
+- Cancelling something that has finished already, or an id that was never
+  given out, does nothing.
+- A request that's still waiting for the server to answer is dropped by your
+  program at once, though the connection itself is only closed when the
+  server answers or gives up.
+
 ### openWebSocket
 
 ```text
-openWebSocket(url: String, onMessage: fn(String), onClose: fn(String)) -> Int
+openWebSocket(url: String, onMessage: fn(String), onData: fn(Data)? = nil,
+              onClose: fn(String)) -> Int
 ```
 
 Connects to a WebSocket server (`ws://` or `wss://`) and returns an id for
 [`sendWebSocket`](#sendwebsocket) and [`closeWebSocket`](#closewebsocket).
 The connection stays open, and messages can go both ways:
 
-- `onMessage` is called with each message the server sends.
+- `onMessage` is called with each text message the server sends.
+- `onData`, if given, is called with each binary message, as
+  [`Data`](#data). Without it, binary messages go to `onMessage`, as text.
 - `onClose` is called once, when the connection ends, with the reason:
   `"closed"` if you closed it, the server's reason (or
   `"closed by the server"`), or what went wrong, like
@@ -1313,7 +1519,17 @@ app Chat {
 }
 ```
 
-Messages are text. A binary message from the server arrives as text too.
+A server that sends binary messages (bytes rather than text) needs `onData`:
+
+```tessel
+socket = openWebSocket(url: "wss://example.com/feed", onMessage: { text in
+    log.append(text)
+}, onData: { data in
+    received += data.count
+}) { reason in
+    socket = -1
+}
+```
 
 ### sendWebSocket
 
@@ -1324,6 +1540,21 @@ sendWebSocket(_ id: Int, text: String) -> Bool
 Sends a text message. Returns `false` if the WebSocket isn't open (it was
 closed, or `id` is wrong). Messages sent before the connection is ready are
 sent once it is.
+
+### sendWebSocketData
+
+```text
+sendWebSocketData(_ id: Int, data: Data) -> Bool
+```
+
+Sends a binary message: the bytes of a [`Data`](#data). Like
+[`sendWebSocket`](#sendwebsocket), it returns `false` if the WebSocket isn't
+open.
+
+```tessel
+sendWebSocketData(socket, data: toBinary(move))
+sendWebSocketData(socket, data: Data(bytes: [1, 2, 255]))
+```
 
 ### closeWebSocket
 

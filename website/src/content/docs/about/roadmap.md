@@ -38,7 +38,8 @@ language may still change. This page is an honest list of where things stand.
   with modules (`import`, `public`, `private`) for code shared between
   programs.
 - **Standard library:** files and folders, JSON and binary encoding of your
-  own types, `Data` for raw bytes, dates and times, random numbers, the
+  own types, `Data` for raw bytes, dates and times with time zones and
+  calendar arithmetic, random numbers, the
   clipboard, reading standard input and writing to standard error, and many
   methods for strings, numbers and lists.
 - **Tools:** the `tessel` command, a REPL (`tessel repl`), hot reload
@@ -60,9 +61,6 @@ These are the main gaps you may run into today.
 - **Appearance:** animation covers moving, resizing and fading; there are no
   springs or custom curves, and a view that disappears goes at once. There's
   no accessibility support (screen readers) yet.
-- **Network:** WebSocket messages are text only (a binary message arrives
-  as text), and there's no way to cancel a request or download once
-  started.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS, with your
   `icon.png` as its icon, but apps aren't code signed and there are no
   installers.
@@ -80,7 +78,7 @@ These are the next areas of work. None of them has a date.
 | Area | Plans |
 |---|---|
 | App polish | Accessibility, using every control from the keyboard, richer animation. |
-| Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
+| Standard library | Filling gaps as apps need them. |
 | Language | Packages: installing shared modules by name, with versions. |
 | Packaging | Code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
