@@ -178,70 +178,23 @@ when **Reload on save** is on.
 tessel repl
 ```
 
-Runs code as you type it, which is a quick way to try something out. Type a
-line and press Enter:
+Runs code as you type it, a line at a time: a quick way to try something
+out. Variables, functions and types stay for the lines that follow.
 
 ```text
 Tessel 0.1.10 (:help for help, :quit to leave)
-> 1 + 2
-3
 > let name = "Ada"
 > "Hello, {name}!"
 Hello, Ada!
 > fn double(n: Int) -> Int { n * 2 }
 > double(21)
 42
+> :quit
 ```
 
-- **Expressions** show their value, the way `print` would. Structs and
-  optionals are shown as JSON (`{"x":1,"y":2}`, `null`), and a value that
-  can't be shown at all, like a function, as its type.
-- **Variables** (`let`, `var`) stay for the lines that follow. Declaring one
-  again replaces it, and may give it another type.
-- **Functions, structs, enums and interfaces** stay too. Declaring one again
-  replaces it. When a struct or enum changes, the variables that hold values
-  of the old one are removed, and the REPL says so.
-- **Several lines.** A line that opens a bracket goes on until the bracket is
-  closed; the prompt turns into `.` meanwhile:
-
-  ```text
-  > for i in 0..3 {
-  .     print(double(i))
-  . }
-  0
-  2
-  4
-  ```
-
-- **Errors** are shown like `tessel check` shows them, and nothing of that
-  entry runs. A mistake while running (an index out of range, endless
-  recursion) stops the entry with its message, and you can go on; variables
-  the entry declared are left out, but what it changed before failing stays
-  changed.
-- **Timers and background work** (`after`, `fetch`, `runCommand`, …) finish
-  before the next prompt.
-
-Commands start with a colon:
-
-| Command | What it does |
-|---|---|
-| `:vars` | Lists the variables so far, with their types. |
-| `:help` | Shows a short summary. |
-| `:quit` | Leaves. Ctrl+D does too. |
-
-The up and down arrow keys bring back earlier lines. When its input isn't a
-keyboard (`tessel repl < lines.txt`), the REPL runs the lines without
-prompts, which is handy for scripts and tests.
-
-The code is compiled to machine code, like any Tessel program, and loaded
-into the running `tessel`; it isn't interpreted. A few things are different
-from a program in a file:
-
-- There's no window, so `view` and `app` aren't accepted. Use `tessel run`
-  for those.
-- `return` and `try` have no function to return from at the prompt; use them
-  inside functions.
-- Ctrl+C while code is running ends the REPL.
+[The REPL](/start/repl/) has its own page: how values are shown, entries of
+several lines, what happens on errors, the `:` commands, and running lines
+from a file (`tessel repl < lines.txt`).
 
 ## `tessel build`
 
