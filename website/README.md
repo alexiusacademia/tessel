@@ -20,6 +20,11 @@ The site is live at https://tessel-lang.netlify.app (Netlify project
 `tessel-lang`, team syncster.dev). `netlify.toml` in this folder has the build
 settings; the base directory is `website`.
 
+It's deployed by `.github/workflows/website.yml` whenever a push to `master`
+changes this folder (or the syntax grammar or the icons, which it's built
+from). The workflow runs on the self-hosted runner and uses the Netlify
+login of that machine (`npx netlify login`); there's no token in GitHub.
+
 To deploy by hand from this folder (it's linked with `netlify link`):
 
 ```sh

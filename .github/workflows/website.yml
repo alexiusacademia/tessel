@@ -1,0 +1,46 @@
+# Deploys the website (website/, an Astro Starlight site) to Netlify when
+# what it's made from changes on master.
+#
+# It runs on the self-hosted runner (the maintainer's Mac), where the Netlify
+# CLI is logged in (`npx netlify login`), so no Netlify token is stored here.
+# If that login is gone, the Deploy step fails and says so; log in again and
+# re-run it.
+name: Website
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "website/**"
+      # (Code highlighting and the icon gallery are made from these.)
+      - "editors/vscode/syntaxes/**"
+      - "crates/tessel-runtime/icons/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+# Only the newest version needs to go out.
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: [self-hosted, macOS, ARM64]
+    defaults:
+      run:
+        working-directory: website
+    env:
+      # The Netlify project `tessel-lang` (not a secret).
+      NETLIFY_SITE_ID: 88564491-56d9-49ef-8003-231f68c9c452
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy
+        run: npx --yes netlify-cli deploy --prod --no-build --dir dist --site "$NETLIFY_SITE_ID"
