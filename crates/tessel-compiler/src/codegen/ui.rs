@@ -162,7 +162,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let info = if fields.is_empty() { self.ptr_ty().const_null() } else { self.record_info(name) };
         let fresh = self.alloca(self.i8().into(), "fresh");
         let id = self.i64().const_int(view_id(name), false);
-        let data = self.call_rt("tsl_ui_view_begin", &[id.into(), info.into(), fresh.into()]).unwrap().into_pointer_value();
+        let layout = self.i64().const_int(self.record_layout(name), false);
+        let data = self.call_rt("tsl_ui_view_begin", &[id.into(), info.into(), layout.into(), fresh.into()]).unwrap().into_pointer_value();
         self.stack.last_mut().unwrap().record = Some(Record { data, ty: st, view: name.to_string() });
         for v in self.view_vars(name) {
             self.push_var(v);
@@ -323,8 +324,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         let root = self.view_builds[&app.name.name].as_global_value().as_pointer_value();
         let null = self.ptr_ty().const_null();
-        self.call_rt("tsl_ui_run", &[title, w, h, appearance, root.into(), null.into()]);
-        self.b.build_unreachable().unwrap();
+        if self.hot.is_some() {
+            // (Returns when the app is running already: it was a reload.)
+            self.call_rt("tsl_ui_hot", &[title, w, h, appearance, root.into(), null.into()]);
+            self.b.build_return(None).unwrap();
+        } else {
+            self.call_rt("tsl_ui_run", &[title, w, h, appearance, root.into(), null.into()]);
+            self.b.build_unreachable().unwrap();
+        }
         self.stack.pop();
     }
 

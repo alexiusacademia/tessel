@@ -5,7 +5,42 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Lists the runtime's functions by name (`runtime_symbols.rs`), so the code
+/// `tessel repl` compiles can be linked to them inside `tessel`.
+fn runtime_symbols() {
+    fn scan(dir: &std::path::Path, names: &mut std::collections::BTreeSet<String>) {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                scan(&path, names);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (at, _) in text.match_indices("extern \"C\" fn tsl_") {
+                    let name = &text[at + "extern \"C\" fn ".len()..];
+                    let end = name.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(name.len());
+                    names.insert(name[..end].to_string());
+                }
+            }
+        }
+    }
+    let source = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../tessel-runtime/src");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let mut names = std::collections::BTreeSet::new();
+    scan(&source, &mut names);
+    let mut out = String::from("unsafe extern \"C\" {\n");
+    for name in &names {
+        out += &format!("    fn {name}();\n");
+    }
+    out += "}\n\n/// The runtime's functions: (name, address).\nstatic RUNTIME_SYMBOLS: &[(&str, unsafe extern \"C\" fn())] = &[\n";
+    for name in &names {
+        out += &format!("    ({name:?}, {name}),\n");
+    }
+    out += "];\n";
+    std::fs::write(PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("runtime_symbols.rs"), out).unwrap();
+}
+
 fn main() {
+    runtime_symbols();
     println!("cargo:rerun-if-changed=src/lld.cpp");
     println!("cargo:rerun-if-env-changed=LLVM_SYS_221_PREFIX");
     if std::env::var_os("CARGO_FEATURE_BUNDLED_LINKER").is_none() {

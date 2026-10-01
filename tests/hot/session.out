@@ -1,0 +1,40 @@
+Root
+  View
+    VStack
+      Text "Count: 2"
+      Button "Add"
+      Button "Patch"
+Root
+  View
+    VStack
+      Text "Clicks so far: 2"
+      Button "Add"
+      View
+        Button "Taps: 0"
+      Button "Break"
+      Button "Patch"
+Root
+  View
+    VStack
+      Text "Clicks so far: 12"
+      Button "Add"
+      View
+        Button "Taps: 1"
+      Button "Break"
+      Button "Patch"
+Root
+  View
+    VStack
+      Text "Clicks so far: 22"
+      Button "Add"
+      View
+        Button "Taps: 1"
+      Button "Break"
+      Button "Patch"
+Root
+  View
+    VStack
+      Text "Count is none"
+      Button "Add"
+      View
+        Button "Taps: 1"

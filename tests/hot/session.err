@@ -1,0 +1,12 @@
+tessel: reloaded
+error: cannot find `cuont`
+ --> main.tsl:5:23
+  |
+5 |         Text("Count: {cuont}")
+  |                       ^^^^^ not found
+  |
+  = help: did you mean `count`?
+
+1 error found
+tessel: not reloaded; the app goes on with the code it has
+tessel: reloaded

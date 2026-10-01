@@ -1,0 +1,19 @@
+// The third version: `count` is text now, so the app's state starts again
+// (its old value isn't text). The badge keeps its place and its state, so
+// its taps stay.
+
+view Badge(label: String) {
+    state taps = 0
+
+    Button("{label}: {taps}") { taps += 1 }
+}
+
+app Hot(width: 300, height: 220) {
+    state count = "none"
+
+    VStack {
+        Text("Count is {count}")
+        Button("Add") { count = "some" }
+        Badge(label: "Taps")
+    }
+}

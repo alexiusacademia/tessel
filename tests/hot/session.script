@@ -1,0 +1,17 @@
+click "Add"
+click "Add"
+tree
+reload
+click "Patch"
+reload
+tree
+click "Add"
+click "Taps: 0"
+tree
+click "Break"
+reload
+click "Add"
+tree
+click "Patch"
+reload
+tree

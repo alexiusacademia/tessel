@@ -1,0 +1,26 @@
+error: index 7 is out of range for a list of 3 items
+ --> repl.27:1:9
+error: cannot find `y`
+ --> repl.28:1:1
+  |
+1 | y
+  | ^ not found
+  |
+  = help: did you mean `p`?
+
+error: can't change `name`, which is a constant
+ --> repl.29:1:1
+  |
+1 | name = "Grace"
+  | ^^^^
+  |
+  = help: declare it with `var` to be able to change it
+
+note: `p` is gone, because its type (`Point`) was declared again
+note: `q` is gone, because its type (`Point`) was declared again
+error: stack overflow: too many function calls inside each other
+ = help: a function that calls itself needs a case where it stops calling itself, like `if n == 0 { return 1 }`
+error: the REPL has no window for views and apps
+ = help: put them in a file, and use `tessel run`
+error: unknown command `:nope`
+ = help: the commands are `:vars`, `:help` and `:quit`

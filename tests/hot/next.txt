@@ -1,0 +1,20 @@
+// The second version: other text, another step, a new view with state of
+// its own. The app's `count` is kept.
+
+view Badge(label: String) {
+    state taps = 0
+
+    Button("{label}: {taps}") { taps += 1 }
+}
+
+app Hot(width: 300, height: 220) {
+    state count = 0
+
+    VStack {
+        Text("Clicks so far: {count}")
+        Button("Add") { count += 10 }
+        Badge(label: "Taps")
+        Button("Break") { copyFile(from: "broken.txt", to: "main.tsl") }
+        Button("Patch") { copyFile(from: "last.txt", to: "main.tsl") }
+    }
+}

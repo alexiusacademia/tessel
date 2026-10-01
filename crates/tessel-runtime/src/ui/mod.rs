@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::{tsl_release, tsl_retain, Header, Str, TslType};
 
-pub use app::{run_until_idle, tsl_ui_run};
+pub use app::{on_reload, run_on_ui, run_until_idle, tsl_ui_hot, tsl_ui_run};
 pub use theme::tsl_is_dark_mode;
 
 // ===== callbacks =====
@@ -340,6 +340,8 @@ impl Builder {
 struct ViewState {
     record: *mut Header,
     seen: u64,
+    /// What the record's memory holds (see `tsl_ui_view_begin`).
+    layout: u64,
 }
 
 thread_local! {
@@ -575,8 +577,13 @@ pub extern "C" fn tsl_ui_end() {
 /// Opens a custom view instance. Returns its persistent state record (the
 /// data of a box of type `ty`), and sets `*fresh` if it was just created and
 /// must be initialized. `ty` may be null for views without state.
+///
+/// `layout` stands for what the record's memory holds (its values' names and
+/// types, all the way down). It only ever differs after a hot reload: when
+/// the new code keeps other state in the view, the view starts afresh,
+/// rather than read the old record as something it isn't.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_view_begin(view_id: u64, ty: *const TslType, fresh: *mut u8) -> *mut u8 {
+pub unsafe extern "C" fn tsl_ui_view_begin(view_id: u64, ty: *const TslType, layout: u64, fresh: *mut u8) -> *mut u8 {
     let mut key = 0;
     with_builder(|b| {
         b.begin(Kind::Group, view_id);
@@ -587,11 +594,21 @@ pub unsafe extern "C" fn tsl_ui_view_begin(view_id: u64, ty: *const TslType, fre
         return std::ptr::null_mut();
     }
     let generation = GENERATION.with(|g| *g.borrow());
+    let stale = STATES.with(|s| {
+        let mut s = s.borrow_mut();
+        match s.get(&key) {
+            Some(v) if v.layout != layout => s.remove(&key).map(|v| v.record),
+            _ => None,
+        }
+    });
+    if let Some(record) = stale {
+        unsafe { tsl_release(record) };
+    }
     let record = STATES.with(|s| {
         let mut s = s.borrow_mut();
         let entry = s.entry(key).or_insert_with(|| {
             unsafe { *fresh = 1 };
-            ViewState { record: unsafe { crate::tsl_box_new(ty) }, seen: generation }
+            ViewState { record: unsafe { crate::tsl_box_new(ty) }, seen: generation, layout }
         });
         entry.seen = generation;
         entry.record

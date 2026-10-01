@@ -1,0 +1,12 @@
+// Hot reload: this app replaces its own source (with next.txt), as an editor
+// would, and the script then says `reload`.
+
+app Hot(width: 300, height: 220) {
+    state count = 0
+
+    VStack {
+        Text("Count: {count}")
+        Button("Add") { count += 1 }
+        Button("Patch") { copyFile(from: "next.txt", to: "main.tsl") }
+    }
+}

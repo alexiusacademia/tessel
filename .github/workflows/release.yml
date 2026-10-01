@@ -230,7 +230,9 @@ jobs:
           security list-keychains -d user -s "$keychain" $(cat "$RUNNER_TEMP/keychains.txt")
           rm "$RUNNER_TEMP/cert.p12"
 
-          codesign --force --timestamp --options runtime --sign "Developer ID Application" dist/pkg/tessel
+          # (The entitlement lets `tessel repl` and hot reload run the code they compile.)
+          codesign --force --timestamp --options runtime --entitlements install/entitlements.plist \
+            --sign "Developer ID Application" dist/pkg/tessel
           codesign --verify --strict --verbose=2 dist/pkg/tessel
 
           # Notarize (a bare executable can't be stapled; macOS checks online).
@@ -279,6 +281,8 @@ jobs:
           run "$t" --version
           run "$t" check examples/todos
           run "$t" run tests/run/hello.tsl
+          # The REPL runs code inside `tessel` (the signed one, on macOS).
+          [[ "$(echo '20 + 22' | run "$t" repl | tr -d '\r')" == "42" ]]
           run "$t" build examples/todos -o dist/smoke/todos
           TESSEL_SCRIPT='click field 1; type "hello"; click "Add"; tree' dist/smoke/todos${{ runner.os == 'Windows' && '.exe' || '' }}
 

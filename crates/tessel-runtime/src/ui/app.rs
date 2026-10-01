@@ -26,6 +26,8 @@
 //! snapshot out.png      render to a PNG (at 2x)
 //! compose "ni"          text an input method is composing (not yet typed);
 //!                       `type` then commits what it became
+//! reload                with `tessel run --hot`: take the program's new code
+//!                       now, if its files changed
 //! appearance dark       switch to the dark (or `light`) appearance
 //! animations on         animate as a window does (headless runs don't,
 //!                       unless asked); `wait` then shows views on their way
@@ -155,6 +157,8 @@ enum Event {
     Closed(u64, String),
     /// `background` work finished: its result (a codec tree, as an address).
     Computed(u64, usize),
+    /// A function to call on the UI thread (its address): see `run_on_ui`.
+    Call(usize),
 }
 
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -335,10 +339,62 @@ fn deliver_background() -> bool {
                     cb.call_with(tree as *mut u8);
                 }
             }
+            Event::Call(address) => {
+                let f: extern "C" fn() = unsafe { std::mem::transmute(address) };
+                f();
+            }
             other => net::deliver(other),
         }
     }
     ran
+}
+
+// ===== hot reload =====
+//
+// `tessel run --hot` runs the program inside `tessel`, and compiles it again
+// when its files change. The new code's entry point calls `tsl_ui_hot`, which
+// hands the running app its new root view; the next rebuild uses it. View
+// state is kept by the runtime, so it carries over (see `tsl_ui_view_begin`).
+
+thread_local! {
+    /// Whether this thread's app is running.
+    static RUNNING: Cell<bool> = const { Cell::new(false) };
+    /// A reloaded program's root view, until the app takes it.
+    static NEW_ROOT: RefCell<Option<Callback>> = const { RefCell::new(None) };
+}
+
+/// Compiles the program again if its files changed; the address of the new
+/// entry point, or 0.
+static RELOAD: std::sync::OnceLock<fn() -> usize> = std::sync::OnceLock::new();
+
+/// For the `reload` script command: how to get the program's new code.
+pub fn on_reload(reload: fn() -> usize) {
+    let _ = RELOAD.set(reload);
+}
+
+/// Calls the function at `address` (an `extern "C" fn()`) on the UI thread,
+/// soon. Can be called from any thread.
+pub fn run_on_ui(address: usize) {
+    post(Event::Call(address));
+}
+
+/// Like `tsl_ui_run`, for a program run with hot reload: the first time it
+/// starts the app (and never returns); when the app is running already, it
+/// gives it `build` as its new root view, and returns.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_hot(
+    title: *const Str,
+    width: f64,
+    height: f64,
+    appearance: i32,
+    f: *const c_void,
+    env: *mut Header,
+) {
+    if RUNNING.with(Cell::get) {
+        NEW_ROOT.with(|r| *r.borrow_mut() = Some(Callback::new(f, env)));
+        return;
+    }
+    unsafe { tsl_ui_run(title, width, height, appearance, f, env) }
 }
 
 // ===== file dialogs =====
@@ -549,6 +605,10 @@ impl App {
     /// Rebuilds the tree if state may have changed, then lays it out.
     fn update(&mut self) {
         // `.onAppear` blocks can change state, which rebuilds again (a few times at most).
+        if let Some(root) = NEW_ROOT.with(|r| r.borrow_mut().take()) {
+            self.root = root;
+            self.dirty = true;
+        }
         for _ in 0..8 {
             if !(self.dirty || self.tree.is_none()) {
                 break;
@@ -1447,6 +1507,7 @@ pub unsafe extern "C" fn tsl_ui_run(
     env: *mut Header,
 ) -> ! {
     let title = unsafe { crate::str_text(title) }.to_string();
+    RUNNING.with(|r| r.set(true));
     theme::set_dark(appearance == 2);
     let app = App {
         root: Callback::new(f, env),
@@ -1624,6 +1685,13 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 app.compose(text.to_string(), None);
             }
             "animations" => app.ui.anim.enabled = rest == "on",
+            "reload" => {
+                let entry = RELOAD.get().map_or(0, |reload| reload());
+                if entry != 0 {
+                    let f: extern "C" fn() = unsafe { std::mem::transmute(entry) };
+                    f();
+                }
+            }
             "appearance" => {
                 if theme::set_dark(rest == "dark") {
                     app.dirty = true;

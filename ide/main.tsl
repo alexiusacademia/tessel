@@ -11,8 +11,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state console: [String] = []
     state panel = Panel.problems
     state running: Int? = nil
-    state restartOnSave = true
-    state restartPending = false
+    state reloadOnSave = true
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -36,7 +35,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             if newVersion != "" {
                 ToolButton(icon: .download, label: "Update to {newVersion}", tint: .blue) { updateTessel() }.disabled(updating)
             }
-            Toggle("Restart on save", isOn: restartOnSave)
+            Toggle("Reload on save", isOn: reloadOnSave)
             ToolButton(icon: .save, label: "Save") { save() }.shortcut("s") { save() }
             ToolButton(icon: .circleCheck, label: "Check") { check() }.shortcut("k") { check() }
             if running == nil {
@@ -250,9 +249,6 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         if any {
             status = "Saved"
             check()
-            if restartOnSave && running != nil {
-                restart()
-            }
         }
     }
 
@@ -380,8 +376,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         }
     }
 
-    // Builds into the project folder and runs the program directly, so
-    // Stop can end it.
+    // With "Reload on save", `tessel run --hot` runs the program: when its
+    // files are saved, an app takes its new code and keeps its state, and a
+    // program without a window starts again. Otherwise, builds into the
+    // project folder and runs the program directly. Either way, Stop can end it.
     fn runOrStop() {
         if let id = running {
             stopCommand(id)
@@ -390,6 +388,15 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         save()
         console = []
         panel = Panel.console
+        if reloadOnSave {
+            status = "Running"
+            running = runCommand(path: tesselCommand(), args: ["run", project, "--hot"], onOutput: { text in console.append(text) }) { exitCode in
+                console.append("— exited with code {exitCode}")
+                running = nil
+                status = "Ready"
+            }
+            return
+        }
         status = "Building…"
         let exe = join(folder: project, name: ".tessel-run")
         runCommand(path: tesselCommand(), args: ["build", project, "-o", exe], onOutput: { text in
@@ -405,20 +412,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                 console.append("— exited with code {exitCode}")
                 running = nil
                 status = "Ready"
-                if restartPending {
-                    restartPending = false
-                    runOrStop()
-                }
             }
-        }
-    }
-
-    // Saving while the program runs: stop it, and run it again once it has exited.
-    fn restart() {
-        if let id = running {
-            restartPending = true
-            status = "Restarting…"
-            stopCommand(id)
         }
     }
 

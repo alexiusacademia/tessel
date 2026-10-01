@@ -1,0 +1,25 @@
+3
+15
+Hello, Ada!
+30
+{"x":1,"y":2}
+12
+0
+2
+4
+(fn(Int) -> Int)
+101
+null
+x
+3
+3
+let name: String
+var count: Int
+let add: fn(Int) -> Int
+let maybe: Int?
+let a: Int
+let b: String
+let xs: [Int]
+{"x":5}
+later
+still here

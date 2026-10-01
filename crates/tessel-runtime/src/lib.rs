@@ -2,8 +2,9 @@
 //! (later) the UI.
 //!
 //! Compiled Tessel programs link against this static library and call its C
-//! ABI (`tsl_*` functions). The runtime also provides the process entry point,
-//! which calls the program's `tsl_main`.
+//! ABI (`tsl_*` functions). A program's `main` calls `tsl_start` with its
+//! `tsl_main`. (The runtime has no `main` of its own, so that `tessel` can
+//! contain it too, for the code its REPL runs.)
 //!
 //! Conventions shared with the code generator:
 //! - Every heap object starts with a [`Header`]. A negative reference count
@@ -197,10 +198,35 @@ pub struct Loc {
     col: i32,
 }
 
+/// What a runtime error does, if not end the process (see `on_error`).
+static ON_ERROR: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
+
+/// Makes runtime errors call `hook` after printing their message, instead of
+/// ending the process. The hook mustn't return to the code that failed (if
+/// it returns, the process ends): the REPL's parks the thread, and goes on
+/// in another.
+pub fn on_error(hook: fn()) {
+    let _ = ON_ERROR.set(hook);
+}
+
+/// The end of a runtime error, after its message.
+pub(crate) fn stop() -> ! {
+    if let Some(hook) = ON_ERROR.get() {
+        hook();
+    }
+    std::process::exit(101);
+}
+
+/// Reports stack overflows on the calling thread as runtime errors (a
+/// program's main thread does this by itself).
+pub fn guard_stack() {
+    stack_guard::install();
+}
+
 fn fatal(msg: &str) -> ! {
     let _ = std::io::stdout().flush();
     eprintln!("error: {msg}");
-    std::process::exit(101);
+    stop();
 }
 
 unsafe fn panic_at(loc: *const Loc, msg: &str) -> ! {
@@ -211,7 +237,7 @@ unsafe fn panic_at(loc: *const Loc, msg: &str) -> ! {
         let file = unsafe { CStr::from_ptr(loc.file) }.to_string_lossy();
         eprintln!(" --> {file}:{}:{}", loc.line, loc.col);
     }
-    std::process::exit(101);
+    stop();
 }
 
 /// Stops the program with a message (a NUL-terminated string) and location.
@@ -1480,16 +1506,12 @@ pub unsafe extern "C" fn tsl_set_is_disjoint(a: *const Dict, b: *const Dict) -> 
 
 // ===== entry point =====
 
-#[cfg(not(test))]
-unsafe extern "C" {
-    fn tsl_main();
-}
-
-#[cfg(not(test))]
+/// Runs a program: `program` is its `tsl_main`. Called by the `main` the
+/// compiler gives every program.
 #[unsafe(no_mangle)]
-pub extern "C" fn main() -> i32 {
+pub extern "C" fn tsl_start(program: extern "C" fn()) -> i32 {
     stack_guard::install();
-    unsafe { tsl_main() };
+    program();
     // Apps never get here (their event loop ends the process); a program
     // with only `fn main` still runs its timers and background callbacks.
     ui::run_until_idle();

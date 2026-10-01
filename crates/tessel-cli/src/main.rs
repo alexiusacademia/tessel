@@ -1,5 +1,7 @@
 mod icon;
+mod hot;
 mod lsp;
+mod repl;
 mod update;
 
 use std::io::IsTerminal;
@@ -24,7 +26,10 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app).
                  An icon.png next to the program is the app's icon
-  run <path>     build and run a program
+  run <path> [--hot]
+                 build and run a program; with --hot, an app takes its new
+                 code when its files change, and keeps its state
+  repl           type code and see what it does, a line at a time
   complete <file> <offset> [--text <path>]
                  completion suggestions at byte <offset> of <file> (with the
                  other .tsl files in its folder); --text reads the file's
@@ -87,7 +92,12 @@ fn main() -> ExitCode {
                 Err(code) => code,
             }
         }
+        (Some("run"), Some(path)) if args[2..].iter().any(|a| a == "--hot") => {
+            let rest: Vec<String> = args[2..].iter().filter(|a| *a != "--hot").cloned().collect();
+            hot::run(Path::new(path), &rest)
+        }
         (Some("run"), Some(path)) => run(Path::new(path), &args[2..]),
+        (Some("repl"), _) => repl::run(),
         (Some("complete"), Some(file)) => {
             let offset = args.get(2).and_then(|o| o.parse().ok());
             let text = args.windows(2).find(|w| w[0] == "--text").map(|w| PathBuf::from(&w[1]));

@@ -6,7 +6,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -75,7 +75,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -144,7 +144,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -208,7 +208,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -272,7 +272,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -336,7 +336,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save
@@ -400,7 +400,7 @@ Root
         Text "project"
         Spacer
         Text "No problems"
-        Toggle "Restart on save" = true
+        Toggle "Reload on save" = true
         View
           HStack
             Icon save

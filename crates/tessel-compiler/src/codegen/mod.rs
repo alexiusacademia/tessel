@@ -75,6 +75,87 @@ pub fn compile(
     optimize: bool,
     target_triple: Option<&str>,
 ) -> Result<(), Vec<Diagnostic>> {
+    generate(program, checked, sources, optimize, target_triple, Mode::Program, |tm, module| {
+        tm.write_to_file(module, FileType::Object, out).map_err(|e| vec![internal(e.to_string())])
+    })
+}
+
+/// A REPL entry to compile: its number in the session, and the session's
+/// variables (in the order of the parameters of `REPL_FN`).
+#[derive(Clone, Copy)]
+pub struct ReplEntry<'a> {
+    pub index: usize,
+    pub vars: &'a [crate::ReplVar],
+}
+
+/// The name of the function that runs entry `index` of a REPL session.
+pub fn repl_entry_symbol(index: usize) -> String {
+    format!("tsl_repl_{index}")
+}
+
+/// The name of the global of a variable declared by entry `index`. It holds
+/// a box with the variable's value.
+pub fn repl_var_symbol(index: usize, name: &str) -> String {
+    format!("tsl_replvar_{index}_{name}")
+}
+
+/// Compiles a checked REPL entry (see `analyze_repl`) for this computer, to
+/// an object file in memory for `jit::Jit`. Its statements are the function
+/// `repl_entry_symbol(index)`; the variables they declare are left in
+/// globals (`repl_var_symbol`), where later entries find them.
+pub fn compile_repl(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+    entry: ReplEntry,
+) -> Result<Vec<u8>, Vec<Diagnostic>> {
+    generate(program, checked, sources, true, None, Mode::Repl(entry), |tm, module| {
+        let buffer = tm.write_to_memory_buffer(module, FileType::Object).map_err(|e| vec![internal(e.to_string())])?;
+        Ok(buffer.as_slice().to_vec())
+    })
+}
+
+/// The name of the function that starts, or reloads, a program compiled by
+/// `compile_hot`.
+pub fn hot_entry_symbol(generation: usize) -> String {
+    format!("tsl_hot_{generation}")
+}
+
+/// Compiles a checked program with an `app` for `tessel run --hot`: to an
+/// object file in memory for `jit::Jit`, whose entry point
+/// (`hot_entry_symbol(generation)`) starts the app the first time, and gives
+/// the running app its new code after that.
+pub fn compile_hot(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+    generation: usize,
+) -> Result<Vec<u8>, Vec<Diagnostic>> {
+    generate(program, checked, sources, true, None, Mode::Hot(generation), |tm, module| {
+        let buffer = tm.write_to_memory_buffer(module, FileType::Object).map_err(|e| vec![internal(e.to_string())])?;
+        Ok(buffer.as_slice().to_vec())
+    })
+}
+
+/// What's being compiled.
+#[derive(Clone, Copy)]
+enum Mode<'a> {
+    /// A program, to an object file that's linked into an executable.
+    Program,
+    Repl(ReplEntry<'a>),
+    /// A program for hot reload: this many times compiled.
+    Hot(usize),
+}
+
+fn generate<R>(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+    optimize: bool,
+    target_triple: Option<&str>,
+    mode: Mode,
+    emit: impl FnOnce(&TargetMachine, &Module) -> Result<R, Vec<Diagnostic>>,
+) -> Result<R, Vec<Diagnostic>> {
     let config = InitializationConfig::default();
     Target::initialize_x86(&config);
     Target::initialize_aarch64(&config);
@@ -105,6 +186,11 @@ pub fn compile(
     module.set_data_layout(&td.get_data_layout());
 
     let mut g = Gen::new(&ctx, module, td, program, checked, sources);
+    match mode {
+        Mode::Program => {}
+        Mode::Repl(entry) => g.repl = Some(entry),
+        Mode::Hot(generation) => g.hot = Some(generation),
+    }
     g.program();
     if !g.errors.is_empty() {
         return Err(g.errors);
@@ -121,7 +207,7 @@ pub fn compile(
     if let Some(path) = std::env::var_os("TESSEL_EMIT_LLVM") {
         let _ = g.module.print_to_file(path);
     }
-    tm.write_to_file(&g.module, FileType::Object, out).map_err(|e| vec![internal(e.to_string())])
+    emit(&tm, &g.module)
 }
 
 fn internal(msg: impl Into<String>) -> Diagnostic {
@@ -275,6 +361,10 @@ struct Gen<'ctx, 'a> {
     view_fns: HashMap<(String, String), FunctionValue<'ctx>>,
     records: HashMap<String, (StructType<'ctx>, Vec<Ty>)>,
     app: Option<&'a AppDecl>,
+    /// Compiling a REPL entry rather than a program.
+    repl: Option<ReplEntry<'a>>,
+    /// Compiling for hot reload: how many times the program was compiled.
+    hot: Option<usize>,
 }
 
 /// A view's source: a `view` declaration or the `app`.
@@ -323,6 +413,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             view_fns: HashMap::new(),
             records: HashMap::new(),
             app: None,
+            repl: None,
+            hot: None,
         }
     }
 
@@ -372,7 +464,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
             }
         }
-        if !self.fn_decls.contains_key("main") && self.app.is_none() {
+        // A REPL entry's statements: compiled last, as the entry point.
+        let repl_fn = self.repl.and_then(|_| self.fn_decls.remove(crate::REPL_FN));
+        if !self.fn_decls.contains_key("main") && self.app.is_none() && self.repl.is_none() {
             if self.errors.is_empty() {
                 self.errors.push(Diagnostic::error(Span::default(), "this program has no `app` or `fn main()` to run"));
             }
@@ -419,8 +513,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
         self.compile_views();
 
+        if let Some(decl) = repl_fn {
+            self.repl_entry(decl);
+            return;
+        }
+        if self.repl.is_some() {
+            return;
+        }
+
         // Entry point called by the runtime.
-        let entry = self.module.add_function("tsl_main", self.ctx.void_type().fn_type(&[], false), None);
+        let entry_name = self.hot.map_or("tsl_main".to_string(), hot_entry_symbol);
+        let entry = self.module.add_function(&entry_name, self.ctx.void_type().fn_type(&[], false), None);
         self.b.position_at_end(self.ctx.append_basic_block(entry, "entry"));
         match self.app {
             Some(app) => self.run_app(app, entry),
@@ -430,6 +533,113 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_return(None).unwrap();
             }
         }
+        if self.hot.is_some() {
+            return;
+        }
+        // The process starts here: the runtime does the rest.
+        let i32t = self.ctx.i32_type();
+        let main = self.module.add_function("main", i32t.fn_type(&[], false), None);
+        self.b.position_at_end(self.ctx.append_basic_block(main, "entry"));
+        let status = self.call_rt("tsl_start", &[entry.as_global_value().as_pointer_value().into()]).unwrap();
+        self.b.build_return(Some(&status)).unwrap();
+    }
+
+    /// The function that runs a REPL entry's statements. The session's
+    /// variables are globals of the code loaded for earlier entries, each
+    /// holding a box with the value (so closures can share them, and entries
+    /// can change them). The variables declared here are left in new globals.
+    fn repl_entry(&mut self, decl: &'a FnDecl) {
+        let repl = self.repl.expect("a REPL entry");
+        let func = self.module.add_function(&repl_entry_symbol(repl.index), self.ctx.void_type().fn_type(&[], false), None);
+        self.b.position_at_end(self.ctx.append_basic_block(func, "entry"));
+        let sig = self.checked.fns[crate::REPL_FN].clone();
+        let mut scope = Vec::new();
+        for (v, p) in repl.vars.iter().zip(&sig.params) {
+            let global = self.module.add_global(self.ptr_ty(), None, &v.symbol);
+            scope.push(Var { name: v.name.clone(), ty: p.ty.clone(), store: Store::EnvBox(global.as_pointer_value()) });
+        }
+        let declared = self.checked.repl.clone().unwrap_or_default().vars;
+        let mut boxed = boxed_vars(&decl.body);
+        boxed.extend(declared.iter().map(|(name, ..)| name.clone()));
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None });
+        self.push_scope();
+        for s in &decl.body.stmts {
+            if self.terminated() {
+                self.continue_dead();
+            }
+            self.stmt(s);
+        }
+        if !self.terminated() {
+            for (name, ..) in &declared {
+                let var = self.stack.last().unwrap().scopes.last().unwrap().iter().rev().find(|v| v.name == *name);
+                let Some(Var { store: Store::Boxed(slot), .. }) = var.cloned() else { continue };
+                let bx = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
+                self.call_rt("tsl_retain", &[bx]);
+                let global = self.module.add_global(self.ptr_ty(), None, &repl_var_symbol(repl.index, name));
+                global.set_initializer(&self.ptr_ty().const_null());
+                self.b.build_store(global.as_pointer_value(), bx).unwrap();
+            }
+        }
+        self.pop_scope();
+        self.finish_function(None);
+        self.stack.pop();
+    }
+
+    /// A text for what a value of `t` is in memory, all the way down: the
+    /// fields of structs, the cases of enums. `open` are the types being
+    /// described (types can contain themselves, through lists).
+    fn layout_text(&self, t: &Ty, open: &mut Vec<Ty>) -> String {
+        let inner = |g: &Self, t: &Ty, open: &mut Vec<Ty>| g.layout_text(t, open);
+        match t {
+            Ty::List(x) => format!("[{}]", inner(self, x, open)),
+            Ty::Set(x) => format!("Set<{}>", inner(self, x, open)),
+            Ty::Opt(x) => format!("{}?", inner(self, x, open)),
+            Ty::Dict(k, v) => format!("[{}: {}]", inner(self, k, open), inner(self, v, open)),
+            Ty::Struct(_) | Ty::Enum(_) if open.contains(t) => self.checked.show(t),
+            Ty::Struct(id) => {
+                open.push(t.clone());
+                let def = &self.checked.structs[*id];
+                let fields: Vec<String> =
+                    def.fields.iter().map(|f| format!("{}: {}", f.name, inner(self, &f.ty, open))).collect();
+                open.pop();
+                format!("{} {{ {} }}", def.name, fields.join(", "))
+            }
+            Ty::Enum(id) => {
+                open.push(t.clone());
+                let def = &self.checked.enums[*id];
+                let cases: Vec<String> = def
+                    .cases
+                    .iter()
+                    .map(|c| {
+                        let values: Vec<String> = c.fields.iter().map(|f| inner(self, &f.ty, open)).collect();
+                        format!("{}({})", c.name, values.join(", "))
+                    })
+                    .collect();
+                open.pop();
+                format!("{} {{ {} }}", def.name, cases.join(", "))
+            }
+            _ => self.checked.show(t),
+        }
+    }
+
+    /// A number for what a view's state record holds (see the runtime's
+    /// `tsl_ui_view_begin`): it changes when the record's values, or the
+    /// types they're made of, do.
+    fn record_layout(&self, view: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let (_, fields) = &self.records[view];
+        let names = self.view_decls[view].body.stmts.iter().filter_map(|s| match s {
+            Stmt::State(d) => Some(d.name.name.as_str()),
+            _ => None,
+        });
+        let names = names.chain(self.view_decls[view].params.iter().map(|p| p.name.name.as_str()));
+        let mut text = String::new();
+        for (name, ty) in names.zip(fields) {
+            text += &format!("{name}: {}; ", self.layout_text(ty, &mut Vec::new()));
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut h);
+        h.finish()
     }
 
     fn method_sig(&self, owner: &Ty, name: &str) -> FnSig {
@@ -857,7 +1067,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_tag" => (vec![p, p], None),
-            "tsl_ui_view_begin" => (vec![i, p, p], Some(p)),
+            "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" | "tsl_ui_animation" => (vec![f64t], None),
             "tsl_ui_padding" => (vec![f64t, f64t, f64t, f64t], None),
             "tsl_ui_font" => (vec![f64t, i8t, i32t, i8t], None),
@@ -872,6 +1082,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, i32t, p, p], None),
+            "tsl_start" => (vec![p], Some(i32t)),
+            "tsl_ui_hot" => (vec![p, f64t, f64t, i32t, p, p], None),
             "tsl_list_unique" => (vec![p], Some(p)),
             _ => panic!("unknown runtime function {name}"),
         };

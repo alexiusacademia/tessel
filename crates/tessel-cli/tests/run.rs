@@ -105,6 +105,55 @@ fn run_with_input(cmd: &mut Command, input: &[u8]) -> std::process::Output {
     out
 }
 
+/// Feeds `tests/repl/<name>.in` to `tessel repl` and compares what it prints
+/// with `<name>.out` (stdout) and `<name>.err` (stderr).
+#[test]
+fn repl_sessions() {
+    let dir = repo().join("tests/repl");
+    let mut inputs: Vec<PathBuf> =
+        std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "in")).collect();
+    inputs.sort();
+    assert!(!inputs.is_empty());
+    for input in inputs {
+        let name = input.file_stem().unwrap().to_string_lossy().to_string();
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessel"));
+        cmd.arg("repl").current_dir(repo());
+        let out = run_with_input(&mut cmd, &std::fs::read(&input).unwrap());
+        assert!(out.status.success(), "{name}: the REPL failed ({})", out.status);
+        for (kind, got) in [("out", &out.stdout), ("err", &out.stderr)] {
+            let expected = std::fs::read_to_string(dir.join(format!("{name}.{kind}"))).unwrap_or_default();
+            let got = String::from_utf8_lossy(got);
+            assert!(got == expected, "{name}: std{kind} differs\n--- expected\n{expected}--- got\n{got}");
+        }
+    }
+}
+
+/// Runs a copy of `tests/hot` with `tessel run --hot` and its script: the app
+/// replaces its own source, and `reload` gives it the new code.
+#[test]
+fn hot_reload() {
+    let from = repo().join("tests/hot");
+    let dir = std::env::temp_dir().join(format!("tessel-hot-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["main.tsl", "next.txt", "broken.txt", "last.txt"] {
+        std::fs::copy(from.join(name), dir.join(name)).unwrap();
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .args(["run", "main.tsl", "--hot"])
+        .current_dir(&dir)
+        .env("TESSEL_SCRIPT", std::fs::read_to_string(from.join("session.script")).unwrap())
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(out.status.success(), "failed ({}):\n{}", out.status, String::from_utf8_lossy(&out.stderr));
+    for (kind, got) in [("out", &out.stdout), ("err", &out.stderr)] {
+        let expected = std::fs::read_to_string(from.join(format!("session.{kind}"))).unwrap();
+        let got = String::from_utf8_lossy(got);
+        assert!(got == expected, "std{kind} differs\n--- expected\n{expected}--- got\n{got}");
+    }
+}
+
 /// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
 /// on a copy of `tests/ide/project`, then compares its output and the
 /// project's files with what's expected.

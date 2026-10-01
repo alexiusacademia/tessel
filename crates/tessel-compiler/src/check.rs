@@ -41,6 +41,24 @@ pub struct Checked {
     /// Specialized copies of generic declarations, to compile along with the
     /// program's own items.
     pub instances: Vec<Rc<Item>>,
+    /// For a REPL entry: what its statements declare and produce.
+    pub repl: Option<ReplChecked>,
+}
+
+/// What the statements of a REPL entry leave behind.
+#[derive(Clone, Debug, Default)]
+pub struct ReplChecked {
+    /// The variables they declare (name, type, declared with `var`), which
+    /// later entries can use.
+    pub vars: Vec<(String, Ty, bool)>,
+    /// The type of the last statement, if it's an expression (`()` otherwise).
+    pub result: Ty,
+}
+
+impl Default for Ty {
+    fn default() -> Ty {
+        Ty::Void
+    }
 }
 
 /// The identifier `tessel complete` puts where the caret is, so the checker
@@ -184,6 +202,17 @@ struct CallFrame {
 
 /// Checks a whole program. With `require_entry`, it must have an `app` or a `fn main()`.
 pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: bool) -> Checked {
+    check(program, diags, require_entry, None)
+}
+
+/// Checks the program of a REPL entry, whose statements are the body of the
+/// function `REPL_FN` and whose parameters are the session's variables
+/// (those in `mutable` were declared with `var`).
+pub fn check_repl(program: &Program, diags: &mut Diagnostics, mutable: HashSet<String>) -> Checked {
+    check(program, diags, false, Some(mutable))
+}
+
+fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: Option<HashSet<String>>) -> Checked {
     let enums = builtins::enums();
     let structs = builtins::structs();
     let mut globals = HashMap::new();
@@ -232,6 +261,8 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         next_id: 0,
         private: program.private.clone(),
         public: program.public.clone(),
+        repl_mutable: repl,
+        repl: None,
     };
     c.next_id = program.next_id;
     let ids = c.collect(&program.items, require_entry);
@@ -267,6 +298,7 @@ pub fn check_program(program: &Program, diags: &mut Diagnostics, require_entry: 
         tries: c.tries,
         completion: c.completion,
         instances: c.instances,
+        repl: c.repl,
     }
 }
 
@@ -357,6 +389,9 @@ const MUTATING: &[&str] =
     &["append", "insert", "remove", "removeAll", "removeValue", "removeFirst", "removeLast", "appendAll"];
 
 struct Checker<'a> {
+    /// Checking a REPL entry: the session's variables declared with `var`.
+    repl_mutable: Option<HashSet<String>>,
+    repl: Option<ReplChecked>,
     diags: &'a mut Diagnostics,
     builtins: Builtins,
     structs: Vec<StructDef>,
@@ -1107,6 +1142,10 @@ impl Checker<'_> {
                     let methods = self.enums[id].methods.clone();
                     self.method_bodies(&d.methods, &methods, Ty::Enum(id), Vec::new());
                 }
+                Item::Fn(f) if self.repl_mutable.is_some() && f.name.name == crate::REPL_FN => {
+                    let sig = self.fns[id.unwrap()].clone();
+                    self.repl_body(f, &sig);
+                }
                 Item::Fn(f) => {
                     let sig = self.fns[id.unwrap()].clone();
                     self.in_main = f.name.name == "main";
@@ -1153,6 +1192,40 @@ impl Checker<'_> {
             c.block(&f.body, Some(&sig.ret));
             c.loops = loops;
             c.returns.pop();
+        });
+    }
+
+    /// The statements of a REPL entry. The session's variables are in scope
+    /// (as the function's parameters); the variables declared here join
+    /// them, and the value of a last expression is shown, not thrown away.
+    fn repl_body(&mut self, f: &FnDecl, sig: &FnSig) {
+        let mutable = self.repl_mutable.clone().unwrap_or_default();
+        self.with_scope(|c| {
+            for (p, ps) in f.params.iter().zip(&sig.params) {
+                let kind = if mutable.contains(&p.name.name) { Kind::Var } else { Kind::Let };
+                c.declare(&p.name, ps.ty.clone(), kind);
+            }
+            let loops = std::mem::take(&mut c.loops);
+            c.with_scope(|c| {
+                let n = f.body.stmts.len();
+                let mut result = Ty::Void;
+                for (i, s) in f.body.stmts.iter().enumerate() {
+                    match s {
+                        Stmt::Expr(e) if i + 1 == n => result = c.expr(e, None),
+                        s => c.stmt(s),
+                    }
+                }
+                let vars = c
+                    .scopes
+                    .last()
+                    .unwrap()
+                    .iter()
+                    .filter(|l| matches!(l.kind, Kind::Let | Kind::Var) && !l.name.starts_with('$'))
+                    .map(|l| (l.name.clone(), l.ty.clone(), matches!(l.kind, Kind::Var)))
+                    .collect();
+                c.repl = Some(ReplChecked { vars, result });
+            });
+            c.loops = loops;
         });
     }
 

@@ -1,0 +1,7 @@
+app Hot(width: 300, height: 220) {
+    state count = 0
+
+    VStack {
+        Text("Count: {cuont}")
+    }
+}

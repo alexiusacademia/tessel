@@ -7,8 +7,6 @@
 //! for signal handlers, and the handler prints what happened and exits with
 //! status 101, like the other runtime errors.
 
-// (Unit tests have no `main`, which installs it.)
-#![cfg_attr(test, allow(dead_code, unused_imports))]
 
 #[cfg(unix)]
 mod imp {
@@ -88,6 +86,10 @@ mod imp {
                 );
             } else {
                 say("error: the program crashed (invalid memory access); this is a bug in Tessel, please report it\n");
+            }
+            // (The REPL goes on; see `on_error`.)
+            if let Some(hook) = crate::ON_ERROR.get() {
+                hook();
             }
             libc::_exit(101);
         }

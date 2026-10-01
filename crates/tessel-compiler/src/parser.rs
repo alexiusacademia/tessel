@@ -22,12 +22,77 @@ pub struct Parser<'a> {
     extra: Vec<Stmt>,
     public: std::collections::HashSet<Span>,
     private: std::collections::HashSet<Span>,
+    /// For a REPL entry: statements are allowed at the top level, and kept here.
+    repl: Option<Vec<Stmt>>,
+    /// For a REPL entry: where each declaration and import is.
+    decls: Vec<ReplDecl>,
+}
+
+/// What a declaration in a REPL entry is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DeclKind {
+    Import,
+    /// A struct, enum or interface.
+    Type,
+    Fn,
+    /// A view or an app.
+    View,
+}
+
+/// A declaration (or import) in a REPL entry: its name and all of its text.
+#[derive(Clone, Debug)]
+pub struct ReplDecl {
+    pub kind: DeclKind,
+    pub name: String,
+    pub span: Span,
+}
+
+/// A REPL entry: its declarations, and the statements between them.
+pub struct ReplEntry {
+    pub program: Program,
+    pub stmts: Vec<Stmt>,
+    pub decls: Vec<ReplDecl>,
+}
+
+/// Parses what's typed at the REPL: declarations as in a file, and
+/// statements as in a function, in any order.
+pub fn parse_repl(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut ExprId) -> ReplEntry {
+    let toks = lex(file, text, 0, diags);
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        file,
+        text,
+        diags,
+        next_id,
+        no_trailing: false,
+        extra: Vec::new(),
+        public: Default::default(),
+        private: Default::default(),
+        repl: Some(Vec::new()),
+        decls: Vec::new(),
+    };
+    let program = p.program();
+    ReplEntry { program, stmts: p.repl.take().unwrap_or_default(), decls: p.decls }
 }
 
 /// Parses one file. `next_id` numbers expressions uniquely across files.
 pub fn parse_file(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut ExprId) -> Program {
     let toks = lex(file, text, 0, diags);
-    let mut p = Parser { toks, pos: 0, file, text, diags, next_id, no_trailing: false, extra: Vec::new(), public: Default::default(), private: Default::default() };
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        file,
+        text,
+        diags,
+        next_id,
+        no_trailing: false,
+        extra: Vec::new(),
+        public: Default::default(),
+        private: Default::default(),
+        repl: None,
+        decls: Vec::new(),
+    };
     p.program()
 }
 
@@ -234,9 +299,11 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
             let start = self.pos;
             if matches!(self.peek(), Tok::Ident(w) if w == "import") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Str(_)) {
+                let lo = self.span();
                 match self.import() {
                     Ok(i) => {
                         imports.push(i);
+                        self.decls.push(ReplDecl { kind: DeclKind::Import, name: String::new(), span: lo.to(self.prev_span()) });
                         if !matches!(self.peek(), Tok::Newline | Tok::Eof) {
                             self.unexpected("end of line");
                             self.recover_item();
@@ -246,7 +313,32 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
+            let item_lo = self.span();
             let vis = self.visibility();
+            let declares = matches!(self.peek(), Tok::Eof | Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::App);
+            if self.repl.is_some() && vis.is_none() && !declares {
+                match self.stmt() {
+                    Ok(s) => {
+                        let stmts = self.repl.as_mut().unwrap();
+                        stmts.push(s);
+                        stmts.append(&mut self.extra);
+                        if !matches!(self.peek(), Tok::Newline | Tok::Eof) {
+                            let span = self.span();
+                            let found = describe(self.peek());
+                            self.error(span, format!("expected end of line, found {found}"))
+                                .help("put each statement on its own line");
+                            self.recover_line();
+                        }
+                    }
+                    Err(Reported) => {
+                        if self.pos == start {
+                            self.bump();
+                        }
+                        self.recover_line();
+                    }
+                }
+                continue;
+            }
             if let Some((_, span)) = vis
                 && matches!(self.peek(), Tok::App)
             {
@@ -272,6 +364,12 @@ impl<'a> Parser<'a> {
             match item {
                 Ok(item) => {
                     self.mark(vis, item.name().span);
+                    let kind = match &item {
+                        Item::Fn(_) => DeclKind::Fn,
+                        Item::View(_) | Item::App(_) => DeclKind::View,
+                        _ => DeclKind::Type,
+                    };
+                    self.decls.push(ReplDecl { kind, name: item.name().name.clone(), span: item_lo.to(self.prev_span()) });
                     items.push(item);
                     if !matches!(self.peek(), Tok::Newline | Tok::Eof) {
                         self.unexpected("end of line");
@@ -486,10 +584,11 @@ impl<'a> Parser<'a> {
     fn members(&mut self, mut member: impl FnMut(&mut Self) -> PResult<()>) {
         loop {
             while self.eat(&Tok::Newline) || self.eat(&Tok::Comma) {}
-            if self.eat(&Tok::RBrace) || self.at(&Tok::Eof) {
-                if self.at(&Tok::Eof) {
-                    self.unexpected("`}`");
-                }
+            if self.eat(&Tok::RBrace) {
+                return;
+            }
+            if self.at(&Tok::Eof) {
+                self.unexpected("`}`");
                 return;
             }
             let start = self.pos;

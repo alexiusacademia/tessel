@@ -1,0 +1,47 @@
+1 + 2
+let name = "Ada"
+var count = 10
+count += 5
+count
+"Hello, {name}!"
+fn double(n: Int) -> Int { n * 2 }
+double(count)
+struct Point {
+    x: Int
+    y: Int
+}
+let p = Point(x: 1, y: 2)
+p
+var q = p
+q.x = 10
+q.x + p.y
+for i in 0..3 {
+    print(double(i))
+}
+let add: fn(Int) -> Int = { n in n + count }
+add
+count = 100
+add(1)
+let maybe: Int? = nil
+maybe
+let (a, b) = (1, "x")
+b
+fn double(n: Int) -> Int { n + n + 1 }
+double(1)
+let xs = [1, 2, 3]
+let y = xs[7]
+y
+xs.count
+name = "Grace"
+struct Point { x: Int }
+:vars
+let p = Point(x: 5)
+p
+after(seconds: 0.1) { print("later") }
+fn forever(n: Int) -> Int { forever(n + 1) + 1 }
+forever(1)
+app A { Text("x") }
+:nope
+"still here"
+:quit
+"not reached"

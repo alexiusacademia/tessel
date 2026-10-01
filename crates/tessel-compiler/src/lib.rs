@@ -8,6 +8,7 @@ pub mod check;
 pub mod codegen;
 pub mod diag;
 pub mod generics;
+pub mod jit;
 pub mod lexer;
 pub mod modules;
 pub mod parser;
@@ -44,6 +45,79 @@ pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     let checked = check::check_program(&program, &mut diags, require_entry);
     diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
     Analysis { program, checked, diags }
+}
+
+/// The function a REPL entry's statements are checked and compiled as.
+pub const REPL_FN: &str = "__repl";
+
+/// A variable of a REPL session: declared by an earlier entry, kept in a
+/// global of the code loaded then.
+#[derive(Clone, Debug)]
+pub struct ReplVar {
+    pub name: String,
+    /// Its type, as written in Tessel.
+    pub ty: String,
+    /// Declared with `var`.
+    pub mutable: bool,
+    /// The name of its global.
+    pub symbol: String,
+}
+
+/// The front end's result for a REPL entry.
+pub struct ReplAnalysis {
+    pub analysis: Analysis,
+    /// The entry's declarations and imports, which stay for later entries.
+    pub decls: Vec<parser::ReplDecl>,
+    /// The entry's last statement, if it's an expression (its value is shown).
+    pub last_expr: Option<source::Span>,
+}
+
+/// Like `analyze`, for a REPL session: file `entry` of `sources` is what was
+/// just typed (declarations and statements), and the other files are the
+/// declarations typed before. `vars` are the session's variables, which the
+/// entry's statements can use.
+pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar]) -> ReplAnalysis {
+    let mut diags = Diagnostics::default();
+    let mut next_id = 0;
+    let mut root = Vec::new();
+    let mut found = None;
+    for (id, file) in sources.files() {
+        if id == entry {
+            let mut e = parser::parse_repl(id, &file.text, &mut diags, &mut next_id);
+            let span = source::Span::new(id, 0, file.text.len());
+            found = Some((std::mem::take(&mut e.stmts), std::mem::take(&mut e.decls), span));
+            root.push((id, e.program));
+        } else {
+            root.push((id, parser::parse_file(id, &file.text, &mut diags, &mut next_id)));
+        }
+    }
+    let (stmts, decls, span) = found.expect("the entry is one of the files");
+    let last_expr = match stmts.last() {
+        Some(ast::Stmt::Expr(e)) => Some(e.span),
+        _ => None,
+    };
+    // The statements become the body of a function whose parameters are the
+    // session's variables (so they have their types, and their names resolve).
+    let params: Vec<String> = vars.iter().map(|v| format!("{}: {}", v.name, v.ty)).collect();
+    let header = sources.add("session", format!("fn {REPL_FN}({}) {{\n}}\n", params.join(", ")));
+    let mut wrapper = parser::parse_file(header, &sources.file(header).text.clone(), &mut diags, &mut next_id);
+    if let Some(ast::Item::Fn(f)) = wrapper.items.first_mut() {
+        f.body = ast::Block { stmts, span };
+    }
+    root.push((header, wrapper));
+
+    let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
+    program.items.extend(tuple_structs());
+    add_prelude(&mut program, &mut diags, &mut next_id);
+    program.next_id = next_id;
+    let mutable = vars.iter().filter(|v| v.mutable).map(|v| v.name.clone()).collect();
+    let checked = check::check_repl(&program, &mut diags, mutable);
+    // ("Declared here" would point at the function made up above.)
+    for d in &mut diags.list {
+        d.secondary.retain(|label| label.span.file != header);
+    }
+    diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
+    ReplAnalysis { analysis: Analysis { program, checked, diags }, decls, last_expr }
 }
 
 /// Adds the prelude's declarations (see `prelude.tsl`) that the program
