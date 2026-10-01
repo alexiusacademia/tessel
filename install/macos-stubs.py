@@ -47,7 +47,7 @@ def main():
         # A program containing the whole runtime, so every symbol it could use is imported.
         main_c = os.path.join(tmp, "main.c")
         with open(main_c, "w") as f:
-            f.write("void tsl_main(void) {}\n")
+            f.write("int main(void) { return 0; }\n")
         exe = os.path.join(tmp, "all")
         args = ["cc", main_c, "-Wl,-all_load", runtime, f"-mmacosx-version-min={MIN_MACOS}", "-o", exe]
         for fw in FRAMEWORKS:
