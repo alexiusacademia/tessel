@@ -41,7 +41,8 @@ language may still change. This page is an honest list of where things stand.
   own types, `Data` for raw bytes, dates and times, random numbers, the
   clipboard, reading standard input and writing to standard error, and many
   methods for strings, numbers and lists.
-- **Tools:** the `tessel` command, the Tessel IDE, a VS Code extension, a
+- **Tools:** the `tessel` command, a REPL (`tessel repl`), hot reload
+  (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE, a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
 
@@ -51,9 +52,6 @@ language may still change. This page is an honest list of where things stand.
 These are the main gaps you may run into today.
 :::
 
-- **Hot reload:** the IDE's "Restart on save" restarts your app when you
-  save, so the app's state starts over. Reloading code while keeping the
-  state isn't there yet.
 - **Debugging:** there is no debugger with breakpoints or stepping yet.
   Runtime errors show a message and the place in your code, which you can
   click in the IDE's console, and `print` output appears there too.
@@ -81,7 +79,6 @@ These are the next areas of work. None of them has a date.
 
 | Area | Plans |
 |---|---|
-| Hot reload | Keep the running app's state when its code changes. |
 | App polish | Accessibility, using every control from the keyboard, richer animation. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
 | Language | Packages: installing shared modules by name, with versions. |

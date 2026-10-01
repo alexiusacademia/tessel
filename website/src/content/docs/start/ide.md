@@ -78,7 +78,7 @@ On Windows, use Ctrl wherever this page says Cmd.
 |---|---|---|
 | Save | Cmd+S | Saves every changed file, then checks the program again. |
 | Check | Cmd+K | Checks the program for errors (like `tessel check`) and lists them under Problems. |
-| Run / Stop | Cmd+R | Saves, builds and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
+| Run / Stop | Cmd+R | Saves and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
 
@@ -90,15 +90,23 @@ version.
 Next to the buttons, a status text says what the IDE is doing ("Building…",
 "Running", "2 problem(s)", and so on).
 
-### Restart on save
+### Reload on save
 
-With **Restart on save** switched on (it is on by default), saving while
-your program is running stops it and runs it again, so you see your change
-straight away. This restarts the program, so its state starts over; the
-IDE doesn't yet keep an app's state across changes.
+With **Reload on save** switched on (it is on by default), saving while
+your app is running gives the running app its new code: the window stays
+open, and what you had typed, switched on or scrolled to is still there. So
+you can change a color or a layout and see it at once, in the middle of
+whatever you were doing in the app. This is
+[`tessel run --hot`](/start/cli/#hot-reload), which has the details: for
+instance, a view whose `state` declarations change starts with fresh state.
 
-When Run builds your program, it writes the executable to a hidden file,
-`.tessel-run`, in the project folder.
+If the saved code has errors, they're shown in the Console and the app
+carries on with the code it had. A program without a window (`fn main()`)
+is run again from the start instead.
+
+With the switch off, Run builds the program and runs it as it was then;
+saving doesn't change the running program. The executable is written to a
+hidden file, `.tessel-run`, in the project folder.
 
 ## Problems and console
 

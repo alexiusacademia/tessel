@@ -21,7 +21,10 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app).
                  An icon.png next to the program is the app's icon
-  run <path>     build and run a program
+  run <path> [--hot]
+                 build and run a program; with --hot, an app takes its new
+                 code when its files change, and keeps its state
+  repl           type code and see what it does, a line at a time
   lsp            start the language server (used by editors)
   help           show this help
   version        print the compiler version
@@ -110,7 +113,7 @@ uses this format for its Problems list.
 ## `tessel run`
 
 ```sh
-tessel run <path>
+tessel run <path> [--hot]
 ```
 
 Compiles the program to a temporary executable and runs it. A `fn main()`
@@ -127,6 +130,118 @@ of a list, it stops with a message and the place in your code:
 error: index 2 is out of range for a list of 2 items
  --> rt/main.tsl:3:11
 ```
+
+### Hot reload
+
+```sh
+tessel run todos --hot
+```
+
+With `--hot`, an app keeps running while you work on it. Whenever you save
+one of its files, the running app takes the new code, and keeps its state:
+the window stays where it is, with the same text in its fields, the same
+tab selected, the same items in its lists. `tessel run` says so:
+
+```text
+tessel: reloaded
+```
+
+- **What's kept.** Every `state` value, of the `app` and of your views,
+  along with what the text fields, scroll views and code editors keep
+  themselves (the cursor, the scroll position, undo history).
+- **What starts afresh.** A view whose `state` declarations or parameters
+  changed (one added or removed, renamed, or of another type), or use a
+  struct or enum that changed: its old state doesn't fit the new code, so
+  that view begins with its initial values. Other views keep theirs. A view
+  that moves to another place among its neighbors is a new view, as always
+  (see [Identity](/ui/lists/#identity-with-id)).
+- **What isn't run again.** State keeps its value even if its initial value
+  in the code is different now, and `.onAppear` blocks of views that are
+  already showing don't run again. Timers started by the old code go on
+  running the old code. To see those changes, close the app and run it again.
+- **Errors.** If the saved code doesn't compile, the errors are printed and
+  the app goes on with the code it has. Save again once they're fixed.
+- The window's title and size, and the `appearance:` the `app` asks for,
+  are set when the app starts, and don't change on a reload.
+
+A program without an `app` is restarted from the beginning when its files
+change (`tessel: restarted`), for as long as it's running.
+
+With `--hot` the app's code is compiled the same way, but loaded into
+`tessel` itself rather than made into an executable, so that new code can
+join it. The [Tessel IDE](/start/ide/#reload-on-save) runs programs this way
+when **Reload on save** is on.
+
+## `tessel repl`
+
+```sh
+tessel repl
+```
+
+Runs code as you type it, which is a quick way to try something out. Type a
+line and press Enter:
+
+```text
+Tessel 0.1.10 (:help for help, :quit to leave)
+> 1 + 2
+3
+> let name = "Ada"
+> "Hello, {name}!"
+Hello, Ada!
+> fn double(n: Int) -> Int { n * 2 }
+> double(21)
+42
+```
+
+- **Expressions** show their value, the way `print` would. Structs and
+  optionals are shown as JSON (`{"x":1,"y":2}`, `null`), and a value that
+  can't be shown at all, like a function, as its type.
+- **Variables** (`let`, `var`) stay for the lines that follow. Declaring one
+  again replaces it, and may give it another type.
+- **Functions, structs, enums and interfaces** stay too. Declaring one again
+  replaces it. When a struct or enum changes, the variables that hold values
+  of the old one are removed, and the REPL says so.
+- **Several lines.** A line that opens a bracket goes on until the bracket is
+  closed; the prompt turns into `.` meanwhile:
+
+  ```text
+  > for i in 0..3 {
+  .     print(double(i))
+  . }
+  0
+  2
+  4
+  ```
+
+- **Errors** are shown like `tessel check` shows them, and nothing of that
+  entry runs. A mistake while running (an index out of range, endless
+  recursion) stops the entry with its message, and you can go on; variables
+  the entry declared are left out, but what it changed before failing stays
+  changed.
+- **Timers and background work** (`after`, `fetch`, `runCommand`, …) finish
+  before the next prompt.
+
+Commands start with a colon:
+
+| Command | What it does |
+|---|---|
+| `:vars` | Lists the variables so far, with their types. |
+| `:help` | Shows a short summary. |
+| `:quit` | Leaves. Ctrl+D does too. |
+
+The up and down arrow keys bring back earlier lines. When its input isn't a
+keyboard (`tessel repl < lines.txt`), the REPL runs the lines without
+prompts, which is handy for scripts and tests.
+
+The code is compiled to machine code, like any Tessel program, and loaded
+into the running `tessel`; it isn't interpreted. A few things are different
+from a program in a file:
+
+- There's no window, so `view` and `app` aren't accepted. Use `tessel run`
+  for those.
+- `return` and `try` have no function to return from at the prompt; use them
+  inside functions.
+- Ctrl+C while code is running ends the REPL.
 
 ## `tessel build`
 

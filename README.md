@@ -51,6 +51,7 @@ The IDE is itself a Tessel app: see [`ide/`](ide/).
 | `ide/` | The Tessel IDE, written in Tessel |
 | `editors/vscode/` | VS Code extension (highlighting, errors as you type, types on hover) |
 | `tests/run/` | Programs with expected output, run by `cargo test` |
+| `tests/repl/` | REPL sessions with expected output |
 | `docs/` | Language design |
 
 ## Installing
@@ -84,6 +85,7 @@ Requires Rust and LLVM 22 (`brew install llvm@22`; the path is set in
 cargo build
 ./target/debug/tessel check examples/todos       # a folder of .tsl files, or one file
 ./target/debug/tessel run examples/todos         # compile and run (opens a window)
+./target/debug/tessel repl                       # type code, a line at a time
 ./target/debug/tessel build app.tsl -o app        # compile to a native executable
 cargo test    # unit tests, error-message fixtures, and programs in tests/run
               # (checked for memory leaks on macOS)
