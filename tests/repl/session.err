@@ -23,4 +23,4 @@ error: stack overflow: too many function calls inside each other
 error: the REPL has no window for views and apps
  = help: put them in a file, and use `tessel run`
 error: unknown command `:nope`
- = help: the commands are `:vars`, `:help` and `:quit`
+ = help: the commands are `:vars`, `:keywords`, `:help` and `:quit`

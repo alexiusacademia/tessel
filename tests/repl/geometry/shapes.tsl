@@ -1,0 +1,11 @@
+// A module for the REPL's import test (tests/repl/imports.in).
+
+public struct Circle {
+    radius: Float
+
+    fn area() -> Float { 3.0 * radius * radius }
+}
+
+public fn unit() -> Circle { Circle(radius: 1) }
+
+fn hidden() -> Int { 0 }

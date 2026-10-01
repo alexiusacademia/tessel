@@ -39,11 +39,23 @@ const HELP: &str = "Type Tessel code and press Enter to run it:
   }
 
 Commands:
-  :vars    the variables so far, with their types
-  :help    this text
-  :quit    leave (also Ctrl+D)
+  :vars      the variables so far, with their types
+  :keywords  the words Tessel keeps for itself
+  :help      this text
+  :quit      leave (also Ctrl+D)
 
 Views and apps need a window: put them in a file, and use `tessel run`.";
+
+/// Tessel's keywords, as `:keywords` shows them: what each group is for.
+const KEYWORDS: &[(&str, &[&str])] = &[
+    ("Declarations", &["app", "view", "struct", "enum", "interface", "fn"]),
+    ("Variables", &["let", "var", "state", "bind"]),
+    ("Control flow", &["if", "else", "for", "in", "match", "while", "break", "continue", "return", "try"]),
+    ("Values", &["true", "false", "nil"]),
+];
+
+/// Keywords only where they begin a declaration (elsewhere they're names).
+const DECLARATION_WORDS: &[&str] = &["import", "public", "private"];
 
 // ===== running entries =====
 
@@ -125,6 +137,9 @@ struct Declared {
 struct Session {
     declared: Vec<Declared>,
     vars: Vec<ReplVar>,
+    /// The files of imported modules, as they were when last read (a number
+    /// made from their text): values of their types don't outlive a change.
+    modules: Vec<(String, u64)>,
     /// The number of the next entry.
     index: usize,
     jit: Jit,
@@ -136,6 +151,19 @@ struct Session {
 fn blank(text: &mut String, lo: usize, hi: usize) {
     let blanked: String = text[lo..hi].chars().map(|c| if c == '\n' { "\n".to_string() } else { " ".repeat(c.len_utf8()) }).collect();
     text.replace_range(lo..hi, &blanked);
+}
+
+fn stamp(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
+}
+
+/// Is a type (as text) made only of built-in types? Those don't change.
+fn built_in(ty: &str) -> bool {
+    ty.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .all(|word| matches!(word, "" | "Int" | "Float" | "Bool" | "String" | "Data" | "Range" | "Set" | "fn"))
 }
 
 /// Does `text` use the name `word`?
@@ -153,6 +181,7 @@ impl Session {
         Ok(Session {
             declared: Vec::new(),
             vars: Vec::new(),
+            modules: Vec::new(),
             index: 1,
             jit: Jit::new(&symbols)?,
             worker: Worker::start(),
@@ -211,8 +240,16 @@ impl Session {
             }
             changed.extend(more);
         }
-        let (vars, dropped): (Vec<ReplVar>, Vec<ReplVar>) =
-            self.vars.iter().cloned().partition(|v| !changed.iter().any(|c| mentions(&v.ty, c)));
+        // The same goes for the types of imported modules, when their files
+        // changed on disk (any value of a type that isn't built in might
+        // hold one).
+        let modules_changed =
+            self.modules.iter().any(|(file, was)| std::fs::read_to_string(file).map_or(true, |text| stamp(&text) != *was));
+        let (vars, dropped): (Vec<ReplVar>, Vec<ReplVar>) = self
+            .vars
+            .iter()
+            .cloned()
+            .partition(|v| !changed.iter().any(|c| mentions(&v.ty, c)) && !(modules_changed && !built_in(&v.ty)));
 
         let analyze = |show: ReplShow| {
             let (mut sources, id) = self.sources(&declared, entry);
@@ -271,8 +308,15 @@ impl Session {
         // From here on the entry counts: its declarations stay even if its
         // statements fail.
         for v in &dropped {
-            eprintln!("note: `{}` is gone, because its type (`{}`) was declared again", v.name, v.ty);
+            if changed.iter().any(|c| mentions(&v.ty, c)) {
+                eprintln!("note: `{}` is gone, because its type (`{}`) was declared again", v.name, v.ty);
+            } else {
+                eprintln!("note: `{}` is gone, because the files of an imported module changed", v.name);
+            }
         }
+        // (The session's own files have names without a folder; the rest are modules'.)
+        let own = |name: &str| name == "session" || name.starts_with("repl.");
+        self.modules = sources.files().filter(|(_, f)| !own(&f.name)).map(|(_, f)| (f.name.clone(), stamp(&f.text))).collect();
         if !decls.is_empty() {
             let mut text = entry.to_string();
             let mut at = 0;
@@ -319,7 +363,16 @@ impl Session {
                     println!("{} {}: {}", if v.mutable { "var" } else { "let" }, v.name, v.ty);
                 }
             }
-            _ => eprintln!("error: unknown command `{line}`\n = help: the commands are `:vars`, `:help` and `:quit`"),
+            ":keywords" => {
+                let count: usize = KEYWORDS.iter().map(|(_, words)| words.len()).sum();
+                println!("Tessel has {count} keywords:");
+                for (group, words) in KEYWORDS {
+                    println!("  {group:<14}{}", words.join(" "));
+                }
+                println!("Only where they begin a declaration: {}", DECLARATION_WORDS.join(" "));
+                println!("Also kept: _ (for a value or name that isn't used)");
+            }
+            _ => eprintln!("error: unknown command `{line}`\n = help: the commands are `:vars`, `:keywords`, `:help` and `:quit`"),
         }
         false
     }
@@ -444,6 +497,30 @@ mod tests {
         assert!(closed("print(\"{f(1)} and {g([2])}\")\nlet x = 1"));
     }
 
+    /// `:keywords` lists exactly the words the lexer treats as keywords.
+    #[test]
+    fn keywords_are_the_lexers() {
+        use tessel_compiler::lexer::keyword;
+        let listed: Vec<&str> = KEYWORDS.iter().flat_map(|(_, words)| words.iter().copied()).collect();
+        for word in &listed {
+            assert!(keyword(word).is_some(), "`{word}` isn't a keyword");
+        }
+        // Every word of the language's own source that is one, is listed.
+        let source = include_str!("../../tessel-compiler/src/lexer.rs");
+        let in_lexer: Vec<&str> = source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix('"')?.split_once("\" => Tok::").map(|(word, _)| word))
+            .filter(|w| *w != "_")
+            .collect();
+        assert!(in_lexer.len() > 20, "{in_lexer:?}");
+        for word in in_lexer {
+            assert!(listed.contains(&word), "`{word}` is missing from :keywords");
+        }
+        for word in DECLARATION_WORDS {
+            assert!(keyword(word).is_none());
+        }
+    }
+
     #[test]
     fn blanking_keeps_places() {
         let mut text = "let é = 1\nfn f() {}\nlet b = 2".to_string();
@@ -454,5 +531,7 @@ mod tests {
         assert_eq!(text.find("fn"), Some(lo));
         assert!(text.starts_with("          \nfn f() {}"));
         assert!(mentions("[Point]?", "Point") && !mentions("[PointList]", "Point"));
+        assert!(built_in("[String: (Int, Float)]?") && built_in("fn(Int) -> Set<Bool>"));
+        assert!(!built_in("geometry.Circle") && !built_in("[Point]"));
     }
 }

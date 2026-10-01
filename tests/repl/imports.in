@@ -1,0 +1,22 @@
+import "tests/repl/geometry"
+geometry.unit().area()
+let c = geometry.Circle(radius: 2)
+c.area()
+:vars
+fn big(c: geometry.Circle) -> Bool { c.radius > 1 }
+big(c)
+import "tests/repl/geometry"
+[c, geometry.unit()].count
+geometry.hidden()
+import nothing
+c.radius
+createFolder("target/replmod")
+writeFile(path: "target/replmod/m.tsl", text: "public struct P \{ x: Int }")
+import "target/replmod"
+let p = replmod.P(x: 1)
+let n = 5
+p
+writeFile(path: "target/replmod/m.tsl", text: "public struct P \{ x: Int, y: Int }")
+n
+p
+replmod.P(x: 1, y: 2)

@@ -135,6 +135,19 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
         f.body = ast::Block { stmts, span };
     }
     root.push((header, wrapper));
+    // An import is for one file, but a session is one conversation: what
+    // any entry imported, every entry (and the statements above) can use.
+    let mut imports: Vec<ast::Import> = Vec::new();
+    for (_, program) in &root {
+        for import in &program.imports {
+            if !imports.iter().any(|i| i.path == import.path && i.quoted == import.quoted) {
+                imports.push(import.clone());
+            }
+        }
+    }
+    for (_, program) in &mut root {
+        program.imports = imports.clone();
+    }
 
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
@@ -147,6 +160,8 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
         d.secondary.retain(|label| label.span.file != header);
     }
     diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
+    // (A mistake in an import would be reported for every file it's now in.)
+    diags.list.dedup_by(|a, b| a.span() == b.span() && a.message == b.message);
     ReplAnalysis { analysis: Analysis { program, checked, diags }, decls, last_expr }
 }
 

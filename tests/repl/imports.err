@@ -1,0 +1,30 @@
+error: `hidden` isn't public in module `geometry`
+  --> repl.9:1:10
+   |
+ 1 | geometry.hidden()
+   |          ^^^^^^
+  ::: ./tests/repl/geometry/shapes.tsl:11:4
+   |
+11 | fn hidden() -> Int { 0 }
+   |    ------ declared here
+   |
+   = help: to use it outside the module, add `public` before its declaration in shapes.tsl
+
+error: can't find module `nothing`
+ --> repl.10:1:1
+  |
+1 | import nothing
+  | ^^^^^^^^^^^^^^
+  |
+  = help: a module is a folder of .tsl files; `import nothing` looks for the folder `./nothing`
+
+note: `c` is gone, because the files of an imported module changed
+note: `p` is gone, because the files of an imported module changed
+error: cannot find `p`
+ --> repl.20:1:1
+  |
+1 | p
+  | ^ not found
+  |
+  = help: did you mean `n`?
+
