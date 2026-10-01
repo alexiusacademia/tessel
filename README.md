@@ -17,7 +17,9 @@ app Counter(width: 320, height: 200) {
 **Status:** apps compile to native macOS executables through LLVM and run in
 their own window, drawn by Tessel's own GPU renderer (`wgpu` + `vello`).
 Windows builds work too. Apps get about 60 built-in icons (`Icon(.folder)`)
-and can show SVG (`Svg("<svg …>")`, `Image("logo.svg")`). See [docs/design.md](docs/design.md) for the design and plan.
+and can show SVG (`Svg("<svg …>")`, `Image("logo.svg")`) and PNG and JPEG
+pictures (`Image("photo.jpg")`). They follow the system's light or dark
+appearance. See [docs/design.md](docs/design.md) for the design and plan.
 
 ```tessel
 fn main() {

@@ -380,7 +380,7 @@ separate edges; the most specific value wins, and edges not named get 0:
 | `ZStack` | `ZStack(alignment: Alignment = .center, content: View)` |
 | `Spacer` | `Spacer()` — takes the remaining space in a stack |
 | `Scroll` | `Scroll(content: View)` |
-| `Image` | `Image(_ path: String)` — SVG files (PNG and JPEG show a placeholder for now) |
+| `Image` | `Image(_ path: String)` — an SVG, PNG or JPEG file |
 | `Icon` | `Icon(_ name: IconName)` — a built-in icon, e.g. `Icon(.folder)` |
 | `Svg` | `Svg(_ source: String)` — SVG markup written inline |
 | `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …)` (`line:` is optional) |
@@ -610,9 +610,9 @@ Still open, not blocking v1:
 | Packaging | ✅ first version | `tessel build --bundle` makes `Name.app` on macOS; Windows apps have no console window. An `icon.png` next to the program is the app's icon (Tessel's by default), in the bundle on macOS and in the `.exe` on Windows; the IDE has Tessel's. Still to do: code signing, installers |
 | **Tessel IDE** | ✅ (`ide/`, opened by `tessel`): explorer with a folder tree, new / rename / delete, tabbed editor, undo, problems and console panels, restart on save | Launching Tessel opens its own IDE. It edits `.tsl` files and runs the `tessel` commands for you: check (errors as you type, like `tessel lsp`), run, debug, build and package. No terminal needed. |
 | Hot reload | partly | The IDE restarts the running app when you save ("Restart on save"). True hot reload, keeping the app's state, is still planned |
-| App polish | planned | Dark mode, animations, real images, Tab between fields, IME input, accessibility |
+| App polish | ✅ first version | Light and dark appearance (following the system, or `app Name(appearance: .dark)`; `isDarkMode()`), colors of your own (`.rgb`, `.rgba`), `.animation()` for views that move, resize and fade, PNG and JPEG in `Image`, Tab between fields, input methods (IME). Still to do: accessibility, keyboard use of buttons and toggles, a view fading out as it disappears |
 | Standard library | ✅ first version | Files and folders, JSON and binary encoding (`toJson`/`fromJson`, `toBinary`/`fromBinary`), `Data`, dates, random numbers, the clipboard, many `String`/`List`/number methods; networking with `request`, `download` and WebSockets; repeating timers; `background` work on another thread. Still to do: time zones, cancelling requests, binary WebSocket messages |
-| Language gaps | planned | Error reasons (not just `nil`), generics for user types |
+| Language gaps | ✅ | Error reasons (`Result`, `Error`, `try`), generics for user types |
 
 **Tessel IDE — first thoughts.** Ideally the IDE is itself a Tessel app, built
 with the language it edits. That needs a few things Tessel doesn't have yet:
@@ -629,7 +629,7 @@ Working: windows, HiDPI, the build → layout → draw cycle, `state` that
 survives rebuilds, actions, `bind` through any number of views (including
 list elements), `Text`, `Button`, `Toggle`, `Picker` (segmented),
 `VStack`/`HStack`/`ZStack`, `Spacer`, `Scroll` (mouse wheel), `Image`
-(placeholder box), all modifiers, `.id` (view state follows its item when a
+(SVG, PNG and JPEG), all modifiers, `.id` (view state follows its item when a
 list is reordered), `after`, `fetch` (`http(s)://` and `file://`), hover and
 pressed states, and a headless script mode for tests.
 
@@ -639,5 +639,8 @@ Option for words, Cmd for line start and end), Home/End, Backspace/Delete
 (also by word or line), select all, copy, cut and paste. The field scrolls
 to keep the caret visible.
 
-Not yet: IME input (e.g. Chinese, Japanese); keyboard focus with Tab;
-loading real images; accessibility; dark mode; animations.
+Also: Tab and Shift+Tab between fields, input methods (IME, with the text
+being composed shown underlined), light and dark appearance, and
+`.animation()`.
+
+Not yet: accessibility; keyboard focus for buttons, toggles and pickers.

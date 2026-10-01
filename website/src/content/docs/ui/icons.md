@@ -90,21 +90,29 @@ Svg("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect x='4' y='
   above turns purple.
 - If the markup isn't valid SVG, nothing is drawn.
 
-## SVG files with `Image`
+## Picture files with `Image`
 
-`Image` loads a picture from a file:
+`Image` shows a picture from a file: an SVG, a PNG or a JPEG.
 
 ```tessel
 Image("assets/logo.svg").frame(width: 80)
+Image("assets/photo.jpg")
+Image("assets/photo.jpg").frame(height: 100)
 ```
 
 The path is relative to the folder the app is started from (the current
-folder), not to the source file. SVG files work like `Svg`: they have their own
-size, scale with `.frame`, and use `currentColor`.
+folder), not to the source file.
 
-:::caution[Only SVG files for now]
-`Image` draws `.svg` files only. For any other kind of file, such as PNG or
-JPEG, or when the file can't be read, it shows a gray placeholder box
-(64 × 64 points unless you give it a frame) instead of the picture. Loading
-real bitmap images is planned.
-:::
+- **SVG files** work like `Svg`: they have their own size, scale with `.frame`,
+  and use `currentColor`.
+- **PNG and JPEG files** are as large as their pixels, one point for each, and
+  made smaller when there's less room than that. A `.frame(width:)` or
+  `.frame(height:)` scales the picture to fit, keeping its proportions; with
+  both, it's centered in the frame. Transparent parts of a PNG show what's
+  behind it.
+
+![Three pictures at their own size (a photo, a small logo and a gray placeholder box), and below them the same photo and logo scaled by frames](../../../assets/screens/ui-images.png)
+
+When the file can't be read, or it's another kind of file, `Image` shows a gray
+placeholder box instead (64 × 64 points unless you give it a frame), like the
+third one above. A picture is read again when its file changes.

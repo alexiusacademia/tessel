@@ -21,10 +21,13 @@ language may still change. This page is an honest list of where things stand.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, about 60 built-in icons, SVG,
-  keyboard shortcuts, hover and pressed states, and the layout and styling
-  modifiers.
+  PNG and JPEG pictures, keyboard shortcuts, hover and pressed states, and
+  the layout and styling modifiers.
+- **Looks:** light and dark appearance that follows the system, colors of
+  your own, and animation of views that move, resize or fade.
 - **Text editing:** selecting with the mouse and keyboard, word and line
-  movement, copy, cut, paste, and undo and redo.
+  movement, copy, cut, paste, undo and redo, Tab between fields, and input
+  methods (Chinese, Japanese, Korean, accents with dead keys).
 - **Background work:** timers (`after` and `every`), HTTP requests,
   downloads and WebSockets, running other programs, and heavy computations on
   another thread (`background`), all with completion blocks that run on the
@@ -48,25 +51,23 @@ language may still change. This page is an honest list of where things stand.
 These are the main gaps you may run into today.
 :::
 
-- **Images:** `Image("file.svg")` draws SVG files, but PNG and JPEG images
-  aren't loaded yet: they show as an empty placeholder box. Use SVG, `Svg`
-  or the built-in [icons](/ui/icons/) for now.
 - **Hot reload:** the IDE's "Restart on save" restarts your app when you
   save, so the app's state starts over. Reloading code while keeping the
   state isn't there yet.
 - **Debugging:** there is no debugger with breakpoints or stepping yet.
   Runtime errors show a message and the place in your code, which you can
   click in the IDE's console, and `print` output appears there too.
-- **Keyboard and input:** Tab doesn't move focus between text fields, and
-  input methods (IME) for languages such as Chinese and Japanese aren't
-  supported.
-- **Appearance:** no dark mode, no animations, and no accessibility support
-  (screen readers) yet.
+- **Keyboard:** Tab moves between text fields, but buttons, toggles and
+  pickers can't be used from the keyboard.
+- **Appearance:** animation covers moving, resizing and fading; there are no
+  springs or custom curves, and a view that disappears goes at once. There's
+  no accessibility support (screen readers) yet.
 - **Network:** WebSocket messages are text only (a binary message arrives
   as text), and there's no way to cancel a request or download once
   started.
-- **Packaging:** `tessel build --bundle` makes a `.app` on macOS, but apps
-  have no custom icon and aren't code signed.
+- **Packaging:** `tessel build --bundle` makes a `.app` on macOS, with your
+  `icon.png` as its icon, but apps aren't code signed and there are no
+  installers.
 - **Editor support:** the language server reports errors, shows types on
   hover and completes code, but doesn't offer go-to-definition or rename.
 - **Installation:** packages exist for Apple silicon Macs and 64-bit
@@ -81,10 +82,10 @@ These are the next areas of work. None of them has a date.
 | Area | Plans |
 |---|---|
 | Hot reload | Keep the running app's state when its code changes. |
-| App polish | Dark mode, animations, loading PNG and JPEG images, Tab between fields, IME input, accessibility. |
+| App polish | Accessibility, using every control from the keyboard, richer animation. |
 | Standard library | Filling gaps as apps need them, such as time zones and more date handling. |
 | Language | Packages: installing shared modules by name, with versions. |
-| Packaging | App icons, code signing and installers. |
+| Packaging | Code signing and installers. |
 | Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
 
 Tessel's goals and the reasons for its design are on

@@ -1,6 +1,6 @@
 ---
 title: Text and styling
-description: Show text and change how views look with font, color, background, border, opacity, hidden, disabled and hoverBackground.
+description: Show text and change how views look with font, color, background, border, opacity, hidden, disabled and hoverBackground; your own colors, light and dark appearance, and animation.
 ---
 
 Views have a plain look until you style them with *modifiers*. This page covers
@@ -72,8 +72,8 @@ Colors are values of the built-in `Color` type, written with a leading dot:
 
 | Color | Use |
 |-------|-----|
-| `.primary` | The default text color, near black. |
-| `.secondary` | Dark gray, for less important text. |
+| `.primary` | The default text color: near black, or near white in the dark appearance. |
+| `.secondary` | Gray, for less important text. |
 | `.gray`, `.lightGray` | Neutral grays. |
 | `.red`, `.orange`, `.yellow`, `.green`, `.blue`, `.purple`, `.pink` | Accent colors. |
 | `.white`, `.black` | Pure white and black. |
@@ -81,13 +81,61 @@ Colors are values of the built-in `Color` type, written with a leading dot:
 | `.sidebar` | A very light gray, for side panels. |
 | `.highlight` | A light blue, for selected rows. |
 | `.separator` | The gray used by `Divider()`. |
+| `.background` | The window's background. |
+| `.rgb(r, g, b)` | A color of your own, from red, green and blue (each 0 to 255). |
+| `.rgba(r, g, b, opacity)` | The same, see-through: `opacity` goes from 0 to 1. |
 
 See the [colors reference](/reference/colors/) for swatches and exact values.
 
-:::note
-These named colors are the only ones for now: there's no way yet to write your
-own RGB color. The UI is always light; there's no dark mode yet.
-:::
+### Your own colors
+
+`.rgb` and `.rgba` make any color. Like every `Color`, one can be kept in a
+`let`, passed to your own views, and compared:
+
+```tessel
+let brand: Color = .rgb(255, 136, 0)
+
+Text("Sale").color(.white).padding(8).background(brand, radius: 8)
+Text("Soon").padding(8).background(.rgba(255, 136, 0, 0.2), radius: 8)
+```
+
+A web color like `#FF8800` is `.rgb(255, 136, 0)`: its three pairs of digits
+are red, green and blue, in base 16.
+
+## Light and dark
+
+An app looks light or dark as the system does, and changes with it while it
+runs. Text, the window, the built-in controls and the named colors all have
+a version for each:
+
+![A small app in the light appearance: colored labels, text on gray and white boxes, a button, a text field, a toggle and a picker](../../../assets/screens/ui-appearance-light.png)
+
+![The same app in the dark appearance: light text on a dark window, darker boxes and controls, slightly brighter accent colors](../../../assets/screens/ui-appearance-dark.png)
+
+To look right in both:
+
+- Leave text its default color, or use `.primary` and `.secondary`.
+- For backgrounds, use `.background`, `.sidebar`, `.lightGray` and
+  `.highlight`, which are dark in the dark appearance. `.white` and `.black`
+  never change, and neither do `.rgb` colors.
+- For a color of your own in each appearance, ask `isDarkMode()`:
+
+```tessel
+let card: Color = if isDarkMode() { .rgb(44, 44, 46) } else { .rgb(250, 246, 240) }
+```
+
+`isDarkMode()` is `true` while the app shows in its dark appearance. The app is
+built again when the appearance changes, so views that use it follow.
+
+An app that should always look one way says so:
+
+```tessel
+app Player(appearance: .dark) {
+    …
+}
+```
+
+`appearance:` is `.system` (the default), `.light` or `.dark`.
 
 A `Button`'s label is blue by default. Setting `.color` on the button itself
 changes it; a color inherited from an outer stack does not.
@@ -170,3 +218,51 @@ hover background.
 `.textAlignment(.leading | .center | .trailing)` lines up the lines of a
 multi-line text. It's covered in
 [Alignment](/ui/alignment/#lining-up-lines-of-text).
+
+## Animation
+
+Normally a view that changes is drawn in its new place at once. With
+`.animation()`, a view and the views inside it take a moment to get there:
+
+```tessel
+app Drawer(width: 360, height: 200) {
+    state open = false
+
+    HStack(spacing: 0) {
+        VStack {
+            Text("Menu")
+        }
+        .frame(width: if open { 160 } else { 40 }, maxHeight: .infinity)
+        .background(.sidebar)
+
+        Button(if open { "Close" } else { "Open" }) { open = !open }
+            .frame(maxWidth: .infinity)
+    }
+    .animation()
+}
+```
+
+Clicking the button widens the side panel smoothly, and the button slides
+along, instead of both jumping.
+
+What's animated, between one state of the UI and the next:
+
+- a view's position and size,
+- its `.opacity`,
+- its `.background` color (one that's added or removed fades in or out),
+- and a view that appears fades in.
+
+`.animation()` takes a quarter of a second; `.animation(0.6)` takes 0.6
+seconds. It covers the view it's on and everything inside it, so putting it on
+your outermost stack animates the whole window. `.animation(0)` turns it off
+again for a part.
+
+A few things to know:
+
+- A view that disappears is gone at once (the views around it then move to
+  fill the gap).
+- Tessel tells views apart by their position among their neighbors. When views
+  are added or removed in the middle of a list, give each one an
+  [`.id`](/ui/lists/#identity-with-id), so that the right ones move.
+- Scrolling and resizing the window aren't slowed down.
+- A `Toggle` always slides, with or without `.animation`.

@@ -999,6 +999,23 @@ The system the program is running on: `"macos"` or `"windows"`.
 let shortcut = if platform() == "macos" { "Cmd+S" } else { "Ctrl+S" }
 ```
 
+### isDarkMode
+
+```text
+isDarkMode() -> Bool
+```
+
+Whether the app is showing in its dark appearance: `true` when the system is
+dark (or the `app` says `appearance: .dark`). The UI is built again when the
+appearance changes, so a view can simply ask:
+
+```tessel
+let card: Color = if isDarkMode() { .rgb(44, 44, 46) } else { .rgb(250, 246, 240) }
+```
+
+In a program without an `app`, it's `false`. See
+[Light and dark](/ui/styling/#light-and-dark).
+
 ### openURL
 
 ```text

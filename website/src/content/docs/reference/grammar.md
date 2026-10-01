@@ -167,7 +167,7 @@ app_decl  = "app" IDENT ("(" args? ")")? block ;
 view_decl = "view" IDENT params? block ;
 ```
 
-The `app`'s arguments are `title:`, `width:` and `height:` (see
+The `app`'s arguments are `title:`, `width:`, `height:` and `appearance:` (see
 [`app`](/reference/views/#app)). A view without parameters may leave out the
 parentheses: `view Header { … }`.
 

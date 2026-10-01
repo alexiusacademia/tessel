@@ -51,7 +51,8 @@ direction. See [Layout](/ui/layout/) for how stacks share out space.
 ## app
 
 ```text
-app Name(title: String = "Name", width: Float = 640, height: Float = 480) { … }
+app Name(title: String = "Name", width: Float = 640, height: Float = 480,
+         appearance: Appearance = .system) { … }
 ```
 
 Declares the program's window. The arguments are optional, but when you give
@@ -62,6 +63,7 @@ them they need their labels and must be in this order.
 | `title` | the app's name | The window title. |
 | `width` | `640` | The window's starting width, in points. |
 | `height` | `480` | The window's starting height, in points. |
+| `appearance` | `.system` | [`.light` or `.dark`](/reference/colors/#appearance) to always look that way, whatever the system's setting. |
 
 ```tessel
 app Notes(title: "My Notes", width: 400, height: 300) {
@@ -343,11 +345,12 @@ Image("logo.svg").frame(width: 48, height: 48)
   `.frame(width:)` or `.frame(height:)`, the drawing is scaled to fit the
   frame, keeping its proportions. `currentColor` in the SVG is drawn in the
   view's [`.color`](/reference/modifiers/#color).
-
-:::note
-Only SVG images are drawn for now. Other files (PNG, JPEG, …), and SVG files
-that can't be found, show a 64 × 64 gray placeholder box.
-:::
+- PNG and JPEG files are drawn one point for each pixel, or smaller when
+  there's less room. A `.frame` scales them to fit it (larger too), keeping
+  their proportions. A photo is shown the way up its camera recorded.
+- Other files, and files that can't be read, show a 64 × 64 gray placeholder
+  box.
+- The file is read once, and again when it changes.
 
 ## Icon
 

@@ -32,9 +32,10 @@ parentheses are all optional:
 | `title:`  | `String` | the app's name  | The text in the window's title bar.   |
 | `width:`  | `Float`  | `640`           | The window's starting width, in points. |
 | `height:` | `Float`  | `480`           | The window's starting height, in points. |
+| `appearance:` | `Appearance` | `.system` | `.light` or `.dark` to always look that way. See [Light and dark](/ui/styling/#light-and-dark). |
 
 If you give more than one, write them in that order: `title:`, `width:`,
-`height:`. You can also leave the parentheses out entirely:
+`height:`, `appearance:`. You can also leave the parentheses out entirely:
 
 ```tessel
 app Hello {

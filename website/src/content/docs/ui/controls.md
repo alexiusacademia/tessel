@@ -201,7 +201,18 @@ Pasting into a text field turns line breaks into spaces, since it holds a
 single line. The [code editor](/ui/code-editor/) adds a few keys of its own
 for indentation.
 
-:::note
-Not supported yet: moving between fields with Tab, and input methods (IME)
-for languages such as Chinese or Japanese.
-:::
+### Moving between fields
+
+Tab starts editing the next text field (or [code editor](/ui/code-editor/)),
+and Shift+Tab the one before, in the order they're written. After the last one
+comes the first again. A field you arrive at with Tab has its text selected, so
+typing replaces it. Hidden and disabled fields are skipped. In a code editor,
+Tab indents instead.
+
+### Input methods
+
+Text typed with an input method works in text fields and code editors:
+Chinese, Japanese and Korean input, and accents typed with dead keys (such as
+Option+E, then E, for é on a Mac). While you compose, the text so far is shown
+underlined at the cursor. It becomes part of the field's text, and of your
+state, when you confirm it.
