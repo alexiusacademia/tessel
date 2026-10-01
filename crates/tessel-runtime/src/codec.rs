@@ -139,7 +139,7 @@ unsafe extern "C" fn int_cmp(a: *const u8, b: *const u8) -> i32 {
 }
 
 /// Element type of `[Int]`, for lists the runtime creates.
-static INT_TYPE: TslType = TslType {
+pub(crate) static INT_TYPE: TslType = TslType {
     size: 8,
     align: 8,
     retain: None,

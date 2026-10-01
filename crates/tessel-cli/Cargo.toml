@@ -34,5 +34,9 @@ tessel-compiler = { path = "../tessel-compiler" }
 # too, for the code `tessel repl` runs.
 tessel-runtime = { path = "../tessel-runtime" }
 
+[dev-dependencies]
+# The WebSocket echo server of the networking test.
+tungstenite = "0.30.0"
+
 [lints]
 workspace = true

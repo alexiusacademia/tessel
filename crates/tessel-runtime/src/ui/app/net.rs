@@ -1,5 +1,6 @@
-//! Networking: HTTP requests (`request`), downloads (`download`) and
-//! WebSockets (`openWebSocket`, `sendWebSocket`, `closeWebSocket`).
+//! Networking: HTTP requests (`request`), downloads (`download`), giving
+//! them up (`cancelRequest`), and WebSockets (`openWebSocket`,
+//! `sendWebSocket`, `sendWebSocketData`, `closeWebSocket`).
 //!
 //! The work happens on background threads; results come back as events
 //! (see `post`) and their blocks run on the UI thread, like `fetch`'s.
@@ -7,7 +8,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex};
 
 use super::{Event, next_id, post};
 use crate::ui::Callback;
@@ -33,11 +34,43 @@ struct ResponseC {
 
 enum Outgoing {
     Text(String),
+    Bytes(Vec<u8>),
     Close,
 }
 
-/// An open WebSocket: its message and close blocks, and the way to send.
-struct Socket(Callback, Callback, mpsc::Sender<Outgoing>);
+/// An open WebSocket: its blocks, and the way to send.
+struct Socket {
+    on_message: Callback,
+    /// For binary messages; without it, they arrive as text.
+    on_data: Option<Callback>,
+    on_close: Callback,
+    send: mpsc::Sender<Outgoing>,
+}
+
+/// Requests and downloads that were cancelled while their threads were at
+/// work: the threads stop when they see their id here (and take it out).
+static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+fn cancelled(id: u64) -> bool {
+    CANCELLED.lock().unwrap().contains(&id)
+}
+
+/// `cancelRequest(id)`: gives up a request or download. Its `done` block
+/// isn't called (nor `progress`), and a download leaves no file. Nothing
+/// happens if it has finished already.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_cancel_request(id: i64) {
+    let id = id as u64;
+    let going = REQUESTS.with(|r| r.borrow_mut().remove(&id).is_some()) | DOWNLOADS.with(|d| d.borrow_mut().remove(&id).is_some());
+    if going {
+        CANCELLED.lock().unwrap().push(id);
+    }
+}
+
+/// A request's or download's thread is done: forget that it was cancelled.
+fn finished(id: u64) {
+    CANCELLED.lock().unwrap().retain(|c| *c != id);
+}
 
 thread_local! {
     /// `request` blocks waiting for their responses, by id.
@@ -76,14 +109,19 @@ pub unsafe extern "C" fn tsl_request(
     body: *const Str,
     f: *const std::ffi::c_void,
     env: *mut Header,
-) {
+) -> i64 {
     let url = unsafe { str_text(url) }.to_string();
     let method = unsafe { str_text(method) }.to_uppercase();
     let body = unsafe { str_text(body) }.as_bytes().to_vec();
     let headers = unsafe { pairs(headers) };
     let id = next_id();
     REQUESTS.with(|r| r.borrow_mut().insert(id, Callback::new(f, env)));
-    std::thread::spawn(move || post(Event::Responded(id, run_request(&url, &method, &headers, body))));
+    std::thread::spawn(move || {
+        let result = run_request(id, &url, &method, &headers, body);
+        finished(id);
+        post(Event::Responded(id, result));
+    });
+    id as i64
 }
 
 unsafe fn pairs(dict: *const crate::Dict) -> Vec<(String, String)> {
@@ -104,7 +142,7 @@ fn failed(error: String) -> HttpResult {
     HttpResult { status: 0, headers: Vec::new(), body: Vec::new(), error }
 }
 
-fn run_request(url: &str, method: &str, headers: &[(String, String)], body: Vec<u8>) -> HttpResult {
+fn run_request(id: u64, url: &str, method: &str, headers: &[(String, String)], body: Vec<u8>) -> HttpResult {
     if let Some(path) = url.strip_prefix("file://") {
         return match std::fs::read(path) {
             Ok(b) => HttpResult { status: 200, headers: Vec::new(), body: b, error: String::new() },
@@ -127,9 +165,17 @@ fn run_request(url: &str, method: &str, headers: &[(String, String)], body: Vec<
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                 .collect();
-            match response.body_mut().with_config().limit(1 << 31).read_to_vec() {
-                Ok(body) => HttpResult { status, headers, body, error: String::new() },
-                Err(e) => HttpResult { status, headers, body: Vec::new(), error: e.to_string() },
+            // In pieces, so a cancelled request stops reading.
+            let mut reader = response.body_mut().with_config().limit(1 << 31).reader();
+            let mut body = Vec::new();
+            let mut piece = vec![0u8; 64 * 1024];
+            loop {
+                match reader.read(&mut piece) {
+                    Ok(0) => break HttpResult { status, headers, body, error: String::new() },
+                    Ok(_) if cancelled(id) => break failed("cancelled".into()),
+                    Ok(n) => body.extend_from_slice(&piece[..n]),
+                    Err(e) => break HttpResult { status, headers, body: Vec::new(), error: e.to_string() },
+                }
             }
         }
         Err(e) => failed(e.to_string()),
@@ -173,7 +219,7 @@ pub unsafe extern "C" fn tsl_download(
     progress_env: *mut Header,
     done_f: *const std::ffi::c_void,
     done_env: *mut Header,
-) {
+) -> i64 {
     let url = unsafe { str_text(url) }.to_string();
     let to = unsafe { str_text(to) }.to_string();
     let id = next_id();
@@ -181,8 +227,10 @@ pub unsafe extern "C" fn tsl_download(
     DOWNLOADS.with(|d| d.borrow_mut().insert(id, (progress, Callback::new(done_f, done_env))));
     std::thread::spawn(move || {
         let ok = run_download(id, &url, &to);
+        finished(id);
         post(Event::Downloaded(id, ok));
     });
+    id as i64
 }
 
 fn run_download(id: u64, url: &str, to: &str) -> bool {
@@ -206,7 +254,7 @@ fn run_download(id: u64, url: &str, to: &str) -> bool {
     };
     // Write to a temporary name, so a failed download leaves no half file.
     let partial = format!("{to}.part");
-    let ok = save(id, reader, total, &partial) && std::fs::rename(&partial, to).is_ok();
+    let ok = save(id, reader, total, &partial) && !cancelled(id) && std::fs::rename(&partial, to).is_ok();
     if !ok {
         let _ = std::fs::remove_file(&partial);
     }
@@ -223,6 +271,7 @@ fn save(id: u64, mut reader: Box<dyn Read + '_>, total: Option<u64>, path: &str)
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
+            Ok(_) if cancelled(id) => return false,
             Ok(n) => {
                 if file.write_all(&buf[..n]).is_err() {
                     return false;
@@ -251,19 +300,28 @@ fn save(id: u64, mut reader: Box<dyn Read + '_>, total: Option<u64>, path: &str)
 
 // ===== WebSockets =====
 
-/// `openWebSocket(url:onMessage:onClose:)`: returns an id for sending and closing.
+/// `openWebSocket(url:onMessage:onData:onClose:)`: returns an id for sending
+/// and closing. `data_f` is null when there's no block for binary messages.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_open_web_socket(
     url: *const Str,
     msg_f: *const std::ffi::c_void,
     msg_env: *mut Header,
+    data_f: *const std::ffi::c_void,
+    data_env: *mut Header,
     close_f: *const std::ffi::c_void,
     close_env: *mut Header,
 ) -> i64 {
     let url = unsafe { str_text(url) }.to_string();
     let id = next_id();
     let (tx, rx) = mpsc::channel();
-    SOCKETS.with(|s| s.borrow_mut().insert(id, Socket(Callback::new(msg_f, msg_env), Callback::new(close_f, close_env), tx)));
+    let socket = Socket {
+        on_message: Callback::new(msg_f, msg_env),
+        on_data: (!data_f.is_null()).then(|| Callback::new(data_f, data_env)),
+        on_close: Callback::new(close_f, close_env),
+        send: tx,
+    };
+    SOCKETS.with(|s| s.borrow_mut().insert(id, socket));
     std::thread::spawn(move || {
         let reason = run_socket(id, &url, rx);
         post(Event::Closed(id, reason));
@@ -297,6 +355,11 @@ fn run_socket(id: u64, url: &str, rx: mpsc::Receiver<Outgoing>) -> String {
                         return format!("send failed: {e}");
                     }
                 }
+                Ok(Outgoing::Bytes(b)) => {
+                    if let Err(e) = socket.send(Message::binary(b)) {
+                        return format!("send failed: {e}");
+                    }
+                }
                 Ok(Outgoing::Close) | Err(mpsc::TryRecvError::Disconnected) => {
                     let _ = socket.close(None);
                     let _ = socket.flush();
@@ -307,7 +370,7 @@ fn run_socket(id: u64, url: &str, rx: mpsc::Receiver<Outgoing>) -> String {
         }
         match socket.read() {
             Ok(Message::Text(t)) => post(Event::Message(id, t.to_string())),
-            Ok(Message::Binary(b)) => post(Event::Message(id, String::from_utf8_lossy(&b).into_owned())),
+            Ok(Message::Binary(b)) => post(Event::Bytes(id, b.to_vec())),
             Ok(Message::Close(frame)) => {
                 return frame.map_or("closed by the server".into(), |f| {
                     if f.reason.is_empty() { "closed by the server".into() } else { f.reason.to_string() }
@@ -325,15 +388,22 @@ fn run_socket(id: u64, url: &str, rx: mpsc::Receiver<Outgoing>) -> String {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_send_web_socket(id: i64, text: *const Str) -> u8 {
     let text = unsafe { str_text(text) }.to_string();
-    SOCKETS.with(|s| s.borrow().get(&(id as u64)).is_some_and(|Socket(_, _, tx)| tx.send(Outgoing::Text(text)).is_ok())) as u8
+    SOCKETS.with(|s| s.borrow().get(&(id as u64)).is_some_and(|socket| socket.send.send(Outgoing::Text(text)).is_ok())) as u8
+}
+
+/// `sendWebSocketData(id, data:)`: a binary message; false if it isn't open.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_send_web_socket_data(id: i64, data: *const Str) -> u8 {
+    let bytes = unsafe { crate::codec::data_bytes(data) }.to_vec();
+    SOCKETS.with(|s| s.borrow().get(&(id as u64)).is_some_and(|socket| socket.send.send(Outgoing::Bytes(bytes)).is_ok())) as u8
 }
 
 /// `closeWebSocket(id)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_close_web_socket(id: i64) {
     SOCKETS.with(|s| {
-        if let Some(Socket(_, _, tx)) = s.borrow().get(&(id as u64)) {
-            let _ = tx.send(Outgoing::Close);
+        if let Some(socket) = s.borrow().get(&(id as u64)) {
+            let _ = socket.send.send(Outgoing::Close);
         }
     });
 }
@@ -356,14 +426,23 @@ pub fn deliver(event: Event) {
             }
         }
         Event::Message(id, text) => {
-            let cb = SOCKETS.with(|s| s.borrow().get(&id).map(|Socket(m, _, _)| m.clone()));
+            let cb = SOCKETS.with(|s| s.borrow().get(&id).map(|socket| socket.on_message.clone()));
             if let Some(cb) = cb {
                 cb.call_with(crate::str_new(&text) as *mut u8);
             }
         }
+        Event::Bytes(id, bytes) => {
+            // To the block for binary messages; without one, as text.
+            let blocks = SOCKETS.with(|s| s.borrow().get(&id).map(|socket| (socket.on_data.clone(), socket.on_message.clone())));
+            match blocks {
+                Some((Some(on_data), _)) => on_data.call_with(crate::codec::data_new(&bytes) as *mut u8),
+                Some((None, on_message)) => on_message.call_with(crate::str_new(&String::from_utf8_lossy(&bytes)) as *mut u8),
+                None => {}
+            }
+        }
         Event::Closed(id, reason) => {
-            if let Some(Socket(_, close, _)) = SOCKETS.with(|s| s.borrow_mut().remove(&id)) {
-                close.call_with(crate::str_new(&reason) as *mut u8);
+            if let Some(socket) = SOCKETS.with(|s| s.borrow_mut().remove(&id)) {
+                socket.on_close.call_with(crate::str_new(&reason) as *mut u8);
             }
         }
         _ => {}

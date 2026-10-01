@@ -1,0 +1,40 @@
+// Networking against the two little servers the test starts (their ports
+// are in SLOW_PORT and ECHO_PORT): giving up a download and a request that
+// are under way, and binary WebSocket messages.
+
+fn main() {
+    let slow = "http://127.0.0.1:{environment("SLOW_PORT") ?? ""}/slow"
+    let target = joinPath(tempFolder(), "tessel-cancel-test-{environment("SLOW_PORT") ?? ""}.bin")
+
+    // A download that would take a long time: cancelled once it's going.
+    var got = 0.0
+    let loading = download(url: slow, to: target, progress: { fraction in got = fraction }) { ok in
+        print("download finished: {ok}")
+    }
+    let asking = request(url: slow) { r in
+        print("request finished: {r.status}")
+    }
+    after(seconds: 0.5) {
+        print("download under way: {got > 0.0 && got < 1.0}")
+        cancelRequest(loading)
+        cancelRequest(asking)
+        // Cancelling again, or something that isn't there, does nothing.
+        cancelRequest(loading)
+        cancelRequest(12345)
+        after(seconds: 0.3) {
+            print("file: {fileExists(target)}, part: {fileExists("{target}.part")}")
+        }
+    }
+
+    // The echo server sends back what it gets, text as text and bytes as bytes.
+    var socket = 0
+    socket = openWebSocket(url: "ws://127.0.0.1:{environment("ECHO_PORT") ?? ""}", onMessage: { text in
+        print("text: {text}")
+    }, onData: { data in
+        print("data: {data.bytes}")
+        closeWebSocket(socket)
+    }) { reason in
+        print("closed: {reason}")
+    }
+    print("sent: {sendWebSocket(socket, text: "hello")} {sendWebSocketData(socket, data: Data(bytes: [0, 1, 254, 255]))}")
+}

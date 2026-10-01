@@ -241,12 +241,48 @@ impl Builtins {
             "now" | "randomFloat" => FnSig { params: vec![], ret: Ty::Float },
             "isDarkMode" => FnSig { params: vec![], ret: Ty::Bool },
             "formatDate" => FnSig {
-                params: vec![P::unlabeled("time", Ty::Float), P::new("format", Ty::Str).default()],
+                params: vec![
+                    P::unlabeled("time", Ty::Float),
+                    P::new("format", Ty::Str).default(),
+                    P::new("timeZone", Ty::Str).default(),
+                ],
                 ret: Ty::Str,
             },
             "parseDate" => FnSig {
-                params: vec![P::unlabeled("text", Ty::Str), P::new("format", Ty::Str).default()],
+                params: vec![
+                    P::unlabeled("text", Ty::Str),
+                    P::new("format", Ty::Str).default(),
+                    P::new("timeZone", Ty::Str).default(),
+                ],
                 ret: Ty::opt(Ty::Float),
+            },
+            "addToDate" => FnSig {
+                params: vec![
+                    P::unlabeled("time", Ty::Float),
+                    P::new("years", Ty::Int).default(),
+                    P::new("months", Ty::Int).default(),
+                    P::new("days", Ty::Int).default(),
+                    P::new("hours", Ty::Int).default(),
+                    P::new("minutes", Ty::Int).default(),
+                    P::new("seconds", Ty::Int).default(),
+                    P::new("timeZone", Ty::Str).default(),
+                ],
+                ret: Ty::Float,
+            },
+            "daysBetween" => FnSig {
+                params: vec![P::unlabeled("from", Ty::Float), P::unlabeled("to", Ty::Float), P::new("timeZone", Ty::Str).default()],
+                ret: Ty::Int,
+            },
+            "timeZoneOffset" => FnSig {
+                params: vec![P::unlabeled("time", Ty::Float), P::new("timeZone", Ty::Str).default()],
+                ret: Ty::Int,
+            },
+            "localTimeZone" => FnSig { params: vec![], ret: Ty::Str },
+            "timeZones" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
+            // For the prelude's `dateParts`.
+            "__dateParts" => FnSig {
+                params: vec![P::unlabeled("time", Ty::Float), P::unlabeled("timeZone", Ty::Str)],
+                ret: Ty::list(Ty::Int),
             },
             "date" => FnSig {
                 params: vec![
@@ -256,6 +292,7 @@ impl Builtins {
                     P::new("hour", Ty::Int).default(),
                     P::new("minute", Ty::Int).default(),
                     P::new("second", Ty::Int).default(),
+                    P::new("timeZone", Ty::Str).default(),
                 ],
                 ret: Ty::Float,
             },
@@ -289,8 +326,9 @@ impl Builtins {
                     P::new("body", Ty::Str).default(),
                     P::new("done", Ty::func(vec![HTTP_RESPONSE], Ty::Void)),
                 ],
-                ret: Ty::Void,
+                ret: Ty::Int,
             },
+            "cancelRequest" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
             "download" => FnSig {
                 params: vec![
                     P::new("url", Ty::Str),
@@ -298,17 +336,19 @@ impl Builtins {
                     P::new("progress", Ty::opt(Ty::func(vec![Ty::Float], Ty::Void))).default(),
                     P::new("done", Ty::func(vec![Ty::Bool], Ty::Void)),
                 ],
-                ret: Ty::Void,
+                ret: Ty::Int,
             },
             "openWebSocket" => FnSig {
                 params: vec![
                     P::new("url", Ty::Str),
                     P::new("onMessage", Ty::func(vec![Ty::Str], Ty::Void)),
+                    P::new("onData", Ty::opt(Ty::func(vec![Ty::Data], Ty::Void))).default(),
                     P::new("onClose", Ty::func(vec![Ty::Str], Ty::Void)),
                 ],
                 ret: Ty::Int,
             },
             "sendWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("text", Ty::Str)], ret: Ty::Bool },
+            "sendWebSocketData" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("data", Ty::Data)], ret: Ty::Bool },
             "closeWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
             "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
@@ -339,7 +379,8 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
-    "isDarkMode",
+    "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
+    "cancelRequest", "sendWebSocketData",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -553,9 +594,22 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "now" => rt("tsl_now"),
         "isDarkMode" => rt("tsl_is_dark_mode"),
         "randomFloat" => rt("tsl_random_float"),
-        "formatDate" => rt_d("tsl_format_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd HH:mm")]),
-        "parseDate" => rt_d("tsl_parse_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd")]),
-        "date" => rt_d("tsl_make_date", &[Dflt::Req, Dflt::Req, Dflt::Req, Dflt::Int(0), Dflt::Int(0), Dflt::Int(0)]),
+        "formatDate" => rt_d("tsl_format_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd HH:mm"), Dflt::Str("")]),
+        "parseDate" => rt_d("tsl_parse_date", &[Dflt::Req, Dflt::Str("yyyy-MM-dd"), Dflt::Str("")]),
+        "date" => {
+            rt_d("tsl_make_date", &[Dflt::Req, Dflt::Req, Dflt::Req, Dflt::Int(0), Dflt::Int(0), Dflt::Int(0), Dflt::Str("")])
+        }
+        "addToDate" => rt_d(
+            "tsl_add_to_date",
+            &[Dflt::Req, Dflt::Int(0), Dflt::Int(0), Dflt::Int(0), Dflt::Int(0), Dflt::Int(0), Dflt::Int(0), Dflt::Str("")],
+        ),
+        "daysBetween" => rt_d("tsl_days_between", &[Dflt::Req, Dflt::Req, Dflt::Str("")]),
+        "timeZoneOffset" => rt_d("tsl_time_zone_offset", &[Dflt::Req, Dflt::Str("")]),
+        "localTimeZone" => rt("tsl_local_time_zone"),
+        "timeZones" => rt("tsl_time_zones"),
+        "__dateParts" => rt("tsl_date_parts"),
+        "cancelRequest" => rt("tsl_cancel_request"),
+        "sendWebSocketData" => rt("tsl_send_web_socket_data"),
         "stopTimer" => rt("tsl_stop_timer"),
         "appendFile" => rt("tsl_append_file"),
         "copyFile" => rt("tsl_copy_file"),

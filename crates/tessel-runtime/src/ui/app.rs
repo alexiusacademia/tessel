@@ -154,6 +154,8 @@ enum Event {
     Progress(u64, f64),
     Downloaded(u64, bool),
     Message(u64, String),
+    /// A binary WebSocket message.
+    Bytes(u64, Vec<u8>),
     Closed(u64, String),
     /// `background` work finished: its result (a codec tree, as an address).
     Computed(u64, usize),

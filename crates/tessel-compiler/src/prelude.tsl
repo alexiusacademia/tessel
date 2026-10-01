@@ -127,3 +127,25 @@ fn decodeBinary<T>(_ data: Data) -> Result<T> {
     let why = __lastError()
     Result.failure(error: Error(message: if why == "" { "the data doesn't have the shape of this type" } else { why }))
 }
+
+/// What the calendar and the clock say at one moment, in one time zone.
+struct DateParts {
+    year: Int
+    /// 1 for January to 12.
+    month: Int
+    day: Int
+    hour: Int
+    minute: Int
+    second: Int
+    /// 1 for Monday to 7 for Sunday.
+    weekday: Int
+    /// 1 for 1 January.
+    dayOfYear: Int
+}
+
+/// The date and time of day of a moment (see `now`), in the computer's time
+/// zone or the one named. All zeros for a time zone that doesn't exist.
+fn dateParts(_ time: Float, timeZone: String = "") -> DateParts {
+    let p = __dateParts(time, timeZone)
+    DateParts(year: p[0], month: p[1], day: p[2], hour: p[3], minute: p[4], second: p[5], weekday: p[6], dayOfYear: p[7])
+}

@@ -1,0 +1,52 @@
+// Time zones and calendar arithmetic. (Every time zone is named, so the
+// output doesn't depend on the computer's.)
+
+fn main() {
+    let t = date(year: 2026, month: 3, day: 7, hour: 12, timeZone: "UTC")
+    print(Int(t))
+    print(formatDate(t, format: "yyyy-MM-dd HH:mm Z", timeZone: "Asia/Tokyo"))
+    print(formatDate(t, format: "h:mm a, EEEE", timeZone: "America/New_York"))
+    print(formatDate(t, format: "HH:mm ZZZZZ", timeZone: "+05:30"))
+    print(formatDate(t, format: "iso", timeZone: "Europe/Paris"))
+    print(formatDate(t, format: "iso", timeZone: "UTC"))
+    print("[{formatDate(t, timeZone: "Mars/Olympus")}]")
+
+    // Reading: in a zone, or from text that says how far from UTC it is.
+    let tokyo = parseDate("2026-03-07 21:00", format: "yyyy-MM-dd HH:mm", timeZone: "Asia/Tokyo")
+    print(tokyo == t)
+    print(parseDate("2026-03-07T13:00:00+01:00", format: "iso") == t)
+    print(parseDate("2026-03-07T12:00:00Z", format: "iso") == t)
+    print(parseDate("7 Mar 2026 07:00 -0500", format: "d MMM yyyy HH:mm Z") == t)
+    print(parseDate("2026-03-07", timeZone: "Nowhere") == nil)
+    print(date(year: 2026, month: 3, day: 7, timeZone: "Nowhere").isNaN)
+
+    // The parts of a date.
+    let p = dateParts(t, timeZone: "Asia/Tokyo")
+    print("{p.year}-{p.month}-{p.day} {p.hour}:{p.minute}:{p.second} weekday {p.weekday} day {p.dayOfYear}")
+    print(dateParts(t, timeZone: "Nowhere").year)
+
+    // Calendar arithmetic: the last day of a shorter month, and a day
+    // across the change to summer time.
+    let paris = "Europe/Paris"
+    let end = date(year: 2026, month: 1, day: 31, hour: 9, minute: 30, timeZone: paris)
+    print(formatDate(addToDate(end, months: 1, timeZone: paris), timeZone: paris))
+    print(formatDate(addToDate(end, years: 1, months: 1, days: 1, timeZone: paris), timeZone: paris))
+    print(formatDate(addToDate(end, days: -31, hours: 2, minutes: 15, timeZone: paris), timeZone: paris))
+    let before = date(year: 2026, month: 3, day: 28, hour: 9, minute: 30, timeZone: paris)
+    print((addToDate(before, days: 1, timeZone: paris) - before) / 3600.0)
+    print(formatDate(addToDate(before, hours: 24, timeZone: paris), timeZone: paris))
+    print(addToDate(end, days: 1, timeZone: "Nowhere").isNaN)
+
+    print(daysBetween(end, before, timeZone: paris))
+    print(daysBetween(before, end, timeZone: paris))
+    let late = date(year: 2026, month: 1, day: 31, hour: 23, minute: 59, timeZone: paris)
+    print("{daysBetween(late, late + 120.0, timeZone: paris)} {daysBetween(late, late + 120.0, timeZone: "UTC")}")
+
+    print(timeZoneOffset(t, timeZone: "Asia/Tokyo") / 3600)
+    let july = date(year: 2026, month: 7, day: 1, timeZone: "UTC")
+    print("{timeZoneOffset(t, timeZone: "America/New_York") / 3600} {timeZoneOffset(july, timeZone: "America/New_York") / 3600}")
+    print(timeZones().contains("Europe/Paris") && timeZones().count > 300)
+    // The computer's own zone has a name, and is the default.
+    print(localTimeZone() != "")
+    print(formatDate(t) == formatDate(t, timeZone: localTimeZone()))
+}

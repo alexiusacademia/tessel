@@ -128,6 +128,74 @@ fn repl_sessions() {
     }
 }
 
+/// Runs `tests/net/servers.tsl` against two servers on this computer: one
+/// that sends a file very slowly (for cancelling a download and a request),
+/// and a WebSocket server that echoes (for binary messages).
+#[test]
+fn network_with_servers() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let slow = TcpListener::bind("127.0.0.1:0").unwrap();
+    let slow_port = slow.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in slow.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut stream = stream;
+                let mut request = [0u8; 2048];
+                let _ = stream.read(&mut request);
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4000000\r\nContent-Type: application/octet-stream\r\n\r\n");
+                // 20 KB every 50 ms: over three minutes, unless the other side gives up.
+                let piece = [7u8; 20_000];
+                for _ in 0..200 {
+                    if stream.write_all(&piece).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            });
+        }
+    });
+    let echo = TcpListener::bind("127.0.0.1:0").unwrap();
+    let echo_port = echo.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in echo.incoming().flatten() {
+            std::thread::spawn(move || {
+                let Ok(mut socket) = tungstenite::accept(stream) else { return };
+                while let Ok(message) = socket.read() {
+                    if (message.is_text() || message.is_binary()) && socket.send(message).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+
+    let started = std::time::Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .args(["run", "tests/net/servers.tsl"])
+        .current_dir(repo())
+        .env("SLOW_PORT", slow_port.to_string())
+        .env("ECHO_PORT", echo_port.to_string())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "failed ({}):\n{stdout}{}", out.status, String::from_utf8_lossy(&out.stderr));
+    // (The order of the lines depends on timing.)
+    let mut lines: Vec<&str> = stdout.lines().collect();
+    lines.sort();
+    let expected = [
+        "closed: closed",
+        "data: [0, 1, 254, 255]",
+        "download under way: true",
+        "file: false, part: false",
+        "sent: true true",
+        "text: hello",
+    ];
+    assert_eq!(lines, expected, "got:\n{stdout}");
+    // Cancelled, the program doesn't wait for the slow server.
+    assert!(started.elapsed() < std::time::Duration::from_secs(60), "took {:?}", started.elapsed());
+}
+
 /// Runs a copy of `tests/hot` with `tessel run --hot` and its script: the app
 /// replaces its own source, and `reload` gives it the new code.
 #[test]

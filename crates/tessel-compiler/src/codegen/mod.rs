@@ -5224,13 +5224,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let bx = self.box_closure(&ft, done);
                 let adapter = self.response_adapter();
                 let p = self.ptr_ty();
-                let f = self.declare_rt("tsl_request", &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], None);
-                self.b.build_call(f, &[url.into(), method.into(), headers.into(), body.into(), adapter.into(), bx.into()], "").unwrap();
+                let f = self.declare_rt(
+                    "tsl_request",
+                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
+                    Some(self.i64().into()),
+                );
+                let args = [url.into(), method.into(), headers.into(), body.into(), adapter.into(), bx.into()];
+                let id = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 self.release(method, &Ty::Str);
                 self.release(headers, &dict_t);
                 self.release(body, &Ty::Str);
-                None
+                id
             }
             "download" => {
                 let url = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
@@ -5254,24 +5259,49 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let bx = self.box_closure(&dt, done);
                 let adapter = self.bool_adapter();
                 let p = self.ptr_ty();
-                let f = self.declare_rt("tsl_download", &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], None);
-                self.b.build_call(f, &[url.into(), to.into(), pf.into(), penv.into(), adapter.into(), bx.into()], "").unwrap();
+                let f = self.declare_rt(
+                    "tsl_download",
+                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
+                    Some(self.i64().into()),
+                );
+                let args = [url.into(), to.into(), pf.into(), penv.into(), adapter.into(), bx.into()];
+                let id = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 self.release(to, &Ty::Str);
-                None
+                id
             }
             "openWebSocket" => {
                 let url = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
                 let ft = Ty::func(vec![Ty::Str], Ty::Void);
                 let on_msg = self.expr_as(arg(info.args[1].unwrap()), &ft).unwrap().into_struct_value();
-                let on_close = self.expr_as(arg(info.args[2].unwrap()), &ft).unwrap().into_struct_value();
+                // The block for binary messages, or null for none.
+                let dt = Ty::opt(Ty::func(vec![Ty::Data], Ty::Void));
+                let (data_f, data_env): (Val, Val) = match info.args[2] {
+                    Some(r) => {
+                        let opt = self.expr_as(arg(r), &dt).unwrap().into_struct_value();
+                        let present = self.b.build_extract_value(opt, 0, "").unwrap().into_int_value();
+                        let closure = self.b.build_extract_value(opt, 1, "").unwrap().into_struct_value();
+                        let f = self.b.build_extract_value(closure, 0, "").unwrap().into_pointer_value();
+                        let env = self.b.build_extract_value(closure, 1, "").unwrap();
+                        let null = self.ptr_ty().const_null();
+                        (self.b.build_select(present, f, null, "").unwrap(), env)
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                let on_close = self.expr_as(arg(info.args[3].unwrap()), &ft).unwrap().into_struct_value();
                 let mut vals: Vec<inkwell::values::BasicMetadataValueEnum> = vec![url.into()];
-                for c in [on_msg, on_close] {
-                    vals.push(self.b.build_extract_value(c, 0, "").unwrap().into());
-                    vals.push(self.b.build_extract_value(c, 1, "").unwrap().into());
-                }
+                vals.push(self.b.build_extract_value(on_msg, 0, "").unwrap().into());
+                vals.push(self.b.build_extract_value(on_msg, 1, "").unwrap().into());
+                vals.push(data_f.into());
+                vals.push(data_env.into());
+                vals.push(self.b.build_extract_value(on_close, 0, "").unwrap().into());
+                vals.push(self.b.build_extract_value(on_close, 1, "").unwrap().into());
                 let p = self.ptr_ty();
-                let f = self.declare_rt("tsl_open_web_socket", &[p.into(), p.into(), p.into(), p.into(), p.into()], Some(self.i64().into()));
+                let f = self.declare_rt(
+                    "tsl_open_web_socket",
+                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
+                    Some(self.i64().into()),
+                );
                 let id = self.b.build_call(f, &vals, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 id

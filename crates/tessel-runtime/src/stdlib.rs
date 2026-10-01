@@ -290,115 +290,7 @@ pub extern "C" fn tsl_now() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }
 
-/// Tessel date patterns: yyyy MM dd HH mm ss, plus MMM (Jan), MMMM
-/// (January), EEE (Mon), EEEE (Monday), a (AM/PM), hh (12-hour).
-fn to_chrono(format: &str) -> String {
-    let mut out = String::new();
-    let chars: Vec<char> = format.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        // 'text' is literal, and '' is a quote (as in Unicode date patterns).
-        if c == '\'' {
-            if chars.get(i + 1) == Some(&'\'') {
-                out.push('\'');
-                i += 2;
-                continue;
-            }
-            i += 1;
-            while i < chars.len() {
-                match (chars[i], chars.get(i + 1)) {
-                    ('\'', Some('\'')) => {
-                        out.push('\'');
-                        i += 2;
-                    }
-                    ('\'', _) => {
-                        i += 1;
-                        break;
-                    }
-                    ('%', _) => {
-                        out.push_str("%%");
-                        i += 1;
-                    }
-                    (ch, _) => {
-                        out.push(ch);
-                        i += 1;
-                    }
-                }
-            }
-            continue;
-        }
-        let mut n = 1;
-        while i + n < chars.len() && chars[i + n] == c {
-            n += 1;
-        }
-        let spec = match (c, n) {
-            ('y', 4) => "%Y",
-            ('y', 2) => "%y",
-            ('M', 4) => "%B",
-            ('M', 3) => "%b",
-            ('M', 2) => "%m",
-            ('M', 1) => "%-m",
-            ('d', 2) => "%d",
-            ('d', 1) => "%-d",
-            ('H', 2) => "%H",
-            ('H', 1) => "%-H",
-            ('h', 2) => "%I",
-            ('h', 1) => "%-I",
-            ('m', 2) => "%M",
-            ('m', 1) => "%-M",
-            ('s', 2) => "%S",
-            ('s', 1) => "%-S",
-            ('E', 4) => "%A",
-            ('E', 3) => "%a",
-            ('a', 1) => "%p",
-            ('%', _) => "%%",
-            _ => "",
-        };
-        if spec.is_empty() {
-            for _ in 0..n {
-                out.push(c);
-            }
-        } else {
-            out.push_str(spec);
-        }
-        i += n;
-    }
-    out
-}
-
-/// `formatDate(time, format:)`: in the computer's time zone.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_format_date(time: f64, format: *const Str) -> *mut Str {
-    use chrono::{Local, TimeZone};
-    let secs = time.floor() as i64;
-    let nanos = ((time - time.floor()) * 1e9) as u32;
-    let Some(dt) = Local.timestamp_opt(secs, nanos).single() else { return str_new("") };
-    str_new(&dt.format(&to_chrono(unsafe { text(format) })).to_string())
-}
-
-/// `parseDate(text, format:)`: in the computer's time zone; nil if it doesn't match.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_parse_date(s: *const Str, format: *const Str, out: *mut f64) -> u8 {
-    use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
-    let (t, f) = unsafe { (text(s), to_chrono(text(format))) };
-    let naive = NaiveDateTime::parse_from_str(t, &f)
-        .ok()
-        .or_else(|| NaiveDate::parse_from_str(t, &f).ok().and_then(|d| d.and_hms_opt(0, 0, 0)));
-    let v = naive.and_then(|n| Local.from_local_datetime(&n).earliest()).map(|dt| dt.timestamp() as f64);
-    unsafe { put(out, v) }
-}
-
-/// `date(year:month:day:hour:minute:second:)`: in the computer's time zone
-/// (NaN if it isn't a real date).
-#[unsafe(no_mangle)]
-pub extern "C" fn tsl_make_date(y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64) -> f64 {
-    use chrono::{Local, NaiveDate, TimeZone};
-    NaiveDate::from_ymd_opt(y as i32, mo as u32, d as u32)
-        .and_then(|date| date.and_hms_opt(h as u32, mi as u32, s as u32))
-        .and_then(|n| Local.from_local_datetime(&n).earliest())
-        .map_or(f64::NAN, |dt| dt.timestamp() as f64)
-}
+// (Calendar dates and time zones are in `dates.rs`.)
 
 // ===== files and folders =====
 
@@ -622,20 +514,6 @@ mod tests {
             let mut i = 0;
             assert_eq!(tsl_str_find_last(s("aébé"), s("é"), &mut i), 1);
             assert_eq!(i, 3);
-        }
-    }
-
-    #[test]
-    fn dates() {
-        unsafe {
-            let t = tsl_make_date(2026, 9, 27, 14, 5, 9);
-            assert_eq!(text(tsl_format_date(t, s("yyyy-MM-dd HH:mm:ss"))), "2026-09-27 14:05:09");
-            assert_eq!(text(tsl_format_date(t, s("EEE, d MMM yyyy h:mm a"))), "Sun, 27 Sep 2026 2:05 PM");
-            let mut back = 0.0;
-            assert_eq!(tsl_parse_date(s("2026-09-27 14:05:09"), s("yyyy-MM-dd HH:mm:ss"), &mut back), 1);
-            assert_eq!(back, t);
-            assert_eq!(tsl_parse_date(s("2026-09-27"), s("yyyy-MM-dd"), &mut back), 1);
-            assert_eq!(tsl_parse_date(s("nope"), s("yyyy-MM-dd"), &mut back), 0);
         }
     }
 

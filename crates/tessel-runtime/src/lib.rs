@@ -17,6 +17,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod codec;
+mod dates;
 mod stack_guard;
 mod stdlib;
 pub mod ui;
