@@ -1,3 +1,4 @@
+mod icon;
 mod lsp;
 mod update;
 
@@ -21,7 +22,8 @@ commands:
                  file, line, column, end line, end column, message (tab-separated)
   build <path> [-o <output>] [--bundle]
                  compile a program to a native executable; with --bundle,
-                 an app bundle you can double-click (macOS: Name.app)
+                 an app bundle you can double-click (macOS: Name.app).
+                 An icon.png next to the program is the app's icon
   run <path>     build and run a program
   complete <file> <offset> [--text <path>]
                  completion suggestions at byte <offset> of <file> (with the
@@ -68,7 +70,7 @@ fn main() -> ExitCode {
                 out.set_extension("exe");
             }
             match build(Path::new(path), &out) {
-                Ok(app_name) if bundle => match make_bundle(&out, app_name.as_deref()) {
+                Ok(app_name) if bundle => match make_bundle(&out, app_name.as_deref(), Some(Path::new(path))) {
                     Ok(bundle) => {
                         println!("built {}", bundle.display());
                         ExitCode::SUCCESS
@@ -258,10 +260,11 @@ fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
             return Err(ExitCode::FAILURE);
         }
     }
-    build_sources(&mut sources, out)
+    build_sources(&mut sources, out, Some(path))
 }
 
-fn build_sources(sources: &mut SourceMap, out: &Path) -> Result<Option<String>, ExitCode> {
+/// `program` is where the sources are from, for the app's icon (see `icon::Icon::of`).
+fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) -> Result<Option<String>, ExitCode> {
     let analysis = tessel_compiler::analyze(sources, true);
     if !analysis.diags.is_empty() {
         report(&analysis.diags.list, sources);
@@ -281,8 +284,19 @@ fn build_sources(sources: &mut SourceMap, out: &Path) -> Result<Option<String>, 
         tessel_compiler::ast::Item::App(a) => Some(a.name.name.clone()),
         _ => None,
     });
-    let linked = link(&obj, &runtime, out, app_name.is_some());
+    // On Windows, an app's icon is linked into its .exe.
+    let windows = target_triple().map_or(cfg!(windows), |t| t.contains("windows"));
+    let resources = (windows && app_name.is_some()).then(|| obj.with_extension("res"));
+    let linked = match &resources {
+        Some(res) => icon::Icon::of(program)
+            .and_then(|icon| std::fs::write(res, icon.windows_resources()).map_err(|e| format!("can't write `{}`: {e}", res.display())))
+            .and_then(|()| link(&obj, &runtime, out, true, Some(res))),
+        None => link(&obj, &runtime, out, app_name.is_some(), None),
+    };
     let _ = std::fs::remove_file(&obj);
+    if let Some(res) = &resources {
+        let _ = std::fs::remove_file(res);
+    }
     linked.map_err(fail)?;
     Ok(app_name)
 }
@@ -298,12 +312,13 @@ fn target_triple() -> Option<String> {
 }
 
 /// Links a compiled program with the runtime: with the built-in linker when
-/// this `tessel` has one, otherwise with the system's.
-fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<(), String> {
+/// this `tessel` has one, otherwise with the system's. `resources` is a
+/// Windows resource file (the app's icon) to link in.
+fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
     if let Some(sdk) = bundled_sdk() {
-        return bundled::link(obj, runtime, out, &sdk, gui);
+        return bundled::link(obj, runtime, out, &sdk, gui, resources);
     }
-    let output = linker(obj, runtime, out, gui)?.output().map_err(|e| format!("can't run the system linker: {e}"))?;
+    let output = linker(obj, runtime, out, gui, resources)?.output().map_err(|e| format!("can't run the system linker: {e}"))?;
     if !output.status.success() {
         // MSVC's link.exe reports errors on stdout.
         let details = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
@@ -329,7 +344,7 @@ fn bundled_sdk() -> Option<PathBuf> {
 mod bundled {
     use std::path::Path;
 
-    pub fn link(_: &Path, _: &Path, _: &Path, _: &Path, _: bool) -> Result<(), String> {
+    pub fn link(_: &Path, _: &Path, _: &Path, _: &Path, _: bool, _: Option<&Path>) -> Result<(), String> {
         unreachable!("bundled_sdk() is None without the bundled-linker feature")
     }
 }
@@ -345,14 +360,14 @@ mod bundled {
         fn tessel_lld_free(output: *mut c_char);
     }
 
-    pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool) -> Result<(), String> {
+    pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         let args = {
-            let _ = gui;
+            let _ = (gui, resources);
             macos_args(obj, runtime, out, sdk)?
         };
         #[cfg(not(target_os = "macos"))]
-        let args = mingw_args(obj, runtime, out, sdk, gui);
+        let args = mingw_args(obj, runtime, out, sdk, gui, resources);
         let args: Vec<CString> = args.into_iter().map(|a| CString::new(a).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
         let ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
         let mut output: *mut c_char = std::ptr::null_mut();
@@ -408,7 +423,7 @@ mod bundled {
     /// with MinGW-w64's C runtime and Windows import libraries from `sdk/`,
     /// in the order clang's MinGW driver uses.
     #[cfg(not(target_os = "macos"))]
-    fn mingw_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool) -> Vec<String> {
+    fn mingw_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool, resources: Option<&Path>) -> Vec<String> {
         let path = |p: &Path| p.to_string_lossy().into_owned();
         let file = |name: &str| path(&sdk.join(name));
         let mut args: Vec<String> = vec!["ld.lld".into(), "-m".into(), "i386pep".into()];
@@ -418,6 +433,7 @@ mod bundled {
         args.extend(["-o".into(), path(out), file("crt2.o"), file("crtbegin.o")]);
         args.push(format!("-L{}", path(sdk)));
         args.extend([path(obj), path(runtime)]);
+        args.extend(resources.map(path));
         args.extend(super::WINDOWS_LIBS.iter().map(|l| format!("-l{l}")));
         let builtins = file("libclang_rt.builtins-x86_64.a");
         for _ in 0..2 {
@@ -431,21 +447,24 @@ mod bundled {
 }
 
 /// Wraps a built app in a platform app bundle. On macOS: `Name.app`, next
-/// to the executable (which moves inside it). Returns the bundle's path.
-fn make_bundle(exe: &Path, app_name: Option<&str>) -> Result<PathBuf, String> {
+/// to the executable (which moves inside it), with the icon of `program`
+/// (see `icon::Icon::of`). Returns the bundle's path.
+fn make_bundle(exe: &Path, app_name: Option<&str>, program: Option<&Path>) -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
-        // Windows apps are already a single double-clickable .exe.
+        // Windows apps are already a single double-clickable .exe, with the icon inside.
         return Ok(exe.to_path_buf());
     }
+    let icon = icon::Icon::of(program)?;
     let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
     let name = app_name.unwrap_or(stem);
     let bundle = exe.with_file_name(format!("{name}.app"));
-    let macos = bundle.join("Contents/MacOS");
+    let contents = bundle.join("Contents");
     if bundle.exists() {
         std::fs::remove_dir_all(&bundle).map_err(|e| format!("can't replace `{}`: {e}", bundle.display()))?;
     }
-    std::fs::create_dir_all(&macos).map_err(|e| format!("can't create `{}`: {e}", bundle.display()))?;
-    std::fs::rename(exe, macos.join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
+    for folder in ["MacOS", "Resources"] {
+        std::fs::create_dir_all(contents.join(folder)).map_err(|e| format!("can't create `{}`: {e}", bundle.display()))?;
+    }
     let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -456,6 +475,7 @@ fn make_bundle(exe: &Path, app_name: Option<&str>) -> Result<PathBuf, String> {
     <key>CFBundleDisplayName</key><string>{name}</string>
     <key>CFBundleExecutable</key><string>{name}</string>
     <key>CFBundleIdentifier</key><string>dev.tessel.{id}</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>
@@ -465,18 +485,21 @@ fn make_bundle(exe: &Path, app_name: Option<&str>) -> Result<PathBuf, String> {
 </plist>
 "#
     );
-    std::fs::write(bundle.join("Contents/Info.plist"), plist).map_err(|e| format!("can't write Info.plist: {e}"))?;
+    std::fs::write(contents.join("Info.plist"), plist).map_err(|e| format!("can't write Info.plist: {e}"))?;
+    std::fs::write(contents.join("Resources/AppIcon.icns"), icon.icns()).map_err(|e| format!("can't write the app's icon: {e}"))?;
+    // Last, so a bundle with its executable is a complete one.
+    std::fs::rename(exe, contents.join("MacOS").join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
     Ok(bundle)
 }
 
 /// The command that links the program's object file with the runtime.
-fn linker(obj: &Path, runtime: &Path, out: &Path, gui: bool) -> Result<Command, String> {
+fn linker(obj: &Path, runtime: &Path, out: &Path, gui: bool, resources: Option<&Path>) -> Result<Command, String> {
     if cfg!(target_env = "msvc") {
         // MSVC's link.exe, found the way Rust finds it (Visual Studio Build Tools).
         let target = if cfg!(target_arch = "aarch64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" };
         let mut cmd = cc::windows_registry::find(target, "link.exe")
             .ok_or("can't find the MSVC linker (link.exe); install Visual Studio Build Tools with the C++ workload")?;
-        cmd.arg("/NOLOGO").arg(obj).arg(runtime).args(platform_link_args());
+        cmd.arg("/NOLOGO").arg(obj).arg(runtime).args(resources).args(platform_link_args());
         if gui {
             // A window app: no console window next to it.
             cmd.args(["/SUBSYSTEM:WINDOWS", "/ENTRY:mainCRTStartup"]);
@@ -527,7 +550,13 @@ fn ide(folder: &Path) -> ExitCode {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&(IDE_SOURCES, tessel_compiler::VERSION, stamp), &mut h);
     let dir = std::env::temp_dir().join(format!("tessel-ide-{:016x}", std::hash::Hasher::finish(&h)));
-    let exe = dir.join(format!("Tessel{}", std::env::consts::EXE_SUFFIX));
+    // On macOS the IDE is an app bundle, which gives it its icon in the Dock;
+    // on Windows the icon is in the .exe.
+    let exe = if cfg!(target_os = "macos") {
+        dir.join("Tessel.app/Contents/MacOS/Tessel")
+    } else {
+        dir.join(format!("Tessel{}", std::env::consts::EXE_SUFFIX))
+    };
     if !exe.exists() {
         eprintln!("tessel: preparing the IDE (first run only)…");
         if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -539,10 +568,15 @@ fn ide(folder: &Path) -> ExitCode {
             sources.add(format!("ide/{name}"), *text);
         }
         let tmp = dir.join(format!("building{}", std::env::consts::EXE_SUFFIX));
-        if let Err(code) = build_sources(&mut sources, &tmp) {
+        if let Err(code) = build_sources(&mut sources, &tmp, None) {
             return code;
         }
-        if let Err(e) = std::fs::rename(&tmp, &exe) {
+        let installed = if cfg!(target_os = "macos") {
+            make_bundle(&tmp, Some("Tessel"), None).map(drop)
+        } else {
+            std::fs::rename(&tmp, &exe).map_err(|e| e.to_string())
+        };
+        if let Err(e) = installed {
             eprintln!("tessel: can't install the IDE: {e}");
             return ExitCode::FAILURE;
         }

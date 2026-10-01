@@ -1653,6 +1653,16 @@ impl ApplicationHandler for WindowApp {
         let attrs = Window::default_attributes()
             .with_title(self.app.title.clone())
             .with_inner_size(LogicalSize::new(self.app.width, self.app.height));
+        // The app's icon is icon group 1 in its .exe (`tessel build` puts it
+        // there): show it in the title bar and the taskbar.
+        #[cfg(windows)]
+        let attrs = {
+            use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+            match winit::window::Icon::from_resource(1, None) {
+                Ok(icon) => attrs.with_window_icon(Some(icon.clone())).with_taskbar_icon(Some(icon)),
+                Err(_) => attrs,
+            }
+        };
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {

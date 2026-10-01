@@ -19,7 +19,8 @@ commands:
                  file, line, column, end line, end column, message (tab-separated)
   build <path> [-o <output>] [--bundle]
                  compile a program to a native executable; with --bundle,
-                 an app bundle you can double-click (macOS: Name.app)
+                 an app bundle you can double-click (macOS: Name.app).
+                 An icon.png next to the program is the app's icon
   run <path>     build and run a program
   lsp            start the language server (used by editors)
   help           show this help
@@ -151,6 +152,16 @@ installed.
 
 On Windows, apps (programs with an `app`) are built without a console
 window.
+
+### The app's icon
+
+Put a square PNG image called `icon.png` next to your program's `.tsl`
+files, and it becomes the app's icon: of `Name.app` on macOS (in Finder and
+the Dock), and of the `.exe`, its window and its taskbar button on Windows.
+1024 × 1024 pixels is best; Tessel makes the smaller sizes from it. Without
+an `icon.png`, apps get Tessel's icon.
+
+On macOS only a bundle has an icon, so build with `--bundle`.
 
 ```sh
 tessel build todos -o todos-app --bundle

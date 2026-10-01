@@ -2749,6 +2749,7 @@ dependencies = [
  "cc",
  "lsp-server",
  "lsp-types",
+ "png",
  "serde_json",
  "sha2",
  "tessel-compiler",

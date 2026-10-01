@@ -607,7 +607,7 @@ Still open, not blocking v1:
 | Area | Status | What it means |
 |---|---|---|
 | Editor support | ✅ first version | VS Code extension: highlighting; `tessel lsp` for live errors and types on hover |
-| Packaging | ✅ first version | `tessel build --bundle` makes `Name.app` on macOS; Windows apps have no console window. Still to do: app icons, code signing, installers |
+| Packaging | ✅ first version | `tessel build --bundle` makes `Name.app` on macOS; Windows apps have no console window. An `icon.png` next to the program is the app's icon (Tessel's by default), in the bundle on macOS and in the `.exe` on Windows; the IDE has Tessel's. Still to do: code signing, installers |
 | **Tessel IDE** | ✅ (`ide/`, opened by `tessel`): explorer with a folder tree, new / rename / delete, tabbed editor, undo, problems and console panels, restart on save | Launching Tessel opens its own IDE. It edits `.tsl` files and runs the `tessel` commands for you: check (errors as you type, like `tessel lsp`), run, debug, build and package. No terminal needed. |
 | Hot reload | partly | The IDE restarts the running app when you save ("Restart on save"). True hot reload, keeping the app's state, is still planned |
 | App polish | planned | Dark mode, animations, real images, Tab between fields, IME input, accessibility |
