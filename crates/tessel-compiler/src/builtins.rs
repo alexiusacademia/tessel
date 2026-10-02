@@ -439,6 +439,8 @@ impl Builtins {
             },
             // For the prelude's `imageSize`.
             "__imageSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
+            // For the prelude's `readImage`.
+            "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
@@ -469,7 +471,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
-    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "setWindowTitle", "renderImage",
+    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "setWindowTitle", "renderImage",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -830,6 +832,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "readData" => rt("tsl_read_data"),
         "writeImage" => rt("tsl_write_image"),
         "__imageSize" => rt("tsl_image_size"),
+        "__imagePixels" => rt("tsl_image_pixels"),
         "setWindowTitle" => rt("tsl_set_window_title"),
         "writeData" => rt("tsl_write_data"),
         _ => return None,

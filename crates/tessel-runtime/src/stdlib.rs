@@ -571,6 +571,24 @@ pub unsafe extern "C" fn tsl_image_size(path: *const Str) -> *mut crate::List {
     slot
 }
 
+/// For the prelude's `readImage`: the pixels of a PNG or JPEG file, row by
+/// row from the top left, each as `writeImage` takes them (red, green, blue
+/// and opacity in one number). An empty list if the file can't be read.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_image_pixels(path: *const Str) -> *mut crate::List {
+    let path = unsafe { text(path) };
+    let Ok(picture) = image::open(path) else {
+        return unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, 0) };
+    };
+    let picture = picture.to_rgba8();
+    let mut slot = unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, (picture.width() * picture.height()) as i64) };
+    for p in picture.pixels() {
+        let v = u32::from_be_bytes(p.0) as i64;
+        unsafe { crate::tsl_list_push(&mut slot, &v as *const i64 as *const u8) };
+    }
+    slot
+}
+
 /// `data.compressed(format)`: the bytes made smaller, as "zlib" (the
 /// default), "deflate" (without a header) or "gzip". An unknown format gives
 /// no bytes.

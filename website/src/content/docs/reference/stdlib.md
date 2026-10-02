@@ -692,6 +692,26 @@ if let size = imageSize("gradient.png") {
 }
 ```
 
+### readImage
+
+```text
+readImage(_ path: String) -> (Int, Int, [Int])?
+```
+
+The width, height and pixels of a PNG or JPEG file, or `nil` if it can't be
+read as one. The pixels come row by row from the top left corner, each as
+one number, the way `writeImage` takes them: red × 16777216 + green × 65536
++ blue × 256 + opacity (each from 0 to 255).
+
+```tessel
+if let picture = readImage("gradient.png") {
+    let (width, height, pixels) = picture
+    let last = pixels[pixels.count - 1]
+    print("{width} × {height}, {pixels.count} pixels")             // 64 × 64, 4096 pixels
+    print("red {last / 16777216}, opacity {last % 256}")           // red 252, opacity 255
+}
+```
+
 ## JSON and binary
 
 These four functions turn your values into text or bytes, to save in a file

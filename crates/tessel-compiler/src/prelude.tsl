@@ -159,3 +159,18 @@ fn imageSize(_ path: String) -> (Int, Int)? {
     }
     (size[0], size[1])
 }
+
+/// A PNG or JPEG file's width, height and pixels (row by row from the top
+/// left, each as `writeImage` takes them), or nil if it can't be read as
+/// a picture.
+fn readImage(_ path: String) -> (Int, Int, [Int])? {
+    let size = __imageSize(path)
+    if size.count < 2 {
+        return nil
+    }
+    let pixels = __imagePixels(path)
+    if pixels.count != size[0] * size[1] {
+        return nil
+    }
+    (size[0], size[1], pixels)
+}

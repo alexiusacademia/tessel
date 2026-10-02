@@ -1,0 +1,35 @@
+fn pixel(_ red: Int, _ green: Int, _ blue: Int, _ opacity: Int) -> Int {
+    red * 16777216 + green * 65536 + blue * 256 + opacity
+}
+
+fn main() {
+    var pixels: [Int] = []
+    for y in 0..3 {
+        for x in 0..4 {
+            pixels.append(pixel(x * 60, y * 100, 7, 255 - x * 50))
+        }
+    }
+    let path = joinPath(tempFolder(), "tessel-read-image.png")
+    print(writeImage(path: path, width: 4, height: 3, pixels: pixels))
+    if let picture = readImage(path) {
+        let (width, height, read) = picture
+        print("{width} × {height}, {read.count} pixels, same: {read == pixels}")
+        let last = read[read.count - 1]
+        print("red {last / 16777216}, green {last / 65536 % 256}, blue {last / 256 % 256}, opacity {last % 256}")
+    } else {
+        print("not read")
+    }
+    // A JPEG has no opacity, and its colors are close, not exact.
+    let photo = joinPath(tempFolder(), "tessel-read-image.jpg")
+    var flat: [Int] = []
+    for _ in 0..64 {
+        flat.append(pixel(200, 100, 50, 255))
+    }
+    print(writeImage(path: photo, width: 8, height: 8, pixels: flat))
+    if let picture = readImage(photo) {
+        let p = picture.2[27]
+        print("{picture.0} × {picture.1}, red near 200: {abs(p / 16777216 - 200) < 6}, opacity {p % 256}")
+    }
+    print(readImage(joinPath(tempFolder(), "tessel-no-such-picture.png")) == nil)
+    print(readImage("Cargo.toml") == nil)
+}
