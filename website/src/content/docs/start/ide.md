@@ -131,6 +131,13 @@ editor, so you can read while you write:
 Drag the edge between the editor and the panel to make the panel wider or
 narrower. Click **Docs** again, or the × in the panel, to close it.
 
+## Resizing the panels
+
+The edges between the parts of the window can be dragged: the one between
+the explorer and the editor, the one above Problems and Console, and the one
+beside the Docs panel. An edge turns blue under the pointer. The sizes last
+until you close the IDE.
+
 ## Problems and console
 
 The bottom of the window has two tabs:

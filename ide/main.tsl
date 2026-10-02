@@ -15,6 +15,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     // The Docs panel, next to the editor.
     state helpOpen = false
     state helpWidth = 440.0
+    // The sizes of the explorer and of the bottom panel: their edges can
+    // be dragged, like the Docs panel's.
+    state explorerWidth = 250.0
+    state panelHeight = 220.0
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -111,9 +115,13 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     }
                 }
             }
-            .frame(width: 250)
+            .frame(width: explorerWidth)
             .background(.sidebar)
-            Divider()
+            Spacer()
+                .frame(width: 5, maxHeight: .infinity)
+                .background(.separator)
+                .hoverBackground(.blue)
+                .onDrag { dx, dy in explorerWidth = (explorerWidth + dx).clamped(min: 160, max: 500) }
 
             // Editor tabs
             if docs.isEmpty {
@@ -159,7 +167,11 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             }
         }
 
-        Divider()
+        Spacer()
+            .frame(height: 5, maxWidth: .infinity)
+            .background(.separator)
+            .hoverBackground(.blue)
+            .onDrag { dx, dy in panelHeight = (panelHeight - dy).clamped(min: 80, max: 500) }
         // Problems and console
         TabView(selection: panel) {
             Scroll {
@@ -199,7 +211,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             .tabItem("Console")
             .tag(Panel.console)
         }
-        .frame(height: 220)
+        .frame(height: panelHeight)
     }
     .onAppear {
         reload()

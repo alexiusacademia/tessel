@@ -61,10 +61,10 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["main.tsl", "• helpers.tsl"] selected 1
           CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -134,10 +134,10 @@ Root
                 Icon fileCode
                 Text "math.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["math.tsl"] selected 0
           CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -201,11 +201,11 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         VStack
           Icon fileCode
           Text "Open a file from the explorer"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -269,10 +269,10 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -337,10 +337,10 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -405,10 +405,10 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -473,10 +473,10 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -540,7 +540,7 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
         Spacer
@@ -560,7 +560,7 @@ Root
             Divider
             Scroll
               Markdown "Second page" links ["first page"]
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -625,7 +625,7 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
         Spacer
@@ -652,7 +652,7 @@ Root
                 HStack
                   Text "Second page"
                   Spacer
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -716,7 +716,7 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
         Spacer
@@ -744,7 +744,7 @@ Root
                     Text "Guide"
                     Spacer
                   Text "Back to the first page."
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
@@ -808,7 +808,7 @@ Root
                 Icon fileCode
                 Text "main.tsl"
                 Spacer
-        Divider
+        Spacer
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
         Spacer
@@ -831,7 +831,7 @@ Root
             Scroll
               VStack
                 Text "Nothing found for \"BACK toxyz\""
-      Divider
+      Spacer
       TabView ["Problems (0)", "Console"] selected 0
         Scroll
           VStack
