@@ -120,6 +120,10 @@ editor, so you can read while you write:
   same order. Click a page to read it.
 - Links in a page go to other pages. The arrow goes back, and the house
   returns to the contents. Links to the web open in your browser.
+- Type in the search field to find pages: the ones with your words in their
+  title come first, then the ones with them in their text, each with the
+  line they're on. Click one to read it. Large and small letters are the
+  same to the search, and it needs two letters or more.
 - The documentation comes with Tessel and is read from your computer: it
   works without a network, and it's the documentation of the version you
   have installed.

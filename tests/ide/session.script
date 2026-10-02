@@ -54,4 +54,12 @@ click "the web"
 click "arrowLeft"
 click "home"
 tree
+click "Search the documentation"
+type BACK to
+tree
+click "Second page"
+click "Search the documentation"
+type xyz
+tree
+click "arrowLeft"
 click "close"

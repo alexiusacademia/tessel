@@ -10,6 +10,27 @@ struct HelpEntry {
     // Of a page: its file is `<slug>.md`.
     slug: String
     label: String
+    // Of a page: the group it's in.
+    section: String = ""
+}
+
+// A page's text, for searching (`lower` is the text in lower case).
+struct HelpDoc {
+    slug: String
+    label: String
+    section: String
+    text: String
+    lower: String
+    // How many characters the text has.
+    length: Int
+}
+
+// A page that a search found: where the words are in it.
+struct HelpHit {
+    slug: String
+    label: String
+    section: String
+    snippet: String
 }
 
 fn helpFolder() -> String {
@@ -21,15 +42,95 @@ fn helpFolder() -> String {
 fn helpIndex() -> [HelpEntry] {
     var out: [HelpEntry] = []
     let text = readFile(join(folder: helpFolder(), name: "index.txt")) ?? ""
+    var section = ""
     for line in text.lines() {
         let parts = line.split("\t")
         if parts.count == 3 && parts[0] == "group" {
-            out.append(HelpEntry(group: true, level: Int(parts[1]) ?? 1, slug: "", label: parts[2]))
+            let level = Int(parts[1]) ?? 1
+            if level == 1 {
+                section = parts[2]
+            }
+            out.append(HelpEntry(group: true, level: level, slug: "", label: parts[2]))
         } else if parts.count == 3 && parts[0] == "page" {
-            out.append(HelpEntry(group: false, level: 0, slug: parts[1], label: parts[2]))
+            out.append(HelpEntry(group: false, level: 0, slug: parts[1], label: parts[2], section: section))
         }
     }
     out
+}
+
+// Every page's text, read once, to search in.
+fn helpTexts(index: [HelpEntry]) -> [HelpDoc] {
+    var out: [HelpDoc] = []
+    for e in index {
+        if !e.group {
+            let text = readFile(join(folder: helpFolder(), name: "{e.slug}.md")) ?? ""
+            out.append(HelpDoc(slug: e.slug, label: e.label, section: e.section, text: text, lower: text.lowercase(), length: text.count))
+        }
+    }
+    out
+}
+
+// The line of `text` around character `at` (where a search found its
+// words) as plain words: without Markdown's marks, and not too long.
+fn helpSnippet(text: String, at: Int, length: Int) -> String {
+    // The piece of the text around the place, and in it the line there.
+    let from = max(0, at - 60)
+    let piece = text.substring(from: from, to: min(length, at + 100))
+    var start = 0
+    var words = piece
+    for line in piece.split("\n") {
+        if at - from >= start && at - from <= start + line.count {
+            words = line
+            break
+        }
+        start += line.count + 1
+    }
+    // A link is its words: `[the guide](/guide/)` is "the guide".
+    while let open = words.find("](") {
+        let rest = words.substring(from: open, to: words.count)
+        if let close = rest.find(")") {
+            words = "{words.substring(from: 0, to: open)}{rest.substring(from: close + 1, to: rest.count)}"
+        } else {
+            break
+        }
+    }
+    for mark in ["`", "*", "#", ">", "|", "["] {
+        words = words.replace(mark, with: "")
+    }
+    words.trim()
+}
+
+// The pages with `query` in them: those with it in their title first. Each
+// with the line it's first found on.
+fn helpSearch(docs: [HelpDoc], query: String) -> [HelpHit] {
+    let q = query.trim().lowercase()
+    var titled: [HelpHit] = []
+    var others: [HelpHit] = []
+    if q.count < 2 {
+        return titled
+    }
+    for doc in docs {
+        let inTitle = doc.label.lowercase().contains(q)
+        // (After the first line, which is the title.)
+        let body = doc.lower.find(q)
+        if !inTitle && body == nil {
+            continue
+        }
+        var snippet = ""
+        if let at = body {
+            if at > doc.label.count + 2 {
+                snippet = helpSnippet(text: doc.text, at: at, length: doc.length)
+            }
+        }
+        let hit = HelpHit(slug: doc.slug, label: doc.label, section: doc.section, snippet: snippet)
+        if inTitle {
+            titled.append(hit)
+        } else {
+            others.append(hit)
+        }
+    }
+    titled.appendAll(others)
+    titled.prefix(40)
 }
 
 // The page a link in the documentation goes to: "/ui/styling/#colors" is
@@ -58,16 +159,32 @@ view HelpPanel(close: fn()) {
     state page = ""
     state text = ""
     state history: [String] = []
+    // Searching: every page's text, what's looked for, and the search a
+    // page was opened from (its results give way to the page).
+    state texts: [HelpDoc] = []
+    state query = ""
+    state opened = ""
 
     VStack(spacing: 0, alignment: .leading) {
         HStack(spacing: 2) {
-            IconButton(icon: .arrowLeft) { back() }.disabled(history.isEmpty)
-            IconButton(icon: .home) { show(slug: "") }.disabled(page == "")
+            IconButton(icon: .arrowLeft) { back() }.disabled(history.isEmpty && !searching())
+            IconButton(icon: .home) { show(slug: "") }.disabled(page == "" && !searching())
             Text(title()).font(size: 12, weight: .semibold).color(.secondary).padding(horizontal: 6)
             Spacer()
             IconButton(icon: .close) { close() }
         }
         .padding(8)
+        HStack(spacing: 6) {
+            TextField("Search the documentation", text: query).font(size: 12)
+            if query != "" {
+                IconButton(icon: .close) {
+                    query = ""
+                    opened = ""
+                }
+            }
+        }
+        .padding(horizontal: 8)
+        .padding(bottom: 8)
         Divider()
 
         if index.isEmpty {
@@ -76,6 +193,38 @@ view HelpPanel(close: fn()) {
                 Text("It comes with Tessel: open the IDE with `tessel`.").font(size: 12).color(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if searching() {
+            Scroll {
+                VStack(spacing: 2, alignment: .leading) {
+                    let hits = helpSearch(docs: texts, query: query)
+                    if hits.isEmpty {
+                        Text(if query.trim().count < 2 { "Type two letters or more" } else { "Nothing found for \"{query.trim()}\"" })
+                            .font(size: 12)
+                            .color(.secondary)
+                            .padding(8)
+                    }
+                    for hit in hits {
+                        VStack(spacing: 2, alignment: .leading) {
+                            HStack(spacing: 6) {
+                                Text(hit.label).font(size: 13, weight: .semibold)
+                                Text(hit.section).font(size: 11).color(.secondary)
+                                Spacer()
+                            }
+                            if hit.snippet != "" {
+                                Text(hit.snippet).font(size: 12).color(.secondary)
+                            }
+                        }
+                        .padding(horizontal: 8, vertical: 5)
+                        .hoverBackground(.lightGray, radius: 4)
+                        .onTap {
+                            opened = query
+                            show(slug: hit.slug)
+                        }
+                        .id(hit.slug)
+                    }
+                }
+                .padding(8)
+            }
         } else if page == "" {
             Scroll {
                 VStack(spacing: 0, alignment: .leading) {
@@ -109,9 +258,21 @@ view HelpPanel(close: fn()) {
         }
     }
     .frame(width: 440)
-    .onAppear { index = helpIndex() }
+    .onAppear {
+        index = helpIndex()
+        texts = helpTexts(index: index)
+    }
+
+    // Whether the results of a search show: there's something to look for,
+    // and it isn't the search the page showing was opened from.
+    fn searching() -> Bool {
+        query.trim() != "" && query != opened
+    }
 
     fn title() -> String {
+        if searching() {
+            return "SEARCH"
+        }
         if page == "" {
             return "DOCUMENTATION"
         }
@@ -133,10 +294,16 @@ view HelpPanel(close: fn()) {
             history.append(page)
             load(slug: slug)
         }
+        // (From the results of a search: they give way to the page.)
+        if searching() {
+            opened = query
+        }
     }
 
     fn back() {
-        if !history.isEmpty {
+        if searching() {
+            opened = query
+        } else if !history.isEmpty {
             load(slug: history.removeLast())
         }
     }
