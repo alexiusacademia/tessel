@@ -49,8 +49,8 @@ language may still change. This page is an honest list of where things stand.
   methods for strings, numbers and lists.
 - **Tools:** the `tessel` command, a REPL (`tessel repl`), hot reload
   (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE
-  (with this documentation built in, and a Design panel for building a
-  window by pointing at it), a VS Code extension, a
+  (with this documentation built in, a Design panel for building a
+  window by pointing at it, and a preview for Markdown files), a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
 

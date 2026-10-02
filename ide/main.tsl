@@ -41,6 +41,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state designTimer = -1
     state designLast: [DesignText] = []
     state designCaret = ""
+    // The Preview panel, next to the editor, for Markdown files.
+    state previewOpen = false
+    state previewWidth = 440.0
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -74,6 +77,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             }
             ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
             ToolButton(icon: .package, label: "Package") { build(bundle: true) }
+            if isMarkdown(path: current) {
+                ToolButton(icon: .eye, label: "Preview", tint: if previewOpen { .blue } else { .primary }) { togglePreview() }
+            }
             ToolButton(icon: .image, label: "Design", tint: if designOpen { .blue } else { .primary }) { toggleDesign() }
             ToolButton(icon: .info, label: "Docs", tint: if helpOpen { .blue } else { .primary }) { toggleHelp() }
         }
@@ -176,6 +182,21 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                             .tag(doc.path)
                     }
                 }
+            }
+
+            if previewOpen && isMarkdown(path: current) {
+                Spacer()
+                    .frame(width: 5, maxHeight: .infinity)
+                    .background(.separator)
+                    .hoverBackground(.blue)
+                    .onDrag { dx, dy in previewWidth = (previewWidth - dx).clamped(min: 240, max: 900) }
+                PreviewPanel(
+                    width: previewWidth,
+                    path: current,
+                    text: docs.first(where: { d in d.path == current })?.text ?? "",
+                    follow: { link in followPreview(link: link) },
+                    close: { previewOpen = false }
+                )
             }
 
             if designOpen {
@@ -504,11 +525,44 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
 
     // ----- design -----
 
-    // (The Docs and the Design panel take turns next to the editor.)
+    // (The Preview, Design and Docs panels take turns next to the editor.)
     fn toggleHelp() {
         helpOpen = !helpOpen
-        if helpOpen && designOpen {
-            toggleDesign()
+        if helpOpen {
+            previewOpen = false
+            if designOpen {
+                toggleDesign()
+            }
+        }
+    }
+
+    fn togglePreview() {
+        previewOpen = !previewOpen
+        if previewOpen {
+            helpOpen = false
+            if designOpen {
+                toggleDesign()
+            }
+        }
+    }
+
+    // A link in a previewed file: a place on the web (in the browser), or
+    // another file of the project (in the editor).
+    fn followPreview(link: String) {
+        if link.hasPrefix("http://") || link.hasPrefix("https://") || link.hasPrefix("mailto:") {
+            openURL(link)
+            return
+        }
+        // (Without the part after `#`, which names a heading.)
+        let file = link.split("#")[0]
+        if file == "" {
+            return
+        }
+        let path = join(folder: parentOf(path: current), name: file)
+        if fileExists(path) && !isFolder(path) {
+            open(path: path)
+        } else {
+            status = "No file {file}"
         }
     }
 
@@ -516,6 +570,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         designOpen = !designOpen
         if designOpen {
             helpOpen = false
+            previewOpen = false
             refreshDesign()
             // Keeps the picture up to date with the code, and the selection
             // with the cursor.

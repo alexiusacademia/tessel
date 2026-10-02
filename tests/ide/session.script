@@ -63,3 +63,15 @@ type xyz
 tree
 click "arrowLeft"
 click "close"
+click "filePlus"
+type notes.md
+key enter
+click editor 1
+type # Notes
+key enter
+type Some *text* and a [link](main.tsl).
+tree
+click "Preview"
+tree
+click "link"
+tree

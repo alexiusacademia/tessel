@@ -53,6 +53,7 @@ const IDE_SOURCES: &[(&str, &str)] = &[
     ("design.tsl", include_str!("../../../ide/design.tsl")),
     ("help.tsl", include_str!("../../../ide/help.tsl")),
     ("main.tsl", include_str!("../../../ide/main.tsl")),
+    ("preview.tsl", include_str!("../../../ide/preview.tsl")),
     ("project.tsl", include_str!("../../../ide/project.tsl")),
     ("widgets.tsl", include_str!("../../../ide/widgets.tsl")),
 ];

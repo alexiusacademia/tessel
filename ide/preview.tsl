@@ -1,0 +1,30 @@
+// The Preview panel: a Markdown file as it reads, next to its text.
+
+fn isMarkdown(path: String) -> Bool {
+    let name = path.lowercase()
+    name.hasSuffix(".md") || name.hasSuffix(".markdown")
+}
+
+// `text` is the file's text in the editor, saved or not. `follow` is given
+// the links that are clicked.
+view PreviewPanel(width: Float, path: String, text: String, follow: fn(String), close: fn()) {
+    VStack(spacing: 0, alignment: .leading) {
+        HStack(spacing: 6) {
+            Text("PREVIEW").font(size: 11, weight: .semibold).color(.secondary)
+            Text(fileName(path)).font(size: 11).color(.secondary)
+            Spacer()
+            IconButton(icon: .close) { close() }
+        }
+        .padding(8)
+        Divider()
+        Scroll {
+            // (Pictures are found from the file's folder.)
+            Markdown(text, folder: parentOf(path: path), onLink: { link in follow(link) })
+                .font(size: 13)
+                .padding(16)
+        }
+        // (Another file starts at its top.)
+        .id(path)
+    }
+    .frame(width: width)
+}

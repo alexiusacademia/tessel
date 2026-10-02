@@ -81,6 +81,7 @@ On Windows, use Ctrl wherever this page says Cmd.
 | Run / Stop | Cmd+R | Saves and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
+| Preview | | Only while a Markdown file is open: shows or hides the [Preview panel](#the-preview-panel). |
 | Design | | Shows or hides the [Design panel](#the-design-panel). |
 | Docs | | Shows or hides the [Docs panel](#the-docs-panel). |
 
@@ -206,8 +207,28 @@ moved there, with everything in it.
 - A program needs an `app` to have a picture.
 
 Drag the edge between the editor and the panel to make the panel wider.
-Click **Design** again, or the × in the panel, to close it. The Design and
-Docs panels take turns: opening one closes the other.
+Click **Design** again, or the × in the panel, to close it. The Preview,
+Design and Docs panels take turns: opening one closes the others.
+
+## The Preview panel
+
+When the file in the editor is a Markdown file (`.md` or `.markdown`), a
+**Preview** button appears in the toolbar. It opens the file as it reads,
+next to its text:
+
+![The IDE with README.md open in the editor and the Preview panel on the right, showing its headings, a numbered list, a block of code and a table](../../../assets/screens/ide-preview.png)
+
+- The preview follows what you type, saved or not.
+- It shows what the [`Markdown`](/reference/views/#markdown) view shows:
+  headings, lists, tables, quotes, code (Tessel code in color) and pictures.
+  Pictures are found from the file's folder.
+- A link to another file of the project opens that file in the editor; a
+  link to the web opens in your browser.
+- The panel shows while a Markdown file is in front: switch to another tab
+  and it steps aside, come back and it's there again.
+
+Drag the edge between the editor and the panel to make the panel wider.
+Click **Preview** again, or the × in the panel, to close it.
 
 ## The Docs panel
 
@@ -235,7 +256,7 @@ narrower. Click **Docs** again, or the × in the panel, to close it.
 
 The edges between the parts of the window can be dragged: the one between
 the explorer and the editor, the one above Problems and Console, and the one
-beside the Design or the Docs panel. An edge turns blue under the pointer. The sizes last
+beside the Preview, Design or Docs panel. An edge turns blue under the pointer. The sizes last
 until you close the IDE.
 
 ## Problems and console

@@ -882,4 +882,255 @@ Root
             HStack
               Icon circleCheck
               Text "No problems"
---- files: main.tsl
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon eye
+            Text "Preview"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+              HStack
+                Spacer
+                Spacer
+                Icon file
+                Text "notes.md"
+                Spacer
+        Spacer
+        TabView ["• main.tsl", "• notes.md"] selected 1
+          CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon eye
+            Text "Preview"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+              HStack
+                Spacer
+                Spacer
+                Icon file
+                Text "notes.md"
+                Spacer
+        Spacer
+        TabView ["• main.tsl", "• notes.md"] selected 1
+          CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+        Spacer
+        View
+          VStack
+            HStack
+              Text "PREVIEW"
+              Text "notes.md"
+              Spacer
+              View
+                Icon close
+            Divider
+            Scroll
+              Markdown "Notes" links ["link"]
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+              HStack
+                Spacer
+                Spacer
+                Icon file
+                Text "notes.md"
+                Spacer
+        Spacer
+        TabView ["• main.tsl", "• notes.md"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+--- files: main.tsl, notes.md
