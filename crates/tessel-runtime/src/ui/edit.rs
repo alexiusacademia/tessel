@@ -35,11 +35,27 @@ pub struct Editing {
     pub focus: usize,
     /// Horizontal scroll of the text inside the field, in points.
     pub scroll: f64,
+    /// What moving the mouse with its button down selects (set by the click
+    /// that began it).
+    pub drag: DragBy,
+}
+
+/// How a drag extends the selection.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum DragBy {
+    /// After one click: character by character.
+    #[default]
+    Character,
+    /// After a double click: word by word, from the word that was clicked
+    /// (its bytes), which stays selected.
+    Word(usize, usize),
+    /// After a triple click, which selected everything: nothing more.
+    Nothing,
 }
 
 impl Editing {
     pub fn new(key: u64, text: &str) -> Editing {
-        Editing { key, anchor: text.len(), focus: text.len(), scroll: 0.0 }
+        Editing { key, anchor: text.len(), focus: text.len(), scroll: 0.0, drag: DragBy::Character }
     }
 
     pub fn range(&self) -> std::ops::Range<usize> {
@@ -227,6 +243,7 @@ pub fn apply(
         }
         Edit::Click { x, y, extend, clicks } => {
             let (x, y) = (x as f32, y as f32);
+            e.drag = DragBy::Character;
             let s = match clicks {
                 _ if extend => sel.shift_click_extension(layout, x, y),
                 1 => Selection::from_point(layout, x, y),
@@ -234,14 +251,34 @@ pub fn apply(
                 _ => {
                     e.anchor = 0;
                     e.focus = text.len();
+                    e.drag = DragBy::Nothing;
                     return None;
                 }
             };
             e.set(s);
+            if clicks == 2 && !extend {
+                let word = e.range();
+                e.drag = DragBy::Word(word.start, word.end);
+            }
             None
         }
         Edit::Drag { x, y } => {
-            e.set(sel.extend_to_point(layout, x as f32, y as f32));
+            match e.drag {
+                DragBy::Character => e.set(sel.extend_to_point(layout, x as f32, y as f32)),
+                // From the clicked word to the word under the mouse: the
+                // slightest move after a double click mustn't undo it.
+                DragBy::Word(start, end) => {
+                    let mut there = e.clone();
+                    there.set(Selection::word_from_point(layout, x as f32, y as f32));
+                    let there = there.range();
+                    if there.start < start {
+                        (e.anchor, e.focus) = (end, there.start);
+                    } else {
+                        (e.anchor, e.focus) = (start, there.end.max(end));
+                    }
+                }
+                DragBy::Nothing => {}
+            }
             None
         }
     }
@@ -313,6 +350,40 @@ mod tests {
         let many = apply("", &layout, &mut Editing::new(1, ""), Edit::Paste, &mut clip, true);
         assert_eq!(one.as_deref(), Some("a b c"));
         assert_eq!(many.as_deref(), Some("a\nb\nc"));
+    }
+
+    #[test]
+    fn dragging_after_a_double_click_keeps_whole_words() {
+        let text = "let greeting = remaining + 1";
+        let mut engine = TextEngine::new();
+        let layout = engine.code_layout(text, 13.0);
+        let mut clip = Clipboard::Memory(String::new());
+        let mut e = Editing::new(1, text);
+        let mut edit = |e: &mut Editing, edit: Edit| {
+            apply(text, &layout, e, edit, &mut clip, true);
+            text[e.range()].to_string()
+        };
+        // Where the middle of byte `i` is.
+        let x_of = |i: usize| {
+            let mut at = Editing::new(1, "");
+            (at.anchor, at.focus) = (i, i + 1);
+            let r = geometry(&layout, &at).1[0];
+            (r.x0 + r.x1) / 2.0
+        };
+        let (y, word) = (5.0, text.find("greeting").unwrap());
+        assert_eq!(edit(&mut e, Edit::Click { x: x_of(word + 3), y, extend: false, clicks: 2 }), "greeting");
+        // The mouse moves a little while the button is down: still the word.
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(word + 4), y }), "greeting");
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(word + 1), y }), "greeting");
+        // Further: word by word, to the right and to the left.
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(text.find("remaining").unwrap() + 2), y }), "greeting = remaining");
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(1), y }), "let greeting");
+        // A single click, and dragging is by characters again.
+        assert_eq!(edit(&mut e, Edit::Click { x: x_of(word), y, extend: false, clicks: 1 }), "");
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(word + 3), y }).len(), 3);
+        // After a triple click everything is selected, and stays so.
+        assert_eq!(edit(&mut e, Edit::Click { x: x_of(word), y, extend: false, clicks: 3 }), text);
+        assert_eq!(edit(&mut e, Edit::Drag { x: x_of(2), y }), text);
     }
 
     #[test]
