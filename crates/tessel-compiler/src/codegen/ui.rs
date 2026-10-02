@@ -93,7 +93,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     pub(super) fn compile_views(&mut self) {
-        let names: Vec<String> = self.view_decls.keys().cloned().collect();
+        // (In the same order every time: `tessel preview` numbers the views
+        // as they're compiled.)
+        let mut names: Vec<String> = self.view_decls.keys().cloned().collect();
+        names.sort();
         for name in names {
             self.compile_view(&name);
             let src = self.view_decls[&name];
@@ -341,6 +344,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     pub(super) fn content_block(&mut self, b: &Block, top: bool) {
         let _ = top;
         self.push_scope();
+        self.design_blocks.push(b.span);
         for s in &b.stmts {
             if self.terminated() {
                 self.continue_dead();
@@ -358,6 +362,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 _ => {}
             }
         }
+        self.design_blocks.pop();
         self.pop_scope();
     }
 
@@ -406,6 +411,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 ) =>
             {
                 self.emit_view(e, callee, args, trailing.as_deref());
+                // For `tessel preview`: the view says which expression it is
+                // (the whole one, with its modifiers).
+                if let (Some(views), false) = (self.design, self.design_inner.contains(&e.id)) {
+                    let parent = self.design_blocks.last().copied().unwrap_or(e.span);
+                    let number = views.borrow_mut().number(e, parent, self.checked, self.sources);
+                    if let Some(n) = number {
+                        let n = self.ctx.i32_type().const_int(n as u64, false);
+                        self.call_rt("tsl_ui_source", &[n.into()]);
+                    }
+                }
             }
             _ => {
                 // A view value (a parameter, a `let`, a function's result): call it.
@@ -460,10 +475,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 };
                 self.call_rt("tsl_ui_next_id", &[h]);
                 self.release(v, &t);
+                self.design_inner.insert(object.id);
                 self.content_expr(object);
             }
             Callee::Modifier(name) => {
                 let ExprKind::Member { object, .. } = &callee.kind else { unreachable!() };
+                self.design_inner.insert(object.id);
                 self.content_expr(object);
                 self.modifier(name, &info, &arg, args);
             }

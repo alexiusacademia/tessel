@@ -225,6 +225,58 @@ fn hot_reload() {
 /// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
 /// on a copy of `tests/ide/project`, then compares its output and the
 /// project's files with what's expected.
+/// `tessel preview`: the picture of an app, and what it tells an editor
+/// about the views in it (see `tests/preview`): from the files as saved,
+/// then with text that isn't saved.
+#[test]
+fn preview() {
+    let root = repo();
+    let prefix = std::env::temp_dir().join(format!("tessel-test-preview-{}", std::process::id())).display().to_string();
+    let mut got = String::new();
+    for unsaved in [false, true] {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessel"));
+        cmd.current_dir(&root).args(["preview", "tests/preview/app", "--out", &prefix]);
+        if unsaved {
+            cmd.args(["--text", "tests/preview/app/main.tsl", "tests/preview/unsaved.txt"]);
+        }
+        let out = cmd.output().unwrap();
+        assert!(out.status.success(), "tessel preview failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        let read = |ext: &str| {
+            let file = format!("{prefix}.{ext}");
+            let bytes = std::fs::read(&file).unwrap_or_default();
+            let _ = std::fs::remove_file(&file);
+            bytes
+        };
+        assert!(read("png").starts_with(b"\x89PNG"), "no picture");
+        let layout: serde_json::Value = serde_json::from_slice(&read("layout.json")).expect("the layout as JSON");
+        got += if unsaved { "--- with unsaved text\n" } else { "--- as saved\n" };
+        // (Whole points: the last decimal may differ between computers.)
+        for n in layout.as_array().unwrap() {
+            let at = |key: &str| n[key].as_f64().unwrap().round();
+            got += &format!(
+                "{}{} [{},{} {}x{}] {}\n",
+                "  ".repeat(n["depth"].as_u64().unwrap() as usize),
+                n["kind"].as_str().unwrap(),
+                at("x"),
+                at("y"),
+                at("width"),
+                at("height"),
+                n["source"]
+            );
+        }
+        if !unsaved {
+            got += &String::from_utf8_lossy(&read("views.json"));
+        } else {
+            read("views.json");
+        }
+    }
+    let expected = std::fs::read_to_string(root.join("tests/preview/expected.out")).unwrap_or_default();
+    if got != expected {
+        std::fs::write(root.join("tests/preview/actual.out"), &got).unwrap();
+        panic!("tessel preview differs; see tests/preview/actual.out\n--- got\n{got}");
+    }
+}
+
 #[test]
 fn ide_session() {
     let root = repo();
@@ -232,36 +284,45 @@ fn ide_session() {
     let built = Command::new(env!("CARGO_BIN_EXE_tessel")).arg("build").arg(root.join("ide")).arg("-o").arg(&exe).output().unwrap();
     assert!(built.status.success(), "IDE build failed:\n{}{}", String::from_utf8_lossy(&built.stdout), String::from_utf8_lossy(&built.stderr));
 
-    let base = std::env::temp_dir().join(format!("tessel-ide-test-{}", std::process::id()));
-    let project = base.join("project");
-    let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&project).unwrap();
-    for entry in std::fs::read_dir(root.join("tests/ide/project")).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(entry.path(), project.join(entry.file_name())).unwrap();
+    // Each session: a script, run on a copy of a project. `session` edits
+    // files; `design` uses the Design panel (and shows the code it wrote).
+    let mut failed = Vec::new();
+    for (name, folder, show) in [("session", "project", None), ("design", "design", Some("main.tsl"))] {
+        let base = std::env::temp_dir().join(format!("tessel-ide-test-{}-{name}", std::process::id()));
+        let project = base.join("project");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&project).unwrap();
+        for entry in std::fs::read_dir(root.join("tests/ide").join(folder)).unwrap() {
+            let entry = entry.unwrap();
+            std::fs::copy(entry.path(), project.join(entry.file_name())).unwrap();
+        }
+        let script = std::fs::read_to_string(root.join(format!("tests/ide/{name}.script"))).unwrap();
+        let out = Command::new(&exe)
+            .env("TESSEL_SCRIPT", script)
+            .env("TESSEL_PROJECT", &project)
+            // (A small documentation of its own, for the Docs panel.)
+            .env("TESSEL_DOCS", root.join("tests/ide/docs"))
+            .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
+            .env("TESSEL_NO_UPDATE_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        // Paths in the output depend on where the project was copied.
+        let stdout = String::from_utf8_lossy(&out.stdout).replace(&project.display().to_string(), "PROJECT");
+        let mut files: Vec<String> =
+            std::fs::read_dir(&project).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+        files.sort();
+        let mut got = format!("{stdout}--- files: {}\n", files.join(", "));
+        if let Some(file) = show {
+            got += &format!("--- {file}\n{}", std::fs::read_to_string(project.join(file)).unwrap_or_default());
+        }
+        let expected = std::fs::read_to_string(root.join(format!("tests/ide/{name}.out"))).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&base);
+        if got != expected {
+            std::fs::write(root.join(format!("tests/ide/{name}.actual")), &got).unwrap();
+            failed.push(format!("IDE session `{name}` differs; see tests/ide/{name}.actual\n--- got\n{got}"));
+        }
     }
-    let script = std::fs::read_to_string(root.join("tests/ide/session.script")).unwrap();
-    let out = Command::new(&exe)
-        .env("TESSEL_SCRIPT", script)
-        .env("TESSEL_PROJECT", &project)
-        // (A small documentation of its own, for the Docs panel.)
-        .env("TESSEL_DOCS", root.join("tests/ide/docs"))
-        .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
-        .env("TESSEL_NO_UPDATE_CHECK", "1")
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
-    // Paths in the output depend on where the project was copied.
-    let stdout = String::from_utf8_lossy(&out.stdout).replace(&project.display().to_string(), "PROJECT");
-    let mut files: Vec<String> =
-        std::fs::read_dir(&project).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
-    files.sort();
-    let got = format!("{stdout}--- files: {}\n", files.join(", "));
-    let expected = std::fs::read_to_string(root.join("tests/ide/session.out")).unwrap_or_default();
-    let _ = std::fs::remove_dir_all(&base);
     let _ = std::fs::remove_file(&exe);
-    if got != expected {
-        std::fs::write(root.join("tests/ide/session.actual"), &got).unwrap();
-        panic!("IDE session differs; see tests/ide/session.actual\n--- got\n{got}");
-    }
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
 }

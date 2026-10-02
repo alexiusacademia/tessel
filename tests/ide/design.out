@@ -1,0 +1,696 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Spacer
+        TabView ["main.tsl"] selected 0
+          CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n\n    VStack(spacing: 12) {\n        Text(\"Count: {count}\").font(size: 24, weight: .bold)\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon close
+            Divider
+            Canvas (8 fills, 9 strokes, 7 texts, 1 image)
+            Divider
+            Scroll
+              VStack
+                VStack
+                  HStack
+                    Text "Text"
+                    Text "main.tsl:5"
+                    Spacer
+                    View
+                      Icon trash
+                  View
+                    View
+                      HStack
+                        Text "Text"
+                        TextField "" = "Count: {count}"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Padding"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Font size"
+                        TextField "" = "24"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Weight"
+                        Text "regular"
+                        Text "medium"
+                        Text "semibold"
+                        Text "bold"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Color"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Background"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Width"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Height"
+                        TextField "" = ""
+                        Spacer
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Spacer
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 30, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon close
+            Divider
+            Canvas (8 fills, 9 strokes, 7 texts, 1 image)
+            Divider
+            Scroll
+              VStack
+                VStack
+                  HStack
+                    Text "Text"
+                    Text "main.tsl:11"
+                    Spacer
+                    View
+                      Icon trash
+                  View
+                    View
+                      HStack
+                        Text "Text"
+                        TextField "" = "inside"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Padding"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Font size"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Weight"
+                        Text "regular"
+                        Text "medium"
+                        Text "semibold"
+                        Text "bold"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Color"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Background"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Width"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Height"
+                        TextField "" = ""
+                        Spacer
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Spacer
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n(            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 30, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon close
+            Text "No new preview: error: expected `)`, found `}`"
+            Divider
+            Canvas (8 fills, 8 strokes, 7 texts, 1 image)
+            Divider
+            Scroll
+              VStack
+                VStack disabled
+                  HStack
+                    Text "Text"
+                    Text "main.tsl:11"
+                    Spacer
+                    View disabled
+                      Icon trash
+                  View
+                    View
+                      HStack
+                        Text "Text"
+                        TextField "" = "inside"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Padding"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Font size"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Weight"
+                        Text "regular"
+                        Text "medium"
+                        Text "semibold"
+                        Text "bold"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Color"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Background"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Width"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Height"
+                        TextField "" = ""
+                        Spacer
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Spacer
+        TabView ["main.tsl"] selected 0
+          CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 30, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon close
+            Divider
+            Canvas (8 fills, 9 strokes, 7 texts, 1 image)
+            Divider
+            Scroll
+              VStack
+                VStack
+                  HStack
+                    Text "Text"
+                    Text "main.tsl:11"
+                    Spacer
+                    View
+                      Icon trash
+                  View
+                    View
+                      HStack
+                        Text "Text"
+                        TextField "" = "inside"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Padding"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Font size"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Weight"
+                        Text "regular"
+                        Text "medium"
+                        Text "semibold"
+                        Text "bold"
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Color"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Background"
+                        HStack
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                          Spacer
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Width"
+                        TextField "" = ""
+                        Spacer
+                  View
+                    View
+                      HStack
+                        Text "Height"
+                        TextField "" = ""
+                        Spacer
+      Spacer
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+--- files: main.tsl
+--- main.tsl
+app Hello(width: 400, height: 300) {
+    state count = 0
+
+    VStack(spacing: 12) {
+        HStack {
+            Button("Add one") { count += 1 }
+            Button("Button") { }
+            Button("Reset") { count = 0 }.padding(4)
+        }
+        Card(title: "é card") {
+            Text("inside")
+        }
+        for i in 0..2 {
+            Text("row {i}")
+                .color(.secondary)
+        }
+        Text("Count: {count}").font(size: 30, weight: .medium)
+    }
+    .padding(16)
+}
+
+view Card(title: String, content: View) {
+    VStack(alignment: .leading) {
+        Text(title).font(weight: .bold)
+        content
+    }
+    .padding(8)
+    .background(.lightGray, radius: 6)
+}

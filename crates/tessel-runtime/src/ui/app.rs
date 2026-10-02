@@ -1938,6 +1938,76 @@ impl App {
         }
         out
     }
+
+    /// The views on screen as JSON, for `tessel preview`: each one's depth
+    /// in the tree, kind, place in the window, and which view expression of
+    /// the source it is (see `Mods::source`; -1 when that isn't known, or
+    /// when nothing of the view shows).
+    fn layout_json(&self) -> String {
+        fn visit(n: &Node, depth: usize, shift: (f64, f64), clip: Rect, out: &mut Vec<String>) {
+            if n.mods.hidden {
+                return;
+            }
+            let shift = (shift.0 + n.mods.offset.0, shift.1 + n.mods.offset.1);
+            let r = n.layout.rect;
+            let (x, y) = (r.x + shift.0, r.y + shift.1);
+            let kind = match &n.kind {
+                Kind::Root => "Root",
+                Kind::Group => "View",
+                Kind::Text(_) => "Text",
+                Kind::Button { .. } => "Button",
+                Kind::TextField { .. } => "TextField",
+                Kind::Toggle { .. } => "Toggle",
+                Kind::Picker { .. } => "Picker",
+                Kind::VStack(..) => "VStack",
+                Kind::HStack(..) => "HStack",
+                Kind::ZStack(_) => "ZStack",
+                Kind::Scroll => "Scroll",
+                Kind::Spacer => "Spacer",
+                Kind::Image { .. } => "Image",
+                Kind::TabView { .. } => "TabView",
+                Kind::Divider => "Divider",
+                Kind::Canvas { .. } => "Canvas",
+                Kind::Markdown { .. } => "Markdown",
+                Kind::Svg { icon: Some(_), .. } => "Icon",
+                Kind::Svg { .. } => "Svg",
+                Kind::CodeEditor { .. } => "CodeEditor",
+            };
+            // What can be seen of it: the part inside the scroll views around it.
+            let (x0, y0) = (x.max(clip.x), y.max(clip.y));
+            let (x1, y1) = ((x + r.w).min(clip.x + clip.w), (y + r.h).min(clip.y + clip.h));
+            let view = match n.mods.source {
+                Some(view) if x1 > x0 && y1 > y0 => view as i64,
+                _ => -1,
+            };
+            out.push(format!(
+                "{{\"depth\":{depth},\"kind\":\"{kind}\",\"x\":{x0:.1},\"y\":{y0:.1},\"width\":{:.1},\"height\":{:.1},\"source\":{view}}}",
+                (x1 - x0).max(0.0),
+                (y1 - y0).max(0.0),
+            ));
+            // (Layout already puts a scroll view's content where it's scrolled to.)
+            let mut clip = clip;
+            if matches!(n.kind, Kind::Scroll) || n.mods.clipped {
+                clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
+            }
+            // A tab view shows only its selected page.
+            if let Kind::TabView { .. } = n.kind {
+                if let Some(c) = n.children.get(n.selected_tab()) {
+                    visit(c, depth + 1, shift, clip, out);
+                }
+                return;
+            }
+            for c in &n.children {
+                visit(c, depth + 1, shift, clip, out);
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(t) = &self.tree {
+            let all = Rect { x: 0.0, y: 0.0, w: self.width, h: self.height };
+            visit(t, 0, (0.0, 0.0), all, &mut out);
+        }
+        format!("[\n{}\n]\n", out.join(",\n"))
+    }
 }
 
 // ===== entry point =====
@@ -2310,6 +2380,13 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let scene = app.scene(scale);
                 let (w, h) = ((app.width * scale) as u32, (app.height * scale) as u32);
                 render::render_png(&mut cx, &mut renderer, &scene, w, h, rest);
+            }
+            "layout" => {
+                app.update();
+                if let Err(e) = std::fs::write(rest, app.layout_json()) {
+                    eprintln!("script: can't write `{rest}`: {e}");
+                    return 2;
+                }
             }
             "dump" | "tree" => {
                 app.update();

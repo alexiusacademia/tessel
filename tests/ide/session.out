@@ -29,6 +29,10 @@ Root
             Text "Package"
         View
           HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
             Icon info
             Text "Docs"
       Divider
@@ -100,6 +104,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info
@@ -175,6 +183,10 @@ Root
             Text "Package"
         View
           HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
             Icon info
             Text "Docs"
       Divider
@@ -241,6 +253,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info
@@ -311,6 +327,10 @@ Root
             Text "Package"
         View
           HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
             Icon info
             Text "Docs"
       Divider
@@ -377,6 +397,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info
@@ -447,6 +471,10 @@ Root
             Text "Package"
         View
           HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
             Icon info
             Text "Docs"
       Divider
@@ -512,6 +540,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info
@@ -597,6 +629,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info
@@ -690,6 +726,10 @@ Root
             Text "Package"
         View
           HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
             Icon info
             Text "Docs"
       Divider
@@ -780,6 +820,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
         View
           HStack
             Icon info

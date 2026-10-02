@@ -1,0 +1,28 @@
+app Hello(width: 400, height: 300) {
+    state count = 0
+
+    VStack(spacing: 12) {
+        Text("Count: {count}").font(size: 24, weight: .bold)
+        HStack {
+            Button("Add one") { count += 1 }
+            Button("Reset") { count = 0 }.padding(4)
+        }
+        Card(title: "é card") {
+            Text("inside")
+        }
+        for i in 0..2 {
+            Text("row {i}")
+                .color(.secondary)
+        }
+    }
+    .padding(16)
+}
+
+view Card(title: String, content: View) {
+    VStack(alignment: .leading) {
+        Text(title).font(weight: .bold)
+        content
+    }
+    .padding(8)
+    .background(.lightGray, radius: 6)
+}

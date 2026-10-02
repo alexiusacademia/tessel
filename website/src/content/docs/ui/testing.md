@@ -98,6 +98,7 @@ opens a window as usual.
 | `appearance dark` | Switches to the dark (or `light`) [appearance](/ui/styling/#light-and-dark). Scripted runs start light, whatever the system's setting, unless the `app` asks for one. |
 | `animations on` | Turns [animations](/ui/styling/#animation) on. Scripted runs have them off, so views are at once where they end up; with them on, `wait` lets them move, and `dump` and `snapshot` show them on their way. |
 | `snapshot out.png` | Renders the window to a PNG file, at twice the size in pixels (like a Retina screen). |
+| `layout out.json` | Writes the views on screen to a file as JSON: each one's depth in the tree, kind and place. [`tessel preview`](/start/cli/#tessel-preview) uses it. |
 | `tree` | Prints the view tree. |
 | `dump` | Prints the view tree with each view's position and size. |
 

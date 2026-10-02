@@ -1,0 +1,37 @@
+wait 0
+click "Design"
+wait 1
+press 970 172
+release
+wait 0
+tree
+click field 3
+key cmd+a
+type 30
+key enter
+wait 1
+click "medium"
+wait 1
+press 838 106
+move 971.7 196.5
+release
+wait 1
+press 970 172
+move 931.8 280.1
+release
+wait 1
+click editor 1
+repeat 19 key up
+wait 1
+tree
+type (
+wait 1
+wait 1
+wait 0
+tree
+key cmd+z
+wait 1
+wait 1
+key cmd+s
+wait 1
+tree

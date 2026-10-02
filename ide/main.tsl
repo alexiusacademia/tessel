@@ -19,6 +19,28 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     // be dragged, like the Docs panel's.
     state explorerWidth = 250.0
     state panelHeight = 220.0
+    // The Design panel, next to the editor: a picture of the app, as
+    // `tessel preview` last made it (`design`), and the view selected in it.
+    state designOpen = false
+    state designWidth = 460.0
+    state design = Design()
+    state designSelected = -1
+    // Where the selected view is written, to find it again in a new picture.
+    state designPath = ""
+    state designLo = -1
+    // The texts the picture was made from; a preview is `designRunning`
+    // until it's done, and `designFailed` if the code had errors.
+    state designSeen: [DesignText] = []
+    state designRunning = false
+    state designFailed = false
+    state designStatus = ""
+    state designRequest = 0
+    state designSession = random(0..1000000)
+    // The timer that keeps the picture up to date, and what it last saw:
+    // the texts, and the line the cursor was on.
+    state designTimer = -1
+    state designLast: [DesignText] = []
+    state designCaret = ""
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -52,7 +74,8 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             }
             ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
             ToolButton(icon: .package, label: "Package") { build(bundle: true) }
-            ToolButton(icon: .info, label: "Docs", tint: if helpOpen { .blue } else { .primary }) { helpOpen = !helpOpen }
+            ToolButton(icon: .image, label: "Design", tint: if designOpen { .blue } else { .primary }) { toggleDesign() }
+            ToolButton(icon: .info, label: "Docs", tint: if helpOpen { .blue } else { .primary }) { toggleHelp() }
         }
         .padding(8)
         Divider()
@@ -153,6 +176,27 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                             .tag(doc.path)
                     }
                 }
+            }
+
+            if designOpen {
+                Spacer()
+                    .frame(width: 5, maxHeight: .infinity)
+                    .background(.separator)
+                    .hoverBackground(.blue)
+                    .onDrag { dx, dy in designWidth = (designWidth - dx).clamped(min: 300, max: 900) }
+                DesignPanel(
+                    width: designWidth,
+                    design: design,
+                    selected: designSelected,
+                    ready: designReady(),
+                    status: designStatus,
+                    select: { index in selectDesign(index: index, show: true) },
+                    change: { target, label, value in changeDesign(target: target, label: label, value: value) },
+                    insert: { code, place in insertDesign(code: code, place: place) },
+                    move: { index, place in moveDesign(index: index, place: place) },
+                    remove: { removeDesign() },
+                    close: { toggleDesign() }
+                )
             }
 
             if helpOpen {
@@ -456,6 +500,203 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         runCommand(path: tesselCommand(), args: args, onOutput: { text in console.append(text) }) { code in
             status = if code == 0 { "Built" } else { "Build failed" }
         }
+    }
+
+    // ----- design -----
+
+    // (The Docs and the Design panel take turns next to the editor.)
+    fn toggleHelp() {
+        helpOpen = !helpOpen
+        if helpOpen && designOpen {
+            toggleDesign()
+        }
+    }
+
+    fn toggleDesign() {
+        designOpen = !designOpen
+        if designOpen {
+            helpOpen = false
+            refreshDesign()
+            // Keeps the picture up to date with the code, and the selection
+            // with the cursor.
+            designTimer = every(seconds: 0.5) { designTick() }
+        } else {
+            stopTimer(designTimer)
+        }
+    }
+
+    fn designTexts() -> [DesignText] {
+        docs.map { d in DesignText(path: d.path, text: d.text) }
+    }
+
+    // Whether the picture was made from the code as it is now.
+    fn designFresh() -> Bool {
+        for d in docs {
+            if let seen = designSeen.first(where: { s in s.path == d.path }) {
+                if seen.text != d.text {
+                    return false
+                }
+            } else if d.text != d.saved {
+                return false
+            }
+        }
+        true
+    }
+
+    // Whether views can be changed in the picture.
+    fn designReady() -> Bool {
+        design.picture != "" && !designRunning && !designFailed && designFresh()
+    }
+
+    fn designTick() {
+        // The view the cursor is in gets selected.
+        if let d = docs.first(where: { d in d.path == current }) {
+            let caret = "{d.path}:{d.line}"
+            if caret != designCaret {
+                designCaret = caret
+                if designReady() {
+                    let at = designViewAt(d: design, path: d.path, line: d.line)
+                    if at >= 0 {
+                        selectDesign(index: at, show: false)
+                    }
+                }
+            }
+        }
+        // A new picture, once the code has stopped changing for a moment.
+        let now = designTexts()
+        let settled = now == designLast
+        if !settled {
+            designLast = now
+        }
+        if settled && !designRunning && !designFresh() {
+            refreshDesign()
+        }
+    }
+
+    // Makes the picture again, from the text in the editor (saved or not).
+    fn refreshDesign() {
+        if designRunning {
+            return
+        }
+        designRunning = true
+        designRequest += 1
+        let prefix = joinPath(tempFolder(), "tessel-design-{designSession}-{designRequest}")
+        let texts = designTexts()
+        var args = ["preview", project, "--out", prefix]
+        var unsaved: [String] = []
+        for (i, d) in docs.enumerated() {
+            if d.text != d.saved {
+                let file = "{prefix}-{i}.tsl"
+                if writeFile(path: file, text: d.text) {
+                    args.append("--text")
+                    args.append(d.path)
+                    args.append(file)
+                    unsaved.append(file)
+                }
+            }
+        }
+        var problem = ""
+        runCommand(path: tesselCommand(), args: args, onOutput: { line in
+            if problem == "" && line.hasPrefix("error") {
+                problem = line
+            }
+        }) { code in
+            for file in unsaved {
+                deleteFile(file)
+            }
+            designRunning = false
+            designSeen = texts
+            let made: Design? = if code == 0 { designLoad(prefix: prefix, seen: texts) } else { nil }
+            if let made = made {
+                designDiscard(picture: design.picture)
+                design = made
+                designFailed = false
+                designStatus = ""
+                designSelected = designFind(d: design, path: designPath, lo: designLo)
+            } else {
+                designDiscard(picture: "{prefix}.png")
+                designFailed = true
+                designStatus = if problem == "" { "No preview: the app couldn't be shown" } else { "No new preview: {problem}" }
+            }
+        }
+    }
+
+    // Selects a view of the picture (-1 for none); with `show`, the editor
+    // goes to where it's written.
+    fn selectDesign(index: Int, show: Bool) {
+        designSelected = index
+        if index < 0 || index >= design.views.count {
+            designLo = -1
+            return
+        }
+        let v = design.views[index]
+        designPath = design.files[v.file]
+        designLo = v.lo
+        if show {
+            open(path: designPath)
+            for doc in docs {
+                if doc.path == designPath {
+                    doc.line = v.line
+                }
+            }
+            designCaret = "{designPath}:{v.line}"
+        }
+    }
+
+    // Puts a file's new text in the editor, and makes the picture again.
+    // The view that starts at `lo` is then selected.
+    fn applyDesign(path: String, text: String, lo: Int) {
+        open(path: path)
+        for doc in docs {
+            if doc.path == path {
+                doc.text = text
+            }
+        }
+        designPath = path
+        designLo = lo
+        designLast = designTexts()
+        refreshDesign()
+    }
+
+    fn changeDesign(target: String, label: String, value: String) {
+        if !designReady() || designSelected < 0 {
+            return
+        }
+        let v = design.views[designSelected]
+        let text = designSet(text: design.texts[v.file], item: v, target: target, label: label, value: value)
+        if text != design.texts[v.file] {
+            applyDesign(path: design.files[v.file], text: text, lo: v.lo)
+        }
+    }
+
+    fn insertDesign(code: String, place: DesignPlace) {
+        let anchor = max(place.container, max(place.before, place.after))
+        if !designReady() || anchor < 0 {
+            return
+        }
+        let file = design.views[anchor].file
+        let change = designInsert(d: design, file: file, place: place, code: code)
+        if change.ok {
+            applyDesign(path: design.files[file], text: change.text, lo: change.lo)
+        }
+    }
+
+    fn moveDesign(index: Int, place: DesignPlace) {
+        if !designReady() {
+            return
+        }
+        let change = designMove(d: design, moved: index, place: place)
+        if change.ok {
+            applyDesign(path: design.files[design.views[index].file], text: change.text, lo: change.lo)
+        }
+    }
+
+    fn removeDesign() {
+        if !designReady() || designSelected < 0 {
+            return
+        }
+        let v = design.views[designSelected]
+        applyDesign(path: design.files[v.file], text: designRemove(text: design.texts[v.file], item: v), lo: -1)
     }
 
     // ----- updates -----

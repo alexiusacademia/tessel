@@ -1,0 +1,27 @@
+// For `tessel preview`: views with and without modifiers, in a custom
+// view's block, and made by a loop.
+app Café(width: 320, height: 240) {
+    VStack(spacing: 10) {
+        Text("Café ☕").font(size: 20, weight: .bold)
+        HStack {
+            Button("Order") { }
+            Spacer()
+        }
+        Box {
+            Text("inside")
+                .color(.secondary)
+        }
+        for i in 0..2 {
+            Text("row {i}")
+        }
+    }
+    .padding(12)
+}
+
+view Box(content: View) {
+    VStack(alignment: .leading) {
+        content
+    }
+    .padding(8)
+    .background(.lightGray, radius: 6)
+}

@@ -1,5 +1,6 @@
 /target
 .tessel-run
 .tessel-run.exe
-tests/ide/session.actual
+tests/ide/*.actual
 tests/run/dialog_test.och
+tests/preview/actual.out

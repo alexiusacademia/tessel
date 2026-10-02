@@ -293,6 +293,39 @@ method	rename	(to: String)
 
 The [Tessel IDE](/start/ide/) uses it for code completion.
 
+## `tessel preview`
+
+```sh
+tessel preview todos --out /tmp/todos
+tessel preview todos --out /tmp/todos --text todos/main.tsl /tmp/unsaved.tsl
+```
+
+Makes a picture of an app's window as it first appears, without opening
+it, and writes what an editor needs to connect the picture to the code. The
+[Tessel IDE](/start/ide/#the-design-panel) uses it for its Design panel.
+With `--out /tmp/todos` it writes three files:
+
+| File | |
+|---|---|
+| `/tmp/todos.png` | The window, at twice its size in pixels. |
+| `/tmp/todos.layout.json` | The views in the window, outermost first: each one's `depth` in the tree, `kind` (`Text`, `VStack`, …), place (`x`, `y`, `width`, `height`, in points) and `source`: the number of the view expression it was made by, or -1. |
+| `/tmp/todos.views.json` | The program's `files`, and its view expressions (`views`), numbered from 0 in the order they're listed. |
+
+A view expression is a view with its modifiers, like
+`Text("Hi").font(size: 20)`. For each one, `views.json` gives its `file`
+(a number in `files`), where it starts and ends (`lo`, `hi`), its `line`
+and `endLine`, its own call (`base`) and its modifiers (`mods`) with the
+places of their arguments, and for a stack the block that holds its views
+(`blockLo`, `blockHi`). Places are counted in characters from the start of
+the file, as [`substring`](/reference/stdlib/#string) counts them.
+
+`--text file from` reads a file's text from another file, for editors with
+unsaved changes; it can be given several times.
+
+The app's code runs up to its first frame (including `.onAppear` blocks),
+inside `tessel`. A program without an `app`, or with errors, makes no
+picture: the errors are printed and the command fails.
+
 ## `tessel lsp`
 
 ```sh

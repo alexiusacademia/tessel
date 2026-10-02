@@ -254,6 +254,9 @@ pub struct Mods {
     /// `.onResize { width, height in … }`: called with the view's size
     /// (inside its padding) when it's first laid out, and when it changes.
     pub on_resize: Option<Callback>,
+    /// Which view expression of the source this is, for `tessel preview`:
+    /// its number among the ones the compiler listed.
+    pub source: Option<u32>,
 }
 
 /// A `PointerEvent`, as the adapter the compiler generates reads it.
@@ -808,6 +811,13 @@ pub extern "C" fn tsl_ui_frame(
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_opacity(value: f64) {
     modify(|m| m.opacity = Some(value.clamp(0.0, 1.0)));
+}
+
+/// Says where the last view is written (see `Mods::source`). Only the code
+/// `tessel preview` compiles calls this.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_source(view: u32) {
+    modify(|m| m.source = Some(view));
 }
 
 #[unsafe(no_mangle)]

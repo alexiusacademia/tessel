@@ -81,6 +81,7 @@ On Windows, use Ctrl wherever this page says Cmd.
 | Run / Stop | Cmd+R | Saves and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
+| Design | | Shows or hides the [Design panel](#the-design-panel). |
 | Docs | | Shows or hides the [Docs panel](#the-docs-panel). |
 
 When a newer Tessel is available, an **Update to v…** button appears next to
@@ -109,6 +110,105 @@ With the switch off, Run builds the program and runs it as it was then;
 saving doesn't change the running program. The executable is written to a
 hidden file, `.tessel-run`, in the project folder.
 
+## The Design panel
+
+**Design** in the toolbar opens a picture of your app next to its code. You
+can build the window by pointing at it: select a view, change how it looks,
+drag new views in, and drag views to other places. Everything you do there
+is written into the code, so you can go back and forth between the picture
+and the editor as you like.
+
+![The IDE with the Design panel open on the right: a row of kinds of views, a picture of a counter app with its title selected, and the title's text, font size, weight and colors below](../../../assets/screens/ide-design.png)
+
+The panel has three parts:
+
+- **The kinds of views** you can add, at the top: `Text`, `Button`,
+  `VStack`, `HStack`, `Spacer`, `Divider` and `Icon`.
+- **The picture**: the app's window as it first appears, made smaller if it
+  doesn't fit.
+- **The selected view's properties**, at the bottom.
+
+### The picture follows the code
+
+The picture is made again whenever the code changes: a moment after you
+stop typing, and after every change you make in the panel. It's made from
+what's in the editor, saved or not.
+
+If the code has an error, the panel says so in red and keeps the last
+picture, dimmed, until the error is gone. Views can't be changed in the
+picture while it doesn't match the code.
+
+### Selecting a view
+
+Click a view in the picture to select it. It gets a blue outline, and the
+editor goes to the line where it's written. It works the other way too:
+put the cursor on a line in the editor, and the view written there is
+selected in the picture.
+
+A view made by a `for` loop is written once and shown several times: all of
+them are outlined. Views inside one of your own `view`s are selected where
+the `view` declares them, in its file.
+
+### Changing a view
+
+The properties of the selected view are what its code gives it. Type a
+value and press **Enter**; click a weight, an alignment or a color to pick
+it, and click it again to take it away.
+
+| Property | What it writes |
+|---|---|
+| Text | The text of a `Text`, `Button`, `TextField`, `Toggle` or `Image`: `Text("Hello")`. Write `{count}` in it to show a value. If the code has something other than plain text there, the field shows the code itself. |
+| Spacing, Alignment | For a `VStack` or `HStack`: `VStack(spacing: 12, alignment: .leading)`. |
+| Padding | `.padding(12)` |
+| Font size, Weight | `.font(size: 20, weight: .bold)` |
+| Color | `.color(.blue)` |
+| Background, Corners | `.background(.lightGray, radius: 6)` |
+| Width, Height | `.frame(width: 200, height: 40)` |
+
+An empty field takes that part of the code away. A value can be any
+expression, not only a number: `Float(count) * 2`, say.
+
+The trash button next to the view's name deletes the view from the code.
+
+### Adding a view
+
+Drag a kind of view from the top of the panel into the picture. A green
+line shows where it would go: between two views of a stack, or at its end.
+Let go, and the view is written there, with the indentation of the code
+around it. It's selected, ready to be changed.
+
+A click on a kind of view (without dragging) adds one after the selected
+view, or inside it if a stack is selected.
+
+A new `VStack` or `HStack` comes with a `Text` in it, so there's something
+to see and to click.
+
+### Moving a view
+
+Drag a view in the picture to another place: elsewhere in its stack, or
+into another stack. The green line shows where it would go. Its code is
+moved there, with everything in it.
+
+### What the panel doesn't do
+
+- The picture shows the app as it starts. It isn't a running app: buttons
+  in it select, they don't click. Use Run for that, with
+  [Reload on save](#reload-on-save) to see changes at once.
+- To make the picture, the app's code runs up to its first frame, including
+  what it does in `.onAppear`.
+- Views can go into stacks: the block of a `VStack`, `HStack`, `ZStack` or
+  `Scroll`, or of one of your own views that takes content. Views in a `for`
+  loop or an `if` can be selected, changed and moved out, but nothing can be
+  dropped among them.
+- Controls that need `state` (`TextField`, `Toggle`, `Picker`) aren't among
+  the kinds to add: write those in the editor, then select them in the
+  picture to style them.
+- A program needs an `app` to have a picture.
+
+Drag the edge between the editor and the panel to make the panel wider.
+Click **Design** again, or the × in the panel, to close it. The Design and
+Docs panels take turns: opening one closes the other.
+
 ## The Docs panel
 
 **Docs** in the toolbar opens Tessel's documentation in a panel next to the
@@ -135,7 +235,7 @@ narrower. Click **Docs** again, or the × in the panel, to close it.
 
 The edges between the parts of the window can be dragged: the one between
 the explorer and the editor, the one above Problems and Console, and the one
-beside the Docs panel. An edge turns blue under the pointer. The sizes last
+beside the Design or the Docs panel. An edge turns blue under the pointer. The sizes last
 until you close the IDE.
 
 ## Problems and console

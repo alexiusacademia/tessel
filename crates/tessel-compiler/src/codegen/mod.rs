@@ -15,6 +15,7 @@
 //! Functions receive owned parameters and release them on exit. Methods also
 //! take a pointer to their receiver (`self`) after `env`.
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
@@ -137,6 +138,23 @@ pub fn compile_hot(
     })
 }
 
+/// Compiles a checked program with an `app` for `tessel preview`: like
+/// `compile_hot` (the entry point is `hot_entry_symbol(1)`), but each view
+/// on screen knows which view expression of the source it is. Returns the
+/// object file and those expressions.
+pub fn compile_design(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+) -> Result<(Vec<u8>, crate::design::Views), Vec<Diagnostic>> {
+    let views = RefCell::new(crate::design::Views::default());
+    let object = generate(program, checked, sources, false, None, Mode::Design(&views), |tm, module| {
+        let buffer = tm.write_to_memory_buffer(module, FileType::Object).map_err(|e| vec![internal(e.to_string())])?;
+        Ok(buffer.as_slice().to_vec())
+    })?;
+    Ok((object, views.into_inner()))
+}
+
 /// What's being compiled.
 #[derive(Clone, Copy)]
 enum Mode<'a> {
@@ -145,6 +163,8 @@ enum Mode<'a> {
     Repl(ReplEntry<'a>),
     /// A program for hot reload: this many times compiled.
     Hot(usize),
+    /// A program for `tessel preview`, whose view expressions are listed here.
+    Design(&'a RefCell<crate::design::Views>),
 }
 
 fn generate<R>(
@@ -190,6 +210,10 @@ fn generate<R>(
         Mode::Program => {}
         Mode::Repl(entry) => g.repl = Some(entry),
         Mode::Hot(generation) => g.hot = Some(generation),
+        Mode::Design(views) => {
+            g.hot = Some(1);
+            g.design = Some(views);
+        }
     }
     g.program();
     if !g.errors.is_empty() {
@@ -365,6 +389,12 @@ struct Gen<'ctx, 'a> {
     repl: Option<ReplEntry<'a>>,
     /// Compiling for hot reload: how many times the program was compiled.
     hot: Option<usize>,
+    /// Compiling for `tessel preview`: the view expressions found so far.
+    design: Option<&'a RefCell<crate::design::Views>>,
+    /// For `design`: the content blocks being compiled, innermost last, and
+    /// the views that have modifiers after them (the expression goes on).
+    design_blocks: Vec<Span>,
+    design_inner: HashSet<ExprId>,
 }
 
 /// A view's source: a `view` declaration or the `app`.
@@ -415,6 +445,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             app: None,
             repl: None,
             hot: None,
+            design: None,
+            design_blocks: Vec::new(),
+            design_inner: HashSet::new(),
         }
     }
 
@@ -1088,6 +1121,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_border" => (vec![i32t, p, f64t, f64t], None),
             "tsl_ui_frame" => (vec![i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, f64t, i8t, i32t], None),
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
+            "tsl_ui_source" => (vec![i32t], None),
             "tsl_ui_next_id" => (vec![i], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, i32t, p, p], None),
             "tsl_start" => (vec![p], Some(i32t)),

@@ -1,6 +1,7 @@
 mod icon;
 mod hot;
 mod lsp;
+mod preview;
 mod repl;
 mod update;
 
@@ -35,6 +36,11 @@ commands:
                  other .tsl files in its folder); --text reads the file's
                  current, unsaved text from <path>. Prints `start <offset>`,
                  then one suggestion per line: kind, label, detail (tab-separated)
+  preview <path> --out <prefix> [--text <file> <from>]...
+                 a picture of an app's window as it first appears, for
+                 editors: writes <prefix>.png, and what's where in it and in
+                 the code (<prefix>.layout.json, <prefix>.views.json); --text
+                 reads a file's current, unsaved text from <from>
   update [version] [--check]
                  update Tessel to the latest release (or to <version>, like
                  v0.1.2); with --check, only say whether there's a newer one
@@ -44,6 +50,7 @@ commands:
 
 /// The IDE's source, built into `tessel` so it works wherever `tessel` is installed.
 const IDE_SOURCES: &[(&str, &str)] = &[
+    ("design.tsl", include_str!("../../../ide/design.tsl")),
     ("help.tsl", include_str!("../../../ide/help.tsl")),
     ("main.tsl", include_str!("../../../ide/main.tsl")),
     ("project.tsl", include_str!("../../../ide/project.tsl")),
@@ -122,6 +129,22 @@ fn main() -> ExitCode {
             let text = args.windows(2).find(|w| w[0] == "--text").map(|w| PathBuf::from(&w[1]));
             match offset {
                 Some(offset) => complete(Path::new(file), offset, text.as_deref()),
+                None => {
+                    eprintln!("{USAGE}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        (Some("preview"), Some(path)) => {
+            let rest = &args[2..];
+            let out = rest.iter().position(|a| a == "--out").and_then(|i| rest.get(i + 1));
+            let texts: Vec<(PathBuf, PathBuf)> = rest
+                .windows(3)
+                .filter(|w| w[0] == "--text")
+                .map(|w| (PathBuf::from(&w[1]), PathBuf::from(&w[2])))
+                .collect();
+            match out {
+                Some(out) => preview::run(Path::new(path), out, &texts),
                 None => {
                     eprintln!("{USAGE}");
                     ExitCode::FAILURE
