@@ -5,10 +5,11 @@
 # library and sdk/. They need nothing else installed.
 #
 # The macOS job runs on a self-hosted runner (the maintainer's Mac: no Actions
-# minutes, and it signs there); the Windows job on GitHub's runners. For now
-# releases build macOS only; tick `windows` in a manual run to build Windows
-# too. Each platform has its own latest-<platform>.txt, so a macOS-only
-# release doesn't break Windows installs.
+# minutes, and it signs there); the Windows job on GitHub's runners (about
+# 20 minutes). A tag builds both, and publishes only if both succeed, so the
+# two platforms are always at the same version. A manual run builds macOS,
+# and Windows too if `windows` is ticked. Each platform has its own
+# latest-<platform>.txt.
 name: Release
 
 on:
@@ -21,7 +22,7 @@ on:
         type: boolean
         default: false
       windows:
-        description: "Also build the Windows package"
+        description: "Also build the Windows package (a tag always does)"
         type: boolean
         default: false
 
@@ -36,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.windows && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
+        include: ${{ fromJSON((github.event_name == 'push' || inputs.windows) && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
