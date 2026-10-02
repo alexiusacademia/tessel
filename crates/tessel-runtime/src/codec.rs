@@ -217,6 +217,16 @@ pub unsafe extern "C" fn tsl_write_data(path: *const Str, data: *const Str) -> b
     std::fs::write(path, unsafe { data_bytes(data) }).map_err(|e| crate::file_error("write", path, &e)).is_ok()
 }
 
+/// `appendData(path:data:)`: the bytes added to the end of a file (made if
+/// it isn't there).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_append_data(path: *const Str, data: *const Str) -> bool {
+    use std::io::Write;
+    let path = unsafe { str_text(path) };
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(path);
+    file.and_then(|mut f| f.write_all(unsafe { data_bytes(data) })).map_err(|e| crate::file_error("write", path, &e)).is_ok()
+}
+
 unsafe extern "C" fn int_eq(a: *const u8, b: *const u8) -> bool {
     unsafe { *(a as *const i64) == *(b as *const i64) }
 }

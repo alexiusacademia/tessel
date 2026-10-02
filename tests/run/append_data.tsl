@@ -1,0 +1,15 @@
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-append-data.bin")
+    print(deleteFile(path) || true)
+    // The file is made if it isn't there.
+    print(appendData(path: path, data: Data(bytes: [1, 2, 3])))
+    print(appendData(path: path, data: Data(bytes: [])))
+    print(appendData(path: path, data: Data(bytes: [0, 255, 128])))
+    print(readData(path)?.bytes ?? [])
+    print(fileSize(path) ?? -1)
+    // writeData starts the file again.
+    print(writeData(path: path, data: Data(text: "ab")))
+    print(appendData(path: path, data: Data(text: "cd")))
+    print(readData(path)?.text ?? "")
+    print(appendData(path: joinPath(tempFolder(), "no-such-folder-here/x.bin"), data: Data(bytes: [1])))
+}

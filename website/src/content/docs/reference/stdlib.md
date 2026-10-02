@@ -500,6 +500,22 @@ let bytes = Data(bytes: [137, 80, 78, 71])
 print(writeData(path: "header.bin", data: bytes))   // true
 ```
 
+### appendData
+
+```text
+appendData(path: String, data: Data) -> Bool
+```
+
+Adds bytes to the end of a file, creating the file if it doesn't exist.
+Returns whether it worked. It lets a large file be written a piece at a
+time, without holding all of it in memory.
+
+```tessel
+print(writeData(path: "numbers.bin", data: Data(bytes: [1, 2, 3])))    // true
+print(appendData(path: "numbers.bin", data: Data(bytes: [4, 5])))      // true
+print(readData("numbers.bin")?.bytes ?? [])                            // [1, 2, 3, 4, 5]
+```
+
 ## Folders and paths
 
 These functions give you the usual places to keep files, and build paths

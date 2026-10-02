@@ -49,6 +49,7 @@ The file functions work immediately and return a result you can check:
 | `modifiedTime(path)` | `Float?` | When the file last changed. |
 | `readData(path)` | `Data?` | The file's raw bytes, for files that aren't text. |
 | `writeData(path:data:)` | `Bool` | Writes raw bytes to the file. |
+| `appendData(path:data:)` | `Bool` | Adds raw bytes to the end of the file. |
 
 Relative paths are relative to `currentFolder()`, the folder the program was
 started from. That's fine for tools, but an app started from the Finder or

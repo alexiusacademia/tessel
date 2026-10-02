@@ -443,6 +443,7 @@ impl Builtins {
             "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
+            "appendData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
                 params: vec![P::new("title", Ty::Str).default(), P::new("types", Ty::list(Ty::Str)).default()],
                 ret: Ty::opt(Ty::Str),
@@ -464,7 +465,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
     "stopCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData",
+    "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
@@ -835,6 +836,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "__imagePixels" => rt("tsl_image_pixels"),
         "setWindowTitle" => rt("tsl_set_window_title"),
         "writeData" => rt("tsl_write_data"),
+        "appendData" => rt("tsl_append_data"),
         _ => return None,
     })
 }
