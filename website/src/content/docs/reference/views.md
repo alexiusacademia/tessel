@@ -306,7 +306,9 @@ HStack {
 Scroll(content: View)
 ```
 
-A vertically scrolling area. Scroll with the mouse wheel or trackpad.
+A vertically scrolling area. Scroll with the mouse wheel or trackpad, or
+drag the scroll bar: it shows at the right edge when the content is taller
+than the view, and clicking beside its thumb jumps there.
 
 ```tessel
 Scroll {

@@ -124,7 +124,8 @@ VStack(spacing: 0) {
 ## Scroll
 
 `Scroll { … }` shows content that may be taller than the space available, and
-lets the user scroll it with the mouse wheel or trackpad:
+lets the user scroll it with the mouse wheel or trackpad, or by dragging the
+scroll bar that shows at its right edge when there's more than fits:
 
 ```tessel
 Scroll {

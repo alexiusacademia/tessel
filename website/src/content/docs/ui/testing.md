@@ -78,7 +78,7 @@ opens a window as usual.
 | `type hello world` | Types text into the text field or code editor being edited. |
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
 | `key enter` | Presses a key, optionally with modifiers (see below). |
-| `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag). |
+| `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag) and for scroll bars. |
 | `scroll 0 120` | Scrolls the scroll view (or code editor) under the middle of the window down by 120 points. A negative number scrolls up. |
 | `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
 | `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |

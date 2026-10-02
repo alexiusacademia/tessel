@@ -53,9 +53,11 @@ Line numbers start at 1, as they do in the gutter.
   views, function calls, and `.cases`. The colors are always Tessel's, whatever
   the text is.
 - **A monospaced font** at 13 points. Long lines don't wrap.
-- **Scrolling.** Scroll up and down with the mouse wheel or trackpad. The
-  editor also scrolls by itself, in both directions, to keep the cursor in
-  view as you type and move around.
+- **Scrolling.** Scroll with the mouse wheel or trackpad, up and down and
+  (for long lines) sideways, or drag a scroll bar: one shows at the right
+  when there are more lines than fit, and one at the bottom when a line is
+  longer than the editor is wide. The editor also scrolls by itself to bring
+  the cursor into view when you type or move it.
 - **All the usual editing keys**, including selection, the clipboard and
   undo; see [Editing text](/ui/controls/#editing-text).
 - **Indentation help:**
