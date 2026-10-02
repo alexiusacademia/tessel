@@ -182,7 +182,7 @@ Runs code as you type it, a line at a time: a quick way to try something
 out. Variables, functions and types stay for the lines that follow.
 
 ```text
-Tessel 0.1.20 (:help for help, :quit to leave)
+Tessel 0.1.21 (:help for help, :quit to leave)
 > let name = "Ada"
 > "Hello, {name}!"
 Hello, Ada!
