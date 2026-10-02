@@ -279,6 +279,35 @@ Text("Click me").onTap {
   clicks; clicks on other parts of the view run `action`.
 - Doesn't run while the view is disabled or hidden.
 
+## onDrag
+
+```text
+.onDrag(_ action: fn(Float, Float))
+```
+
+Runs `action` again and again while the mouse is moved with its button held
+down, starting on the view. It gets how far the mouse moved since the last
+time, across and down, in points.
+
+```tessel
+Spacer()
+    .frame(width: 6, maxHeight: .infinity)
+    .background(.separator)
+    .onDrag { dx, dy in
+        sidebar = (sidebar + dx).clamped(min: 120, max: 400)
+    }
+```
+
+- The drag goes on until the button is released, also when the mouse leaves
+  the view (as it does at once, with a thin bar).
+- Add the movements up to follow the mouse: a width that's dragged is
+  `width + dx`. Keep the result in bounds yourself, as with `clamped` above.
+- Over the view, the pointer shows that it can be dragged: sideways arrows
+  over a tall, thin view, up-and-down arrows over a wide, flat one, and a
+  hand otherwise.
+- A view with `onDrag` doesn't get [`onTap`](#ontap) clicks.
+- Doesn't run while the view is disabled or hidden.
+
 ## id
 
 ```text

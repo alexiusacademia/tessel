@@ -128,7 +128,8 @@ editor, so you can read while you write:
   works without a network, and it's the documentation of the version you
   have installed.
 
-Click **Docs** again, or the × in the panel, to close it.
+Drag the edge between the editor and the panel to make the panel wider or
+narrower. Click **Docs** again, or the × in the panel, to close it.
 
 ## Problems and console
 

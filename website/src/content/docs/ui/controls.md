@@ -166,6 +166,32 @@ Add [`.hoverBackground`](/ui/styling/#hover-backgrounds) so people can see it's
 clickable. If a clickable view contains a button or another clickable view, a
 click goes to the innermost one.
 
+## Dragging
+
+`.onDrag { dx, dy in … }` runs while the mouse is dragged from a view, with
+how far it moved each time. That's what a bar between two panes needs, to
+resize them:
+
+```tessel
+app Split(width: 400, height: 200) {
+    state left = 150.0
+
+    HStack(spacing: 0) {
+        Text("Left").frame(width: left, maxHeight: .infinity).background(.sidebar)
+        Spacer()
+            .frame(width: 6, maxHeight: .infinity)
+            .background(.separator)
+            .onDrag { dx, dy in left = (left + dx).clamped(min: 60, max: 300) }
+        Text("Right").frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+```
+
+The bar is a `Spacer` given a size and a color. Dragging it changes `left`,
+the UI is rebuilt with the new width, and the bar follows the mouse. The
+pointer turns into a resize arrow over it. See
+[`onDrag`](/reference/modifiers/#ondrag) in the reference.
+
 ## Editing text
 
 Text fields and code editors support the usual editing keys. On Windows, use
