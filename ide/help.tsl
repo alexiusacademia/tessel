@@ -152,7 +152,7 @@ fn helpSlug(link: String) -> String? {
     parts.joined(separator: "/")
 }
 
-view HelpPanel(close: fn()) {
+view HelpPanel(width: Float, close: fn()) {
     state index: [HelpEntry] = []
     // The page that's showing ("" for the contents), its text, and the
     // pages before it.
@@ -257,7 +257,7 @@ view HelpPanel(close: fn()) {
             .id(page)
         }
     }
-    .frame(width: 440)
+    .frame(width: width)
     .onAppear {
         index = helpIndex()
         texts = helpTexts(index: index)

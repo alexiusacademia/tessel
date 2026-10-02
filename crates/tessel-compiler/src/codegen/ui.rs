@@ -811,6 +811,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_tap", &[], action);
             }
+            "onDrag" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_drag", &[], action);
+            }
             "tag" => {
                 let x = &args[0].value;
                 let t = self.ty(x);

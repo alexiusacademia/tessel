@@ -1067,7 +1067,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_button" | "tsl_ui_text_field" | "tsl_ui_toggle" => (vec![p, p, p], None),
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
-            "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_tag" => (vec![p, p], None),
+            "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),
             "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" | "tsl_ui_animation" => (vec![f64t], None),
             "tsl_ui_padding" => (vec![f64t, f64t, f64t, f64t], None),

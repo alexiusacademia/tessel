@@ -1,0 +1,9 @@
+dump
+drag 152 100 40 0
+drag 192 100 500 9
+dump
+drag 302 100 -500 0
+dump
+drag 230 112 12 -5
+drag 230 112 3 4
+tree

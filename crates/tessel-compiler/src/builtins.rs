@@ -189,6 +189,7 @@ impl Builtins {
             "hidden" => vec![P::unlabeled("isHidden", Ty::Bool).default()],
             "disabled" => vec![P::unlabeled("isDisabled", Ty::Bool).default()],
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
+            "onDrag" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
             "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
@@ -550,7 +551,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
-            "textAlignment", "animation",
+            "textAlignment", "animation", "onDrag",
         ],
         _ => &[],
     }

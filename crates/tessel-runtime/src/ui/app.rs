@@ -19,6 +19,8 @@
 //! hover "Add"           move the pointer over a labelled view (or `hover 40 60`)
 //! answer "/tmp/a.och"   what the next openFile/saveFile dialog returns
 //!                       (`answer cancel` for cancelling it)
+//! drag 300 40 -80 0     press at a point, and move by (dx, dy) with the
+//!                       button held (for views with `.onDrag`)
 //! scroll 0 120          scroll the view under the pointer by (dx, dy) points
 //! wait 1.5              let 1.5 seconds pass (fires timers); first waits
 //!                       for loads, commands and background work to finish
@@ -504,12 +506,14 @@ enum Hit {
     Tap(u64),
     /// A link in a Markdown view: its number.
     Link(u64, usize),
+    /// A view with `.onDrag`.
+    Drag(u64),
 }
 
 impl Hit {
     fn key(&self) -> u64 {
         match *self {
-            Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) => k,
+            Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) | Hit::Drag(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
     }
@@ -1105,6 +1109,7 @@ impl App {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
                 Kind::Toggle { .. } => Some(Hit::Toggle(n.key)),
                 Kind::TextField { .. } | Kind::CodeEditor { .. } => Some(Hit::Field(n.key)),
+                _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
             }
@@ -1139,6 +1144,37 @@ impl App {
 
     fn node(&self, key: u64) -> Option<&Node> {
         self.tree.as_ref()?.find(key)
+    }
+
+    /// The view with `.onDrag` at a point, if a drag can start there.
+    fn drag_at(&self, x: f64, y: f64) -> Option<u64> {
+        match self.hit(x, y) {
+            Some(Hit::Drag(key)) => Some(key),
+            _ => None,
+        }
+    }
+
+    /// The mouse moved by (dx, dy) while dragging view `key`.
+    fn drag(&mut self, key: u64, dx: f64, dy: f64) {
+        if let Some(on_drag) = self.node(key).and_then(|n| n.mods.on_drag.clone()) {
+            on_drag.call_with_floats(dx, dy);
+            self.dirty = true;
+        }
+    }
+
+    /// The pointer for a view with `.onDrag` under it: by the view's shape,
+    /// since a tall thin one is dragged sideways and a wide flat one up and
+    /// down.
+    fn drag_cursor(&self, x: f64, y: f64) -> Option<winit::window::CursorIcon> {
+        use winit::window::CursorIcon;
+        let r = self.node(self.drag_at(x, y)?)?.layout.rect;
+        Some(if r.h >= 2.0 * r.w {
+            CursorIcon::ColResize
+        } else if r.w >= 2.0 * r.h {
+            CursorIcon::RowResize
+        } else {
+            CursorIcon::Grab
+        })
     }
 
     /// A completed click at (x, y).
@@ -1675,6 +1711,20 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
                 app.key(name, mods);
             }
+            "drag" => {
+                let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                let key = match n[..] {
+                    [x, y, _, _] => app.drag_at(x, y),
+                    _ => None,
+                };
+                match (key, &n[..]) {
+                    (Some(key), [_, _, dx, dy]) => app.drag(key, *dx, *dy),
+                    _ => {
+                        eprintln!("script: nothing to drag for `{rest}`");
+                        return 2;
+                    }
+                }
+            }
             "scroll" => {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                 if let [_, dy] = n[..] {
@@ -1776,6 +1826,10 @@ struct WindowApp {
     mods: Mods,
     /// Dragging to select text in a field.
     selecting: bool,
+    /// The view with `.onDrag` being dragged.
+    dragging: Option<u64>,
+    /// The pointer that's showing (a resize one over a drag handle).
+    pointer: winit::window::CursorIcon,
     /// For double and triple clicks: when and where the last click was, and the count.
     last_click: Option<(Instant, (f64, f64), u32)>,
     /// Whether input methods are on (they are while text is edited), and
@@ -1802,6 +1856,8 @@ fn run_window(app: App) -> i32 {
         cursor: (0.0, 0.0),
         mods: Mods::default(),
         selecting: false,
+        dragging: None,
+        pointer: winit::window::CursorIcon::Default,
         last_click: None,
         ime: false,
         ime_caret: None,
@@ -1963,7 +2019,20 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = self.scale();
+                let before = self.cursor;
                 self.cursor = (position.x / scale, position.y / scale);
+                if let Some(key) = self.dragging {
+                    self.app.drag(key, self.cursor.0 - before.0, self.cursor.1 - before.1);
+                    self.request_redraw();
+                } else {
+                    let pointer = self.app.drag_cursor(self.cursor.0, self.cursor.1).unwrap_or_default();
+                    if pointer != self.pointer {
+                        self.pointer = pointer;
+                        if let Some(w) = &self.window {
+                            w.set_cursor(pointer);
+                        }
+                    }
+                }
                 if self.selecting {
                     self.app.drag_field(self.cursor.0, self.cursor.1);
                     self.request_redraw();
@@ -1989,6 +2058,9 @@ impl ApplicationHandler for WindowApp {
                     ElementState::Pressed if self.app.popup_click(x, y) => {}
                     ElementState::Pressed => {
                         let hit = self.app.hit(x, y);
+                        if let Some(Hit::Drag(key)) = hit {
+                            self.dragging = Some(key);
+                        }
                         if let Some(Hit::Field(key)) = hit {
                             let now = Instant::now();
                             let clicks = match self.last_click {
@@ -2010,6 +2082,7 @@ impl ApplicationHandler for WindowApp {
                     }
                     ElementState::Released => {
                         self.selecting = false;
+                        self.dragging = None;
                         let pressed = self.app.ui.pressed.take();
                         let here = self.app.hit(x, y).map(|h| h.key());
                         if pressed.is_some() && pressed == here {

@@ -65,6 +65,12 @@ impl Callback {
         f(self.env, arg);
     }
 
+    /// Runs a closure taking two `Float`s: `void fn(env, f64, f64)`.
+    pub fn call_with_floats(&self, a: f64, b: f64) {
+        let f: extern "C" fn(*mut Header, f64, f64) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, b);
+    }
+
     /// Runs a locator: `ptr fn(env)`, giving a pointer to a value's storage.
     pub fn locate(&self) -> *mut u8 {
         let f: extern "C" fn(*mut Header) -> *mut u8 = unsafe { std::mem::transmute(self.f) };
@@ -205,6 +211,9 @@ pub struct Mods {
     pub hidden: bool,
     pub disabled: bool,
     pub on_tap: Option<Callback>,
+    /// `.onDrag { dx, dy in … }`: called as the mouse moves with its button
+    /// held down on the view, with how far it moved since the last call.
+    pub on_drag: Option<Callback>,
     pub tag: Option<Value>,
     /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows).
     pub shortcut: Option<(String, Callback)>,
@@ -763,6 +772,12 @@ pub extern "C" fn tsl_ui_disabled(disabled: u8) {
 pub unsafe extern "C" fn tsl_ui_on_tap(f: *const c_void, env: *mut Header) {
     let cb = Callback::new(f, env);
     modify(|m| m.on_tap = Some(cb));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_drag(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_drag = Some(cb));
 }
 
 #[unsafe(no_mangle)]

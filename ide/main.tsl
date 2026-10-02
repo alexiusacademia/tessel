@@ -14,6 +14,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state reloadOnSave = true
     // The Docs panel, next to the editor.
     state helpOpen = false
+    state helpWidth = 440.0
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -147,8 +148,14 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             }
 
             if helpOpen {
-                Divider()
-                HelpPanel(close: { helpOpen = false })
+                // The edge between the editor and the Docs panel: drag it to
+                // make the panel wider or narrower.
+                Spacer()
+                    .frame(width: 5, maxHeight: .infinity)
+                    .background(.separator)
+                    .hoverBackground(.blue)
+                    .onDrag { dx, dy in helpWidth = (helpWidth - dx).clamped(min: 280, max: 800) }
+                HelpPanel(width: helpWidth, close: { helpOpen = false })
             }
         }
 

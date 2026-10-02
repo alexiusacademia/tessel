@@ -1,0 +1,27 @@
+// `.onDrag`: a bar between two panes that's dragged to resize them, and a
+// box that's dragged around.
+
+app Split(width: 400, height: 200) {
+    state left = 150.0
+    state x = 0.0
+    state y = 0.0
+
+    HStack(spacing: 0) {
+        Text("Left").frame(width: left, maxHeight: .infinity).background(.sidebar)
+        Spacer()
+            .frame(width: 6, maxHeight: .infinity)
+            .background(.separator)
+            .onDrag { dx, dy in left = (left + dx).clamped(min: 60, max: 300) }
+        VStack {
+            Text("Moved {Int(x)}, {Int(y)}")
+            Text("Drag me")
+                .padding(8)
+                .background(.lightGray, radius: 6)
+                .onDrag { dx, dy in
+                    x += dx
+                    y += dy
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
