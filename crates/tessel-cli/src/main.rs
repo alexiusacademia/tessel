@@ -643,7 +643,10 @@ fn run(path: &Path, program_args: &[String]) -> ExitCode {
     if let Ok(me) = std::env::current_exe() {
         cmd.env("TESSEL_EXE", me);
     }
-    let status = cmd.status();
+    let status = cmd.spawn().and_then(|mut child| {
+        pass_signals_to(child.id());
+        child.wait()
+    });
     let _ = std::fs::remove_file(&exe);
     match status {
         Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),
@@ -653,6 +656,41 @@ fn run(path: &Path, program_args: &[String]) -> ExitCode {
         }
     }
 }
+
+/// The program `tessel run` started, for `pass_signal`.
+#[cfg(unix)]
+static RUNNING: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn signal(signal: i32, handler: usize) -> usize;
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+#[cfg(unix)]
+extern "C" fn pass_signal(signal: i32) {
+    let pid = RUNNING.load(std::sync::atomic::Ordering::SeqCst);
+    if pid > 0 {
+        unsafe { kill(pid, signal) };
+    }
+}
+
+/// Stopping `tessel run` (kill, a timeout, a closed terminal) stops the
+/// program it runs too, instead of leaving it running on its own.
+#[cfg(unix)]
+fn pass_signals_to(child: u32) {
+    const SIGHUP: i32 = 1;
+    const SIGALRM: i32 = 14;
+    const SIGTERM: i32 = 15;
+    RUNNING.store(child as i32, std::sync::atomic::Ordering::SeqCst);
+    let handler = pass_signal as extern "C" fn(i32) as usize;
+    for s in [SIGHUP, SIGALRM, SIGTERM] {
+        unsafe { signal(s, handler) };
+    }
+}
+
+#[cfg(not(unix))]
+fn pass_signals_to(_child: u32) {}
 
 #[cfg(test)]
 mod tests {
