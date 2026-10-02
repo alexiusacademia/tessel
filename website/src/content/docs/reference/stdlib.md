@@ -1,6 +1,6 @@
 ---
 title: Standard library
-description: Every built-in Tessel function (math, random numbers, files, JSON and binary encoding, dates, the network, timers and background work) and every property and method of Int, Float, String, Data, lists and dictionaries.
+description: Every built-in Tessel function (math, random numbers, files, pictures, JSON and binary encoding, dates, the network, timers and background work) and every property and method of Int, Float, String, Data, lists and dictionaries.
 ---
 
 This page lists everything built into Tessel that isn't a view or a
@@ -607,6 +607,91 @@ In a [headless test run](/ui/testing/) no dialog opens. The script's
 returns; without one, it returns `nil`, as if the user cancelled.
 :::
 
+## Pictures
+
+[`Image`](/reference/views/#image) shows a picture file, and a
+[`Canvas`](/reference/views/#canvas) draws one with `g.image`. These
+functions make picture files, and tell their size.
+
+### renderImage
+
+```text
+renderImage(path: String, width: Float, height: Float, scale: Float = 1,
+            draw: fn(Graphics)) -> Bool
+```
+
+Runs a drawing block, as a [`Canvas`](/reference/views/#canvas) of `width`
+× `height` points would, and saves what it draws as a picture. Returns
+whether it worked. It needs no window, so it works in a program with only
+`fn main()` too.
+
+```tessel
+fn main() {
+    let ok = renderImage(path: "badge.png", width: 200, height: 80, scale: 2) { g in
+        g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .blue, radius: 16)
+        g.text("Tessel", x: g.width / 2, y: g.height / 2, size: 28, color: .white, weight: .bold, align: .center)
+    }
+    print(ok)       // true
+}
+```
+
+- The file is a PNG, or a JPEG if `path` ends in `.jpg` or `.jpeg`.
+- The picture is `width × scale` by `height × scale` pixels: `scale: 2`
+  gives the sharpness of a Retina screen, and a larger one a picture to
+  print. Neither side can be more than 16 384 pixels.
+- Where nothing is drawn, a PNG is see-through and a JPEG white.
+- The drawing is done by the GPU, like a window's.
+
+### writeImage
+
+```text
+writeImage(path: String, width: Int, height: Int, pixels: [Int]) -> Bool
+```
+
+Saves a picture from its pixels, one number each, row by row from the top
+left. A pixel's number is
+
+```text
+red × 16777216 + green × 65536 + blue × 256 + opacity
+```
+
+with each part from 0 to 255 (255: fully opaque). Returns whether it
+worked; `pixels` must have at least `width × height` numbers.
+
+```tessel
+fn pixel(_ red: Int, _ green: Int, _ blue: Int) -> Int {
+    red * 16777216 + green * 65536 + blue * 256 + 255
+}
+
+fn main() {
+    var pixels: [Int] = []
+    for y in 0..64 {
+        for x in 0..64 {
+            pixels.append(pixel(x * 4, y * 4, 128))
+        }
+    }
+    print(writeImage(path: "gradient.png", width: 64, height: 64, pixels: pixels))   // true
+}
+```
+
+Like `renderImage`, it writes a PNG, or a JPEG for a path ending in `.jpg`
+or `.jpeg`.
+
+### imageSize
+
+```text
+imageSize(_ path: String) -> (Int, Int)?
+```
+
+The width and height of a PNG or JPEG file in pixels, or `nil` if it can't
+be read as one.
+
+```tessel
+if let size = imageSize("gradient.png") {
+    print("{size.0} × {size.1}")        // 64 × 64
+}
+```
+
 ## JSON and binary
 
 These four functions turn your values into text or bytes, to save in a file
@@ -805,12 +890,96 @@ print(bytes == Data(text: "Hi!"))       // true
 | `text` | `String?` | The bytes read as UTF-8 text, or `nil` if they aren't valid UTF-8. |
 | `base64` | `String` | The bytes as [base64](#base64) text. |
 
+| `latin1` | `String` | Each byte as the character with that number, up to the first zero byte: the text of old files that aren't UTF-8. |
+| `slice(from: Int, to: Int)` | `Data` | The bytes from index `from` up to `to`. |
+| `int8(at:)`, `int16(at:)`, `uint16(at:)`, `int32(at:)`, `uint32(at:)`, `int64(at:)` | `Int` | The whole number stored in the bytes starting at an index. |
+| `float32(at:)`, `float64(at:)` | `Float` | The decimal number stored there. |
+| `compressed(_ format: String = "zlib")` | `Data` | The bytes, made smaller. |
+| `decompressed(_ format: String = "zlib")` | `Data?` | Compressed bytes, as they were. |
+
 - `data[i]` is the byte at index `i` (from 0), as an `Int`. An index outside
   the data stops the program with an error. `Data` can't be changed in place;
   make a new one instead.
 - `==` and `!=` compare the bytes.
 - Read and write files of bytes with [`readData`](#readdata) and
   [`writeData`](#writedata).
+
+### Numbers in bytes
+
+Files that aren't text (pictures, sound, maps, most formats that come from
+other programs) store numbers as bytes: a whole number in 1, 2, 4 or 8 of
+them, a decimal number in 4 or 8. These methods read one, starting at the
+byte `at`:
+
+```text
+data.int8(at: Int) -> Int
+data.int16(at: Int, bigEndian: Bool = false) -> Int        (also uint16, int32, uint32, int64)
+data.float32(at: Int, bigEndian: Bool = false) -> Float    (also float64)
+```
+
+```tessel
+let d = Data(bytes: [2, 1, 255, 255, 0, 0, 192, 63])
+print(d.uint16(at: 0))                      // 258   (2 + 1 × 256)
+print(d.uint16(at: 0, bigEndian: true))     // 513   (2 × 256 + 1)
+print(d.int16(at: 2))                       // -1
+print(d.uint16(at: 2))                      // 65535
+print(d.float32(at: 4))                     // 1.5
+```
+
+- `int…` reads a number that can be negative, `uint…` one that can't: the
+  bytes 255, 255 are `-1` as an `int16` and `65535` as a `uint16`.
+- Most files put a number's smallest byte first ("little-endian"), which is
+  what you get. With `bigEndian: true`, the largest byte comes first; a
+  format's description says which it uses.
+- Bytes that aren't there (an index too close to the end) stop the program
+  with an error, like `data[i]`.
+
+To go the other way, `Int` and `Float` have a [`bytes`](#bytes) method, and
+`Data(bytes:)` makes the data:
+
+```tessel
+var out: [Int] = []
+out += (258).bytes(count: 2)                // [2, 1]
+out += (1.5).bytes(count: 4)                // [0, 0, 192, 63]
+let data = Data(bytes: out)
+```
+
+### slice and latin1
+
+```tessel
+let d = Data(text: "name: Zoë")
+print(d.slice(from: 0, to: 4).text ?? "")   // name
+print(d.slice(from: 6, to: 99).count)       // 4   (ë takes two bytes)
+print(Data(bytes: [90, 111, 235]).latin1)   // Zoë
+print(Data(bytes: [90, 111, 235]).text ?? "not UTF-8")   // not UTF-8
+```
+
+`slice` brings its indexes into range, like a list's
+[`slice`](#slice): it never stops the program. `latin1` reads text from
+before UTF-8, where every byte is one character (it stops at a zero byte,
+which such files use to fill fixed-width fields).
+
+### compressed and decompressed
+
+```text
+data.compressed(_ format: String = "zlib") -> Data
+data.decompressed(_ format: String = "zlib") -> Data?
+```
+
+Makes bytes smaller, and gets them back. The format is `"zlib"`,
+`"deflate"` (the same without a header and a check) or `"gzip"` (what
+`.gz` files are).
+
+```tessel
+let text = Data(text: "to be or not to be, that is the question. ".repeated(4))
+let small = text.compressed()
+print("{text.count} bytes as {small.count}")    // 168 bytes as 54
+print(small.decompressed() == text)             // true
+print(text.decompressed() == nil)               // true: it isn't compressed
+```
+
+`decompressed` gives `nil` if the bytes aren't in that format. An unknown
+format name gives no bytes from `compressed`, and `nil` from `decompressed`.
 
 ### base64
 
@@ -1175,6 +1344,25 @@ let card: Color = if isDarkMode() { .rgb(44, 44, 46) } else { .rgb(250, 246, 240
 
 In a program without an `app`, it's `false`. See
 [Light and dark](/ui/styling/#light-and-dark).
+
+### setWindowTitle
+
+```text
+setWindowTitle(_ title: String)
+```
+
+Changes the text in the app's title bar, which starts as the `app`'s
+`title:`. A document's name usually goes there:
+
+```tessel
+Button("Open…") {
+    if let path = openFile() {
+        setWindowTitle("Notes — {path.fileName}")
+    }
+}
+```
+
+In a program without a window, it does nothing.
 
 ### openURL
 
@@ -1687,6 +1875,7 @@ An `Int` is a whole number. The arithmetic operators work on it, and
 | `isEven` | `Bool` | Whether the number is even. |
 | `isOdd` | `Bool` | Whether the number is odd. |
 | `clamped(min: Int, max: Int)` | `Int` | The number, moved into the range from `min` to `max`. |
+| `bytes(count: Int, bigEndian: Bool = false)` | `[Int]` | The number as `count` bytes (1 to 8), as files store it. See [bytes](#bytes). |
 
 ```tessel
 print((4).isEven)                       // true
@@ -1709,6 +1898,7 @@ A `Float` is a decimal number. The arithmetic operators work on it, and the
 | `clamped(min: Float, max: Float)` | `Float` | The number, moved into the range from `min` to `max`. |
 | `isNaN` | `Bool` | Whether the value is `NaN`, "not a number" (like `0.0 / 0.0` or `sqrt(-1.0)`). |
 | `isFinite` | `Bool` | Whether the value is an ordinary number: not infinite and not `NaN`. |
+| `bytes(count: Int = 8, bigEndian: Bool = false)` | `[Int]` | The number as 8 bytes (or 4, with less precision), as files store it. See [bytes](#bytes). |
 
 ```tessel
 let volume = 1.4
@@ -1719,6 +1909,27 @@ print((1.0 / 0.0).isFinite)                 // false
 
 `NaN` is never equal to anything, not even itself, so `x == x` is `false`
 for a `NaN`: use `isNaN` to check for it.
+
+### bytes
+
+```text
+n.bytes(count: Int, bigEndian: Bool = false) -> [Int]      (an Int)
+x.bytes(count: Int = 8, bigEndian: Bool = false) -> [Int]  (a Float)
+```
+
+A number as the bytes a file stores it in, each from 0 to 255: the opposite
+of `Data`'s [`int32(at:)`, `float64(at:)` and the others](#numbers-in-bytes).
+
+```tessel
+print((258).bytes(count: 2))                    // [2, 1]
+print((258).bytes(count: 4, bigEndian: true))   // [0, 0, 1, 2]
+print((-1).bytes(count: 2))                     // [255, 255]
+print((1.5).bytes(count: 4))                    // [0, 0, 192, 63]
+print((1.5).bytes().count)                      // 8
+```
+
+An `Int` that doesn't fit in `count` bytes keeps its lowest bytes. A
+`Float` takes 8 bytes, or 4 with about 7 digits of precision.
 
 ### formatted
 
@@ -2061,8 +2272,8 @@ Other list operations:
 
 - `list[i]` reads the item at index `i` (from 0), and `list[i] = value`
   replaces it. An index outside the list stops the program with an error.
-- `a + b` is a new list with the items of `a` then `b`; `list += [x]`
-  appends.
+- `a + b` is a new list with the items of `a` then `b`; `list += more`
+  adds the items of `more` to `list` where it is.
 - `==` and `!=` compare two lists item by item.
 - `for item in list { … }` loops over the items. See
   [Collections](/language/collections/).

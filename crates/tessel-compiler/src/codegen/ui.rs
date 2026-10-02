@@ -669,6 +669,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "Spacer" => {
                 self.call_rt("tsl_ui_spacer", &[]);
             }
+            "Canvas" => {
+                // The runtime calls `adapter(box, width, height)`; the box holds the block.
+                let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+                let (has_redraw, redraw): (Val, Val) = match a(0) {
+                    Some(x) => (self.i8().const_int(1, false).into(), self.expr_as(x, &Ty::Int).unwrap()),
+                    None => (self.i8().const_zero().into(), self.i64().const_zero().into()),
+                };
+                let draw = self.expr_as(a(1).unwrap(), &ft).unwrap();
+                let bx = self.box_closure(&ft, draw);
+                let adapter = self.graphics_adapter();
+                self.call_rt("tsl_ui_canvas", &[adapter.into(), bx.into(), has_redraw, redraw]);
+            }
             _ => unreachable!("built-in view {name}"),
         }
     }
@@ -814,6 +826,44 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "onDrag" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_drag", &[], action);
+            }
+            "onPointer" => {
+                // The runtime calls `adapter(box, event)`; the box holds the block.
+                let ft = Ty::func(vec![builtins::POINTER_EVENT], Ty::Void);
+                let action = self.expr_as(a(0).unwrap(), &ft).unwrap();
+                let bx = self.box_closure(&ft, action);
+                let adapter = self.pointer_adapter();
+                self.call_rt("tsl_ui_on_pointer", &[adapter.into(), bx.into()]);
+            }
+            "onKey" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_key", &[], action);
+            }
+            "cursor" => {
+                let style = int(self, a(0).unwrap());
+                self.call_rt("tsl_ui_cursor", &[style]);
+            }
+            "offset" => {
+                let x = float(self, a(0), 0.0);
+                let y = float(self, a(1), 0.0);
+                self.call_rt("tsl_ui_offset", &[x, y]);
+            }
+            "clipped" => {
+                let b = flag(self, a(0));
+                self.call_rt("tsl_ui_clipped", &[b]);
+            }
+            "onDrop" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_drop", &[], action);
+            }
+            "onResize" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_resize", &[], action);
+            }
+            "tooltip" => {
+                let text = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
+                self.call_rt("tsl_ui_tooltip", &[text]);
+                self.release(text, &Ty::Str);
             }
             "tag" => {
                 let x = &args[0].value;

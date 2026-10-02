@@ -1,0 +1,21 @@
+// `list += more` adds to the list where it is (and stays fast in a loop).
+
+struct Box { items: [Int] = [] }
+fn main() {
+    var a: [Int] = []
+    let t = now()
+    for j in 0..300000 { a += (1.5).bytes() }
+    print("{a.count} {now() - t < 1.0}")
+    var b = [1, 2]
+    b += b
+    let c = b
+    b += [9]
+    print("{b} {c}")
+    var boxes = [Box(), Box()]
+    boxes[1].items += [4, 5]
+    boxes[1].items += boxes[1].items
+    print(boxes[1].items)
+    var names = ["a"]
+    names += ["b", "c"]
+    print(names)
+}

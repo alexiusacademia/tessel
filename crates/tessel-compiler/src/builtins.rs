@@ -18,11 +18,23 @@ pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
 pub const ALIGNMENTS: &[&str] =
     &["leading", "center", "trailing", "top", "bottom", "topLeading", "topTrailing", "bottomLeading", "bottomTrailing"];
 
+/// What a mouse did, for `.onPointer` (the runtime relies on the order).
+pub const POINTER_KINDS: &[&str] = &["down", "up", "move", "drag", "scroll", "pinch", "leave"];
+
+/// Mouse buttons (the runtime relies on the order).
+pub const POINTER_BUTTONS: &[&str] = &["left", "right", "middle"];
+
+/// Pointers for `.cursor(…)` (the runtime relies on the order).
+pub const CURSOR_STYLES: &[&str] = &[
+    "arrow", "hand", "crosshair", "grab", "grabbing", "text", "move", "wait", "notAllowed", "resizeHorizontal",
+    "resizeVertical", "zoomIn", "zoomOut",
+];
+
 /// Names of the built-in icons, in order (shared with the runtime).
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
-/// IconName, Appearance.
+/// IconName, Appearance, PointerKind, PointerButton, CursorStyle.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -45,6 +57,9 @@ pub fn enums() -> Vec<EnumDef> {
         simple("Alignment", ALIGNMENTS),
         simple("IconName", &icons),
         simple("Appearance", APPEARANCES),
+        simple("PointerKind", POINTER_KINDS),
+        simple("PointerButton", POINTER_BUTTONS),
+        simple("CursorStyle", CURSOR_STYLES),
     ]
 }
 
@@ -72,6 +87,31 @@ pub fn structs() -> Vec<StructDef> {
             fields: vec![field("label", Ty::Str), field("detail", Ty::Str), field("kind", Ty::Str)],
             methods: Vec::new(),
         },
+        // What a `Canvas`'s block draws with: its methods are in `method_of`.
+        StructDef {
+            name: "Graphics".into(),
+            span: Span::default(),
+            fields: vec![field("width", Ty::Float), field("height", Ty::Float)],
+            methods: Vec::new(),
+        },
+        // What `.onPointer` tells its block (the runtime's `PointerC`).
+        StructDef {
+            name: "PointerEvent".into(),
+            span: Span::default(),
+            fields: vec![
+                field("kind", POINTER_KIND),
+                field("x", Ty::Float),
+                field("y", Ty::Float),
+                field("dx", Ty::Float),
+                field("dy", Ty::Float),
+                field("button", POINTER_BUTTON),
+                field("clicks", Ty::Int),
+                field("shift", Ty::Bool),
+                field("alt", Ty::Bool),
+                field("command", Ty::Bool),
+            ],
+            methods: Vec::new(),
+        },
     ]
 }
 
@@ -79,6 +119,18 @@ pub fn structs() -> Vec<StructDef> {
 pub const HTTP_RESPONSE: Ty = Ty::Struct(0);
 /// The `Completion` struct (see `structs`).
 pub const COMPLETION: Ty = Ty::Struct(1);
+/// The `Graphics` struct (see `structs`).
+pub const GRAPHICS: Ty = Ty::Struct(2);
+/// The `PointerEvent` struct (see `structs`).
+pub const POINTER_EVENT: Ty = Ty::Struct(3);
+
+/// The built-in enums, by their place in `enums`.
+pub const COLOR: Ty = Ty::Enum(0);
+pub const WEIGHT: Ty = Ty::Enum(1);
+pub const ALIGNMENT: Ty = Ty::Enum(2);
+pub const POINTER_KIND: Ty = Ty::Enum(5);
+pub const POINTER_BUTTON: Ty = Ty::Enum(6);
+pub const CURSOR_STYLE: Ty = Ty::Enum(7);
 
 pub struct Builtins {
     pub color: Ty,
@@ -89,7 +141,7 @@ pub struct Builtins {
 }
 
 impl Builtins {
-    /// The built-in enums are always the first five (see `enums`).
+    /// The built-in enums are always the first ones (see `enums`).
     pub fn standard() -> Builtins {
         Builtins { color: Ty::Enum(0), weight: Ty::Enum(1), alignment: Ty::Enum(2), icon: Ty::Enum(3), appearance: Ty::Enum(4) }
     }
@@ -98,7 +150,7 @@ impl Builtins {
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas",
     ];
 
 impl Builtins {
@@ -147,6 +199,7 @@ impl Builtins {
             "Scroll" => vec![content()],
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
+            "Canvas" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void))],
             _ => return None,
         })
     }
@@ -190,6 +243,14 @@ impl Builtins {
             "disabled" => vec![P::unlabeled("isDisabled", Ty::Bool).default()],
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "onDrag" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
+            "onPointer" => vec![P::unlabeled("action", Ty::func(vec![POINTER_EVENT], Ty::Void))],
+            "onKey" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "cursor" => vec![P::unlabeled("style", CURSOR_STYLE)],
+            "offset" => vec![P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
+            "clipped" => vec![P::unlabeled("isClipped", Ty::Bool).default()],
+            "onDrop" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "tooltip" => vec![P::unlabeled("text", Ty::Str)],
+            "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
             "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
@@ -357,6 +418,28 @@ impl Builtins {
             "sendWebSocketData" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("data", Ty::Data)], ret: Ty::Bool },
             "closeWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
             "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
+            "writeImage" => FnSig {
+                params: vec![
+                    P::new("path", Ty::Str),
+                    P::new("width", Ty::Int),
+                    P::new("height", Ty::Int),
+                    P::new("pixels", Ty::list(Ty::Int)),
+                ],
+                ret: Ty::Bool,
+            },
+            "renderImage" => FnSig {
+                params: vec![
+                    P::new("path", Ty::Str),
+                    P::new("width", Ty::Float),
+                    P::new("height", Ty::Float),
+                    P::new("scale", Ty::Float).default(),
+                    P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void)),
+                ],
+                ret: Ty::Bool,
+            },
+            // For the prelude's `imageSize`.
+            "__imageSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
+            "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
                 params: vec![P::new("title", Ty::Str).default(), P::new("types", Ty::list(Ty::Str)).default()],
@@ -386,7 +469,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
-    "cancelRequest", "sendWebSocketData",
+    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "setWindowTitle", "renderImage",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -423,6 +506,7 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
         (Ty::Data, "isEmpty") => Ty::Bool,
         (Ty::Data, "bytes") => Ty::list(Ty::Int),
         (Ty::Data, "text") => Ty::opt(Ty::Str),
+        (Ty::Data, "latin1") => Ty::Str,
         _ => return None,
     })
 }
@@ -496,13 +580,31 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
         },
         Ty::Int => match name {
             "clamped" => method(vec![P::new("min", Ty::Int), P::new("max", Ty::Int)], Ty::Int),
+            "bytes" => method(vec![P::new("count", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::list(Ty::Int)),
             _ => return None,
         },
         Ty::Float => match name {
             "formatted" => method(vec![P::new("decimals", Ty::Int)], Ty::Str),
             "clamped" => method(vec![P::new("min", Ty::Float), P::new("max", Ty::Float)], Ty::Float),
+            "bytes" => method(
+                vec![P::new("count", Ty::Int).default(), P::new("bigEndian", Ty::Bool).default()],
+                Ty::list(Ty::Int),
+            ),
             _ => return None,
         },
+        Ty::Data => match name {
+            "slice" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::Data),
+            "compressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::Data),
+            "decompressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::opt(Ty::Data)),
+            "int8" | "int16" | "uint16" | "int32" | "uint32" | "int64" => {
+                method(vec![P::new("at", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::Int)
+            }
+            "float32" | "float64" => {
+                method(vec![P::new("at", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::Float)
+            }
+            _ => return None,
+        },
+        t if *t == GRAPHICS => return graphics_method(name),
         Ty::Set(t) => {
             let (t, set) = ((**t).clone(), recv.clone());
             match name {
@@ -525,6 +627,62 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
     })
 }
 
+/// Methods of `Graphics`, which a `Canvas`'s block draws with.
+fn graphics_method(name: &str) -> Option<Method> {
+    let f = |l: &str| P::new(l, Ty::Float);
+    let u = |l: &str| P::unlabeled(l, Ty::Float);
+    let color = || P::unlabeled("color", COLOR);
+    let labeled_color = || P::new("color", COLOR);
+    Some(match name {
+        "beginPath" | "closePath" | "save" | "restore" | "resetTransform" => method(vec![], Ty::Void),
+        "moveTo" | "lineTo" | "translate" => method(vec![u("x"), u("y")], Ty::Void),
+        "quadTo" => method(vec![u("cx"), u("cy"), u("x"), u("y")], Ty::Void),
+        "curveTo" => method(vec![u("c1x"), u("c1y"), u("c2x"), u("c2y"), u("x"), u("y")], Ty::Void),
+        "lines" => method(vec![P::unlabeled("points", Ty::list(Ty::Float)), P::new("closed", Ty::Bool).default()], Ty::Void),
+        "rect" => method(vec![f("x"), f("y"), f("width"), f("height"), f("radius").default()], Ty::Void),
+        "circle" => method(vec![f("x"), f("y"), f("radius")], Ty::Void),
+        "ellipse" => method(vec![f("x"), f("y"), f("radiusX"), f("radiusY")], Ty::Void),
+        "arc" => method(vec![f("x"), f("y"), f("radius"), f("from"), f("to")], Ty::Void),
+        "fill" => method(vec![color(), P::new("evenOdd", Ty::Bool).default()], Ty::Void),
+        "stroke" => method(vec![color(), f("width").default(), P::new("dash", Ty::list(Ty::Float)).default()], Ty::Void),
+        "line" => method(vec![u("x1"), u("y1"), u("x2"), u("y2"), labeled_color(), f("width").default()], Ty::Void),
+        "fillRect" => method(vec![f("x"), f("y"), f("width"), f("height"), labeled_color(), f("radius").default()], Ty::Void),
+        "strokeRect" => method(
+            vec![f("x"), f("y"), f("width"), f("height"), labeled_color(), f("lineWidth").default(), f("radius").default()],
+            Ty::Void,
+        ),
+        "fillCircle" => method(vec![f("x"), f("y"), f("radius"), labeled_color()], Ty::Void),
+        "strokeCircle" => method(vec![f("x"), f("y"), f("radius"), labeled_color(), f("lineWidth").default()], Ty::Void),
+        "text" => method(
+            vec![
+                P::unlabeled("text", Ty::Str),
+                f("x"),
+                f("y"),
+                f("size").default(),
+                labeled_color().default(),
+                P::new("weight", WEIGHT).default(),
+                P::new("align", ALIGNMENT).default(),
+                f("angle").default(),
+                P::new("halo", COLOR).default(),
+                f("haloWidth").default(),
+            ],
+            Ty::Void,
+        ),
+        "textWidth" => {
+            method(vec![P::unlabeled("text", Ty::Str), f("size").default(), P::new("weight", WEIGHT).default()], Ty::Float)
+        }
+        "image" => method(
+            vec![P::unlabeled("path", Ty::Str), f("x"), f("y"), f("width"), f("height"), f("opacity").default()],
+            Ty::Bool,
+        ),
+        "scale" => method(vec![u("x"), u("y")], Ty::Void),
+        "rotate" => method(vec![u("angle")], Ty::Void),
+        "zoom" => method(vec![u("factor")], Ty::Void),
+        "clip" => method(vec![f("x"), f("y"), f("width"), f("height")], Ty::Void),
+        _ => return None,
+    })
+}
+
 /// Names shown in "did you mean" suggestions for members of built-in types.
 pub fn member_names(recv: &Ty) -> &'static [&'static str] {
     match recv {
@@ -540,18 +698,27 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "repeated", "padStart", "padEnd", "character", "words", "occurrences", "characters", "urlEncoded",
             "urlDecoded", "fileName", "fileExtension", "folder",
         ],
-        Ty::Int => &["isEven", "isOdd", "clamped"],
+        Ty::Int => &["isEven", "isOdd", "clamped", "bytes"],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::Set(_) => &[
             "count", "isEmpty", "values", "contains", "insert", "remove", "union", "intersection", "subtracting",
             "isSubset", "isSuperset", "isDisjoint", "filter", "sorted",
         ],
-        Ty::Float => &["formatted", "clamped", "isNaN", "isFinite"],
-        Ty::Data => &["count", "isEmpty", "bytes", "text", "base64"],
+        Ty::Float => &["formatted", "clamped", "isNaN", "isFinite", "bytes"],
+        Ty::Data => &[
+            "count", "isEmpty", "bytes", "text", "base64", "latin1", "slice", "int8", "int16", "uint16", "int32", "uint32",
+            "int64", "float32", "float64", "compressed", "decompressed",
+        ],
+        t if *t == GRAPHICS => &[
+            "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
+            "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
+            "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip",
+        ],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
-            "textAlignment", "animation", "onDrag",
+            "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
+            "tooltip", "onResize",
         ],
         _ => &[],
     }
@@ -569,6 +736,8 @@ pub enum Dflt {
     Bool(bool),
     Str(&'static str),
     EmptyList,
+    /// A case (without values) of the parameter's enum, by its place.
+    Case(i32),
 }
 
 /// A built-in function or method that compiles to a call of runtime function
@@ -579,18 +748,37 @@ pub enum Dflt {
 /// String/Data/list/dictionary is a pointer, null for nil; an optional Int or
 /// Float comes back through a trailing out pointer, with a u8 "present"
 /// result. Owned results (strings, lists…) are new references.
+///
+/// An enum goes as its case's place (an i32), followed, for an enum whose
+/// cases have values (`Color`), by the box of those values (a pointer).
 #[derive(Clone, Copy, Debug)]
 pub struct RtCall {
     pub rt: &'static str,
     pub defaults: &'static [Dflt],
+    /// The call's place in the source goes after the arguments (a pointer),
+    /// for a runtime error's message.
+    pub located: bool,
+    /// A method whose receiver isn't passed (the methods of `Graphics`).
+    pub no_receiver: bool,
 }
 
 const fn rt(rt: &'static str) -> RtCall {
-    RtCall { rt, defaults: &[] }
+    RtCall { rt, defaults: &[], located: false, no_receiver: false }
 }
 
 const fn rt_d(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
-    RtCall { rt, defaults }
+    RtCall { rt, defaults, located: false, no_receiver: false }
+}
+
+/// A `Data` method that reads a number: `bigEndian:` is false unless given,
+/// and bytes that aren't there stop the program.
+const fn rt_number(rt: &'static str) -> RtCall {
+    RtCall { rt, defaults: &[Dflt::Req, Dflt::Bool(false)], located: true, no_receiver: false }
+}
+
+/// A `Graphics` method.
+const fn rt_g(rt: &'static str, defaults: &'static [Dflt]) -> RtCall {
+    RtCall { rt, defaults, located: false, no_receiver: true }
 }
 
 /// Built-in functions that are runtime calls (their signatures are in
@@ -640,6 +828,9 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "sendWebSocket" => rt("tsl_send_web_socket"),
         "closeWebSocket" => rt("tsl_close_web_socket"),
         "readData" => rt("tsl_read_data"),
+        "writeImage" => rt("tsl_write_image"),
+        "__imageSize" => rt("tsl_image_size"),
+        "setWindowTitle" => rt("tsl_set_window_title"),
         "writeData" => rt("tsl_write_data"),
         _ => return None,
     })
@@ -668,6 +859,65 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Set(_), "isSuperset") => rt("tsl_set_is_superset"),
         (Ty::Set(_), "isDisjoint") => rt("tsl_set_is_disjoint"),
         (Ty::Float, "clamped") => rt("tsl_float_clamped"),
+        (Ty::Int, "bytes") => rt_d("tsl_int_bytes", &[Dflt::Req, Dflt::Bool(false)]),
+        (Ty::Float, "bytes") => rt_d("tsl_float_bytes", &[Dflt::Int(8), Dflt::Bool(false)]),
+        (Ty::Data, "slice") => rt("tsl_data_slice"),
+        (Ty::Data, "compressed") => rt_d("tsl_data_compressed", &[Dflt::Str("zlib")]),
+        (Ty::Data, "decompressed") => rt_d("tsl_data_decompressed", &[Dflt::Str("zlib")]),
+        (Ty::Data, "int8") => rt_number("tsl_data_int8"),
+        (Ty::Data, "int16") => rt_number("tsl_data_int16"),
+        (Ty::Data, "uint16") => rt_number("tsl_data_uint16"),
+        (Ty::Data, "int32") => rt_number("tsl_data_int32"),
+        (Ty::Data, "uint32") => rt_number("tsl_data_uint32"),
+        (Ty::Data, "int64") => rt_number("tsl_data_int64"),
+        (Ty::Data, "float32") => rt_number("tsl_data_float32"),
+        (Ty::Data, "float64") => rt_number("tsl_data_float64"),
+        (t, _) if *t == GRAPHICS => return graphics_call(name),
+        _ => return None,
+    })
+}
+
+/// The runtime calls behind the methods of `Graphics` (see `graphics_method`).
+fn graphics_call(name: &str) -> Option<RtCall> {
+    use Dflt::{Bool, Case, EmptyList, Float, Req};
+    // `Color.primary` and `.clear`, `Weight.regular`, `Alignment.topLeading`.
+    const PRIMARY: Dflt = Case(0);
+    const CLEAR: Dflt = Case(12);
+    const REGULAR: Dflt = Case(0);
+    const TOP_LEADING: Dflt = Case(5);
+    Some(match name {
+        "beginPath" => rt_g("tsl_canvas_begin_path", &[]),
+        "closePath" => rt_g("tsl_canvas_close_path", &[]),
+        "save" => rt_g("tsl_canvas_save", &[]),
+        "restore" => rt_g("tsl_canvas_restore", &[]),
+        "resetTransform" => rt_g("tsl_canvas_reset_transform", &[]),
+        "moveTo" => rt_g("tsl_canvas_move_to", &[]),
+        "lineTo" => rt_g("tsl_canvas_line_to", &[]),
+        "translate" => rt_g("tsl_canvas_translate", &[]),
+        "scale" => rt_g("tsl_canvas_scale", &[]),
+        "rotate" => rt_g("tsl_canvas_rotate", &[]),
+        "zoom" => rt_g("tsl_canvas_zoom", &[]),
+        "quadTo" => rt_g("tsl_canvas_quad_to", &[]),
+        "curveTo" => rt_g("tsl_canvas_curve_to", &[]),
+        "lines" => rt_g("tsl_canvas_lines", &[Req, Bool(false)]),
+        "rect" => rt_g("tsl_canvas_rect", &[Req, Req, Req, Req, Float(0.0)]),
+        "circle" => rt_g("tsl_canvas_circle", &[]),
+        "ellipse" => rt_g("tsl_canvas_ellipse", &[]),
+        "arc" => rt_g("tsl_canvas_arc", &[]),
+        "fill" => rt_g("tsl_canvas_fill", &[Req, Bool(false)]),
+        "stroke" => rt_g("tsl_canvas_stroke", &[Req, Float(1.0), EmptyList]),
+        "line" => rt_g("tsl_canvas_line", &[Req, Req, Req, Req, Req, Float(1.0)]),
+        "fillRect" => rt_g("tsl_canvas_fill_rect", &[Req, Req, Req, Req, Req, Float(0.0)]),
+        "strokeRect" => rt_g("tsl_canvas_stroke_rect", &[Req, Req, Req, Req, Req, Float(1.0), Float(0.0)]),
+        "fillCircle" => rt_g("tsl_canvas_fill_circle", &[]),
+        "strokeCircle" => rt_g("tsl_canvas_stroke_circle", &[Req, Req, Req, Req, Float(1.0)]),
+        "text" => rt_g(
+            "tsl_canvas_text",
+            &[Req, Req, Req, Float(14.0), PRIMARY, REGULAR, TOP_LEADING, Float(0.0), CLEAR, Float(0.0)],
+        ),
+        "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR]),
+        "image" => rt_g("tsl_canvas_image", &[Req, Req, Req, Req, Req, Float(1.0)]),
+        "clip" => rt_g("tsl_canvas_clip", &[]),
         _ => return None,
     })
 }
@@ -690,6 +940,7 @@ pub fn runtime_property(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Data, "isEmpty") => rt("tsl_data_is_empty"),
         (Ty::Data, "bytes") => rt("tsl_data_ints"),
         (Ty::Data, "text") => rt("tsl_data_text"),
+        (Ty::Data, "latin1") => rt("tsl_data_latin1"),
         _ => return None,
     })
 }

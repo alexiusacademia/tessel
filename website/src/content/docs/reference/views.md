@@ -39,7 +39,7 @@ the space they are offered.
 | Flexible… | Views |
 |---|---|
 | horizontally only | `TextField` |
-| in both directions | `Scroll`, `CodeEditor`, `TabView` |
+| in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas` |
 | along its stack's direction | `Spacer` |
 | across its stack | `Divider` |
 | when a child is flexible | `VStack`, `HStack`, `ZStack`, custom views |
@@ -491,6 +491,100 @@ TabView(selection: current, onClose: { name in close(name) }) {
 
 - The tab bar is 34 points tall. The tab view is flexible in both
   directions; when nothing limits it, it is 480 × 320 points.
+
+## Canvas
+
+```text
+Canvas(redraw: Int = …, draw: fn(Graphics))
+```
+
+A view the program draws itself. `draw` is almost always the block after
+the call; it gets a [`Graphics`](#graphics) to draw with. See
+[Drawing and the mouse](/ui/drawing/).
+
+```tessel
+Canvas { g in
+    g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .sidebar)
+    g.fillCircle(x: g.width / 2, y: g.height / 2, radius: 20, color: .blue)
+    g.text("Hello", x: g.width / 2, y: 8, align: .top)
+}
+.frame(width: 200, height: 120)
+```
+
+- Coordinates are in points from the canvas's top left corner (inside its
+  padding); `y` grows downwards. Nothing is drawn outside the canvas.
+- A canvas is flexible in both directions. When nothing limits it, it is
+  300 × 150 points.
+- Without `redraw:`, the block runs each time the window is drawn. With it,
+  the drawing is kept, and the block runs again only when the number is
+  different from last time, the canvas's size changes, or the appearance
+  switches between light and dark.
+- The block shouldn't change `state`.
+- In a [headless run](/ui/testing/), `tree` shows what was drawn:
+  `Canvas (2 fills, 1 text)`.
+
+### Graphics
+
+What a `Canvas`'s block (and [`renderImage`](/reference/stdlib/#renderimage)'s)
+draws with. It has two fields, `width` and `height`: the size of the canvas
+in points. Its methods draw on the canvas being drawn; called at any other
+time, they do nothing. Angles are in radians.
+
+**A path** is an outline, built up and then drawn:
+
+| Method | |
+|---|---|
+| `beginPath()` | Starts a new, empty path. |
+| `moveTo(_ x, _ y)` | Starts a part of the path at a point. |
+| `lineTo(_ x, _ y)` | A straight line to a point. |
+| `quadTo(_ cx, _ cy, _ x, _ y)` | A curve to (x, y), pulled towards (cx, cy). |
+| `curveTo(_ c1x, _ c1y, _ c2x, _ c2y, _ x, _ y)` | A curve to (x, y) that leaves towards the first control point and arrives from the second (a cubic Bézier). |
+| `closePath()` | A line back to where the part started. |
+| `lines(_ points: [Float], closed: Bool = false)` | A part through many points, given as `x, y, x, y, …`; closed too, with `closed: true`. Points that aren't numbers (NaN) are left out. |
+| `rect(x:, y:, width:, height:, radius: = 0)` | A rectangle, with rounded corners if `radius` is given. |
+| `circle(x:, y:, radius:)` | A circle around (x, y). |
+| `ellipse(x:, y:, radiusX:, radiusY:)` | An ellipse around (x, y). |
+| `arc(x:, y:, radius:, from:, to:)` | Part of a circle, from one angle to another (0 is to the right; angles grow clockwise). |
+| `fill(_ color: Color, evenOdd: Bool = false)` | Fills the path. With `evenOdd: true`, a part inside another is a hole. |
+| `stroke(_ color: Color, width: Float = 1, dash: [Float] = [])` | Draws the path's line. `dash` is the lengths of dashes and gaps in turn, like `[6, 3]`. |
+
+`fill` and `stroke` keep the path, so it can be filled and then outlined.
+
+**Shapes drawn at once** (they leave the path alone):
+
+| Method | |
+|---|---|
+| `line(_ x1, _ y1, _ x2, _ y2, color:, width: = 1)` | A straight line. |
+| `fillRect(x:, y:, width:, height:, color:, radius: = 0)` | A filled rectangle. |
+| `strokeRect(x:, y:, width:, height:, color:, lineWidth: = 1, radius: = 0)` | A rectangle's outline. |
+| `fillCircle(x:, y:, radius:, color:)` | A filled circle. |
+| `strokeCircle(x:, y:, radius:, color:, lineWidth: = 1)` | A circle's outline. |
+
+**Text and pictures:**
+
+| Method | |
+|---|---|
+| `text(_ text, x:, y:, size: = 14, color: = .primary, weight: = .regular, align: = .topLeading, angle: = 0, halo: = .clear, haloWidth: = 0)` | Text at a point. `align` (an [`Alignment`](/reference/colors/#alignment)) says which part of the text sits on the point; `angle` turns it around the point; a halo is an outline of `haloWidth` points in another color, under the text. |
+| `textWidth(_ text, size: = 14, weight: = .regular) -> Float` | How wide `text` would be drawn. |
+| `image(_ path, x:, y:, width:, height:, opacity: = 1) -> Bool` | A PNG or JPEG file, stretched to the rectangle. `false` if there's no such picture. |
+
+**The transform**, which says where coordinates land, **and clipping:**
+
+| Method | |
+|---|---|
+| `translate(_ x, _ y)` | Moves what follows: (0, 0) is now where (x, y) was. |
+| `scale(_ x, _ y)` | Makes what follows `x` times as wide and `y` times as tall. A negative number flips it. |
+| `rotate(_ angle)` | Turns what follows around (0, 0). |
+| `zoom(_ factor)` | Draws what follows `factor` times larger as a whole: positions like `scale(factor, factor)`, and line widths and text sizes too. For a small copy of a drawing, or a page shown at less than its size. |
+| `resetTransform()` | Back to the canvas's own coordinates. |
+| `save()` | Remembers the transform (and the clips). |
+| `restore()` | Goes back to what the matching `save()` remembered. |
+| `clip(x:, y:, width:, height:)` | Until the matching `restore()`, only what's inside the rectangle shows. |
+
+The transform applies to the points of paths and shapes, to the corners of
+pictures, and to the point a text sits on. Line widths, dashes and text
+sizes are always in points: scaling doesn't make lines thicker or text
+larger. `zoom` is the exception: it enlarges those too.
 
 ## Divider
 

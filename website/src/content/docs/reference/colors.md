@@ -158,3 +158,59 @@ app Player(appearance: .dark) {
 
 [`isDarkMode()`](/reference/stdlib/#isdarkmode) tells which one the app is
 showing in.
+
+## CursorStyle
+
+Used by [`.cursor`](/reference/modifiers/#cursor): the pointer shown over a
+view.
+
+| Case | The pointer |
+|---|---|
+| `arrow` | The usual arrow. |
+| `hand` | A pointing hand, for links. |
+| `crosshair` | A cross, for picking a point or drawing. |
+| `grab`, `grabbing` | An open hand, and a closed one, for things that are moved. |
+| `text` | The I-beam of text. |
+| `move` | Arrows in four directions. |
+| `wait` | Busy. |
+| `notAllowed` | A crossed circle. |
+| `resizeHorizontal`, `resizeVertical` | Arrows sideways, and up and down. |
+| `zoomIn`, `zoomOut` | A magnifying glass with a plus or a minus. |
+
+## PointerEvent
+
+What [`.onPointer`](/reference/modifiers/#onpointer) tells its block. A
+struct with these fields:
+
+| Field | Type | |
+|---|---|---|
+| `kind` | `PointerKind` | What happened (below). |
+| `x`, `y` | `Float` | Where the mouse is, in points from the view's top left corner (inside its padding). During a drag they can be outside the view, and negative. |
+| `dx`, `dy` | `Float` | For `.move` and `.drag`: how far the mouse moved since the event before. For `.scroll`: how far to scroll, across and down (positive `dy`: towards what's further down). For `.pinch`: `dy` is how much larger (0.1: a tenth larger; negative: smaller). |
+| `button` | `PointerButton` | `.left`, `.right` or `.middle`, for `.down`, `.drag` and `.up`. |
+| `clicks` | `Int` | For `.down` and `.up`: 1 for a click, 2 for the second click of a double click, and so on. |
+| `shift`, `alt`, `command` | `Bool` | Whether the key was held. `command` is Cmd on macOS and Ctrl on Windows; `alt` is Option on macOS. |
+
+`PointerKind` has the cases `down`, `up`, `move`, `drag`, `scroll`,
+`pinch` and `leave`:
+
+| Case | When |
+|---|---|
+| `down` | A button was pressed on the view. |
+| `drag` | The mouse moved with that button held, on the view or off it. |
+| `up` | The button was let go. |
+| `move` | The mouse moved over the view with no button held. |
+| `leave` | The mouse left the view (or the window). |
+| `scroll` | The mouse wheel, or two fingers on a trackpad. |
+| `pinch` | Two fingers pinched on a trackpad (macOS only). |
+
+```tessel
+.onPointer { e in
+    match e.kind {
+        .down -> { start = (e.x, e.y) }
+        .drag -> { offset = (offset.0 + e.dx, offset.1 + e.dy) }
+        .scroll -> { zoom = zoom * exp(-e.dy * 0.01) }
+        _ -> {}
+    }
+}
+```

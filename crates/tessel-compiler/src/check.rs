@@ -1418,7 +1418,8 @@ impl Checker<'_> {
             }
             _ => return,
         };
-        if recv.has_error() || matches!(recv, Ty::View) {
+        // (The methods of `Graphics` draw: what `image` returns may be ignored.)
+        if recv.has_error() || matches!(recv, Ty::View) || recv == builtins::GRAPHICS {
             return;
         }
         let returns_value = match builtins::method_of(&recv, &name) {
@@ -3144,6 +3145,23 @@ impl Checker<'_> {
                 self.set_callee(Callee::Modifier(n.to_string()));
                 self.modifier_call(name, args, trailing, span)
             }
+            // `Graphics`: a built-in struct whose methods are the runtime's.
+            t if *t == builtins::GRAPHICS => match builtins::method_of(&recv, n) {
+                Some(m) => {
+                    self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                    self.args(&what, &m.sig.params, args, trailing, span);
+                    m.sig.ret
+                }
+                None if n == "width" || n == "height" => {
+                    self.error(name.span, format!("`{n}` is a field, not a method")).help("remove the parentheses");
+                    Ty::Error
+                }
+                None => {
+                    let names = builtins::member_names(&recv).iter().map(|s| s.to_string()).collect();
+                    self.no_member(name, &format!("`Graphics` has no method `{n}`"), names);
+                    Ty::Error
+                }
+            },
             Ty::Struct(_) | Ty::Enum(_) => {
                 let (methods, owner, fields) = match &recv {
                     Ty::Struct(id) => {

@@ -22,7 +22,11 @@ language may still change. This page is an honest list of where things stand.
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, about 60 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
-  and pressed states, and the layout and styling modifiers.
+  and pressed states, and the layout and styling modifiers. Drawing of your
+  own in a `Canvas` (shapes, paths, text and pictures), the mouse in full
+  with `.onPointer` (every button, moves, the wheel, pinches), keys with
+  `.onKey`, tooltips, pointers, files dropped on the window, and drawings
+  saved as pictures.
 - **Looks:** light and dark appearance that follows the system, colors of
   your own, and animation of views that move, resize or fade.
 - **Text editing:** selecting with the mouse and keyboard, word and line
@@ -38,7 +42,8 @@ language may still change. This page is an honest list of where things stand.
   with modules (`import`, `public`, `private`) for code shared between
   programs.
 - **Standard library:** files and folders, JSON and binary encoding of your
-  own types, `Data` for raw bytes, dates and times with time zones and
+  own types, `Data` for raw bytes (with the numbers that binary files hold,
+  and compression), dates and times with time zones and
   calendar arithmetic, random numbers, the
   clipboard, reading standard input and writing to standard error, and many
   methods for strings, numbers and lists.

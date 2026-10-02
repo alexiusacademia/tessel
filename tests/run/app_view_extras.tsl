@@ -1,0 +1,25 @@
+// `.offset`, `.clipped`, `.tooltip`, `.onDrop`, `.onResize`, and
+// `setWindowTitle`.
+
+app Extras(width: 320, height: 240) {
+    state shift = 0.0
+    state size = ""
+    state dropped = "nothing"
+    state taps = 0
+
+    VStack(spacing: 8) {
+        ZStack {
+            Text("moved").background(.yellow).offset(x: shift, y: 5).onTap { taps += 1 }
+        }
+        .frame(width: 100, height: 40)
+        .background(.sidebar, radius: 8)
+        .clipped()
+        .onResize { w, h in size = "{Int(w)} by {Int(h)}" }
+        Button("Shift") { shift += 40 }.tooltip("Moves the text to the right")
+        Text("{size}, {dropped}, {taps} taps")
+            .onDrop { path in
+                dropped = path.fileName
+                setWindowTitle("Extras: {dropped}")
+            }
+    }
+}

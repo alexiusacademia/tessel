@@ -1,0 +1,15 @@
+dump
+hover "Shift"
+wait 0.3
+tree
+wait 0.5
+tree
+click "moved"
+click "Shift"
+dump
+click "Shift"
+click 150 60
+click 232 60
+drop "/tmp/roads.shp"
+size 320 300
+tree

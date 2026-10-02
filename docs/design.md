@@ -387,6 +387,7 @@ separate edges; the most specific value wins, and edges not named get 0:
 | `CodeEditor` | `CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …)` (`line:` is optional) |
 | `TabView` | `TabView(selection: bind T, onClose: fn(T)?, content: View)` with `.tabItem(title)` and `.tag(value)` on pages |
 | `Divider` | `Divider()` — a thin separator line |
+| `Canvas` | `Canvas(redraw: Int = …, draw: fn(Graphics))` — the program's own drawing: paths, shapes, text and pictures through the `Graphics` it's given |
 
 **Icons.** `IconName` is a built-in enum of commonly used icons (from the
 Lucide set, ISC license): `file`, `fileText`, `fileCode`, `filePlus`,
@@ -411,6 +412,8 @@ In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 
 Common modifiers: `padding`, `frame(width:height:minWidth:maxWidth:minHeight:maxHeight:alignment:)`, `font`, `color`,
 `textAlignment`, `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
+For the mouse and keys: `onPointer` (a `PointerEvent`: what happened, where, which button), `onDrag`, `onKey`,
+`cursor`, `tooltip`, `onDrop`; and `offset`, `clipped` and `onResize` for views that are moved or drawn by hand.
 
 ### 8.6 Alignment
 

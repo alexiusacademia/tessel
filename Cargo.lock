@@ -2845,6 +2845,7 @@ dependencies = [
  "arboard",
  "chrono",
  "chrono-tz",
+ "flate2",
  "iana-time-zone",
  "image",
  "libc",

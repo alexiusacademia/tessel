@@ -1,0 +1,87 @@
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = ""
+      Text "keys: "
+      Text "down at 30,30 left ×1"
+      Text "up at 30,30 left ×1"
+      Spacer
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = ""
+      Text "keys: "
+      Text "down at 20,20 right ×1 shift alt"
+      Text "up at 20,20 right ×1 shift alt"
+      Text "down at 50,40 left ×1"
+      Text "up at 50,40 left ×1"
+      Text "down at 50,40 left ×2"
+      Text "up at 50,40 left ×2"
+      Spacer
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = ""
+      Text "keys: "
+      Text "down at 10,10 middle ×1"
+      Text "drag at 20,30 by 10.0,20.0"
+      Text "drag at 330,290 by 310.0,260.0"
+      Text "up at 330,290 middle ×1"
+      Spacer
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = ""
+      Text "keys: "
+      Text "move at 30,20"
+      Text "move at 30,30"
+      Text "leave at 230,240"
+      Text "scroll at 30,20 by 0.0,-40.0"
+      Text "pinch at 30,20 by 0.0,0.25"
+      Spacer
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = ""
+      Text "keys: "
+      Text "down at 10,10 left ×1"
+      Text "drag at 25,15 by 15.0,5.0"
+      Text "up at 25,15 left ×1"
+      Text "under down"
+      Text "under up"
+      Spacer
+Root
+  View
+    VStack
+      Text "pad"
+      ZStack
+        Text "under"
+        Button "Clear"
+      TextField "Name" = "ab"
+      Text "keys: [escape][x][+]"
+      Text "down at 10,10 left ×1"
+      Text "drag at 25,15 by 15.0,5.0"
+      Text "up at 25,15 left ×1"
+      Text "under down"
+      Text "under up"
+      Spacer

@@ -149,3 +149,13 @@ fn dateParts(_ time: Float, timeZone: String = "") -> DateParts {
     let p = __dateParts(time, timeZone)
     DateParts(year: p[0], month: p[1], day: p[2], hour: p[3], minute: p[4], second: p[5], weekday: p[6], dayOfYear: p[7])
 }
+
+/// The width and height in pixels of a PNG or JPEG file, or nil if it
+/// can't be read as one.
+fn imageSize(_ path: String) -> (Int, Int)? {
+    let size = __imageSize(path)
+    if size.count < 2 {
+        return nil
+    }
+    (size[0], size[1])
+}

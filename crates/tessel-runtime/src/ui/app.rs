@@ -21,7 +21,19 @@
 //!                       (`answer cancel` for cancelling it)
 //! drag 300 40 -80 0     press at a point, and move by (dx, dy) with the
 //!                       button held (for views with `.onDrag`)
-//! scroll 0 120          scroll the view under the pointer by (dx, dy) points
+//! scroll 0 120          scroll the view under the middle of the window by
+//!                       (dx, dy) points
+//! wheel 40 60 0 120     the same, at a point
+//! press 40 60           press the mouse on a view with `.onPointer` (add
+//!                       `right` or `middle` for another button), then
+//! move 80 60            move it there (a drag while pressed), and
+//! release               let go; `click`, `drag` and `hover` work on such
+//!                       views too, and so do
+//! rightclick 40 60      a click with the right button,
+//! doubleclick 40 60     two clicks in a row, and
+//! pinch 40 60 0.2       a trackpad pinch (0.2: a fifth larger)
+//! mods shift+alt        the modifier keys held for these (`mods none`)
+//! drop "/tmp/a.shp"     drop a file on the window (for `.onDrop`)
 //! wait 1.5              let 1.5 seconds pass (fires timers); first waits
 //!                       for loads, commands and background work to finish
 //! repeat 20 key down    run a command several times
@@ -508,12 +520,15 @@ enum Hit {
     Link(u64, usize),
     /// A view with `.onDrag`.
     Drag(u64),
+    /// A view with `.onPointer`.
+    Pointer(u64),
 }
 
 impl Hit {
     fn key(&self) -> u64 {
         match *self {
             Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) | Hit::Drag(k) => k,
+            Hit::Pointer(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
     }
@@ -537,7 +552,47 @@ struct App {
     /// selection, and the length of its text (see `follow_caret`).
     followed: Option<(u64, usize, usize, usize)>,
     completing: Completing,
+    /// The view with `.onPointer` the mouse is over (it's told when it leaves).
+    pointer_over: Option<u64>,
+    /// The view with a `.tooltip` the mouse rests on.
+    tip: Option<Tip>,
+    /// The sizes views with `.onResize` were last told.
+    sizes: HashMap<u64, (f64, f64)>,
 }
+
+/// A tooltip waiting to show, or showing.
+struct Tip {
+    key: u64,
+    /// When the mouse came to rest on the view (on the app's clock).
+    since: f64,
+    /// Showing, or not to be shown again until the mouse leaves the view
+    /// (after a click).
+    done: bool,
+}
+
+/// How long the mouse rests on a view before its tooltip shows.
+const TIP_DELAY: f64 = 0.6;
+
+thread_local! {
+    /// `setWindowTitle(…)`: the title the window takes at its next update.
+    static NEW_TITLE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// `setWindowTitle(title)`: changes the text in the window's title bar.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_window_title(title: *const Str) {
+    let title = unsafe { crate::str_text(title) }.to_string();
+    NEW_TITLE.with(|t| *t.borrow_mut() = Some(title));
+}
+
+// `PointerKind` cases, in order.
+const DOWN: i32 = 0;
+const UP: i32 = 1;
+const MOVE: i32 = 2;
+const DRAG: i32 = 3;
+const SCROLL: i32 = 4;
+const PINCH: i32 = 5;
+const LEAVE: i32 = 6;
 
 /// Code completion in a `CodeEditor`.
 #[derive(Default)]
@@ -620,21 +675,29 @@ impl App {
             self.root = root;
             self.dirty = true;
         }
-        for _ in 0..8 {
-            if !(self.dirty || self.tree.is_none()) {
+        // `.onResize` blocks run after layout, and can change state too:
+        // then the tree is built and laid out again (a few times at most).
+        for _ in 0..4 {
+            for _ in 0..8 {
+                if !(self.dirty || self.tree.is_none()) {
+                    break;
+                }
+                self.dirty = false;
+                self.tree = Some(build(&self.root));
+                self.run_on_appear();
+                self.sync_editor_lines();
+            }
+            if self.ui.editing.is_none() {
+                self.ui.composing = None;
+            }
+            let composing =
+                self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
+            let tree = self.tree.as_mut().unwrap();
+            Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run(tree, self.width, self.height);
+            if !self.run_on_resize() {
                 break;
             }
-            self.dirty = false;
-            self.tree = Some(build(&self.root));
-            self.run_on_appear();
-            self.sync_editor_lines();
         }
-        if self.ui.editing.is_none() {
-            self.ui.composing = None;
-        }
-        let composing = self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
-        let tree = self.tree.as_mut().unwrap();
-        Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run(tree, self.width, self.height);
         self.follow_caret();
         self.layout_popup();
         let tree = self.tree.as_ref().unwrap();
@@ -924,6 +987,37 @@ impl App {
         }
     }
 
+    /// Runs `.onResize` for views whose size isn't what they were last told
+    /// (or that were never told). Returns whether any ran.
+    fn run_on_resize(&mut self) -> bool {
+        fn visit(n: &Node, sizes: &HashMap<u64, (f64, f64)>, out: &mut Vec<(u64, f64, f64, Callback)>) {
+            if n.mods.hidden {
+                return;
+            }
+            if let Some(cb) = &n.mods.on_resize {
+                let c = n.layout.rect.inset_by(n.mods.padding);
+                if sizes.get(&n.key) != Some(&(c.w, c.h)) {
+                    out.push((n.key, c.w, c.h, cb.clone()));
+                }
+            }
+            for c in n.visible_children() {
+                visit(c, sizes, out);
+            }
+        }
+        let mut changed = Vec::new();
+        if let Some(t) = &self.tree {
+            visit(t, &self.sizes, &mut changed);
+        }
+        self.sizes.retain(|key, _| self.keys.contains(key));
+        let ran = !changed.is_empty();
+        for (key, w, h, cb) in changed {
+            self.sizes.insert(key, (w, h));
+            cb.call_with_floats(w, h);
+            self.dirty = true;
+        }
+        ran
+    }
+
     /// Runs `.onAppear` for views that weren't in the previous tree.
     fn run_on_appear(&mut self) {
         type Keys = std::collections::HashSet<u64>;
@@ -947,6 +1041,7 @@ impl App {
             visit(t, &mut keys, &self.keys, &mut appeared, &mut focus);
         }
         self.keys = keys;
+        super::canvas::keep_only(&self.keys);
         if let Some((key, text)) = focus {
             self.ui.editing = Some(Editing::new(key, &text));
         }
@@ -1043,6 +1138,11 @@ impl App {
     /// `{`) and `}` at the start of a line removes one level.
     fn type_text(&mut self, text: &str) {
         self.ui.composing = None;
+        // With no text being edited, a typed character is a key for `.onKey`.
+        if self.ui.editing.is_none() {
+            self.run_on_key(text);
+            return;
+        }
         if self.editing_code() {
             let before = self.line_before_caret().unwrap_or_default();
             if text == "\n" {
@@ -1072,11 +1172,16 @@ impl App {
         let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
         painter.paint(tree);
         painter.paint_popup();
+        painter.paint_tooltip();
         scene
     }
 
     fn hit(&self, x: f64, y: f64) -> Option<Hit> {
         fn visit(n: &Node, x: f64, y: f64) -> Option<Hit> {
+            // Nothing of a clipped view shows outside it.
+            if n.mods.clipped && !n.layout.rect.contains(x, y) {
+                return None;
+            }
             if n.mods.hidden || n.layout.style.disabled || !n.layout.rect.contains(x, y) {
                 // Scroll content can extend outside; only stop at our own bounds for leaves.
                 if n.mods.hidden || n.layout.style.disabled || n.children.is_empty() {
@@ -1118,6 +1223,7 @@ impl App {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
                 Kind::Toggle { .. } => Some(Hit::Toggle(n.key)),
                 Kind::TextField { .. } | Kind::CodeEditor { .. } => Some(Hit::Field(n.key)),
+                _ if n.mods.on_pointer.is_some() => Some(Hit::Pointer(n.key)),
                 _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
@@ -1129,6 +1235,7 @@ impl App {
     /// Moves the pointer to a point (as the window does on mouse moves).
     pub fn hover(&mut self, x: f64, y: f64) {
         self.ui.pointer = Some((x, y));
+        self.tip_move(x, y);
         self.ui.hovered = self.hit(x, y).map(|h| h.key());
         self.ui.hover_background = self.hover_background_at(x, y);
     }
@@ -1169,6 +1276,186 @@ impl App {
             on_drag.call_with_floats(dx, dy);
             self.dirty = true;
         }
+    }
+
+    /// The view with `.onPointer` at a point.
+    fn pointer_at(&self, x: f64, y: f64) -> Option<u64> {
+        match self.hit(x, y) {
+            Some(Hit::Pointer(key)) => Some(key),
+            _ => None,
+        }
+    }
+
+    /// Tells view `key` what the mouse did, at `at` in the window (the view
+    /// gets it from its own top left corner, inside its padding).
+    fn pointer(&mut self, key: u64, kind: i32, at: (f64, f64), delta: (f64, f64), button: i32, clicks: i64, mods: Mods) {
+        let Some(node) = self.node(key) else { return };
+        let Some(on_pointer) = node.mods.on_pointer.clone() else { return };
+        let origin = node.layout.rect.inset_by(node.mods.padding);
+        let mut event = super::PointerC {
+            kind,
+            button,
+            clicks,
+            x: at.0 - origin.x,
+            y: at.1 - origin.y,
+            dx: delta.0,
+            dy: delta.1,
+            shift: mods.shift as u8,
+            alt: mods.alt as u8,
+            command: mods.primary as u8,
+        };
+        on_pointer.call_with(&mut event as *mut super::PointerC as *mut u8);
+        self.dirty = true;
+    }
+
+    /// The mouse moved (no button held) to a point: the view with
+    /// `.onPointer` there is told, and the one it left. Returns whether any was.
+    fn pointer_move(&mut self, x: f64, y: f64, delta: (f64, f64), mods: Mods) -> bool {
+        let now = self.pointer_at(x, y);
+        let before = self.pointer_over;
+        if let Some(old) = before.filter(|old| Some(*old) != now) {
+            self.pointer(old, LEAVE, (x, y), (0.0, 0.0), 0, 0, mods);
+        }
+        if let Some(key) = now {
+            self.pointer(key, MOVE, (x, y), delta, 0, 0, mods);
+        }
+        self.pointer_over = now;
+        now.is_some() || before.is_some()
+    }
+
+    /// The mouse left the window.
+    fn pointer_leave(&mut self, mods: Mods) {
+        if let Some(old) = self.pointer_over.take() {
+            let at = self.ui.pointer.unwrap_or((0.0, 0.0));
+            self.pointer(old, LEAVE, at, (0.0, 0.0), 0, 0, mods);
+        }
+    }
+
+    /// The pointer a view asks for with `.cursor(…)`: the innermost such
+    /// view at the point.
+    fn cursor_at(&self, x: f64, y: f64) -> Option<winit::window::CursorIcon> {
+        use winit::window::CursorIcon;
+        fn visit(n: &Node, x: f64, y: f64) -> Option<u8> {
+            if n.mods.hidden || !n.layout.rect.contains(x, y) && n.children.is_empty() {
+                return None;
+            }
+            let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
+            inner.or(n.mods.cursor.filter(|_| n.layout.rect.contains(x, y)))
+        }
+        // In the order of the `CursorStyle` enum.
+        const STYLES: [CursorIcon; 13] = [
+            CursorIcon::Default,
+            CursorIcon::Pointer,
+            CursorIcon::Crosshair,
+            CursorIcon::Grab,
+            CursorIcon::Grabbing,
+            CursorIcon::Text,
+            CursorIcon::Move,
+            CursorIcon::Wait,
+            CursorIcon::NotAllowed,
+            CursorIcon::EwResize,
+            CursorIcon::NsResize,
+            CursorIcon::ZoomIn,
+            CursorIcon::ZoomOut,
+        ];
+        let style = visit(self.tree.as_ref()?, x, y)?;
+        STYLES.get(style as usize).copied()
+    }
+
+    /// The innermost view with a `.tooltip` at a point: its key and text.
+    fn tooltip_at(&self, x: f64, y: f64) -> Option<(u64, String)> {
+        fn visit(n: &Node, x: f64, y: f64) -> Option<(u64, String)> {
+            if n.mods.hidden || (n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
+                return None;
+            }
+            let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
+            inner.or_else(|| n.mods.tooltip.clone().filter(|_| n.layout.rect.contains(x, y)).map(|t| (n.key, t)))
+        }
+        visit(self.tree.as_ref()?, x, y)
+    }
+
+    /// The mouse moved to a point: a tooltip starts waiting when it comes
+    /// onto a view that has one, and goes when it leaves.
+    fn tip_move(&mut self, x: f64, y: f64) {
+        let over = self.tooltip_at(x, y).map(|(key, _)| key);
+        if over != self.tip.as_ref().map(|t| t.key) {
+            self.tip = over.map(|key| Tip { key, since: now(), done: false });
+            self.ui.tooltip = None;
+        }
+    }
+
+    /// A click, a key or the wheel: the tooltip goes, until the mouse has
+    /// left the view.
+    fn tip_hide(&mut self) {
+        if let Some(t) = self.tip.as_mut() {
+            t.done = true;
+        }
+        self.ui.tooltip = None;
+    }
+
+    /// When the waiting tooltip is to show (on the app's clock), if one waits.
+    fn tip_time(&self) -> Option<f64> {
+        self.tip.as_ref().filter(|t| !t.done).map(|t| t.since + TIP_DELAY)
+    }
+
+    /// Shows the tooltip if the mouse has rested long enough. Returns
+    /// whether it just came up.
+    fn tip_due(&mut self) -> bool {
+        let Some(tip) = self.tip.as_ref().filter(|t| !t.done && now() >= t.since + TIP_DELAY) else { return false };
+        let Some(text) = self.node(tip.key).and_then(|n| n.mods.tooltip.clone()) else {
+            self.tip = None;
+            return false;
+        };
+        let layout = self.text.layout(&text, 12.0, 400.0, theme().colors[theme::PRIMARY], Some(280.0));
+        let (w, h) = (layout.width() as f64 + 16.0, layout.height() as f64 + 10.0);
+        // Below and to the right of the pointer, inside the window.
+        let (px, py) = self.ui.pointer.unwrap_or((0.0, 0.0));
+        let x = (px + 12.0).min(self.width - w - 4.0).max(4.0);
+        let y = if py + 20.0 + h > self.height - 4.0 { (py - h - 8.0).max(4.0) } else { py + 20.0 };
+        self.ui.tooltip = Some(render::Tooltip { rect: Rect { x, y, w, h }, text, layout });
+        if let Some(t) = self.tip.as_mut() {
+            t.done = true;
+        }
+        true
+    }
+
+    /// A file dropped on the window: the first visible view with `.onDrop`
+    /// gets its path. Returns whether one did.
+    fn drop_file(&mut self, path: &str) -> bool {
+        fn find(n: &Node) -> Option<Callback> {
+            if n.mods.hidden || n.layout.style.disabled {
+                return None;
+            }
+            if let Some(cb) = &n.mods.on_drop {
+                return Some(cb.clone());
+            }
+            n.visible_children().iter().find_map(find)
+        }
+        let Some(cb) = self.tree.as_ref().and_then(find) else { return false };
+        cb.call_with(crate::str_new(path) as *mut u8);
+        self.dirty = true;
+        true
+    }
+
+    /// Runs `.onKey` with a key pressed while no text is edited: the first
+    /// visible, enabled view with one gets it. Returns whether one did.
+    fn run_on_key(&mut self, key: &str) -> bool {
+        fn find(n: &Node) -> Option<Callback> {
+            if n.mods.hidden || n.layout.style.disabled {
+                return None;
+            }
+            if let Some(cb) = &n.mods.on_key {
+                return Some(cb.clone());
+            }
+            n.visible_children().iter().find_map(find)
+        }
+        if key.is_empty() {
+            return false;
+        }
+        let Some(cb) = self.tree.as_ref().and_then(find) else { return false };
+        cb.call_with(crate::str_new(key) as *mut u8);
+        self.dirty = true;
+        true
     }
 
     /// The pointer for a view with `.onDrag` under it: by the view's shape,
@@ -1351,6 +1638,9 @@ impl App {
         if mods.primary && !editing_key && self.run_shortcut(name) {
             return;
         }
+        if self.ui.editing.is_none() && !mods.primary && self.run_on_key(name) {
+            return;
+        }
         let unit = if mods.primary {
             Unit::Line
         } else if mods.alt {
@@ -1435,9 +1725,33 @@ impl App {
         self.tree.as_ref().and_then(|t| find(t, x, y))
     }
 
-    /// Scrolls the view under (x, y) by (dx, dy): as far as its content goes.
-    fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64) {
-        let Some(key) = self.scrollable_at(x, y) else { return };
+    /// What the wheel turns at a point: the innermost scroll view or code
+    /// editor there, or view with `.onPointer` (true: it is told instead).
+    fn wheel_target(&self, x: f64, y: f64) -> Option<(u64, bool)> {
+        fn find(n: &Node, x: f64, y: f64) -> Option<(u64, bool)> {
+            if !n.layout.rect.contains(x, y) || n.mods.hidden {
+                return None;
+            }
+            let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
+            inner.or_else(|| {
+                if n.mods.on_pointer.is_some() && !n.layout.style.disabled {
+                    Some((n.key, true))
+                } else {
+                    matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some((n.key, false))
+                }
+            })
+        }
+        self.tree.as_ref().and_then(|t| find(t, x, y))
+    }
+
+    /// Scrolls the view under (x, y) by (dx, dy): as far as its content
+    /// goes. A view with `.onPointer` is told of the scroll instead.
+    fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, mods: Mods) {
+        let Some((key, pointer)) = self.wheel_target(x, y) else { return };
+        if pointer {
+            self.pointer(key, SCROLL, (x, y), (dx, dy), 0, 0, mods);
+            return;
+        }
         let Some(n) = self.node(key) else { return };
         let content = n.layout.rect.inset_by(n.mods.padding);
         let max_y = (n.layout.content_h - content.h).max(0.0);
@@ -1584,6 +1898,11 @@ impl App {
                     format!("TabView {titles:?} selected {}", n.selected_tab())
                 }
                 Kind::Divider => "Divider".to_string(),
+                Kind::Canvas { draw, redraw } => {
+                    let c = n.layout.rect.inset_by(n.mods.padding);
+                    let drawing = super::canvas::drawing(n.key, draw, *redraw, c.w, c.h);
+                    format!("Canvas ({})", drawing.stats.describe())
+                }
                 Kind::Markdown { .. } => {
                     let laid = n.layout.markdown.as_ref();
                     let links: Vec<&str> = laid.iter().flat_map(|l| &l.links).map(|l| l.text.as_str()).collect();
@@ -1652,6 +1971,9 @@ pub unsafe extern "C" fn tsl_ui_run(
         keys: Default::default(),
         followed: None,
         completing: Completing::default(),
+        pointer_over: None,
+        tip: None,
+        sizes: HashMap::new(),
     };
     let code = match std::env::var("TESSEL_SCRIPT") {
         Ok(script) => run_script(app, &script),
@@ -1691,6 +2013,12 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             None => commands.push(cmd.to_string()),
         }
     }
+    // The mouse, for views with `.onPointer`: the view it's pressed on (and
+    // the button), where it is, and the modifier keys held.
+    let mut held: Option<(u64, i32)> = None;
+    let mut mouse = (0.0, 0.0);
+    let mut mods = Mods::default();
+    let numbers = |text: &str| -> Vec<f64> { text.split_whitespace().filter_map(|x| x.parse().ok()).collect() };
     for cmd in commands.iter().map(String::as_str) {
         app.update();
         let (word, rest) = cmd.split_once(' ').unwrap_or((cmd, ""));
@@ -1704,6 +2032,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
             }
             "click" => {
+                app.tip_hide();
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
@@ -1714,10 +2043,105 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     (n.len() == 2).then(|| (n[0], n[1]))
                 };
                 match point {
-                    Some((x, y)) => app.click(x, y),
+                    Some((x, y)) => match app.pointer_at(x, y) {
+                        Some(key) => {
+                            app.ui.editing = None;
+                            app.pointer(key, DOWN, (x, y), (0.0, 0.0), 0, 1, mods);
+                            app.pointer(key, UP, (x, y), (0.0, 0.0), 0, 1, mods);
+                            mouse = (x, y);
+                        }
+                        None => app.click(x, y),
+                    },
                     None => {
                         eprintln!("script: nothing to click for `{rest}`");
                         return 2;
+                    }
+                }
+            }
+            "rightclick" | "doubleclick" => {
+                let n = numbers(rest);
+                let key = match n[..] {
+                    [x, y] => app.pointer_at(x, y),
+                    _ => None,
+                };
+                let (Some(key), [x, y]) = (key, &n[..]) else {
+                    eprintln!("script: no view with `.onPointer` for `{cmd}`");
+                    return 2;
+                };
+                let at = (*x, *y);
+                app.ui.editing = None;
+                let (button, presses) = if word == "rightclick" { (1, 1) } else { (0, 2) };
+                for clicks in 1..=presses {
+                    app.pointer(key, DOWN, at, (0.0, 0.0), button, clicks, mods);
+                    app.pointer(key, UP, at, (0.0, 0.0), button, clicks, mods);
+                }
+                mouse = at;
+            }
+            "press" => {
+                let words: Vec<&str> = rest.split_whitespace().collect();
+                let button = match words.get(2).copied() {
+                    Some("right") => 1,
+                    Some("middle") => 2,
+                    _ => 0,
+                };
+                let n = numbers(rest);
+                let key = match n[..] {
+                    [x, y] => app.pointer_at(x, y),
+                    _ => None,
+                };
+                let (Some(key), [x, y]) = (key, &n[..]) else {
+                    eprintln!("script: no view with `.onPointer` for `{cmd}`");
+                    return 2;
+                };
+                mouse = (*x, *y);
+                app.ui.editing = None;
+                app.pointer(key, DOWN, mouse, (0.0, 0.0), button, 1, mods);
+                held = Some((key, button));
+            }
+            "move" => {
+                let n = numbers(rest);
+                let [x, y] = n[..] else {
+                    eprintln!("script: write it as `move 80 60`");
+                    return 2;
+                };
+                let delta = (x - mouse.0, y - mouse.1);
+                mouse = (x, y);
+                match held {
+                    Some((key, button)) => app.pointer(key, DRAG, mouse, delta, button, 0, mods),
+                    None => {
+                        app.hover(x, y);
+                        app.pointer_move(x, y, delta, mods);
+                    }
+                }
+            }
+            "release" => {
+                if let [x, y] = numbers(rest)[..] {
+                    mouse = (x, y);
+                }
+                if let Some((key, button)) = held.take() {
+                    app.pointer(key, UP, mouse, (0.0, 0.0), button, 1, mods);
+                }
+            }
+            "pinch" => {
+                let n = numbers(rest);
+                let key = match n[..] {
+                    [x, y, _] => app.pointer_at(x, y),
+                    _ => None,
+                };
+                let (Some(key), [x, y, delta]) = (key, &n[..]) else {
+                    eprintln!("script: no view with `.onPointer` for `{cmd}`");
+                    return 2;
+                };
+                app.pointer(key, PINCH, (*x, *y), (0.0, *delta), 0, 0, mods);
+            }
+            "mods" => {
+                mods = Mods::default();
+                for m in rest.split('+') {
+                    match m.trim() {
+                        "shift" => mods.shift = true,
+                        "alt" => mods.alt = true,
+                        "cmd" | "ctrl" => mods.primary = true,
+                        _ => {}
                     }
                 }
             }
@@ -1735,7 +2159,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     (n.len() == 2).then(|| (n[0], n[1]))
                 };
                 match point {
-                    Some((x, y)) => app.hover(x, y),
+                    Some((x, y)) => {
+                        app.hover(x, y);
+                        app.pointer_move(x, y, (x - mouse.0, y - mouse.1), mods);
+                        mouse = (x, y);
+                    }
                     None => {
                         eprintln!("script: nothing to hover over for `{rest}`");
                         return 2;
@@ -1769,6 +2197,17 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "drag" => {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                // On a view with `.onPointer`: press, move and let go.
+                if let [x, y, dx, dy] = n[..] {
+                    if let Some(key) = app.pointer_at(x, y) {
+                        app.ui.editing = None;
+                        app.pointer(key, DOWN, (x, y), (0.0, 0.0), 0, 1, mods);
+                        mouse = (x + dx, y + dy);
+                        app.pointer(key, DRAG, mouse, (dx, dy), 0, 0, mods);
+                        app.pointer(key, UP, mouse, (0.0, 0.0), 0, 1, mods);
+                        continue;
+                    }
+                }
                 let key = match n[..] {
                     [x, y, _, _] => app.drag_at(x, y),
                     _ => None,
@@ -1793,10 +2232,17 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "scroll" => {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-                if let [_, dy] = n[..] {
+                if let [dx, dy] = n[..] {
                     let (x, y) = (app.width / 2.0, app.height / 2.0);
-                    app.scroll(x, y, 0.0, dy);
+                    app.scroll(x, y, dx, dy, mods);
                 }
+            }
+            "wheel" => {
+                let [x, y, dx, dy] = numbers(rest)[..] else {
+                    eprintln!("script: write it as `wheel 40 60 0 120`");
+                    return 2;
+                };
+                app.scroll(x, y, dx, dy, mods);
             }
             "wait" => {
                 // Loads and commands in progress finish first (tests shouldn't depend on timing).
@@ -1833,6 +2279,14 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
                 CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(end));
+                app.tip_due();
+            }
+            "drop" => {
+                let path = rest.trim_matches('"');
+                if !app.drop_file(path) {
+                    eprintln!("script: no view with `.onDrop` for `{cmd}`");
+                    return 2;
+                }
             }
             "compose" => {
                 let text = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')).unwrap_or(rest);
@@ -1860,6 +2314,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             "dump" | "tree" => {
                 app.update();
                 print!("{}", app.dump(word == "dump"));
+                if let Some(tip) = &app.ui.tooltip {
+                    println!("Tooltip {:?}", tip.text);
+                }
                 // The completion list, with the selected suggestion marked.
                 if let Some(m) = app.matches() {
                     let items: Vec<String> = m
@@ -1897,6 +2354,8 @@ struct WindowApp {
     /// The scroll bar being dragged: its view, whether it's the one down
     /// the side, and where on its thumb it's held.
     scrolling: Option<(u64, bool, f64)>,
+    /// The view with `.onPointer` the mouse is pressed on, and the button.
+    pointing: Option<(u64, i32)>,
     /// The pointer that's showing (a resize one over a drag handle).
     pointer: winit::window::CursorIcon,
     /// For double and triple clicks: when and where the last click was, and the count.
@@ -1927,6 +2386,7 @@ fn run_window(app: App) -> i32 {
         selecting: false,
         dragging: None,
         scrolling: None,
+        pointing: None,
         pointer: winit::window::CursorIcon::Default,
         last_click: None,
         ime: false,
@@ -1951,6 +2411,10 @@ impl WindowApp {
 
     fn redraw(&mut self) {
         let (Some(surface), Some(window)) = (self.surface.as_ref(), self.window.as_ref()) else { return };
+        if let Some(title) = NEW_TITLE.with(|t| t.borrow_mut().take()) {
+            window.set_title(&title);
+            self.app.title = title;
+        }
         let scale = window.scale_factor();
         let size = window.inner_size();
         self.app.width = size.width as f64 / scale;
@@ -2066,6 +2530,13 @@ impl ApplicationHandler for WindowApp {
         if std::env::var_os("TESSEL_DEBUG_EVENTS").is_some() && !matches!(event, WindowEvent::RedrawRequested) {
             eprintln!("event: {event:?}");
         }
+        // A click, a key or the wheel puts the tooltip away.
+        if matches!(event, WindowEvent::MouseInput { .. } | WindowEvent::KeyboardInput { .. } | WindowEvent::MouseWheel { .. }) {
+            if self.app.ui.tooltip.is_some() {
+                self.request_redraw();
+            }
+            self.app.tip_hide();
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -2096,11 +2567,19 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                     return;
                 }
-                if let Some(key) = self.dragging {
-                    self.app.drag(key, self.cursor.0 - before.0, self.cursor.1 - before.1);
+                let delta = (self.cursor.0 - before.0, self.cursor.1 - before.1);
+                if let Some((key, button)) = self.pointing {
+                    self.app.pointer(key, DRAG, self.cursor, delta, button, 0, self.mods);
+                    self.request_redraw();
+                } else if let Some(key) = self.dragging {
+                    self.app.drag(key, delta.0, delta.1);
                     self.request_redraw();
                 } else {
-                    let pointer = self.app.drag_cursor(self.cursor.0, self.cursor.1).unwrap_or_default();
+                    if !self.selecting && self.app.pointer_move(self.cursor.0, self.cursor.1, delta, self.mods) {
+                        self.request_redraw();
+                    }
+                    let (x, y) = self.cursor;
+                    let pointer = self.app.cursor_at(x, y).or_else(|| self.app.drag_cursor(x, y)).unwrap_or_default();
                     if pointer != self.pointer {
                         self.pointer = pointer;
                         if let Some(w) = &self.window {
@@ -2115,16 +2594,75 @@ impl ApplicationHandler for WindowApp {
                 let hovered = self.app.hit(self.cursor.0, self.cursor.1).map(|h| h.key());
                 let hover_bg = self.app.hover_background_at(self.cursor.0, self.cursor.1);
                 self.app.ui.pointer = Some(self.cursor);
+                let had_tip = self.app.ui.tooltip.is_some();
+                self.app.tip_move(self.cursor.0, self.cursor.1);
+                if had_tip && self.app.ui.tooltip.is_none() {
+                    self.request_redraw();
+                }
                 if hovered != self.app.ui.hovered || hovered.is_some() || hover_bg != self.app.ui.hover_background {
                     self.app.ui.hovered = hovered;
                     self.app.ui.hover_background = hover_bg;
                     self.request_redraw();
                 }
             }
+            WindowEvent::DroppedFile(path) => {
+                if self.app.drop_file(&path.to_string_lossy()) {
+                    self.request_redraw();
+                }
+            }
             WindowEvent::CursorLeft { .. } => {
+                if self.pointing.is_none() {
+                    self.app.pointer_leave(self.mods);
+                }
+                self.app.tip = None;
+                self.app.ui.tooltip = None;
                 self.app.ui.hovered = None;
                 self.app.ui.hover_background = None;
                 self.app.ui.pointer = None;
+                self.request_redraw();
+            }
+            // A view with `.onPointer` gets every button, pressed and let go.
+            WindowEvent::MouseInput { state, button, .. }
+                if matches!(button, MouseButton::Left | MouseButton::Right | MouseButton::Middle)
+                    && match state {
+                        ElementState::Pressed => {
+                            self.pointing.is_none()
+                                && self.app.ui.popup.as_ref().is_none_or(|p| !p.rect.contains(self.cursor.0, self.cursor.1))
+                                && self.app.pointer_at(self.cursor.0, self.cursor.1).is_some()
+                        }
+                        ElementState::Released => self.pointing.is_some(),
+                    } =>
+            {
+                let (x, y) = self.cursor;
+                let pressed = match button {
+                    MouseButton::Right => 1,
+                    MouseButton::Middle => 2,
+                    _ => 0,
+                };
+                match (state, self.pointing) {
+                    (ElementState::Pressed, _) => {
+                        let Some(key) = self.app.pointer_at(x, y) else { return };
+                        let now = Instant::now();
+                        let clicks = match self.last_click {
+                            Some((t, (px, py), n))
+                                if now.duration_since(t) < Duration::from_millis(400) && (px - x).abs() < 4.0 && (py - y).abs() < 4.0 =>
+                            {
+                                n + 1
+                            }
+                            _ => 1,
+                        };
+                        self.last_click = Some((now, (x, y), clicks));
+                        self.app.ui.editing = None;
+                        self.app.pointer(key, DOWN, (x, y), (0.0, 0.0), pressed, clicks as i64, self.mods);
+                        self.pointing = Some((key, pressed));
+                    }
+                    (ElementState::Released, Some((key, held))) if held == pressed => {
+                        let clicks = self.last_click.map_or(1, |(_, _, n)| n);
+                        self.app.pointer(key, UP, (x, y), (0.0, 0.0), pressed, clicks as i64, self.mods);
+                        self.pointing = None;
+                    }
+                    _ => {}
+                }
                 self.request_redraw();
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
@@ -2191,8 +2729,15 @@ impl ApplicationHandler for WindowApp {
                     MouseScrollDelta::LineDelta(x, y) => (-x as f64 * 40.0, -y as f64 * 40.0),
                     MouseScrollDelta::PixelDelta(p) => (-p.x / self.scale(), -p.y / self.scale()),
                 };
-                self.app.scroll(self.cursor.0, self.cursor.1, dx, dy);
+                self.app.scroll(self.cursor.0, self.cursor.1, dx, dy, self.mods);
                 self.request_redraw();
+            }
+            // A trackpad pinch (macOS): for a view with `.onPointer`.
+            WindowEvent::PinchGesture { delta, .. } => {
+                if let Some(key) = self.app.pointer_at(self.cursor.0, self.cursor.1) {
+                    self.app.pointer(key, PINCH, self.cursor, (0.0, delta), 0, 0, self.mods);
+                    self.request_redraw();
+                }
             }
             WindowEvent::KeyboardInput { event: KeyEvent { state: ElementState::Pressed, logical_key, text, .. }, .. } => {
                 let mods = self.mods;
@@ -2245,7 +2790,12 @@ impl ApplicationHandler for WindowApp {
             self.app.dirty = true;
             self.request_redraw();
         }
-        match next_timer() {
+        if self.app.tip_due() {
+            self.request_redraw();
+        }
+        // Wake for the next timer, or for a tooltip that's waiting to show.
+        let next = [next_timer(), self.app.tip_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
+        match next {
             Some(t) => {
                 let wait = Duration::from_secs_f64((t - now()).max(0.0));
                 event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + wait));

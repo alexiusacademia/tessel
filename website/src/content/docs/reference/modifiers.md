@@ -308,6 +308,88 @@ Spacer()
 - A view with `onDrag` doesn't get [`onTap`](#ontap) clicks.
 - Doesn't run while the view is disabled or hidden.
 
+## onPointer
+
+```text
+.onPointer(_ action: fn(PointerEvent))
+```
+
+Runs `action` with everything the mouse does on the view: pressing and
+letting go (any button), moving, dragging, scrolling and pinching. See
+[Following the mouse](/ui/drawing/#following-the-mouse).
+
+```tessel
+Canvas { g in g.fillCircle(x: x, y: y, radius: 6, color: .red) }
+    .onPointer { e in
+        if e.kind == .down || e.kind == .drag {
+            x = e.x
+            y = e.y
+        }
+    }
+```
+
+- The block gets a [`PointerEvent`](/reference/colors/#pointerevent): what
+  happened (`kind`), where (`x`, `y`, from the view's top left corner inside
+  its padding), how far (`dx`, `dy`), which `button`, how many `clicks`, and
+  whether `shift`, `alt` or `command` was held.
+- From `.down` to `.up`, the view has the mouse: `.drag` events keep coming
+  when the mouse leaves the view, and the `.up` comes wherever it is let go.
+- A scroll over the view goes to it (as a `.scroll` event) rather than to a
+  `Scroll` around it.
+- A view with `onPointer` doesn't get [`onTap`](#ontap) or
+  [`onDrag`](#ondrag). Controls on top of it (in a `ZStack`) still get their
+  own clicks.
+- Doesn't run while the view is disabled or hidden.
+
+## onKey
+
+```text
+.onKey(_ action: fn(String))
+```
+
+Runs `action` with each key pressed while no text is being edited.
+
+```tessel
+VStack {
+    Text("Arrows move the piece")
+}
+.onKey { key in
+    match key {
+        "left" -> { column -= 1 }
+        "right" -> { column += 1 }
+        " " -> { drop() }
+        _ -> {}
+    }
+}
+```
+
+- `key` is the character typed (`"a"`, `"A"`, `"+"`, `" "`), or a key's
+  name: `"enter"`, `"escape"`, `"tab"`, `"backspace"`, `"delete"`,
+  `"left"`, `"right"`, `"up"`, `"down"`, `"home"`, `"end"`.
+- While a text field or code editor is being edited, keys go to it, not to
+  `onKey`. Keys pressed with Cmd (Ctrl on Windows) go to
+  [`shortcut`](#shortcut).
+- If several views have `onKey`, the first one (from the top of the view
+  tree) that is shown and enabled gets the key.
+
+## cursor
+
+```text
+.cursor(_ style: CursorStyle)
+```
+
+The pointer shown while the mouse is over the view.
+
+```tessel
+Text("Read more").color(.blue).cursor(.hand).onTap { open() }
+```
+
+`style` is one of `.arrow`, `.hand`, `.crosshair`, `.grab`, `.grabbing`,
+`.text`, `.move`, `.wait`, `.notAllowed`, `.resizeHorizontal`,
+`.resizeVertical`, `.zoomIn`, `.zoomOut` (see
+[CursorStyle](/reference/colors/#cursorstyle)). The innermost view under
+the mouse that has a cursor decides.
+
 ## id
 
 ```text
@@ -480,6 +562,102 @@ VStack {
 - Views are told apart by their position, or by [`.id`](#id): give the views
   of a list an id so that the right ones move when one is added or removed.
 - Clicks go to where a view will end up, not to where it's drawn on the way.
+
+## offset
+
+```text
+.offset(x: Float = 0, y: Float = 0)
+```
+
+Shows the view (and everything in it) that far from where layout put it,
+without moving anything else.
+
+```tessel
+Text("3").background(.red, radius: 8).offset(x: 10, y: -6)
+```
+
+- The space the view takes in its stack stays where it was; only the view
+  is shifted. It may end up over its neighbors, or outside its container.
+- Clicks go to where the view is shown.
+- Unlike `padding`, changing an offset doesn't change any view's size, so a
+  [`Canvas(redraw:)`](/reference/views/#canvas) that's shifted keeps its
+  drawing.
+
+## clipped
+
+```text
+.clipped(_ isClipped: Bool = true)
+```
+
+Nothing of what's in the view shows outside its frame.
+
+```tessel
+ZStack {
+    Image("photo.jpg").offset(x: panX, y: panY)
+}
+.frame(width: 240, height: 160)
+.background(.black, radius: 12)
+.clipped()
+```
+
+- The corners follow the view's [`background`](#background) or
+  [`border`](#border) radius, so content can be given rounded corners.
+- What's cut away doesn't get clicks either.
+
+## onResize
+
+```text
+.onResize(_ action: fn(Float, Float))
+```
+
+Runs `action` with the view's width and height (inside its padding) when it
+is first laid out, and again whenever its size changes.
+
+```tessel
+Canvas { g in drawMap(g) }
+    .onResize { width, height in
+        mapWidth = width
+        mapHeight = height
+    }
+```
+
+It may change `state`; the views are then built and laid out again before
+anything is drawn.
+
+## onDrop
+
+```text
+.onDrop(_ action: fn(String))
+```
+
+Runs `action` with the path of each file dropped on the window.
+
+```tessel
+VStack {
+    Text(if path.isEmpty { "Drop a file here" } else { path.fileName })
+}
+.onDrop { dropped in path = dropped }
+```
+
+The window is one place to drop on: the first view (from the top of the
+view tree) with `onDrop` that is shown and enabled gets the files, wherever
+in the window they land. Several files dropped together arrive one by one.
+
+## tooltip
+
+```text
+.tooltip(_ text: String)
+```
+
+A short text that shows next to the pointer when the mouse rests on the
+view for a moment.
+
+```tessel
+Icon(.trash).onTap { remove() }.tooltip("Delete the selected rows")
+```
+
+It goes away when the mouse leaves the view, and on a click, a key or a
+scroll. An empty text shows nothing.
 
 ## hoverBackground
 

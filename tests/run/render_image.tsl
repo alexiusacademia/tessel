@@ -1,0 +1,11 @@
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-render.png")
+    let ok = renderImage(path: path, width: 120, height: 80, scale: 2) { g in
+        g.fillRect(x: 10, y: 10, width: 100, height: 60, color: .rgba(0, 120, 255, 0.5), radius: 12)
+        g.text("Hi", x: g.width / 2, y: g.height / 2, size: 30, color: .white, weight: .bold, align: .center)
+    }
+    let size = imageSize(path)
+    print("{ok} {size?.0 ?? 0} × {size?.1 ?? 0}")
+    print(renderImage(path: joinPath(tempFolder(), "tessel-render.jpg"), width: 50, height: 50) { g in g.fillCircle(x: 25, y: 25, radius: 20, color: .red) })
+    print(renderImage(path: path, width: 0, height: 10) { g in })
+}

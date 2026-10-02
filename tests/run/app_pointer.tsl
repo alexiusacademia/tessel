@@ -1,0 +1,43 @@
+// `.onPointer`: what the mouse does on a view, with where and how.
+// `.onKey`: keys pressed while no text is edited. `.cursor`: the pointer.
+
+app Pad(width: 320, height: 340) {
+    state log: [String] = []
+    state name = ""
+    state keys = ""
+
+    fn note(_ e: PointerEvent) {
+        var text = "{e.kind} at {Int(e.x)},{Int(e.y)}"
+        if e.kind == .drag || e.kind == .scroll || e.kind == .pinch {
+            text += " by {e.dx},{e.dy}"
+        }
+        if e.kind == .down || e.kind == .up {
+            text += " {e.button} ×{e.clicks}"
+        }
+        if e.shift { text += " shift" }
+        if e.alt { text += " alt" }
+        if e.command { text += " command" }
+        log.append(text)
+    }
+
+    VStack(spacing: 6) {
+        Text("pad")
+            .frame(width: 200, height: 100)
+            .padding(10)
+            .background(.sidebar)
+            .onPointer { e in note(e) }
+            .cursor(.crosshair)
+        // A button over a view with `.onPointer` keeps its clicks.
+        ZStack {
+            Text("under").frame(width: 200, height: 30).onPointer { e in log.append("under {e.kind}") }
+            Button("Clear") { log = [] }
+        }
+        TextField("Name", text: name)
+        Text("keys: {keys}")
+        for line in log.suffix(6) {
+            Text(line).font(size: 11)
+        }
+        Spacer()
+    }
+    .onKey { key in keys += "[{key}]" }
+}

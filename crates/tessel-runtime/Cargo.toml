@@ -12,6 +12,8 @@ pollster = "1.0.1"
 # Dates in the computer's time zone (formatDate, parseDate, date).
 # Reading Markdown, for the `Markdown` view.
 pulldown-cmark = { version = "0.13", default-features = false }
+# zlib, deflate and gzip for `data.compressed()` and `data.decompressed()`.
+flate2 = "1"
 # PNG and JPEG files for `Image`.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
@@ -22,7 +24,8 @@ iana-time-zone = "0.1"
 # JSON and MessagePack for toJson/fromJson/toBinary/fromBinary.
 rmp-serde = "1.3.1"
 serde = "1.0.229"
-serde_json = { version = "1.0.151", features = ["preserve_order"] }
+# (float_roundtrip: a number read back is the very number that was written.)
+serde_json = { version = "1.0.151", features = ["preserve_order", "float_roundtrip"] }
 # Native Open and Save dialogs (openFile, saveFile).
 rfd = { version = "0.17.2", default-features = false }
 ureq = "3.4.2"

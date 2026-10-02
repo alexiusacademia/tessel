@@ -1,0 +1,36 @@
+Root [0,0 320x240]
+  View [86,70 148x101]
+    VStack [86,70 148x101]
+      ZStack [110,70 100x40]
+        Text "moved" [140,86 39x16]
+      Button "Shift" [133,118 54x28]
+      Text "100 by 40, nothing, 0 taps" [86,154 148x16]
+Root
+  View
+    VStack
+      ZStack
+        Text "moved"
+      Button "Shift"
+      Text "100 by 40, nothing, 0 taps"
+Root
+  View
+    VStack
+      ZStack
+        Text "moved"
+      Button "Shift"
+      Text "100 by 40, nothing, 0 taps"
+Tooltip "Moves the text to the right"
+Root [0,0 320x240]
+  View [87,70 145x101]
+    VStack [87,70 145x101]
+      ZStack [110,70 100x40]
+        Text "moved" [180,86 39x16]
+      Button "Shift" [133,118 54x28]
+      Text "100 by 40, nothing, 1 taps" [87,154 145x16]
+Root
+  View
+    VStack
+      ZStack
+        Text "moved"
+      Button "Shift"
+      Text "100 by 40, roads.shp, 1 taps"

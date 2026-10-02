@@ -347,7 +347,7 @@ Root
             HStack
               Icon circleCheck
               Text "No problems"
-Completions: [greeting] background
+Completions: [greeting] Graphics background
 Root
   View
     VStack

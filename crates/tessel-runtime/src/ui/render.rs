@@ -175,6 +175,15 @@ pub struct Interaction {
     /// Text an input method is composing in the view being edited.
     pub composing: Option<Composing>,
     pub anim: super::anim::Animations,
+    /// The `.tooltip` that shows, laid out.
+    pub tooltip: Option<Tooltip>,
+}
+
+/// A view's `.tooltip`, shown next to the pointer.
+pub struct Tooltip {
+    pub rect: Rect,
+    pub text: String,
+    pub layout: parley::Layout<Paint>,
 }
 
 /// Text being composed with an input method (for Chinese, Japanese, accents
@@ -425,6 +434,16 @@ impl Painter<'_> {
         self.stroke(r, 6.0, 1.0, theme().field_border);
     }
 
+    /// Draws the tooltip, if one shows (last, so it's on top of everything).
+    pub fn paint_tooltip(&mut self) {
+        let Some(tip) = self.ui.tooltip.as_ref() else { return };
+        let r = tip.rect;
+        self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.0), 6.0, Rgba([0, 0, 0, 26]));
+        self.fill(r, 5.0, theme().popup);
+        self.stroke(r, 5.0, 1.0, theme().field_border);
+        self.text(&tip.layout, r.x + 8.0, r.y + 5.0, None);
+    }
+
     pub fn paint(&mut self, n: &Node) {
         if n.mods.hidden {
             return;
@@ -445,6 +464,13 @@ impl Painter<'_> {
         }
         if let Some((c, radius)) = shown.map_or(n.mods.background, |s| s.background) {
             self.fill(r, radius, c);
+        }
+        // `.clipped()`: what's in the view stays inside its frame (with the
+        // corners of its background or border).
+        if n.mods.clipped {
+            let radius = n.mods.background.map(|b| b.1).or(n.mods.border.map(|b| b.2)).unwrap_or(0.0);
+            let t = self.t();
+            self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(r, radius));
         }
         if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hover_background == Some(n.key)) {
             self.fill(r, radius, c);
@@ -641,6 +667,15 @@ impl Painter<'_> {
                 self.fill(content, 8.0, theme().control);
                 self.stroke(content, 8.0, 1.0, theme().field_border);
             }
+            Kind::Canvas { draw, redraw } => {
+                // The program's drawing, in the canvas's own coordinates, and
+                // nothing of it outside the canvas.
+                let drawing = super::canvas::drawing(n.key, draw, *redraw, content.w, content.h);
+                let t = self.t();
+                self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
+                self.scene.append(&drawing.scene, Some(t * Affine::translate((content.x, content.y))));
+                self.scene.pop_layer();
+            }
             Kind::Scroll => {
                 let t = self.t();
                 self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
@@ -683,6 +718,9 @@ impl Painter<'_> {
             for c in &n.children {
                 self.paint(c);
             }
+        }
+        if n.mods.clipped {
+            self.scene.pop_layer();
         }
         if let Some((c, width, radius)) = n.mods.border {
             self.stroke(r, radius, width, c);
@@ -731,6 +769,17 @@ pub fn params(width: u32, height: u32) -> RenderParams {
 
 /// Renders a scene off-screen and saves it as a PNG.
 pub fn render_png(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene: &Scene, width: u32, height: u32, path: &str) {
+    let pixels = render_pixels(cx, renderer, scene, width, height, color(theme().colors[theme::BACKGROUND]));
+    let file = std::fs::File::create(path).expect("can't create snapshot file");
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header().and_then(|mut w| w.write_image_data(&pixels)).expect("can't write snapshot");
+}
+
+/// Renders a scene off-screen, over `base`: its pixels, four bytes each
+/// (red, green, blue, opacity), row by row.
+pub fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene: &Scene, width: u32, height: u32, base: Color) -> Vec<u8> {
     let dev = pollster::block_on(cx.device(None)).expect("no GPU device");
     let handle = &cx.devices[dev];
     let (device, queue) = (&handle.device, &handle.queue);
@@ -746,7 +795,8 @@ pub fn render_png(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    renderer.render_to_texture(device, queue, scene, &view, &params(width, height)).expect("render failed");
+    let params = RenderParams { base_color: base, width, height, antialiasing_method: AaConfig::Area };
+    renderer.render_to_texture(device, queue, scene, &view, &params).expect("render failed");
     let row = (width * 4).div_ceil(256) * 256;
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("snapshot"),
@@ -773,9 +823,5 @@ pub fn render_png(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene
         let start = (y * row) as usize;
         pixels.extend_from_slice(&data[start..start + (width * 4) as usize]);
     }
-    let file = std::fs::File::create(path).expect("can't create snapshot file");
-    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().and_then(|mut w| w.write_image_data(&pixels)).expect("can't write snapshot");
+    pixels
 }

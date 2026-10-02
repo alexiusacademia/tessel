@@ -1068,6 +1068,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),
+            "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),
+            "tsl_ui_cursor" => (vec![i32t], None),
+            "tsl_ui_offset" => (vec![f64t, f64t], None),
+            "tsl_ui_clipped" => (vec![i8t], None),
+            "tsl_ui_on_drop" | "tsl_ui_on_resize" => (vec![p, p], None),
+            "tsl_ui_tooltip" => (vec![p], None),
+            "tsl_ui_canvas" => (vec![p, p, i8t, i], None),
             "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" | "tsl_ui_animation" => (vec![f64t], None),
             "tsl_ui_padding" => (vec![f64t, f64t, f64t, f64t], None),
@@ -1975,6 +1982,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let v = self.expr_as(value, &tt).unwrap();
         let p = self.write_ptr(target);
+        // `list += more` adds to the list where it is, rather than make a
+        // new list of both (which would copy the whole list every time).
+        if let (AssignOp::Add, Ty::List(elem)) = (op, &tt) {
+            let l = self.loc(target.span.to(value.span));
+            self.list_mutating(p, elem, "appendAll", &[v], l);
+            return;
+        }
         let old = self.load(&tt, p);
         let bop = match op {
             AssignOp::Add => BinOp::Add,
@@ -4162,16 +4176,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             info.args.get(i).copied().flatten().map(|r| g.expr_as(arg(r), t).unwrap())
         };
         if let (Some(call), Some(m)) = (builtins::runtime_method(recv, name), builtins::method_of(recv, name)) {
-            let mut vals = vec![(v, recv.clone())];
+            // (The receiver is borrowed; the arguments are released below.)
+            let mut vals = if call.no_receiver { Vec::new() } else { vec![(v, recv.clone())] };
+            let own = vals.len();
             for (i, p) in m.sig.params.iter().enumerate() {
                 let x = match a(self, i, &p.ty) {
                     Some(x) => x,
                     None => self.default_value(call.defaults.get(i).copied().unwrap_or(builtins::Dflt::Req), &p.ty),
                 };
+                self.hold(x, &p.ty);
                 vals.push((x, p.ty.clone()));
             }
-            let r = self.call_rt_generic(call.rt, &vals, &m.sig.ret);
-            for (x, ty) in vals.into_iter().skip(1) {
+            self.unhold(vals.len() - own);
+            let r = self.call_rt_located(call.rt, &vals, &m.sig.ret, call.located.then_some(span));
+            for (x, ty) in vals.into_iter().skip(own) {
                 self.release(x, &ty);
             }
             return r;
@@ -4381,7 +4399,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// `box` with the fetched text (owned), or `nil` if `text` is null.
     /// A box holding `closure` (taken over), for adapters the runtime calls
     /// as `adapter(box, …)`.
-    fn box_closure(&mut self, t: &Ty, closure: Val<'ctx>) -> PointerValue<'ctx> {
+    pub(super) fn box_closure(&mut self, t: &Ty, closure: Val<'ctx>) -> PointerValue<'ctx> {
         let ti = self.type_info(t);
         let bx = self.call_rt("tsl_box_new", &[ti.into()]).unwrap().into_pointer_value();
         let data = self.box_data(bx);
@@ -4421,6 +4439,98 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             for (i, src) in [(2u32, 1u32), (3, 2), (4, 3), (5, 4)] {
                 let v = field(g, src, p.into());
                 s = g.b.build_insert_value(s, v, i, "").unwrap().into_struct_value();
+            }
+            g.call_fn_value(closure, &ft, &[s.into()]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
+    /// `adapter(box, width, height)`: calls the `Canvas` block in the box
+    /// with a `Graphics` of that size.
+    pub(super) fn graphics_adapter(&mut self) -> PointerValue<'ctx> {
+        let name = "tsl_h_canvas_draw";
+        if let Some(f) = self.helpers.get(name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let (p, f64t) = (self.ptr_ty(), self.ctx.f64_type());
+        let f = self.module.add_function(
+            name,
+            self.ctx.void_type().fn_type(&[p.into(), f64t.into(), f64t.into()], false),
+            Some(Linkage::Internal),
+        );
+        self.helpers.insert(name.to_string(), f);
+        let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let closure = g.load(&ft, g.box_data(bx));
+            let st = g.llty(&builtins::GRAPHICS).unwrap().into_struct_type();
+            let mut s = st.get_undef();
+            for i in 0..2 {
+                s = g.b.build_insert_value(s, f.get_nth_param(1 + i).unwrap(), i, "").unwrap().into_struct_value();
+            }
+            g.call_fn_value(closure, &ft, &[s.into()]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
+    /// `adapter(box, PointerC*)`: builds a `PointerEvent` and calls the
+    /// `.onPointer` block in the box.
+    pub(super) fn pointer_adapter(&mut self) -> PointerValue<'ctx> {
+        let name = "tsl_h_on_pointer";
+        if let Some(f) = self.helpers.get(name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name.to_string(), f);
+        let ft = Ty::func(vec![builtins::POINTER_EVENT], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let ec = f.get_nth_param(1).unwrap().into_pointer_value();
+            let closure = g.load(&ft, g.box_data(bx));
+            // PointerC: { i32 kind, i32 button, i64 clicks, f64 x, y, dx, dy, i8 shift, alt, command }
+            let (i32t, i8t, f64t) = (g.ctx.i32_type(), g.i8(), g.ctx.f64_type());
+            let ct = g.ctx.struct_type(
+                &[
+                    i32t.into(),
+                    i32t.into(),
+                    g.i64().into(),
+                    f64t.into(),
+                    f64t.into(),
+                    f64t.into(),
+                    f64t.into(),
+                    i8t.into(),
+                    i8t.into(),
+                    i8t.into(),
+                ],
+                false,
+            );
+            let field = |g: &mut Self, i: u32, t: BasicTypeEnum<'ctx>| {
+                let fp = g.b.build_struct_gep(ct, ec, i, "").unwrap();
+                g.b.build_load(t, fp, "").unwrap()
+            };
+            let st = g.llty(&builtins::POINTER_EVENT).unwrap().into_struct_type();
+            let mut s = st.get_undef();
+            // PointerEvent: kind, x, y, dx, dy, button, clicks, shift, alt, command
+            let plain: [(u32, u32, BasicTypeEnum<'ctx>); 7] = [
+                (0, 0, i32t.into()),
+                (1, 3, f64t.into()),
+                (2, 4, f64t.into()),
+                (3, 5, f64t.into()),
+                (4, 6, f64t.into()),
+                (5, 1, i32t.into()),
+                (6, 2, g.i64().into()),
+            ];
+            for (to, from, t) in plain {
+                let v = field(g, from, t);
+                s = g.b.build_insert_value(s, v, to, "").unwrap().into_struct_value();
+            }
+            for (to, from) in [(7u32, 7u32), (8, 8), (9, 9)] {
+                let v = field(g, from, i8t.into());
+                let flag = g.truthy(Some(v));
+                s = g.b.build_insert_value(s, flag, to, "").unwrap().into_struct_value();
             }
             g.call_fn_value(closure, &ft, &[s.into()]);
             g.b.build_return(None).unwrap();
@@ -4859,6 +4969,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Calls a table-driven runtime function (see `builtins::RtCall`) with
     /// already evaluated arguments (borrowed), and returns the result as `ret`.
     fn call_rt_generic(&mut self, rt: &str, args: &[(Val<'ctx>, Ty)], ret: &Ty) -> Option<Val<'ctx>> {
+        self.call_rt_located(rt, args, ret, None)
+    }
+
+    /// Like `call_rt_generic`; with `at`, the call's place in the source goes
+    /// after the arguments, for the message of a runtime error.
+    fn call_rt_located(&mut self, rt: &str, args: &[(Val<'ctx>, Ty)], ret: &Ty, at: Option<Span>) -> Option<Val<'ctx>> {
         // An optional Int/Float comes back through an out pointer.
         let out_param = match ret {
             Ty::Opt(inner) if matches!(**inner, Ty::Int | Ty::Float | Ty::Bool) => Some((**inner).clone()),
@@ -4870,12 +4986,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 // A Range goes as two Ints (start, end).
                 let mut ps: Vec<BasicMetadataTypeEnum> = Vec::new();
                 for (_, t) in args {
-                    if *t == Ty::Range {
-                        let i = BasicMetadataTypeEnum::from(self.i64());
-                        ps.extend([i, i]);
-                    } else {
-                        ps.push(self.c_type(t).into());
+                    match t {
+                        Ty::Range => {
+                            let i = BasicMetadataTypeEnum::from(self.i64());
+                            ps.extend([i, i]);
+                        }
+                        // An enum goes as its case's place, then the box of the case's values if it has cases with some.
+                        Ty::Enum(id) => {
+                            ps.push(self.ctx.i32_type().into());
+                            if self.has_payload(*id) {
+                                ps.push(self.ptr_ty().into());
+                            }
+                        }
+                        _ => ps.push(self.c_type(t).into()),
                     }
+                }
+                if at.is_some() {
+                    ps.push(self.ptr_ty().into());
                 }
                 if out_param.is_some() {
                     ps.push(self.ptr_ty().into());
@@ -4898,8 +5025,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 continue;
             }
+            if let Ty::Enum(id) = t {
+                if self.has_payload(*id) {
+                    let e = v.into_struct_value();
+                    for i in 0..2 {
+                        vals.push(self.b.build_extract_value(e, i, "").unwrap().into());
+                    }
+                    continue;
+                }
+            }
             let v = if *t == Ty::Bool { self.to_c_bool(v.into_int_value()) } else { *v };
             vals.push(v.into());
+        }
+        if let Some(span) = at {
+            vals.push(self.loc(span).into());
         }
         let out = out_param.as_ref().map(|inner| {
             let lt = self.llty(inner).unwrap();
@@ -4938,6 +5077,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let info = self.type_info(elem);
                 let zero = self.i64().const_zero();
                 self.call_rt("tsl_list_new", &[info.into(), zero.into()]).unwrap()
+            }
+            builtins::Dflt::Case(case) => {
+                let Ty::Enum(id) = t else { unreachable!("Case default for a non-enum") };
+                let tag = self.ctx.i32_type().const_int(case as u64, false);
+                if self.has_payload(*id) {
+                    let st = self.llty(t).unwrap().into_struct_type();
+                    let s = self.b.build_insert_value(st.get_undef(), tag, 0, "").unwrap();
+                    self.b.build_insert_value(s, self.ptr_ty().const_null(), 1, "").unwrap().into_struct_value().into()
+                } else {
+                    tag.into()
+                }
             }
             builtins::Dflt::Req => unreachable!("required argument missing"),
         }
@@ -5306,6 +5456,30 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let id = self.b.build_call(f, &vals, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 id
+            }
+            "renderImage" => {
+                let path = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+                let width = self.expr_as(arg(info.args[1].unwrap()), &Ty::Float).unwrap();
+                let height = self.expr_as(arg(info.args[2].unwrap()), &Ty::Float).unwrap();
+                let scale = match info.args[3] {
+                    Some(r) => self.expr_as(arg(r), &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_float(1.0).into(),
+                };
+                // The runtime calls `adapter(box, width, height)`; the box holds the block.
+                let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+                let draw = self.expr_as(arg(info.args[4].unwrap()), &ft).unwrap();
+                let bx = self.box_closure(&ft, draw);
+                let adapter = self.graphics_adapter();
+                let (p, f64t) = (self.ptr_ty(), self.ctx.f64_type());
+                let f = self.declare_rt(
+                    "tsl_render_image",
+                    &[p.into(), f64t.into(), f64t.into(), f64t.into(), p.into(), p.into()],
+                    Some(self.i8().into()),
+                );
+                let args = [path.into(), width.into(), height.into(), scale.into(), adapter.into(), bx.into()];
+                let saved = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
+                self.release(path, &Ty::Str);
+                Some(self.truthy(saved).into())
             }
             "after" => {
                 let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();

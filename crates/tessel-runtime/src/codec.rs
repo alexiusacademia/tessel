@@ -106,6 +106,97 @@ pub unsafe extern "C" fn tsl_data_ints(d: *const Str) -> *mut List {
     slot
 }
 
+/// `data.slice(from:to:)`: the bytes from index `from` up to `to`, both
+/// brought into range (like a list's `slice`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_slice(d: *const Str, from: i64, to: i64) -> *mut Str {
+    let bytes = unsafe { data_bytes(d) };
+    let len = bytes.len() as i64;
+    let from = from.clamp(0, len);
+    let to = to.clamp(from, len);
+    data_new(&bytes[from as usize..to as usize])
+}
+
+/// `data.latin1`: each byte as the character with that number (the text of
+/// old files that aren't UTF-8), ending at the first zero byte if there is one.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_latin1(d: *const Str) -> *mut Str {
+    let bytes = unsafe { data_bytes(d) };
+    let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+    let text: String = bytes[..end].iter().map(|b| *b as char).collect();
+    crate::str_new(&text)
+}
+
+/// The `N` bytes at `at`, in the order numbers are stored on this machine
+/// (`big`: the file has the most significant byte first). Stops the program
+/// if they aren't all there.
+unsafe fn number_at<const N: usize>(d: *const Str, at: i64, big: u8, loc: *const Loc) -> [u8; N] {
+    let bytes = unsafe { data_bytes(d) };
+    if at < 0 || at as usize + N > bytes.len() {
+        let msg = format!("bytes {at} to {} are out of range for data with {} bytes", at + N as i64 - 1, bytes.len());
+        unsafe { crate::panic_at(loc, &msg) };
+    }
+    let mut out = [0u8; N];
+    out.copy_from_slice(&bytes[at as usize..at as usize + N]);
+    if big != 0 {
+        out.reverse();
+    }
+    out
+}
+
+/// `data.int16(at:bigEndian:)` and the others: a number stored in the bytes
+/// starting at `at`.
+macro_rules! data_number {
+    ($name:ident, $t:ty, $out:ty) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(d: *const Str, at: i64, big: u8, loc: *const Loc) -> $out {
+            <$t>::from_le_bytes(unsafe { number_at(d, at, big, loc) }) as $out
+        }
+    };
+}
+
+data_number!(tsl_data_int8, i8, i64);
+data_number!(tsl_data_int16, i16, i64);
+data_number!(tsl_data_uint16, u16, i64);
+data_number!(tsl_data_int32, i32, i64);
+data_number!(tsl_data_uint32, u32, i64);
+data_number!(tsl_data_int64, i64, i64);
+data_number!(tsl_data_float32, f32, f64);
+data_number!(tsl_data_float64, f64, f64);
+
+/// A list of Ints, one for each byte.
+fn byte_list(bytes: &[u8]) -> *mut List {
+    let mut slot = unsafe { crate::tsl_list_new(&INT_TYPE, bytes.len() as i64) };
+    for &b in bytes {
+        let v = b as i64;
+        unsafe { crate::tsl_list_push(&mut slot, &v as *const i64 as *const u8) };
+    }
+    slot
+}
+
+/// `n.bytes(count:bigEndian:)`: the number as `count` bytes (1 to 8), the
+/// least significant first unless `big`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_int_bytes(n: i64, count: i64, big: u8) -> *mut List {
+    let count = count.clamp(1, 8) as usize;
+    let mut bytes = n.to_le_bytes()[..count].to_vec();
+    if big != 0 {
+        bytes.reverse();
+    }
+    byte_list(&bytes)
+}
+
+/// `x.bytes(count:bigEndian:)`: the number as 8 bytes (or 4, with less
+/// precision), as files store decimal numbers.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_float_bytes(x: f64, count: i64, big: u8) -> *mut List {
+    let mut bytes = if count == 4 { (x as f32).to_le_bytes().to_vec() } else { x.to_le_bytes().to_vec() };
+    if big != 0 {
+        bytes.reverse();
+    }
+    byte_list(&bytes)
+}
+
 /// `readData(path)`: the file's bytes, or null if it can't be read.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_read_data(path: *const Str) -> *mut Str {

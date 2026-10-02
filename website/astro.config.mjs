@@ -113,6 +113,7 @@ export default defineConfig({
 						{ label: 'Lists and identity', slug: 'ui/lists' },
 						{ label: 'Tabs', slug: 'ui/tabs' },
 						{ label: 'Icons, SVG and images', slug: 'ui/icons' },
+						{ label: 'Drawing and the mouse', slug: 'ui/drawing' },
 						{ label: 'Code editor', slug: 'ui/code-editor' },
 						{ label: 'Files, commands and the network', slug: 'ui/async' },
 						{ label: 'Keyboard shortcuts', slug: 'ui/shortcuts' },

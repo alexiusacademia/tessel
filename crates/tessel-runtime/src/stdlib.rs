@@ -527,3 +527,91 @@ mod tests {
         }
     }
 }
+
+// ===== pictures and compression =====
+
+/// `writeImage(path:width:height:pixels:)`: saves a picture as a PNG (or a
+/// JPEG, for a path ending in .jpg or .jpeg). `pixels` has one number for
+/// each pixel, row by row from the top left:
+/// red × 16777216 + green × 65536 + blue × 256 + opacity, each from 0 to 255.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_write_image(path: *const Str, width: i64, height: i64, pixels: *const crate::List) -> u8 {
+    let path = unsafe { text(path) };
+    let n = unsafe { crate::tsl_list_len(pixels) };
+    if width <= 0 || height <= 0 || width > 65535 || height > 65535 || n < width * height {
+        return 0;
+    }
+    let mut bytes = Vec::with_capacity((width * height * 4) as usize);
+    for i in 0..width * height {
+        let p = unsafe { *(crate::tsl_list_get(pixels, i, std::ptr::null()) as *const i64) } as u32;
+        bytes.extend_from_slice(&p.to_be_bytes());
+    }
+    let Some(picture) = image::RgbaImage::from_raw(width as u32, height as u32, bytes) else { return 0 };
+    let lower = path.to_lowercase();
+    let saved = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        // JPEG has no opacity.
+        image::DynamicImage::ImageRgba8(picture).to_rgb8().save_with_format(path, image::ImageFormat::Jpeg)
+    } else {
+        picture.save_with_format(path, image::ImageFormat::Png)
+    };
+    saved.is_ok() as u8
+}
+
+/// For the prelude's `imageSize`: the width and height of a PNG or JPEG
+/// file in pixels, or an empty list if it can't be read.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_image_size(path: *const Str) -> *mut crate::List {
+    let path = unsafe { text(path) };
+    let mut slot = unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, 2) };
+    if let Ok((w, h)) = image::image_dimensions(path) {
+        for v in [w as i64, h as i64] {
+            unsafe { crate::tsl_list_push(&mut slot, &v as *const i64 as *const u8) };
+        }
+    }
+    slot
+}
+
+/// `data.compressed(format)`: the bytes made smaller, as "zlib" (the
+/// default), "deflate" (without a header) or "gzip". An unknown format gives
+/// no bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_compressed(d: *const Str, format: *const Str) -> *mut Str {
+    use std::io::Write;
+    let bytes = unsafe { crate::codec::data_bytes(d) };
+    let level = flate2::Compression::default();
+    let out = match unsafe { text(format) } {
+        "zlib" => {
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), level);
+            e.write_all(bytes).and_then(|_| e.finish())
+        }
+        "deflate" => {
+            let mut e = flate2::write::DeflateEncoder::new(Vec::new(), level);
+            e.write_all(bytes).and_then(|_| e.finish())
+        }
+        "gzip" => {
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), level);
+            e.write_all(bytes).and_then(|_| e.finish())
+        }
+        _ => Ok(Vec::new()),
+    };
+    crate::codec::data_new(&out.unwrap_or_default())
+}
+
+/// `data.decompressed(format)`: the bytes that were compressed as "zlib"
+/// (the default), "deflate" or "gzip"; null if they aren't that.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_decompressed(d: *const Str, format: *const Str) -> *mut Str {
+    use std::io::Read;
+    let bytes = unsafe { crate::codec::data_bytes(d) };
+    let mut out = Vec::new();
+    let read = match unsafe { text(format) } {
+        "zlib" => flate2::read::ZlibDecoder::new(bytes).read_to_end(&mut out),
+        "deflate" => flate2::read::DeflateDecoder::new(bytes).read_to_end(&mut out),
+        "gzip" => flate2::read::GzDecoder::new(bytes).read_to_end(&mut out),
+        _ => return std::ptr::null_mut(),
+    };
+    match read {
+        Ok(_) => crate::codec::data_new(&out),
+        Err(_) => std::ptr::null_mut(),
+    }
+}

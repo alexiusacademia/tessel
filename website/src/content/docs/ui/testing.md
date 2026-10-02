@@ -80,6 +80,15 @@ opens a window as usual.
 | `key enter` | Presses a key, optionally with modifiers (see below). |
 | `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag) and for scroll bars. |
 | `scroll 0 120` | Scrolls the scroll view (or code editor) under the middle of the window down by 120 points. A negative number scrolls up. |
+| `wheel 40 60 0 120` | The same, for what's at a point: here (40, 60). |
+| `press 40 60` | Presses the mouse on a view with [`.onPointer`](/reference/modifiers/#onpointer). Add `right` or `middle` for another button. |
+| `move 80 60` | Moves the mouse there: a drag while it's pressed. |
+| `release` | Lets the mouse button go (`release 90 60`: somewhere else). |
+| `rightclick 40 60` | A click with the right button, on a view with `.onPointer`. |
+| `doubleclick 40 60` | Two clicks in a row there. |
+| `pinch 40 60 0.2` | A trackpad pinch that makes things a fifth larger. |
+| `mods shift+alt` | Holds modifier keys for the mouse commands that follow; `mods none` lets them go. |
+| `drop "/tmp/a.csv"` | Drops a file on the window, for [`.onDrop`](/reference/modifiers/#ondrop). |
 | `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
 | `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |
 | `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due. |
@@ -212,6 +221,16 @@ Button "Send" disabled
 `dump` adds `[x,y widthxheight]` in points after each view, which is useful for
 checking a [layout](/ui/layout/). Anything your program prints with `print`
 appears in the same output, in order.
+
+A [`Canvas`](/reference/views/#canvas) shows what its block drew, like
+`Canvas (2 fills, 1 stroke, 3 texts)`, and a [tooltip](/reference/modifiers/#tooltip)
+that's showing is printed after the tree: `Tooltip "Delete the selected rows"`
+(it comes up when a `wait` of 0.6 seconds or more follows a `hover`).
+
+On a view with `.onPointer`, `click`, `drag` and `hover` send it the events a
+real mouse would: a press and a release, a press, a move and a release, or a
+move. `key x` (or `type x`) while no field is being edited goes to
+[`.onKey`](/reference/modifiers/#onkey).
 
 `snapshot` renders exactly what the window would show, including the text
 cursor and selection. It needs a GPU (the screenshots on this site were made

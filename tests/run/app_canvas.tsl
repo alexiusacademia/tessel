@@ -1,0 +1,82 @@
+// `Canvas`: a view the program draws itself, with a `Graphics`.
+
+fn star(_ g: Graphics, x: Float, y: Float, r: Float) {
+    var points: [Float] = []
+    for k in 0..10 {
+        let a = Float(k) * pi / 5.0
+        let d = if k % 2 == 0 { r } else { r * 0.45 }
+        points.append(x + d * sin(a))
+        points.append(y - d * cos(a))
+    }
+    g.beginPath()
+    g.lines(points, closed: true)
+    g.fill(.yellow)
+    g.stroke(.orange, width: 2)
+}
+
+app Drawing(width: 320, height: 300) {
+    state stars = 1
+    state version = 0
+
+    VStack(spacing: 8) {
+        // Drawn again every time the window is.
+        Canvas { g in
+            g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .sidebar)
+            for i in 0..stars {
+                star(g, x: 30.0 + Float(i) * 50.0, y: g.height / 2, r: 20)
+            }
+            g.line(0, 0, g.width, g.height, color: .gray)
+            g.text("{Int(g.width)} × {Int(g.height)}", x: g.width / 2, y: g.height - 4, size: 11, align: .bottom)
+        }
+        .frame(height: 80)
+
+        // Kept until `version` changes.
+        Canvas(redraw: version) { g in
+            print("drawing version {version}")
+            g.save()
+            g.translate(g.width / 2, g.height / 2)
+            g.rotate(pi / 4)
+            g.scale(2, 1)
+            g.beginPath()
+            g.rect(x: -10, y: -10, width: 20, height: 20, radius: 3)
+            g.circle(x: 0, y: 0, radius: 4)
+            g.fill(.blue, evenOdd: true)
+            g.restore()
+            g.clip(x: 0, y: 0, width: 40, height: 40)
+            g.strokeCircle(x: 40, y: 40, radius: 30, color: .red, lineWidth: 3)
+            g.strokeRect(x: 4, y: 4, width: 20, height: 12, color: .green)
+            g.save()
+            g.zoom(0.5)
+            g.text("half size", x: 10, y: 60, size: 20)
+            g.restore()
+            g.fillCircle(x: 10, y: 30, radius: 5, color: .purple)
+        }
+        .frame(width: 120, height: 80)
+        .border(.separator)
+
+        // Nothing is drawn where there's nothing to draw with.
+        Canvas { g in
+            g.beginPath()
+            g.fill(.red)
+            g.moveTo(0, 0)
+            g.lineTo(10, 10)
+            g.quadTo(20, 0, 30, 10)
+            g.curveTo(40, 20, 50, 0, 60, 10)
+            g.arc(x: 80, y: 10, radius: 8, from: 0, to: pi)
+            g.ellipse(x: 110, y: 10, radiusX: 12, radiusY: 6)
+            g.closePath()
+            g.stroke(.primary, width: 1.5, dash: [4, 2])
+            g.stroke(.primary, width: 0)
+            let wide = g.textWidth("wide text", size: 20, weight: .bold) > g.textWidth("wide text", size: 10)
+            g.text(if wide { "measured" } else { "?" }, x: 2, y: 22, size: 10, color: .secondary, halo: .white, haloWidth: 1)
+            g.image("no-such-file.png", x: 0, y: 0, width: 10, height: 10)
+        }
+        .frame(height: 40)
+
+        HStack {
+            Button("Star") { stars += 1 }
+            Button("Redraw") { version += 1 }
+        }
+    }
+    .padding(10)
+}

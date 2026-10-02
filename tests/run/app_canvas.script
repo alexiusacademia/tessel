@@ -1,0 +1,8 @@
+dump
+click "Star"
+click "Star"
+tree
+click "Redraw"
+tree
+size 400 300
+tree

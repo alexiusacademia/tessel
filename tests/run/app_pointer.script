@@ -1,0 +1,33 @@
+click 100 40
+tree
+mods shift+alt
+rightclick 90 30
+mods none
+doubleclick 120 50
+tree
+click "Clear"
+press 80 20 middle
+move 90 40
+move 400 300
+release
+tree
+click "Clear"
+hover 100 30
+hover 100 40
+hover 300 250
+wheel 100 30 0 -40
+pinch 100 30 0.25
+tree
+click "Clear"
+drag 80 20 15 5
+click 80 120
+tree
+key escape
+key x
+type +
+key cmd+a
+click "Name"
+type ab
+key left
+key escape
+tree

@@ -1,0 +1,38 @@
+drawing version 0
+Root [0,0 320x300]
+  View [0,14 320x272]
+    VStack [0,14 320x272]
+      Canvas (2 fills, 2 strokes, 1 text) [10,24 300x80]
+      Canvas (2 fills, 2 strokes, 1 text) [100,112 120x80]
+      Canvas (1 stroke, 1 text) [10,200 300x40]
+      HStack [95,248 131x28]
+        Button "Star" [95,248 51x28]
+        Button "Redraw" [154,248 72x28]
+Root
+  View
+    VStack
+      Canvas (4 fills, 4 strokes, 1 text)
+      Canvas (2 fills, 2 strokes, 1 text)
+      Canvas (1 stroke, 1 text)
+      HStack
+        Button "Star"
+        Button "Redraw"
+drawing version 1
+Root
+  View
+    VStack
+      Canvas (4 fills, 4 strokes, 1 text)
+      Canvas (2 fills, 2 strokes, 1 text)
+      Canvas (1 stroke, 1 text)
+      HStack
+        Button "Star"
+        Button "Redraw"
+Root
+  View
+    VStack
+      Canvas (4 fills, 4 strokes, 1 text)
+      Canvas (2 fills, 2 strokes, 1 text)
+      Canvas (1 stroke, 1 text)
+      HStack
+        Button "Star"
+        Button "Redraw"

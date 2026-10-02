@@ -1,0 +1,54 @@
+// Numbers in bytes: reading them from `Data`, and making them.
+
+fn main() {
+    let bytes = (258).bytes(count: 2) + (258).bytes(count: 2, bigEndian: true) + (-2).bytes(count: 4) +
+        (1.5).bytes() + (0.25).bytes(count: 4, bigEndian: true) + (255).bytes(count: 1)
+    let d = Data(bytes: bytes)
+    print(d.count)
+    print(d.uint16(at: 0))
+    print(d.uint16(at: 2, bigEndian: true))
+    print(d.int16(at: 2))
+    print(d.int32(at: 4))
+    print(d.uint32(at: 4))
+    print(d.float64(at: 8))
+    print(d.float32(at: 16, bigEndian: true))
+    print(d.int8(at: 20))
+    print(d[20])
+    print((1).bytes(count: 8))
+    print(Data(bytes: (-7).bytes(count: 8)).int64(at: 0))
+    print((1.0).bytes(count: 8, bigEndian: true))
+
+    let part = d.slice(from: 2, to: 4)
+    print(part.bytes)
+    print(d.slice(from: 19, to: 99).count)
+    print(d.slice(from: 5, to: 2).isEmpty)
+
+    print(Data(bytes: [72, 233, 108, 108, 111, 0, 33]).latin1)
+    print(Data(bytes: [72, 233]).text ?? "not UTF-8")
+
+    let text = Data(text: "to be or not to be, that is the question. ".repeated(4))
+    for format in ["zlib", "deflate", "gzip"] {
+        let small = text.compressed(format)
+        let back = small.decompressed(format)
+        print("{format}: {small.count < text.count} {back == text}")
+    }
+    print(text.compressed() == text.compressed("zlib"))
+    print(text.decompressed() == nil)
+    print(text.compressed("lz4").count)
+
+    // A number saved as JSON is read back exactly.
+    let exact = 0.9729999899864197
+    let back: [Float] = fromJson(toJson([exact])) ?? []
+    print(back[0] == exact)
+
+    // A picture of 2 × 2 pixels: red, green, blue, and one that's clear.
+    let path = joinPath(tempFolder(), "tessel-data-numbers.png")
+    let pixels = [255 * 16777216 + 255, 255 * 65536 + 255, 255 * 256 + 255, 0]
+    print(writeImage(path: path, width: 2, height: 2, pixels: pixels))
+    if let size = imageSize(path) {
+        print("{size.0} × {size.1}")
+    }
+    print(writeImage(path: path, width: 3, height: 2, pixels: pixels))
+    print(imageSize("no-such-file.png") == nil)
+    deleteFile(path)
+}

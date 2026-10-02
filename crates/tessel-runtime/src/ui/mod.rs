@@ -8,6 +8,7 @@
 
 mod anim;
 mod app;
+mod canvas;
 mod edit;
 mod highlight;
 mod image;
@@ -184,6 +185,10 @@ pub enum Kind {
     Markdown { source: std::rc::Rc<str>, folder: String, on_link: Option<Callback> },
     /// A PNG or JPEG file; without a picture (a missing file), a placeholder box.
     Image { path: String, picture: Option<std::rc::Rc<image::Picture>> },
+    /// A drawing of the program's own: `draw` is called with the canvas's
+    /// width and height when it's painted. With `redraw`, the drawing is kept
+    /// until that number changes.
+    Canvas { draw: Callback, redraw: Option<i64> },
 }
 
 #[derive(Default)]
@@ -230,6 +235,42 @@ pub struct Mods {
     /// `.animation(seconds)`: how long changes to the view and the views
     /// inside it take (0 for at once); inherited.
     pub animation: Option<f64>,
+    /// `.onPointer { event in … }`: called with what the mouse does on the
+    /// view (see `PointerC`).
+    pub on_pointer: Option<Callback>,
+    /// `.onKey { key in … }`: called with keys pressed while no text is edited.
+    pub on_key: Option<Callback>,
+    /// `.cursor(…)`: the pointer shown over the view (a `CursorStyle` tag).
+    pub cursor: Option<u8>,
+    /// `.offset(x:y:)`: the view (and what's in it) is shown this far from
+    /// where layout put it, without moving anything else.
+    pub offset: (f64, f64),
+    /// `.clipped()`: nothing of the view's content shows outside its frame.
+    pub clipped: bool,
+    /// `.onDrop { path in … }`: called with each file dropped on the window.
+    pub on_drop: Option<Callback>,
+    /// `.tooltip("…")`: shown next to the pointer when it rests on the view.
+    pub tooltip: Option<String>,
+    /// `.onResize { width, height in … }`: called with the view's size
+    /// (inside its padding) when it's first laid out, and when it changes.
+    pub on_resize: Option<Callback>,
+}
+
+/// A `PointerEvent`, as the adapter the compiler generates reads it.
+#[repr(C)]
+pub struct PointerC {
+    /// The `PointerKind` case: 0 down, 1 up, 2 move, 3 drag, 4 scroll, 5 pinch, 6 leave.
+    pub kind: i32,
+    /// The `PointerButton` case: 0 left, 1 right, 2 middle.
+    pub button: i32,
+    pub clicks: i64,
+    pub x: f64,
+    pub y: f64,
+    pub dx: f64,
+    pub dy: f64,
+    pub shift: u8,
+    pub alt: u8,
+    pub command: u8,
 }
 
 pub struct Node {
@@ -296,6 +337,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Image { .. } => 16,
         Kind::Svg { .. } => 17,
         Kind::Markdown { .. } => 18,
+        Kind::Canvas { .. } => 19,
     }
 }
 
@@ -398,6 +440,7 @@ pub fn build(root: &Callback) -> Node {
 
 /// Releases all view state (at exit, so leak checkers see a clean heap).
 pub fn release_all_state() {
+    canvas::forget_all();
     let records: Vec<*mut Header> = STATES.with(|s| s.borrow_mut().drain().map(|(_, v)| v.record).collect());
     for r in records {
         unsafe { tsl_release(r) };
@@ -519,6 +562,15 @@ pub extern "C" fn tsl_ui_icon(index: i32) {
 pub unsafe extern "C" fn tsl_ui_svg(source: *const Str) {
     let source = unsafe { text_of(source) };
     with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: None }));
+}
+
+/// `Canvas(redraw:) { g in … }`: `f` is called as `f(env, width, height)`
+/// each time the canvas is painted (or, with `redraw`, when it changed).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_canvas(f: *const c_void, env: *mut Header, has_redraw: u8, redraw: i64) {
+    let draw = Callback::new(f, env);
+    let redraw = (has_redraw != 0).then_some(redraw);
+    with_builder(|b| b.leaf(Kind::Canvas { draw, redraw }));
 }
 
 /// An `Alignment` tag (the compiler's `ALIGNMENTS` order) as horizontal and
@@ -778,6 +830,59 @@ pub unsafe extern "C" fn tsl_ui_on_tap(f: *const c_void, env: *mut Header) {
 pub unsafe extern "C" fn tsl_ui_on_drag(f: *const c_void, env: *mut Header) {
     let cb = Callback::new(f, env);
     modify(|m| m.on_drag = Some(cb));
+}
+
+/// `.onPointer { event in … }`: `f` is called as `f(env, &PointerC)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_pointer(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_pointer = Some(cb));
+}
+
+/// `.onKey { key in … }`: `f` is called as `f(env, String)` (the string is the callee's).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_key(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_key = Some(cb));
+}
+
+/// `.offset(x:y:)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_offset(x: f64, y: f64) {
+    modify(|m| m.offset = (if x.is_finite() { x } else { 0.0 }, if y.is_finite() { y } else { 0.0 }));
+}
+
+/// `.clipped()`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_clipped(clipped: u8) {
+    modify(|m| m.clipped = clipped != 0);
+}
+
+/// `.onDrop { path in … }`: `f` is called as `f(env, String)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_drop(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_drop = Some(cb));
+}
+
+/// `.onResize { width, height in … }`: `f` is called as `f(env, width, height)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_resize(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_resize = Some(cb));
+}
+
+/// `.tooltip("…")`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_tooltip(text: *const Str) {
+    let text = unsafe { text_of(text) };
+    modify(|m| m.tooltip = (!text.is_empty()).then_some(text));
+}
+
+/// `.cursor(…)`: a `CursorStyle` case's tag.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_cursor(style: i32) {
+    modify(|m| m.cursor = Some(style.clamp(0, 255) as u8));
 }
 
 #[unsafe(no_mangle)]

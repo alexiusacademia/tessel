@@ -1,0 +1,33 @@
+app Main {
+    state name = ""
+
+    Canvas { g in
+        g.fil(.red) // error: `Graphics` has no method `fil`
+        g.width() // error: `width` is a field, not a method
+        g.fill("red") // error: expected `Color`
+        g.lines([1, 2], closed: 1) // error: expected `Bool`
+        g.line(0, 0, 10, 10) // error: `line` is missing `color:`
+        g.text("hi", x: 1) // error: `text` is missing `y:`
+        let w: Int = g.textWidth("hi") // error: expected `Int`
+    }
+    Canvas(redraw: "often") { g in } // error: expected `Int`
+    Canvas { a, b in } // error: should take 1 parameter
+    Text("pad")
+        .onPointer { e in name = e.kind } // error: expected `String`
+        .onPointer { name = "" } // error: this block receives 1 value
+        .onKey { key in name = key + 1 } // error: `Int`
+        .cursor(.spinner) // error: `CursorStyle` has no case `.spinner`
+        .offset(x: "far") // error: expected `Float`
+        .tooltip(3) // error: expected `String`
+        .onResize { w in name = "" } // error: should take 2 parameter
+        .onDrop { path in name = path.count } // error: expected `String`
+}
+
+fn numbers(d: Data) {
+    let a: String = d.int32(at: 0) // error: expected `String`
+    let b = d.float64(0) // error: needs its label `at:`
+    let c = d.slice(from: 1) // error: `slice` is missing `to:`
+    let e: Data = d.decompressed() // error: expected `Data`
+    let f = (1).bytes() // error: `bytes` is missing `count:`
+    writeImage(path: "a.png", width: 1, height: 1, pixels: d) // error: expected `[Int]`
+}

@@ -329,6 +329,11 @@ impl Layouter<'_> {
             }
             Kind::Spacer => Size::default(),
             Kind::Image { .. } => Size { w: 64.0, h: 64.0 },
+            // A canvas takes the space it's offered.
+            Kind::Canvas { .. } => Size {
+                w: if avail.w.is_finite() { avail.w } else { 300.0 },
+                h: if avail.h.is_finite() { avail.h } else { 150.0 },
+            },
             Kind::Picker { .. } => {
                 let mut w = 0.0;
                 let mut h: f64 = 0.0;
@@ -426,6 +431,9 @@ impl Layouter<'_> {
         // …or less than its min size (it then overflows, rather than squash its content).
         rect.w = rect.w.max(n.mods.min_width.unwrap_or(0.0));
         rect.h = rect.h.max(n.mods.min_height.unwrap_or(0.0));
+        // `.offset`: shown (with all that's in it) away from its place.
+        rect.x += n.mods.offset.0;
+        rect.y += n.mods.offset.1;
         n.layout.rect = rect;
         if n.mods.hidden {
             return;
@@ -583,7 +591,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } | Kind::Markdown { .. } => axis == Axis::X,
-        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } => true,
+        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } => true,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
