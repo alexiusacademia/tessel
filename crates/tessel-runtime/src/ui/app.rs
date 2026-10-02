@@ -894,8 +894,8 @@ impl App {
         match node.kind {
             Kind::CodeEditor { .. } => {
                 let (cx0, cx1, cy0, cy1) = caret.map_or((0.0, 0.0, 0.0, 16.0), |c| (c.x0, c.x1, c.y0, c.y1));
-                let visible_w = (content.w - node.layout.gutter - 16.0).max(1.0);
-                let visible_h = (content.h - 12.0).max(1.0);
+                let visible_w = (content.w - node.layout.gutter - 2.0 * render::CODE_PAD_X).max(1.0);
+                let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
                 let sx = self.ui.scroll_x.entry(e.key).or_insert(0.0);
                 keep(sx, cx0, cx1, visible_w, layout.width() as f64 + 2.0);
                 let sy = self.ui.scroll.entry(e.key).or_insert(0.0);

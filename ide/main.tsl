@@ -135,6 +135,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                             completionStart: if doc.path == suggestPath { suggestStart } else { -1 },
                             onComplete: { offset in complete(path: doc.path, offset: offset) }
                         )
+                            .padding(8)
                             .id(doc.path)
                             .tabItem(if doc.text != doc.saved { "• {fileName(doc.path)}" } else { fileName(doc.path) })
                             .tag(doc.path)

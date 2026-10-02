@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use parley::{FontContext, GenericFamily, LayoutContext, PositionedLayoutItem, StyleProperty};
+use parley::{FontContext, GenericFamily, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty};
 use vello::kurbo::{Affine, Circle, RoundedRect, Stroke};
 use vello::peniko::{Color, Fill, Mix};
 use vello::util::RenderContext;
@@ -17,6 +17,16 @@ use super::{Kind, Node, Rgba};
 /// Text color carried through parley layouts.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Paint(pub [u8; 4]);
+
+// A code editor's spacing, in points.
+/// The height of a line of code (its text is 13 points): room to read.
+const CODE_LINE: f32 = 20.0;
+/// Left and right of the line numbers.
+pub const GUTTER_PAD: (f64, f64) = (12.0, 10.0);
+/// Between the line numbers and the code, and after the longest line.
+pub const CODE_PAD_X: f64 = 12.0;
+/// Above the first line and below the last.
+pub const CODE_PAD_Y: f64 = 10.0;
 
 pub struct TextEngine {
     fonts: FontContext,
@@ -33,6 +43,7 @@ impl TextEngine {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
         b.push_default(StyleProperty::from(GenericFamily::Monospace));
         b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::LineHeight(LineHeight::Absolute(CODE_LINE)));
         b.push_default(StyleProperty::Brush(Paint(theme().colors[theme::PRIMARY].0)));
         for (range, color) in super::highlight::highlight(text) {
             b.push(StyleProperty::Brush(Paint(color.0)), range);
@@ -56,11 +67,12 @@ impl TextEngine {
         layout
     }
 
-    /// Monospaced gray text (line numbers).
+    /// Monospaced gray text (line numbers), on the lines of the code.
     pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> parley::Layout<Paint> {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
         b.push_default(StyleProperty::from(GenericFamily::Monospace));
         b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::LineHeight(LineHeight::Absolute(CODE_LINE)));
         b.push_default(StyleProperty::Brush(Paint(color.0)));
         let mut layout = b.build(text);
         layout.break_all_lines(None);
@@ -415,7 +427,7 @@ impl Painter<'_> {
                         self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, theme().error_mark);
                     }
                     if let Some(numbers) = &n.layout.placeholder {
-                        self.text(numbers, content.x + 4.0, y0 - scroll_y, None);
+                        self.text(numbers, content.x + GUTTER_PAD.0, y0 - scroll_y, None);
                     }
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
                     self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(code_area, 0.0));
@@ -522,7 +534,7 @@ impl Painter<'_> {
 /// Where a code editor's text starts (before scrolling).
 pub fn code_origin(n: &Node) -> (f64, f64) {
     let content = n.layout.rect.inset_by(n.mods.padding);
-    (content.x + n.layout.gutter + 8.0, content.y + 6.0)
+    (content.x + n.layout.gutter + CODE_PAD_X, content.y + CODE_PAD_Y)
 }
 
 /// Where a text field's text starts (before horizontal scrolling).

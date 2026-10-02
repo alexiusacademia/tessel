@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use super::render::{Paint, TextEngine};
+use super::render::{Paint, TextEngine, CODE_PAD_Y, GUTTER_PAD};
 use super::theme::{self, theme};
 use super::{Kind, Node, Rgba};
 
@@ -263,8 +263,8 @@ impl Layouter<'_> {
                 let digits = count.to_string().len().max(2);
                 let numbers: Vec<String> = (1..=count).map(|i| format!("{i:>digits$}")).collect();
                 let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, theme().line_number);
-                n.layout.gutter = numbers.width() as f64 + 14.0;
-                n.layout.content_h = t.height() as f64 + 12.0;
+                n.layout.gutter = numbers.width() as f64 + GUTTER_PAD.0 + GUTTER_PAD.1;
+                n.layout.content_h = t.height() as f64 + 2.0 * CODE_PAD_Y;
                 n.layout.text = Some(t);
                 n.layout.placeholder = Some(numbers);
                 let w = if avail.w.is_finite() { avail.w } else { 480.0 };
