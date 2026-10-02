@@ -88,6 +88,8 @@ pub struct Box {
     pub content_h: f64,
     /// For pickers: the rectangle of each option.
     pub segments: Vec<Rect>,
+    /// For Markdown: what to draw, and where its links are.
+    pub markdown: Option<std::rc::Rc<super::markdown::Laid>>,
     /// Inherited style, resolved for this node.
     pub style: Style,
 }
@@ -316,6 +318,14 @@ impl Layouter<'_> {
                 let framed = n.mods.width.is_some() || n.mods.height.is_some();
                 let s = if framed && s.is_finite() { s } else { s.min(1.0) };
                 Size { w: w * s, h: h * s }
+            }
+            Kind::Markdown { source, folder, .. } => {
+                // As wide as the space there is, and as tall as that makes it.
+                let w = if avail.w.is_finite() { avail.w } else { 480.0 };
+                let laid = super::markdown::layout(self.text, source, folder, w, style);
+                let size = Size { w, h: laid.height };
+                n.layout.markdown = Some(laid);
+                size
             }
             Kind::Spacer => Size::default(),
             Kind::Image { .. } => Size { w: 64.0, h: 64.0 },
@@ -572,7 +582,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     }
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
-        Kind::TextField { .. } => axis == Axis::X,
+        Kind::TextField { .. } | Kind::Markdown { .. } => axis == Axis::X,
         Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } => true,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),

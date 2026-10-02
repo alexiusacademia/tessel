@@ -502,12 +502,14 @@ enum Hit {
     Field(u64),
     Segment(u64, usize),
     Tap(u64),
+    /// A link in a Markdown view: its number.
+    Link(u64, usize),
 }
 
 impl Hit {
     fn key(&self) -> u64 {
         match *self {
-            Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) => k,
+            Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
     }
@@ -1054,7 +1056,7 @@ impl App {
         self.update();
         let mut scene = Scene::new();
         let tree = self.tree.as_ref().unwrap();
-        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0) };
+        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
         painter.paint(tree);
         painter.paint_popup();
         scene
@@ -1092,6 +1094,12 @@ impl App {
             }
             if !n.layout.rect.contains(x, y) {
                 return None;
+            }
+            if let (Kind::Markdown { .. }, Some(laid)) = (&n.kind, &n.layout.markdown) {
+                let c = n.layout.content;
+                if let Some(link) = laid.link_at(x - c.x, y - c.y) {
+                    return Some(Hit::Link(n.key, link));
+                }
             }
             match n.kind {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
@@ -1179,6 +1187,22 @@ impl App {
             (Hit::Tap(_), _) => {
                 if let Some(tap) = node.mods.on_tap.clone() {
                     tap.call();
+                }
+            }
+            // A link goes to the view's `onLink`; without one, links to the
+            // web open in the browser.
+            (Hit::Link(_, i), Kind::Markdown { on_link, .. }) => {
+                let url = node.layout.markdown.as_ref().and_then(|laid| laid.links.get(*i)).map(|l| l.url.clone());
+                match (url, on_link.clone()) {
+                    (Some(url), Some(on_link)) => on_link.call_with(crate::str_new(&url) as *mut u8),
+                    (Some(url), None) if url.starts_with("http://") || url.starts_with("https://") => {
+                        let s = crate::str_new(&url);
+                        unsafe {
+                            crate::stdlib::tsl_open_url(s);
+                            crate::tsl_release(s as *mut Header);
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -1384,6 +1408,13 @@ impl App {
                 }
                 return n.children.get(n.selected_tab()).and_then(|c| visit(c, label));
             }
+            // A link in Markdown, by what it says.
+            if let (Kind::Markdown { .. }, Some(laid), false) = (&n.kind, &n.layout.markdown, n.mods.hidden) {
+                let c = n.layout.content;
+                if let Some(r) = laid.links.iter().find(|l| l.text == label).and_then(|l| l.rects.first()) {
+                    return Some((c.x + r.x + r.w / 2.0, c.y + r.y + r.h / 2.0));
+                }
+            }
             let matches = match &n.kind {
                 Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } => s == label,
                 Kind::TextField { placeholder, .. } => placeholder == label,
@@ -1462,6 +1493,11 @@ impl App {
                     format!("TabView {titles:?} selected {}", n.selected_tab())
                 }
                 Kind::Divider => "Divider".to_string(),
+                Kind::Markdown { .. } => {
+                    let laid = n.layout.markdown.as_ref();
+                    let links: Vec<&str> = laid.iter().flat_map(|l| &l.links).map(|l| l.text.as_str()).collect();
+                    format!("Markdown {:?} links {links:?}", laid.map_or("", |l| l.title.as_str()))
+                }
                 Kind::Svg { icon: Some(name), .. } => format!("Icon {name}"),
                 Kind::Svg { .. } => "Svg".to_string(),
                 Kind::CodeEditor { text, error_lines, .. } => {

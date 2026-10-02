@@ -98,7 +98,7 @@ impl Builtins {
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider", "Icon", "Svg",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown",
     ];
 
 impl Builtins {
@@ -133,6 +133,11 @@ impl Builtins {
             "Divider" => vec![],
             "Icon" => vec![P::unlabeled("name", self.icon.clone())],
             "Svg" => vec![P::unlabeled("source", Ty::Str)],
+            "Markdown" => vec![
+                P::unlabeled("text", Ty::Str),
+                P::new("folder", Ty::Str).default(),
+                P::new("onLink", Ty::opt(Ty::func(vec![Ty::Str], Ty::Void))).default(),
+            ],
             "VStack" | "HStack" => vec![
                 P::new("spacing", Ty::Float).default(),
                 P::new("alignment", self.alignment.clone()).default(),

@@ -12,6 +12,7 @@ mod edit;
 mod highlight;
 mod image;
 mod layout;
+mod markdown;
 mod render;
 mod svg;
 mod theme;
@@ -172,6 +173,9 @@ pub enum Kind {
     ZStack(u8),
     Scroll,
     Spacer,
+    /// Text written in Markdown. Pictures are looked for in `folder`;
+    /// `on_link` gets the address of a link that's clicked.
+    Markdown { source: std::rc::Rc<str>, folder: String, on_link: Option<Callback> },
     /// A PNG or JPEG file; without a picture (a missing file), a placeholder box.
     Image { path: String, picture: Option<std::rc::Rc<image::Picture>> },
 }
@@ -282,6 +286,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Spacer => 15,
         Kind::Image { .. } => 16,
         Kind::Svg { .. } => 17,
+        Kind::Markdown { .. } => 18,
     }
 }
 
@@ -483,6 +488,14 @@ pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
         }
     };
     with_builder(|b| b.leaf(kind));
+}
+
+/// `Markdown(text, folder:onLink:)`. `f` is null when there's no `onLink`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_markdown(source: *const Str, folder: *const Str, f: *const c_void, env: *mut Header) {
+    let (source, folder) = unsafe { (text_of(source), text_of(folder)) };
+    let on_link = (!f.is_null()).then(|| Callback::new(f, env));
+    with_builder(|b| b.leaf(Kind::Markdown { source: source.into(), folder, on_link }));
 }
 
 /// `Icon(.name)`: a built-in icon, by its index in `IconName`.
@@ -851,7 +864,7 @@ mod tests {
 
         let mut scene = vello::Scene::new();
         let ui = render::Interaction::default();
-        render::Painter { scene: &mut scene, ui: &ui, scale: 2.0, offset: (0.0, 0.0) }.paint(&tree);
+        render::Painter { scene: &mut scene, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None }.paint(&tree);
         let path = std::env::temp_dir().join("tessel-runtime-counter.png");
         let mut cx = vello::util::RenderContext::new();
         render::render_png(&mut cx, &mut None, &scene, 640, 520, path.to_str().unwrap());

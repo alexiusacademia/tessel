@@ -12,6 +12,8 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state panel = Panel.problems
     state running: Int? = nil
     state reloadOnSave = true
+    // The Docs panel, next to the editor.
+    state helpOpen = false
     state status = "Ready"
     state prompt = Prompt.none
     state promptText = ""
@@ -45,6 +47,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             }
             ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
             ToolButton(icon: .package, label: "Package") { build(bundle: true) }
+            ToolButton(icon: .info, label: "Docs", tint: if helpOpen { .blue } else { .primary }) { helpOpen = !helpOpen }
         }
         .padding(8)
         Divider()
@@ -141,6 +144,11 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                             .tag(doc.path)
                     }
                 }
+            }
+
+            if helpOpen {
+                Divider()
+                HelpPanel(close: { helpOpen = false })
             }
         }
 

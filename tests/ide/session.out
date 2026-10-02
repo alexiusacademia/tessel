@@ -27,6 +27,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -96,6 +100,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -165,6 +173,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -229,6 +241,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -293,6 +309,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -357,6 +377,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -421,6 +445,10 @@ Root
           HStack
             Icon package
             Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
       Divider
       HStack
         VStack
@@ -448,6 +476,178 @@ Root
         Divider
         TabView ["• main.tsl"] selected 0
           CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+        Divider
+        View
+          VStack
+            HStack
+              View
+                Icon arrowLeft
+              View
+                Icon home
+              Text "Second page"
+              Spacer
+              View
+                Icon close
+            Divider
+            Scroll
+              Markdown "Second page" links ["first page"]
+      Divider
+      TabView ["Problems (0)", "Console"] selected 0
+        Scroll
+          VStack
+            HStack
+              Icon circleCheck
+              Text "No problems"
+(open https://example.com)
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            Text "EXPLORER"
+            Spacer
+            View
+              Icon filePlus
+            View
+              Icon folderPlus
+            View
+              Icon pencil
+            View
+              Icon trash
+          Text "PROJECT"
+          Spacer
+          Scroll
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Icon fileCode
+                Text "main.tsl"
+                Spacer
+        Divider
+        TabView ["• main.tsl"] selected 0
+          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+        Divider
+        View
+          VStack
+            HStack
+              View
+                Icon arrowLeft
+              View disabled
+                Icon home
+              Text "DOCUMENTATION"
+              Spacer
+              View
+                Icon close
+            Divider
+            Scroll
+              VStack
+                Text "GUIDE"
+                HStack
+                  Text "First page"
+                  Spacer
+                HStack
+                  Text "Second page"
+                  Spacer
       Divider
       TabView ["Problems (0)", "Console"] selected 0
         Scroll

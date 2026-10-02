@@ -244,6 +244,8 @@ fn ide_session() {
     let out = Command::new(&exe)
         .env("TESSEL_SCRIPT", script)
         .env("TESSEL_PROJECT", &project)
+        // (A small documentation of its own, for the Docs panel.)
+        .env("TESSEL_DOCS", root.join("tests/ide/docs"))
         .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
         .env("TESSEL_NO_UPDATE_CHECK", "1")
         .output()

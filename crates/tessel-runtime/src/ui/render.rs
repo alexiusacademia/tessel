@@ -80,6 +80,64 @@ impl TextEngine {
         layout
     }
 
+    /// Text with stretches in other styles (bold, italic, code, links), for
+    /// `Markdown`: wrapped at `max_w`, with room between its lines.
+    pub fn rich(
+        &mut self,
+        text: &str,
+        size: f64,
+        weight: f32,
+        color: Rgba,
+        spans: &[(std::ops::Range<usize>, super::markdown::Inline)],
+        max_w: Option<f64>,
+    ) -> parley::Layout<Paint> {
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(StyleProperty::from(GenericFamily::SystemUi));
+        b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
+        b.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(1.45)));
+        b.push_default(StyleProperty::Brush(Paint(color.0)));
+        for (range, style) in spans {
+            if style.bold {
+                b.push(StyleProperty::FontWeight(parley::FontWeight::new(700.0)), range.clone());
+            }
+            if style.italic {
+                b.push(StyleProperty::FontStyle(parley::FontStyle::Italic), range.clone());
+            }
+            if style.code {
+                b.push(StyleProperty::from(GenericFamily::Monospace), range.clone());
+                b.push(StyleProperty::FontSize(size as f32 * 0.92), range.clone());
+                b.push(StyleProperty::Brush(Paint(theme().code.type_name.0)), range.clone());
+            }
+            if style.link.is_some() {
+                b.push(StyleProperty::Brush(Paint(theme().accent.0)), range.clone());
+            }
+        }
+        let mut layout = b.build(text);
+        layout.break_all_lines(max_w.map(|w| w as f32 + 0.5));
+        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+        layout
+    }
+
+    /// A block of code in a `Markdown` view: monospaced, wrapped at `width`,
+    /// with syntax colors if it's Tessel.
+    pub fn code_block(&mut self, text: &str, size: f64, tessel: bool, width: f64) -> parley::Layout<Paint> {
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(StyleProperty::from(GenericFamily::Monospace));
+        b.push_default(StyleProperty::FontSize(size as f32));
+        b.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(1.45)));
+        b.push_default(StyleProperty::Brush(Paint(theme().colors[theme::PRIMARY].0)));
+        if tessel {
+            for (range, color) in super::highlight::highlight(text) {
+                b.push(StyleProperty::Brush(Paint(color.0)), range);
+            }
+        }
+        let mut layout = b.build(text);
+        layout.break_all_lines(Some(width as f32 + 0.5));
+        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+        layout
+    }
+
     pub fn layout(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>) -> parley::Layout<Paint> {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
         b.push_default(StyleProperty::from(GenericFamily::SystemUi));
@@ -194,6 +252,9 @@ pub struct Painter<'a> {
     /// How far the view being drawn is from where layout put it (while it's
     /// animated to its place), in points.
     pub offset: (f64, f64),
+    /// The part of the window that shows, inside scroll views: what's
+    /// outside needn't be drawn.
+    pub clip: Option<Rect>,
 }
 
 impl Painter<'_> {
@@ -508,10 +569,36 @@ impl Painter<'_> {
             Kind::Scroll => {
                 let t = self.t();
                 self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
+                let outer = self.clip.replace(content);
                 for c in &n.children {
                     self.paint(c);
                 }
+                self.clip = outer;
                 self.scene.pop_layer();
+            }
+            Kind::Markdown { .. } => {
+                if let Some(laid) = &n.layout.markdown {
+                    let (x0, y0) = (content.x, content.y);
+                    // Only the rows that show (a page can be very long).
+                    let (top, bottom) = self.clip.map_or((f64::MIN, f64::MAX), |c| (c.y - y0, c.y + c.h - y0));
+                    for item in &laid.items {
+                        let (from, to) = item.rows();
+                        if to < top || from > bottom {
+                            continue;
+                        }
+                        match item {
+                            super::markdown::Item::Text { x, y, layout } => self.text(layout, x0 + x, y0 + y, None),
+                            super::markdown::Item::Fill { rect, radius, color } => {
+                                self.fill(Rect { x: x0 + rect.x, y: y0 + rect.y, ..*rect }, *radius, *color)
+                            }
+                            super::markdown::Item::Picture { rect, picture } => {
+                                let s = rect.w / picture.width.max(1.0);
+                                let t = self.t() * Affine::translate((x0 + rect.x, y0 + rect.y)) * Affine::scale(s);
+                                self.scene.draw_image(&picture.image, t);
+                            }
+                        }
+                    }
+                }
             }
             _ => {}
         }

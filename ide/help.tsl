@@ -1,0 +1,152 @@
+// The Docs panel: Tessel's documentation, as it comes with `tessel`. It's
+// read from the folder in TESSEL_DOCS (where `tessel` writes it before it
+// starts the IDE), so it needs no network.
+
+// A line of the contents: a group's title, or a page.
+struct HelpEntry {
+    group: Bool
+    // Of a group: 1, or 2 for a group inside another.
+    level: Int
+    // Of a page: its file is `<slug>.md`.
+    slug: String
+    label: String
+}
+
+fn helpFolder() -> String {
+    environment("TESSEL_DOCS") ?? ""
+}
+
+// The contents (`index.txt`): `group <level> <label>` and `page <slug>
+// <label>` lines, with tabs between.
+fn helpIndex() -> [HelpEntry] {
+    var out: [HelpEntry] = []
+    let text = readFile(join(folder: helpFolder(), name: "index.txt")) ?? ""
+    for line in text.lines() {
+        let parts = line.split("\t")
+        if parts.count == 3 && parts[0] == "group" {
+            out.append(HelpEntry(group: true, level: Int(parts[1]) ?? 1, slug: "", label: parts[2]))
+        } else if parts.count == 3 && parts[0] == "page" {
+            out.append(HelpEntry(group: false, level: 0, slug: parts[1], label: parts[2]))
+        }
+    }
+    out
+}
+
+// The page a link in the documentation goes to: "/ui/styling/#colors" is
+// "ui/styling". Nil for a link within its page ("#colors").
+fn helpSlug(link: String) -> String? {
+    if !link.hasPrefix("/") {
+        return nil
+    }
+    var path = link
+    if let at = path.find("#") {
+        path = path.substring(from: 0, to: at)
+    }
+    var parts: [String] = []
+    for part in path.split("/") {
+        if part != "" {
+            parts.append(part)
+        }
+    }
+    parts.joined(separator: "/")
+}
+
+view HelpPanel(close: fn()) {
+    state index: [HelpEntry] = []
+    // The page that's showing ("" for the contents), its text, and the
+    // pages before it.
+    state page = ""
+    state text = ""
+    state history: [String] = []
+
+    VStack(spacing: 0, alignment: .leading) {
+        HStack(spacing: 2) {
+            IconButton(icon: .arrowLeft) { back() }.disabled(history.isEmpty)
+            IconButton(icon: .home) { show(slug: "") }.disabled(page == "")
+            Text(title()).font(size: 12, weight: .semibold).color(.secondary).padding(horizontal: 6)
+            Spacer()
+            IconButton(icon: .close) { close() }
+        }
+        .padding(8)
+        Divider()
+
+        if index.isEmpty {
+            VStack(spacing: 6) {
+                Text("The documentation isn't here").color(.secondary)
+                Text("It comes with Tessel: open the IDE with `tessel`.").font(size: 12).color(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if page == "" {
+            Scroll {
+                VStack(spacing: 0, alignment: .leading) {
+                    for e in index {
+                        if e.group {
+                            Text(if e.level == 1 { e.label.uppercase() } else { e.label })
+                                .font(size: 11, weight: if e.level == 1 { .bold } else { .semibold })
+                                .color(.secondary)
+                                .padding(top: if e.level == 1 { 14 } else { 8 }, leading: 8, bottom: 4)
+                        } else {
+                            HStack {
+                                Text(e.label).font(size: 13)
+                                Spacer()
+                            }
+                            .padding(horizontal: 8, vertical: 4)
+                            .hoverBackground(.lightGray, radius: 4)
+                            .onTap { show(slug: e.slug) }
+                        }
+                    }
+                }
+                .padding(8)
+            }
+        } else {
+            Scroll {
+                Markdown(text, folder: helpFolder(), onLink: { link in follow(link: link) })
+                    .font(size: 13)
+                    .padding(16)
+            }
+            // (Another page starts at its top.)
+            .id(page)
+        }
+    }
+    .frame(width: 440)
+    .onAppear { index = helpIndex() }
+
+    fn title() -> String {
+        if page == "" {
+            return "DOCUMENTATION"
+        }
+        if let e = index.first(where: { e in e.slug == page }) {
+            return e.label
+        }
+        page
+    }
+
+    fn load(slug: String) {
+        page = slug
+        if slug != "" {
+            text = readFile(join(folder: helpFolder(), name: "{slug}.md")) ?? "# Not found\n\nThere's no page `{slug}`."
+        }
+    }
+
+    fn show(slug: String) {
+        if slug != page {
+            history.append(page)
+            load(slug: slug)
+        }
+    }
+
+    fn back() {
+        if !history.isEmpty {
+            load(slug: history.removeLast())
+        }
+    }
+
+    // A link in a page: another page, or a place on the web (in the browser).
+    fn follow(link: String) {
+        if link.hasPrefix("http://") || link.hasPrefix("https://") {
+            openURL(link)
+        } else if let slug = helpSlug(link: link) {
+            show(slug: slug)
+        }
+    }
+}

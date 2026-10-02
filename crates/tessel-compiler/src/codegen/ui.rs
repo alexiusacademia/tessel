@@ -623,6 +623,27 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.call_rt("tsl_ui_svg", &[s]);
                 self.release(s, &Ty::Str);
             }
+            "Markdown" => {
+                let source = string(self, a(0));
+                let folder = string(self, a(1));
+                // The block for links, or null for none.
+                let lt = Ty::opt(Ty::func(vec![Ty::Str], Ty::Void));
+                let (f, env): (Val, Val) = match a(2) {
+                    Some(x) => {
+                        let opt = self.expr_as(x, &lt).unwrap().into_struct_value();
+                        let present = self.b.build_extract_value(opt, 0, "").unwrap().into_int_value();
+                        let closure = self.b.build_extract_value(opt, 1, "").unwrap().into_struct_value();
+                        let f = self.b.build_extract_value(closure, 0, "").unwrap().into_pointer_value();
+                        let env = self.b.build_extract_value(closure, 1, "").unwrap();
+                        let null = self.ptr_ty().const_null();
+                        (self.b.build_select(present, f, null, "").unwrap(), env)
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                self.call_rt("tsl_ui_markdown", &[source, folder, f, env]);
+                self.release(source, &Ty::Str);
+                self.release(folder, &Ty::Str);
+            }
             "VStack" | "HStack" | "ZStack" | "Scroll" => {
                 // (runtime kind, index of `alignment:`, index of the content)
                 let (kind, align_at, content) = match name {

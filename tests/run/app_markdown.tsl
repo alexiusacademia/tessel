@@ -1,0 +1,16 @@
+// `Markdown`: text with headings, lists, code, a table and links. A link
+// goes to `onLink`; without one, a link to the web opens in the browser.
+
+app Reader(width: 420, height: 360) {
+    state followed = "nothing"
+    let page = "# Notes\n\nSome *text* with `code`, and a [link](/there/) to follow.\n\n- one\n- two\n\n| Name | Count |\n|---|---|\n| apples | 3 |\n\n```tessel\nlet x = 1\n```\n"
+
+    VStack(spacing: 8, alignment: .leading) {
+        Text("Followed: {followed}")
+        Scroll {
+            Markdown(page, onLink: { url in followed = url })
+        }
+        Markdown("Find out more on [the web](https://example.com/more).").font(size: 12)
+    }
+    .padding(16)
+}

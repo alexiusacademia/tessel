@@ -1057,6 +1057,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),
             "tsl_ui_icon" => (vec![i32t], None),
             "tsl_ui_svg" => (vec![p], None),
+            "tsl_ui_markdown" => (vec![p, p, p, p], None),
             "tsl_ui_tab_item" => (vec![p], None),
             "tsl_ui_hover_background" => (vec![i32t, p, f64t], None),
             "tsl_create_folder" => (vec![p], Some(i8t)),

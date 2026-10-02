@@ -46,3 +46,12 @@ tree
 key tab
 type )
 tree
+click "Docs"
+click "Second page"
+tree
+click "first page"
+click "the web"
+click "arrowLeft"
+click "home"
+tree
+click "close"

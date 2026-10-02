@@ -44,10 +44,29 @@ commands:
 
 /// The IDE's source, built into `tessel` so it works wherever `tessel` is installed.
 const IDE_SOURCES: &[(&str, &str)] = &[
+    ("help.tsl", include_str!("../../../ide/help.tsl")),
     ("main.tsl", include_str!("../../../ide/main.tsl")),
     ("project.tsl", include_str!("../../../ide/project.tsl")),
     ("widgets.tsl", include_str!("../../../ide/widgets.tsl")),
 ];
+
+// The documentation that comes with `tessel`: `DOCS`, (path, bytes).
+include!(concat!(env!("OUT_DIR"), "/docs.rs"));
+
+/// Writes the documentation to `folder` (for the IDE's Docs panel, which
+/// reads it from there).
+fn write_docs(folder: &Path) -> std::io::Result<()> {
+    // (The contents last: its being there means everything is.)
+    let contents = |name: &str| name == "index.txt";
+    for (name, bytes) in DOCS.iter().filter(|(n, _)| !contents(n)).chain(DOCS.iter().filter(|(n, _)| contents(n))) {
+        let file = folder.join(name);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(file, bytes)?;
+    }
+    Ok(())
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -591,8 +610,16 @@ fn ide(folder: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
+    // The documentation, next to the IDE.
+    let docs = dir.join("docs");
+    if !docs.join("index.txt").exists() {
+        if let Err(e) = write_docs(&docs) {
+            eprintln!("tessel: can't write the documentation to `{}`: {e}", docs.display());
+        }
+    }
     let mut cmd = Command::new(&exe);
     cmd.env("TESSEL_PROJECT", &folder);
+    cmd.env("TESSEL_DOCS", &docs);
     if let Some(me) = me {
         cmd.env("TESSEL_EXE", me);
     }

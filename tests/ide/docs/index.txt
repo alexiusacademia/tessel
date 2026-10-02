@@ -1,0 +1,3 @@
+group	1	Guide
+page	guide/first	First page
+page	guide/second	Second page
