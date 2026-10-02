@@ -807,6 +807,17 @@ pub extern "C" fn tsl_canvas_clip(x: f64, y: f64, w: f64, h: f64) {
     });
 }
 
+/// `g.clipPath(evenOdd:)`: until the matching `g.restore()` (or the end of
+/// the drawing), only what's inside the current path shows.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_clip_path(even_odd: u8) {
+    with(|c| {
+        let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
+        c.scene.push_clip_layer(rule, Affine::IDENTITY, &c.path);
+        c.clips += 1;
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

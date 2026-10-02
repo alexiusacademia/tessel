@@ -682,6 +682,7 @@ fn graphics_method(name: &str) -> Option<Method> {
         "rotate" => method(vec![u("angle")], Ty::Void),
         "zoom" => method(vec![u("factor")], Ty::Void),
         "clip" => method(vec![f("x"), f("y"), f("width"), f("height")], Ty::Void),
+        "clipPath" => method(vec![P::new("evenOdd", Ty::Bool).default()], Ty::Void),
         _ => return None,
     })
 }
@@ -715,7 +716,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         t if *t == GRAPHICS => &[
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
-            "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip",
+            "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
         ],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
@@ -923,6 +924,7 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR]),
         "image" => rt_g("tsl_canvas_image", &[Req, Req, Req, Req, Req, Float(1.0)]),
         "clip" => rt_g("tsl_canvas_clip", &[]),
+        "clipPath" => rt_g("tsl_canvas_clip_path", &[Bool(false)]),
         _ => return None,
     })
 }

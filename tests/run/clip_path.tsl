@@ -1,0 +1,38 @@
+// g.clipPath: only what's inside the current path shows.
+
+fn pixel(_ picture: (Int, Int, [Int]), _ x: Int, _ y: Int) -> String {
+    let p = picture.2[y * picture.0 + x]
+    if p % 256 == 0 { "clear" } else { "{p / 16777216},{p / 65536 % 256},{p / 256 % 256}" }
+}
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-clip-path.png")
+    let ok = renderImage(path: path, width: 100, height: 100) { g in
+        // A red square, seen only through a circle in the middle.
+        g.save()
+        g.beginPath()
+        g.circle(x: 50, y: 50, radius: 30)
+        g.clipPath()
+        g.fillRect(x: 0, y: 0, width: 100, height: 100, color: .rgb(255, 0, 0))
+        g.restore()
+        // After restore, drawing isn't clipped: a blue corner.
+        g.fillRect(x: 0, y: 0, width: 10, height: 10, color: .rgb(0, 0, 255))
+        // A ring (even-odd): green shows between the circles, not inside the inner one.
+        g.save()
+        g.beginPath()
+        g.circle(x: 50, y: 50, radius: 12)
+        g.circle(x: 50, y: 50, radius: 4)
+        g.clipPath(evenOdd: true)
+        g.fillRect(x: 0, y: 0, width: 100, height: 100, color: .rgb(0, 255, 0))
+        g.restore()
+    }
+    print(ok)
+    if let picture = readImage(path) {
+        print("middle of the ring's hole: {pixel(picture, 50, 50)}")
+        print("in the ring: {pixel(picture, 58, 50)}")
+        print("in the circle: {pixel(picture, 70, 50)}")
+        print("outside the circle: {pixel(picture, 90, 50)}")
+        print("corner: {pixel(picture, 5, 5)}")
+        print("corner of the circle's box: {pixel(picture, 25, 25)}")
+    }
+}

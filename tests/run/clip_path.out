@@ -1,0 +1,7 @@
+true
+middle of the ring's hole: 255,0,0
+in the ring: 0,255,0
+in the circle: 255,0,0
+outside the circle: clear
+corner: 0,0,255
+corner of the circle's box: clear

@@ -580,6 +580,7 @@ time, they do nothing. Angles are in radians.
 | `save()` | Remembers the transform (and the clips). |
 | `restore()` | Goes back to what the matching `save()` remembered. |
 | `clip(x:, y:, width:, height:)` | Until the matching `restore()`, only what's inside the rectangle shows. |
+| `clipPath(evenOdd: = false)` | The same, for the current path: only what's inside it shows (for hatching a shape, or a picture in a circle). |
 
 The transform applies to the points of paths and shapes, to the corners of
 pictures, and to the point a text sits on. Line widths, dashes and text
