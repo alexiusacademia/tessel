@@ -206,6 +206,72 @@ impl Interaction {
     }
 }
 
+/// A scroll bar of a scroll view or a code editor: it shows when there's
+/// more than fits, and can be dragged.
+pub struct Bar {
+    /// Where the thumb can go.
+    pub track: Rect,
+    pub thumb: Rect,
+    /// How far the view can be scrolled.
+    pub max: f64,
+}
+
+impl Bar {
+    const THICKNESS: f64 = 6.0;
+    const MARGIN: f64 = 3.0;
+
+    /// The bar along one side of the `view` (what shows), for content
+    /// `total` long, scrolled by `offset`. `None` if it all fits.
+    fn along(view: Rect, vertical: bool, total: f64, offset: f64, shorter: f64) -> Option<Bar> {
+        let visible = if vertical { view.h } else { view.w };
+        let max = total - visible;
+        if max <= 0.5 || visible < 40.0 {
+            return None;
+        }
+        let length = visible - 2.0 * Bar::MARGIN - shorter;
+        let thumb = (length * visible / total).max(28.0).min(length);
+        let at = (length - thumb) * (offset / max).clamp(0.0, 1.0);
+        let (track, thumb) = if vertical {
+            let x = view.x + view.w - Bar::MARGIN - Bar::THICKNESS;
+            let y = view.y + Bar::MARGIN;
+            (Rect { x, y, w: Bar::THICKNESS, h: length }, Rect { x, y: y + at, w: Bar::THICKNESS, h: thumb })
+        } else {
+            let x = view.x + Bar::MARGIN;
+            let y = view.y + view.h - Bar::MARGIN - Bar::THICKNESS;
+            (Rect { x, y, w: length, h: Bar::THICKNESS }, Rect { x: x + at, y, w: thumb, h: Bar::THICKNESS })
+        };
+        Some(Bar { track, thumb, max })
+    }
+
+    /// How far the view is scrolled when the thumb starts `at` along the
+    /// track (from the track's start).
+    pub fn offset_for(&self, at: f64) -> f64 {
+        let vertical = self.track.h > self.track.w;
+        let room = if vertical { self.track.h - self.thumb.h } else { self.track.w - self.thumb.w };
+        if room <= 0.0 { 0.0 } else { (at / room).clamp(0.0, 1.0) * self.max }
+    }
+}
+
+/// The scroll bars of a view: (down the side, along the bottom). A scroll
+/// view has the first; a code editor both.
+pub fn scroll_bars(n: &Node, ui: &Interaction) -> (Option<Bar>, Option<Bar>) {
+    let content = n.layout.rect.inset_by(n.mods.padding);
+    let down = ui.scroll.get(&n.key).copied().unwrap_or(0.0);
+    match &n.kind {
+        Kind::Scroll => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
+        Kind::CodeEditor { .. } => {
+            let code = Rect { x: content.x + n.layout.gutter, w: (content.w - n.layout.gutter).max(0.0), ..content };
+            let across = ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
+            let width = n.layout.text.as_ref().map_or(0.0, |t| t.width() as f64) + 2.0 * CODE_PAD_X;
+            let bottom = Bar::along(code, false, width, across, 0.0);
+            // (The two don't meet in the corner.)
+            let shorter = if bottom.is_some() { Bar::THICKNESS + Bar::MARGIN } else { 0.0 };
+            (Bar::along(content, true, n.layout.content_h, down, shorter), bottom)
+        }
+        _ => (None, None),
+    }
+}
+
 /// A code editor's completion list, drawn over everything else.
 pub struct Popup {
     pub rect: Rect,
@@ -260,6 +326,14 @@ pub struct Painter<'a> {
 impl Painter<'_> {
     fn t(&self) -> Affine {
         Affine::scale(self.scale) * Affine::translate(self.offset)
+    }
+
+    /// Draws the scroll bars of a scroll view or code editor, over its content.
+    fn paint_scroll_bars(&mut self, n: &Node) {
+        let (down, across) = scroll_bars(n, self.ui);
+        for bar in [down, across].into_iter().flatten() {
+            self.fill(bar.thumb, Bar::THICKNESS / 2.0, theme().scroll_thumb);
+        }
     }
 
     /// Underlines the text an input method is composing in view `n`, whose
@@ -512,6 +586,7 @@ impl Painter<'_> {
                     self.scene.pop_layer();
                 }
                 self.scene.pop_layer();
+                self.paint_scroll_bars(n);
                 if editing.is_some() {
                     self.stroke(content, 6.0, 2.0, theme().accent);
                 } else {
@@ -575,6 +650,7 @@ impl Painter<'_> {
                 }
                 self.clip = outer;
                 self.scene.pop_layer();
+                self.paint_scroll_bars(n);
             }
             Kind::Markdown { .. } => {
                 if let Some(laid) = &n.layout.markdown {

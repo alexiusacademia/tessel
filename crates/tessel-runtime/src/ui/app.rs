@@ -533,6 +533,9 @@ struct App {
     clipboard: Clipboard,
     /// Keys of the views in the current tree, to find ones that just appeared.
     keys: std::collections::HashSet<u64>,
+    /// The caret the view was last scrolled to: the view edited, the
+    /// selection, and the length of its text (see `follow_caret`).
+    followed: Option<(u64, usize, usize, usize)>,
     completing: Completing,
 }
 
@@ -888,12 +891,18 @@ impl App {
         }
         let (caret, _) = edit::geometry(layout, &at);
         let content = node.layout.rect.inset_by(node.mods.padding);
-        // Scroll so the caret stays visible.
+        // Scroll so the caret shows, when it (or the text) changed: not all
+        // the time, or the view couldn't be scrolled away from it.
+        let now = (e.key, at.anchor, at.focus, layout.len());
+        let moved = self.followed != Some(now);
+        self.followed = Some(now);
         let keep = |offset: &mut f64, lo: f64, hi: f64, visible: f64, total: f64| {
-            if hi - *offset > visible {
-                *offset = hi - visible;
-            } else if lo < *offset {
-                *offset = lo;
+            if moved {
+                if hi - *offset > visible {
+                    *offset = hi - visible;
+                } else if lo < *offset {
+                    *offset = lo;
+                }
             }
             *offset = offset.min((total - visible).max(0.0)).max(0.0);
         };
@@ -1414,21 +1423,67 @@ impl App {
         self.edit(Edit::Drag { x: x - x0 + sx, y: y - y0 + sy });
     }
 
-    fn scroll(&mut self, x: f64, y: f64, dy: f64) {
+    /// The scroll view or code editor at a point (the innermost one).
+    fn scrollable_at(&self, x: f64, y: f64) -> Option<u64> {
         fn find(n: &Node, x: f64, y: f64) -> Option<u64> {
             if !n.layout.rect.contains(x, y) || n.mods.hidden {
                 return None;
             }
-            let inner = n.children.iter().rev().find_map(|c| find(c, x, y));
+            let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
             inner.or(matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some(n.key))
         }
-        let Some(key) = self.tree.as_ref().and_then(|t| find(t, x, y)) else { return };
-        let offset = self.ui.scroll.entry(key).or_insert(0.0);
-        *offset = (*offset + dy).max(0.0);
-        if let Some(n) = self.node(key) {
-            let max = (n.layout.content_h - n.layout.rect.h).max(0.0);
-            let offset = self.ui.scroll.get_mut(&key).unwrap();
-            *offset = offset.min(max);
+        self.tree.as_ref().and_then(|t| find(t, x, y))
+    }
+
+    /// Scrolls the view under (x, y) by (dx, dy): as far as its content goes.
+    fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64) {
+        let Some(key) = self.scrollable_at(x, y) else { return };
+        let Some(n) = self.node(key) else { return };
+        let content = n.layout.rect.inset_by(n.mods.padding);
+        let max_y = (n.layout.content_h - content.h).max(0.0);
+        let max_x = match &n.kind {
+            Kind::CodeEditor { .. } => {
+                let width = n.layout.text.as_ref().map_or(0.0, |t| t.width() as f64) + 2.0 * render::CODE_PAD_X;
+                (width - (content.w - n.layout.gutter)).max(0.0)
+            }
+            _ => 0.0,
+        };
+        let down = self.ui.scroll.entry(key).or_insert(0.0);
+        *down = (*down + dy).clamp(0.0, max_y);
+        if max_x > 0.0 || dx < 0.0 {
+            let across = self.ui.scroll_x.entry(key).or_insert(0.0);
+            *across = (*across + dx).clamp(0.0, max_x);
+        }
+    }
+
+    /// The scroll bar at a point: its view, whether it's the one down the
+    /// side, and how far along the thumb the point is (the middle of the
+    /// thumb, for a point on the track beside it: the thumb jumps there).
+    fn scroll_bar_at(&self, x: f64, y: f64) -> Option<(u64, bool, f64)> {
+        let n = self.node(self.scrollable_at(x, y)?)?;
+        let (down, across) = render::scroll_bars(n, &self.ui);
+        // (A little wider than it looks, to be easy to catch.)
+        let on = |r: Rect| r.inset(-3.0).contains(x, y);
+        if let Some(bar) = down.filter(|b| on(b.track)) {
+            let grab = if on(bar.thumb) { y - bar.thumb.y } else { bar.thumb.h / 2.0 };
+            return Some((n.key, true, grab));
+        }
+        let bar = across.filter(|b| on(b.track))?;
+        let grab = if on(bar.thumb) { x - bar.thumb.x } else { bar.thumb.w / 2.0 };
+        Some((n.key, false, grab))
+    }
+
+    /// Scrolls so that the thumb of a scroll bar (held `grab` along it) is
+    /// under the pointer at (x, y).
+    fn drag_scroll_bar(&mut self, key: u64, vertical: bool, grab: f64, x: f64, y: f64) {
+        let Some(n) = self.node(key) else { return };
+        let (down, across) = render::scroll_bars(n, &self.ui);
+        if let (true, Some(bar)) = (vertical, &down) {
+            let offset = bar.offset_for(y - grab - bar.track.y);
+            self.ui.scroll.insert(key, offset);
+        } else if let (false, Some(bar)) = (vertical, &across) {
+            let offset = bar.offset_for(x - grab - bar.track.x);
+            self.ui.scroll_x.insert(key, offset);
         }
     }
 
@@ -1595,6 +1650,7 @@ pub unsafe extern "C" fn tsl_ui_run(
         dirty: true,
         clipboard: Clipboard::Headless,
         keys: Default::default(),
+        followed: None,
         completing: Completing::default(),
     };
     let code = match std::env::var("TESSEL_SCRIPT") {
@@ -1717,8 +1773,18 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     [x, y, _, _] => app.drag_at(x, y),
                     _ => None,
                 };
-                match (key, &n[..]) {
-                    (Some(key), [_, _, dx, dy]) => app.drag(key, *dx, *dy),
+                // A scroll bar, or a view with `.onDrag`.
+                let bar = match n[..] {
+                    [x, y, _, _] => app.scroll_bar_at(x, y),
+                    _ => None,
+                };
+                match (bar, key, &n[..]) {
+                    (Some((key, vertical, grab)), _, [x, y, dx, dy]) => {
+                        app.drag_scroll_bar(key, vertical, grab, *x, *y);
+                        app.update();
+                        app.drag_scroll_bar(key, vertical, grab, x + dx, y + dy);
+                    }
+                    (None, Some(key), [_, _, dx, dy]) => app.drag(key, *dx, *dy),
                     _ => {
                         eprintln!("script: nothing to drag for `{rest}`");
                         return 2;
@@ -1729,7 +1795,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                 if let [_, dy] = n[..] {
                     let (x, y) = (app.width / 2.0, app.height / 2.0);
-                    app.scroll(x, y, dy);
+                    app.scroll(x, y, 0.0, dy);
                 }
             }
             "wait" => {
@@ -1828,6 +1894,9 @@ struct WindowApp {
     selecting: bool,
     /// The view with `.onDrag` being dragged.
     dragging: Option<u64>,
+    /// The scroll bar being dragged: its view, whether it's the one down
+    /// the side, and where on its thumb it's held.
+    scrolling: Option<(u64, bool, f64)>,
     /// The pointer that's showing (a resize one over a drag handle).
     pointer: winit::window::CursorIcon,
     /// For double and triple clicks: when and where the last click was, and the count.
@@ -1857,6 +1926,7 @@ fn run_window(app: App) -> i32 {
         mods: Mods::default(),
         selecting: false,
         dragging: None,
+        scrolling: None,
         pointer: winit::window::CursorIcon::Default,
         last_click: None,
         ime: false,
@@ -2021,6 +2091,11 @@ impl ApplicationHandler for WindowApp {
                 let scale = self.scale();
                 let before = self.cursor;
                 self.cursor = (position.x / scale, position.y / scale);
+                if let Some((key, vertical, grab)) = self.scrolling {
+                    self.app.drag_scroll_bar(key, vertical, grab, self.cursor.0, self.cursor.1);
+                    self.request_redraw();
+                    return;
+                }
                 if let Some(key) = self.dragging {
                     self.app.drag(key, self.cursor.0 - before.0, self.cursor.1 - before.1);
                     self.request_redraw();
@@ -2056,6 +2131,15 @@ impl ApplicationHandler for WindowApp {
                 let (x, y) = self.cursor;
                 match state {
                     ElementState::Pressed if self.app.popup_click(x, y) => {}
+                    // On a scroll bar: the thumb comes to the pointer, and
+                    // follows it until the button is released.
+                    ElementState::Pressed if self.app.scroll_bar_at(x, y).is_some() => {
+                        self.scrolling = self.app.scroll_bar_at(x, y);
+                        if let Some((key, vertical, grab)) = self.scrolling {
+                            self.app.drag_scroll_bar(key, vertical, grab, x, y);
+                        }
+                    }
+                    ElementState::Released if self.scrolling.is_some() => self.scrolling = None,
                     ElementState::Pressed => {
                         let hit = self.app.hit(x, y);
                         if let Some(Hit::Drag(key)) = hit {
@@ -2103,11 +2187,11 @@ impl ApplicationHandler for WindowApp {
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -y as f64 * 40.0,
-                    MouseScrollDelta::PixelDelta(p) => -p.y / self.scale(),
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (-x as f64 * 40.0, -y as f64 * 40.0),
+                    MouseScrollDelta::PixelDelta(p) => (-p.x / self.scale(), -p.y / self.scale()),
                 };
-                self.app.scroll(self.cursor.0, self.cursor.1, dy);
+                self.app.scroll(self.cursor.0, self.cursor.1, dx, dy);
                 self.request_redraw();
             }
             WindowEvent::KeyboardInput { event: KeyEvent { state: ElementState::Pressed, logical_key, text, .. }, .. } => {

@@ -1,0 +1,19 @@
+// Scroll bars: a scroll view with more than fits can be scrolled by its
+// bar; one whose content fits has none.
+
+app Bars(width: 300, height: 200) {
+    HStack(spacing: 0, alignment: .top) {
+        Scroll {
+            VStack(spacing: 0, alignment: .leading) {
+                for i in 0..40 {
+                    Text("Row {i}").frame(height: 20)
+                }
+            }
+        }
+        .frame(width: 150)
+        Scroll {
+            Text("Short")
+        }
+        .frame(width: 150)
+    }
+}

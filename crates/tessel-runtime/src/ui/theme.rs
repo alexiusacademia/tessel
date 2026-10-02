@@ -33,6 +33,8 @@ pub struct Theme {
     pub error_mark: Rgba,
     /// The completion list.
     pub popup: Rgba,
+    /// The bar that shows (and moves) how far a view is scrolled.
+    pub scroll_thumb: Rgba,
     pub code: Code,
 }
 
@@ -99,6 +101,7 @@ pub static LIGHT: Theme = Theme {
     error_line: rgb(255, 235, 235),
     error_mark: rgb(255, 59, 48),
     popup: rgb(255, 255, 255),
+    scroll_thumb: Rgba([0, 0, 0, 76]),
     code: Code {
         keyword: rgb(155, 35, 147),
         string: rgb(196, 26, 22),
@@ -146,6 +149,7 @@ pub static DARK: Theme = Theme {
     error_line: rgb(74, 34, 34),
     error_mark: rgb(255, 69, 58),
     popup: rgb(44, 44, 46),
+    scroll_thumb: Rgba([255, 255, 255, 90]),
     code: Code {
         keyword: rgb(252, 95, 163),
         string: rgb(252, 106, 93),
