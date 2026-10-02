@@ -352,6 +352,40 @@ Image("logo.svg").frame(width: 48, height: 48)
   box.
 - The file is read once, and again when it changes.
 
+## Markdown
+
+```text
+Markdown(_ text: String, folder: String = "", onLink: fn(String)? = nil)
+```
+
+Shows text written in [Markdown](https://commonmark.org/help/): headings,
+paragraphs with **bold**, *italic*, `code` and links, lists, quotes, blocks
+of code, tables, pictures and rules. It's for longer or richer text than a
+[`Text`](#text): help pages, release notes, a message with a link in it.
+
+```tessel
+Markdown("## Welcome\n\nRead the [guide](/guide/) or just *start typing*.", onLink: { link in
+    open(page: link)
+})
+```
+
+- It's as wide as the space it's given, and as tall as its text needs then.
+  Put it in a [`Scroll`](#scroll) when it may be longer than the window.
+- The text's size and color are the view's ([`.font`](/reference/modifiers/#font),
+  [`.color`](/reference/modifiers/#color)); headings are larger in proportion.
+- **Links.** A click on a link calls `onLink` with the link's address,
+  exactly as written. Without `onLink`, links to the web (`http://`,
+  `https://`) open in the browser, and other links do nothing.
+- **Pictures** (`![what it shows](picture.png)`) are PNG and JPEG files,
+  looked for in `folder` (or in the folder the program runs from). A picture
+  that's wider than the view is made to fit. One that can't be read is
+  replaced by its description.
+- **Code.** A block marked `tessel` gets Tessel's syntax colors. Long lines
+  wrap.
+- Tables are as wide as their text, and wrap their cells when that's wider
+  than the view.
+- HTML in the text isn't shown. Text can't be selected.
+
 ## Icon
 
 ```text

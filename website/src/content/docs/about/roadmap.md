@@ -21,8 +21,8 @@ language may still change. This page is an honest list of where things stand.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, about 60 built-in icons, SVG,
-  PNG and JPEG pictures, keyboard shortcuts, hover and pressed states, and
-  the layout and styling modifiers.
+  PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
+  and pressed states, and the layout and styling modifiers.
 - **Looks:** light and dark appearance that follows the system, colors of
   your own, and animation of views that move, resize or fade.
 - **Text editing:** selecting with the mouse and keyboard, word and line
@@ -43,7 +43,8 @@ language may still change. This page is an honest list of where things stand.
   clipboard, reading standard input and writing to standard error, and many
   methods for strings, numbers and lists.
 - **Tools:** the `tessel` command, a REPL (`tessel repl`), hot reload
-  (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE, a VS Code extension, a
+  (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE
+  (with this documentation built in), a VS Code extension, a
   language server for other editors, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
 

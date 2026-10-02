@@ -1,6 +1,6 @@
 ---
 title: Text and styling
-description: Show text and change how views look with font, color, background, border, opacity, hidden, disabled and hoverBackground; your own colors, light and dark appearance, and animation.
+description: Show text and change how views look with font, color, background, border, opacity, hidden, disabled and hoverBackground; your own colors, light and dark appearance, animation, and longer text with Markdown.
 ---
 
 Views have a plain look until you style them with *modifiers*. This page covers
@@ -20,6 +20,9 @@ Text("First line\nSecond line")
 Text can contain `{…}` interpolation, like any Tessel string, and `\n` starts a
 new line. When a text is offered less width than it needs, it wraps onto more
 lines at word boundaries.
+
+For text with headings, lists or links in it, see
+[Markdown](#longer-text-with-markdown) below.
 
 ## Fonts
 
@@ -266,3 +269,37 @@ A few things to know:
   [`.id`](/ui/lists/#identity-with-id), so that the right ones move.
 - Scrolling and resizing the window aren't slowed down.
 - A `Toggle` always slides, with or without `.animation`.
+
+## Longer text with Markdown
+
+A `Text` has one font and one color. For text with more to it (a heading, a
+list, a word in bold, a link, a table), write it in
+[Markdown](https://commonmark.org/help/) and show it with `Markdown`:
+
+```tessel
+app Notes(width: 420, height: 330) {
+    state opened = ""
+    let page = "## Release notes\n\nVersion **2.0** is out. It adds:\n\n- a *dark* appearance\n- faster `search()`\n\n| Key | Does |\n|---|---|\n| Cmd+F | Find |\n| Cmd+S | Save |\n\nRead the [full list](/changes/)."
+
+    VStack(spacing: 8, alignment: .leading) {
+        Markdown(page, onLink: { link in opened = link })
+        Text("Opened: {opened}").color(.secondary)
+    }
+    .padding(16)
+}
+```
+
+![A heading "Release notes" with a line under it, a sentence with a bold word, a list of two items, a small table of keys, and a sentence with a blue link](../../../assets/screens/ui-markdown.png)
+
+Usually the text comes from a file, with
+[`readFile`](/reference/stdlib/#readfile), rather than from a string in the
+program. Put the view in a `Scroll` when the text may be longer than the
+window.
+
+When a link is clicked, `onLink` gets its address, as it's written in the
+text: what happens then is up to you. Without `onLink`, links to the web open
+in the browser.
+
+The [reference](/reference/views/#markdown) lists what's shown (and what
+isn't). The documentation in the [Tessel IDE](/start/ide/#the-docs-panel) is
+shown with this view.

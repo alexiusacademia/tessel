@@ -81,6 +81,7 @@ On Windows, use Ctrl wherever this page says Cmd.
 | Run / Stop | Cmd+R | Saves and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
+| Docs | | Shows or hides the [Docs panel](#the-docs-panel). |
 
 When a newer Tessel is available, an **Update to v…** button appears next to
 the status. It runs [`tessel update`](/start/installation/#updating) and shows
@@ -107,6 +108,23 @@ is run again from the start instead.
 With the switch off, Run builds the program and runs it as it was then;
 saving doesn't change the running program. The executable is written to a
 hidden file, `.tessel-run`, in the project folder.
+
+## The Docs panel
+
+**Docs** in the toolbar opens Tessel's documentation in a panel next to the
+editor, so you can read while you write:
+
+![The IDE with the Docs panel open on the right, showing the page "Text and styling" next to the code editor](../../../assets/screens/ide-docs.png)
+
+- The panel opens on the contents: every page of this documentation, in the
+  same order. Click a page to read it.
+- Links in a page go to other pages. The arrow goes back, and the house
+  returns to the contents. Links to the web open in your browser.
+- The documentation comes with Tessel and is read from your computer: it
+  works without a network, and it's the documentation of the version you
+  have installed.
+
+Click **Docs** again, or the × in the panel, to close it.
 
 ## Problems and console
 
