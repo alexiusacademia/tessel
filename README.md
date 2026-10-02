@@ -49,7 +49,7 @@ The IDE is itself a Tessel app: see [`ide/`](ide/).
 | `crates/tessel-cli` | The `tessel` command |
 | `examples/` | Sample programs, one folder each (a folder is a program) |
 | `ide/` | The Tessel IDE, written in Tessel |
-| `editors/vscode/` | VS Code extension (highlighting, errors as you type, types on hover) |
+| `editors/vscode/` | VS Code extension, published as `alexiusacademia.tessel` (highlighting, errors as you type, types on hover, completion) |
 | `tests/run/` | Programs with expected output, run by `cargo test` |
 | `tests/repl/` | REPL sessions with expected output |
 | `docs/` | Language design |

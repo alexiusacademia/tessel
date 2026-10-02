@@ -9,8 +9,7 @@ language server.
 
 ## VS Code
 
-The extension lives in the Tessel repository, in `editors/vscode`. It gives
-you:
+The Tessel extension is in the VS Code Marketplace. It gives you:
 
 - **Syntax highlighting** for `.tsl` files.
 - **Errors as you type.** The same errors `tessel check` reports appear as
@@ -31,9 +30,32 @@ extension needs the `tessel` command (see [Installation](/start/installation/)).
 
 ### Installing
 
-The extension isn't in the VS Code Marketplace yet. You build a `.vsix`
-package and install it from the file. You need [Node.js](https://nodejs.org)
-for the build.
+Open the Extensions view in VS Code (Cmd+Shift+X, or Ctrl+Shift+X on
+Windows), search for **Tessel**, and click **Install** on the one published
+by `alexiusacademia`. Or install it from a terminal:
+
+```sh
+code --install-extension alexiusacademia.tessel
+```
+
+It's also on the Marketplace's website:
+[Tessel for VS Code](https://marketplace.visualstudio.com/items?itemName=alexiusacademia.tessel).
+VS Code keeps it up to date from there.
+
+Code completion needs Tessel 0.1.8 or later; run
+[`tessel update`](/start/installation/#updating) if yours is older.
+
+:::note
+Editors built on VS Code that use another marketplace (Cursor, VSCodium and
+others) don't find the extension by searching. Build it from its source, as
+described next, and install the file.
+:::
+
+### Building it from source
+
+The extension's source is in the Tessel repository, in `editors/vscode`. To
+build a `.vsix` package and install it from the file, you need
+[Node.js](https://nodejs.org):
 
 ```sh
 cd editors/vscode
