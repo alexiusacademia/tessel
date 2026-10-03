@@ -315,12 +315,15 @@ A view expression is a view with its modifiers, like
 `Text("Hi").font(size: 20)`. For each one, `views.json` gives its `file`
 (a number in `files`), where it starts and ends (`lo`, `hi`), its `line`
 and `endLine`, its own call (`base`) and its modifiers (`mods`) with the
-places of their arguments, and for a stack the block that holds its views
-(`blockLo`, `blockHi`). Places are counted in characters from the start of
+places of their arguments, for a stack the block that holds its views
+(`blockLo`, `blockHi`), and where a new `state` of the `view` or `app` it's
+in could be written (`stateAt`, with `indentAt` a statement whose line gives
+the indentation; -1 when there's none). Places are counted in characters from the start of
 the file, as [`substring`](/reference/stdlib/#string) counts them.
 
 `--text file from` reads a file's text from another file, for editors with
-unsaved changes; it can be given several times.
+unsaved changes; it can be given several times. `--dark` makes the picture
+in the dark appearance (unless the `app` asks for one).
 
 The app's code runs up to its first frame (including `.onAppear` blocks),
 inside `tessel`. A program without an `app`, or with errors, makes no

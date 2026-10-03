@@ -576,6 +576,20 @@ const TIP_DELAY: f64 = 0.6;
 thread_local! {
     /// `setWindowTitle(…)`: the title the window takes at its next update.
     static NEW_TITLE: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// `undoTextEdit()` (false) or `redoTextEdit()` (true), done at the next update.
+    static UNDO: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// `undoTextEdit()`: as Cmd+Z.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_undo_text_edit() {
+    UNDO.with(|u| u.set(Some(false)));
+}
+
+/// `redoTextEdit()`: as Cmd+Shift+Z.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_redo_text_edit() {
+    UNDO.with(|u| u.set(Some(true)));
 }
 
 /// `setWindowTitle(title)`: changes the text in the window's title bar.
@@ -670,6 +684,9 @@ struct Mods {
 impl App {
     /// Rebuilds the tree if state may have changed, then lays it out.
     fn update(&mut self) {
+        if let Some(redo) = UNDO.with(|u| u.take()) {
+            self.undo(redo);
+        }
         // `.onAppear` blocks can change state, which rebuilds again (a few times at most).
         if let Some(root) = NEW_ROOT.with(|r| r.borrow_mut().take()) {
             self.root = root;
@@ -686,6 +703,7 @@ impl App {
                 self.tree = Some(build(&self.root));
                 self.run_on_appear();
                 self.sync_editor_lines();
+                self.track_editor_texts();
             }
             if self.ui.editing.is_none() {
                 self.ui.composing = None;
@@ -699,6 +717,7 @@ impl App {
             }
         }
         self.follow_caret();
+        self.scroll_to_offset();
         self.layout_popup();
         let tree = self.tree.as_ref().unwrap();
         self.ui.anim.step(tree, now(), (self.width, self.height), &self.ui.scroll);
@@ -1053,6 +1072,37 @@ impl App {
 
     /// Two-way sync of code editors' `line:` bindings: when the program sets
     /// a new line, move the caret there.
+    /// Changes the program makes to a code editor's text can be undone too,
+    /// like typing: each becomes a step of the editor's undo history.
+    fn track_editor_texts(&mut self) {
+        fn editors(n: &Node, out: &mut Vec<(u64, String)>) {
+            if let Kind::CodeEditor { text, .. } = &n.kind {
+                out.push((n.key, read_string(text)));
+            }
+            n.children.iter().for_each(|c| editors(c, out));
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            editors(t, &mut found);
+        }
+        for (key, text) in found {
+            let Some(h) = self.ui.history.get_mut(&key) else {
+                // (First seen: what it has is where its history starts.)
+                self.ui.history.insert(key, edit::History { last_text: text, ..Default::default() });
+                continue;
+            };
+            if h.last_text != text {
+                // Undoing puts the caret where the change began.
+                let at = common_prefix(&h.last_text, &text);
+                let before = std::mem::replace(&mut h.last_text, text);
+                h.undo.push(edit::Snapshot { text: before, anchor: at, focus: at });
+                h.redo.clear();
+                h.typing = false;
+                self.ui.last_edited = Some(key);
+            }
+        }
+    }
+
     fn sync_editor_lines(&mut self) {
         fn editors(n: &Node, out: &mut Vec<(u64, Callback)>) {
             if let Kind::CodeEditor { line: Some(line), .. } = &n.kind {
@@ -1081,10 +1131,32 @@ impl App {
         } else {
             text.match_indices('\n').nth((line - 2) as usize).map_or(text.len(), |(i, _)| i + 1)
         };
+        // (While a view with `.onKey` has the keyboard, it keeps it.)
+        if self.ui.keys_to_view {
+            self.ui.scroll_to = Some((key, offset));
+            return;
+        }
         let mut e = Editing::new(key, &text);
         e.anchor = offset;
         e.focus = offset;
         self.ui.editing = Some(e);
+    }
+
+    /// Scrolls a code editor so that a character shows, a third of the way
+    /// down (see `go_to_line`).
+    fn scroll_to_offset(&mut self) {
+        let Some((key, offset)) = self.ui.scroll_to.take() else { return };
+        let Some(node) = self.node(key) else { return };
+        let Some(layout) = &node.layout.text else { return };
+        let at = Editing { key, anchor: offset, focus: offset, ..Default::default() };
+        let (caret, _) = edit::geometry(layout, &at);
+        let Some(c) = caret else { return };
+        let content = node.layout.rect.inset_by(node.mods.padding);
+        let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
+        let total = layout.height() as f64;
+        let y = (c.y0 - visible_h / 3.0).min((total - visible_h).max(0.0)).max(0.0);
+        self.ui.scroll.insert(key, y);
+        self.ui.scroll_x.insert(key, 0.0);
     }
 
     /// After the caret moved: report its line to the editor's `line:` binding.
@@ -1292,6 +1364,13 @@ impl App {
         let Some(node) = self.node(key) else { return };
         let Some(on_pointer) = node.mods.on_pointer.clone() else { return };
         let origin = node.layout.rect.inset_by(node.mods.padding);
+        // Pressing a view like a canvas ends text editing; with `.onKey`, it
+        // takes the keyboard.
+        if kind == DOWN {
+            let has_keys = node.mods.on_key.is_some();
+            self.ui.editing = None;
+            self.ui.keys_to_view = has_keys;
+        }
         let mut event = super::PointerC {
             kind,
             button,
@@ -1482,6 +1561,7 @@ impl App {
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
         }
+        self.ui.keys_to_view = false;
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
         match (&hit, &node.kind) {
@@ -1571,6 +1651,7 @@ impl App {
             h.typing = typing;
             h.redo.clear();
             h.last_text = new;
+            self.ui.last_edited = Some(e.key);
             self.dirty = true;
         }
         self.ui.editing = Some(e);
@@ -1581,12 +1662,15 @@ impl App {
         }
     }
 
-    /// Undo (or redo) the last change in the view being edited.
+    /// Undo (or redo) the last change in the view being edited, or, while
+    /// nothing is, in the one whose text changed last. That one is then
+    /// edited, with the caret where the change was.
     fn undo(&mut self, redo: bool) {
-        let Some(mut e) = self.ui.editing.clone() else { return };
-        let Some(text) = self.node(e.key).and_then(editable_text).cloned() else { return };
+        let Some(key) = self.ui.editing.as_ref().map(|e| e.key).or(self.ui.last_edited) else { return };
+        let Some(text) = self.node(key).and_then(editable_text).cloned() else { return };
         let current = read_string(&text);
-        let h = self.ui.history.entry(e.key).or_default();
+        let editing = self.ui.editing.clone().filter(|e| e.key == key);
+        let h = self.ui.history.entry(key).or_default();
         if h.last_text != current {
             h.undo.clear();
             h.redo.clear();
@@ -1594,7 +1678,14 @@ impl App {
         }
         let (from, to) = if redo { (&mut h.redo, &mut h.undo) } else { (&mut h.undo, &mut h.redo) };
         let Some(step) = from.pop() else { return };
-        to.push(edit::Snapshot { text: current, anchor: e.anchor, focus: e.focus });
+        let (anchor, focus) = match &editing {
+            Some(e) => (e.anchor, e.focus),
+            None => {
+                let at = common_prefix(&current, &step.text);
+                (at, at)
+            }
+        };
+        to.push(edit::Snapshot { text: current, anchor, focus });
         h.last_text = step.text.clone();
         h.typing = false;
         let slot = text.locate() as *mut *mut Str;
@@ -1603,9 +1694,18 @@ impl App {
             *slot = crate::str_new(&step.text);
             crate::tsl_release(old as *mut Header);
         }
-        e.anchor = step.anchor;
-        e.focus = step.focus;
+        let mut e = editing.unwrap_or_else(|| Editing::new(key, &step.text));
+        let valid = |at: usize| {
+            let mut at = at.min(step.text.len());
+            while !step.text.is_char_boundary(at) {
+                at -= 1;
+            }
+            at
+        };
+        e.anchor = valid(step.anchor);
+        e.focus = valid(step.focus);
         self.ui.editing = Some(e);
+        self.ui.last_edited = Some(key);
         self.dirty = true;
     }
 
@@ -1639,6 +1739,11 @@ impl App {
             return;
         }
         if self.ui.editing.is_none() && !mods.primary && self.run_on_key(name) {
+            return;
+        }
+        // (While nothing is being edited: in the view whose text changed last.)
+        if self.ui.editing.is_none() && mods.primary && name == "z" {
+            self.undo(mods.shift);
             return;
         }
         let unit = if mods.primary {
@@ -1696,6 +1801,7 @@ impl App {
 
     /// A mouse press on a text field or code editor: place the caret or select.
     fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32) {
+        self.ui.keys_to_view = false;
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
         let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
@@ -2883,6 +2989,11 @@ impl ApplicationHandler for WindowApp {
 }
 
 /// The locator of an editable view's text.
+/// How many bytes two texts start with in common (at a character boundary).
+fn common_prefix(a: &str, b: &str) -> usize {
+    a.char_indices().zip(b.chars()).find(|((_, x), y)| x != y).map_or(a.len().min(b.len()), |((i, _), _)| i)
+}
+
 fn editable_text(n: &Node) -> Option<&Callback> {
     match &n.kind {
         Kind::TextField { text, .. } | Kind::CodeEditor { text, .. } => Some(text),

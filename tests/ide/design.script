@@ -1,25 +1,47 @@
 wait 0
 click "Design"
 wait 1
-press 970 172
+press 970 218
 release
 wait 0
 tree
-click field 3
-key cmd+a
-type 30
-key enter
+click "plus"
 wait 1
+wait 0
 click "medium"
 wait 1
-press 838 106
-move 971.7 196.5
+wait 0
+press 835 105
+move 972.6 256.4
 release
 wait 1
-press 970 172
-move 931.8 280.1
+wait 0
+press 895 105
+move 972.6 256.4
 release
 wait 1
+wait 0
+tree
+key cmd+z
+wait 1
+wait 0
+click "redo"
+wait 1
+wait 0
+press 970 218
+release
+wait 0
+key backspace
+wait 1
+wait 0
+click "undo"
+wait 1
+wait 0
+press 970 218
+move 909.6 388.5
+release
+wait 1
+wait 0
 click editor 1
 repeat 19 key up
 wait 1

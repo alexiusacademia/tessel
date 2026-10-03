@@ -86,102 +86,154 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         .padding(8)
         Divider()
 
+        // The explorer, the editor and the bottom panel; then, beside them
+        // all, the Preview, Design or Docs panel.
         HStack(spacing: 0, alignment: .top) {
-            // Explorer
-            VStack(spacing: 0, alignment: .leading) {
-                HStack(spacing: 2) {
-                    Text("EXPLORER").font(size: 11, weight: .semibold).color(.secondary)
-                    Spacer()
-                    IconButton(icon: .filePlus) { ask(Prompt.newFile) }
-                    IconButton(icon: .folderPlus) { ask(Prompt.newFolder) }
-                    IconButton(icon: .pencil) { ask(Prompt.rename) }
-                    IconButton(icon: .trash) { ask(Prompt.delete) }
-                }
-                .padding(8)
-                Text(fileName(project).uppercase()).font(size: 11, weight: .bold).padding(8)
-
-                match prompt {
-                    .none -> Spacer().frame(height: 0)
-                    .delete -> HStack(spacing: 6) {
-                        Text("Delete {fileName(selected)}?").font(size: 12)
-                        Spacer()
-                        Button("Delete") { confirm() }
-                        Button("Cancel") { prompt = Prompt.none }
-                    }
-                    .padding(6)
-                    _ -> TextField(promptLabel(), text: promptText).autofocus().onSubmit { confirm() }.padding(6)
-                }
-
-                Scroll {
+            VStack(spacing: 0) {
+                HStack(spacing: 0, alignment: .top) {
+                    // Explorer
                     VStack(spacing: 0, alignment: .leading) {
-                        for e in tree {
-                            HStack(spacing: 5) {
-                                Spacer().frame(width: Float(e.depth) * 14)
-                                if e.folder && expanded.contains(e.path) {
-                                    Icon(.chevronDown).font(size: 11).color(.secondary)
-                                    Icon(.folderOpen).font(size: 13).color(.blue)
-                                    Text(e.name).font(size: 13)
-                                } else if e.folder {
-                                    Icon(.chevronRight).font(size: 11).color(.secondary)
-                                    Icon(.folder).font(size: 13).color(.blue)
-                                    Text(e.name).font(size: 13)
-                                } else if e.name.hasSuffix(".tsl") {
-                                    Spacer().frame(width: 13)
-                                    Icon(.fileCode).font(size: 13).color(.blue)
-                                    Text(e.name).font(size: 13)
-                                } else {
-                                    Spacer().frame(width: 13)
-                                    Icon(.file).font(size: 13).color(.gray)
-                                    Text(e.name).font(size: 13).color(.secondary)
-                                }
+                        HStack(spacing: 2) {
+                            Text("EXPLORER").font(size: 11, weight: .semibold).color(.secondary)
+                            Spacer()
+                            IconButton(icon: .filePlus) { ask(Prompt.newFile) }
+                            IconButton(icon: .folderPlus) { ask(Prompt.newFolder) }
+                            IconButton(icon: .pencil) { ask(Prompt.rename) }
+                            IconButton(icon: .trash) { ask(Prompt.delete) }
+                        }
+                        .padding(8)
+                        Text(fileName(project).uppercase()).font(size: 11, weight: .bold).padding(8)
+
+                        match prompt {
+                            .none -> Spacer().frame(height: 0)
+                            .delete -> HStack(spacing: 6) {
+                                Text("Delete {fileName(selected)}?").font(size: 12)
                                 Spacer()
+                                Button("Delete") { confirm() }
+                                Button("Cancel") { prompt = Prompt.none }
                             }
-                            .padding(4)
-                            .background(if e.path == selected { .highlight } else { .clear })
-                            .hoverBackground(.lightGray)
-                            .onTap { choose(e) }
+                            .padding(6)
+                            _ -> TextField(promptLabel(), text: promptText).autofocus().onSubmit { confirm() }.padding(6)
+                        }
+
+                        Scroll {
+                            VStack(spacing: 0, alignment: .leading) {
+                                for e in tree {
+                                    HStack(spacing: 5) {
+                                        Spacer().frame(width: Float(e.depth) * 14)
+                                        if e.folder && expanded.contains(e.path) {
+                                            Icon(.chevronDown).font(size: 11).color(.secondary)
+                                            Icon(.folderOpen).font(size: 13).color(.blue)
+                                            Text(e.name).font(size: 13)
+                                        } else if e.folder {
+                                            Icon(.chevronRight).font(size: 11).color(.secondary)
+                                            Icon(.folder).font(size: 13).color(.blue)
+                                            Text(e.name).font(size: 13)
+                                        } else if e.name.hasSuffix(".tsl") {
+                                            Spacer().frame(width: 13)
+                                            Icon(.fileCode).font(size: 13).color(.blue)
+                                            Text(e.name).font(size: 13)
+                                        } else {
+                                            Spacer().frame(width: 13)
+                                            Icon(.file).font(size: 13).color(.gray)
+                                            Text(e.name).font(size: 13).color(.secondary)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(4)
+                                    .background(if e.path == selected { .highlight } else { .clear })
+                                    .hoverBackground(.lightGray)
+                                    .onTap { choose(e) }
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: explorerWidth)
+                    .background(.sidebar)
+                    Spacer()
+                        .frame(width: 5, maxHeight: .infinity)
+                        .background(.separator)
+                        .hoverBackground(.blue)
+                        .onDrag { dx, dy in explorerWidth = (explorerWidth + dx).clamped(min: 160, max: 500) }
+
+                    // Editor tabs
+                    if docs.isEmpty {
+                        // Fills the space next to the explorer, with its content in the middle.
+                        VStack(spacing: 10) {
+                            Icon(.fileCode).font(size: 40).color(.lightGray)
+                            if hasTesselFiles() {
+                                Text("Open a file from the explorer").color(.secondary)
+                            } else {
+                                Text("This folder has no Tessel files yet").color(.secondary)
+                                Button("Create main.tsl") { createStarter() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        TabView(selection: current, onClose: { path in closeDoc(path: path) }) {
+                            for doc in docs {
+                                CodeEditor(
+                                    text: doc.text,
+                                    errorLines: errorLines(path: doc.path),
+                                    line: doc.line,
+                                    completions: if doc.path == suggestPath { suggestions } else { [] },
+                                    completionStart: if doc.path == suggestPath { suggestStart } else { -1 },
+                                    onComplete: { offset in complete(path: doc.path, offset: offset) }
+                                )
+                                    .padding(8)
+                                    .id(doc.path)
+                                    .tabItem(if doc.text != doc.saved { "• {fileName(doc.path)}" } else { fileName(doc.path) })
+                                    .tag(doc.path)
+                            }
                         }
                     }
                 }
-            }
-            .frame(width: explorerWidth)
-            .background(.sidebar)
-            Spacer()
-                .frame(width: 5, maxHeight: .infinity)
-                .background(.separator)
-                .hoverBackground(.blue)
-                .onDrag { dx, dy in explorerWidth = (explorerWidth + dx).clamped(min: 160, max: 500) }
 
-            // Editor tabs
-            if docs.isEmpty {
-                // Fills the space next to the explorer, with its content in the middle.
-                VStack(spacing: 10) {
-                    Icon(.fileCode).font(size: 40).color(.lightGray)
-                    if hasTesselFiles() {
-                        Text("Open a file from the explorer").color(.secondary)
-                    } else {
-                        Text("This folder has no Tessel files yet").color(.secondary)
-                        Button("Create main.tsl") { createStarter() }
+                Spacer()
+                    .frame(height: 5, maxWidth: .infinity)
+                    .background(.separator)
+                    .hoverBackground(.blue)
+                    .onDrag { dx, dy in panelHeight = (panelHeight - dy).clamped(min: 80, max: 500) }
+                // Problems and console
+                TabView(selection: panel) {
+                    Scroll {
+                        VStack(spacing: 2, alignment: .leading) {
+                            if problems.isEmpty {
+                                HStack(spacing: 6) {
+                                    Icon(.circleCheck).font(size: 12).color(.green)
+                                    Text("No problems").font(size: 12).color(.secondary)
+                                }
+                                .padding(3)
+                            }
+                            for p in problems {
+                                HStack(spacing: 6) {
+                                    Icon(.circleX).font(size: 12).color(.red)
+                                    Text("{fileName(p.file)}:{p.line}").font(size: 12).color(.secondary)
+                                    Text(p.message).font(size: 12).color(.red)
+                                    Spacer()
+                                }
+                                .padding(3)
+                                .hoverBackground(.lightGray)
+                                .onTap { jump(p: p) }
+                            }
+                        }
+                        .padding(6)
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                TabView(selection: current, onClose: { path in closeDoc(path: path) }) {
-                    for doc in docs {
-                        CodeEditor(
-                            text: doc.text,
-                            errorLines: errorLines(path: doc.path),
-                            line: doc.line,
-                            completions: if doc.path == suggestPath { suggestions } else { [] },
-                            completionStart: if doc.path == suggestPath { suggestStart } else { -1 },
-                            onComplete: { offset in complete(path: doc.path, offset: offset) }
-                        )
-                            .padding(8)
-                            .id(doc.path)
-                            .tabItem(if doc.text != doc.saved { "• {fileName(doc.path)}" } else { fileName(doc.path) })
-                            .tag(doc.path)
+                    .tabItem("Problems ({problems.count})")
+                    .tag(Panel.problems)
+
+                    Scroll {
+                        VStack(spacing: 1, alignment: .leading) {
+                            for text in console {
+                                Text(text).font(size: 12).onTap { jumpTo(text: text) }
+                            }
+                        }
+                        .padding(6)
                     }
+                    .tabItem("Console")
+                    .tag(Panel.console)
                 }
+                .frame(height: panelHeight)
             }
 
             if previewOpen && isMarkdown(path: current) {
@@ -213,7 +265,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     status: designStatus,
                     select: { index in selectDesign(index: index, show: true) },
                     change: { target, label, value in changeDesign(target: target, label: label, value: value) },
-                    insert: { code, place in insertDesign(code: code, place: place) },
+                    insert: { kind, place in insertDesign(kind: kind, place: place) },
                     move: { index, place in moveDesign(index: index, place: place) },
                     remove: { removeDesign() },
                     close: { toggleDesign() }
@@ -231,52 +283,6 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                 HelpPanel(width: helpWidth, close: { helpOpen = false })
             }
         }
-
-        Spacer()
-            .frame(height: 5, maxWidth: .infinity)
-            .background(.separator)
-            .hoverBackground(.blue)
-            .onDrag { dx, dy in panelHeight = (panelHeight - dy).clamped(min: 80, max: 500) }
-        // Problems and console
-        TabView(selection: panel) {
-            Scroll {
-                VStack(spacing: 2, alignment: .leading) {
-                    if problems.isEmpty {
-                        HStack(spacing: 6) {
-                            Icon(.circleCheck).font(size: 12).color(.green)
-                            Text("No problems").font(size: 12).color(.secondary)
-                        }
-                        .padding(3)
-                    }
-                    for p in problems {
-                        HStack(spacing: 6) {
-                            Icon(.circleX).font(size: 12).color(.red)
-                            Text("{fileName(p.file)}:{p.line}").font(size: 12).color(.secondary)
-                            Text(p.message).font(size: 12).color(.red)
-                            Spacer()
-                        }
-                        .padding(3)
-                        .hoverBackground(.lightGray)
-                        .onTap { jump(p: p) }
-                    }
-                }
-                .padding(6)
-            }
-            .tabItem("Problems ({problems.count})")
-            .tag(Panel.problems)
-
-            Scroll {
-                VStack(spacing: 1, alignment: .leading) {
-                    for text in console {
-                        Text(text).font(size: 12).onTap { jumpTo(text: text) }
-                    }
-                }
-                .padding(6)
-            }
-            .tabItem("Console")
-            .tag(Panel.console)
-        }
-        .frame(height: panelHeight)
     }
     .onAppear {
         reload()
@@ -638,6 +644,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         let prefix = joinPath(tempFolder(), "tessel-design-{designSession}-{designRequest}")
         let texts = designTexts()
         var args = ["preview", project, "--out", prefix]
+        if isDarkMode() {
+            args.append("--dark")
+        }
         var unsaved: [String] = []
         for (i, d) in docs.enumerated() {
             if d.text != d.saved {
@@ -724,15 +733,17 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         }
     }
 
-    fn insertDesign(code: String, place: DesignPlace) {
+    fn insertDesign(kind: Int, place: DesignPlace) {
         let anchor = max(place.container, max(place.before, place.after))
         if !designReady() || anchor < 0 {
             return
         }
         let file = design.views[anchor].file
-        let change = designInsert(d: design, file: file, place: place, code: code)
+        let change = designInsertItem(d: design, file: file, place: place, item: designItems()[kind])
         if change.ok {
             applyDesign(path: design.files[file], text: change.text, lo: change.lo)
+        } else {
+            designStatus = "A {designItems()[kind].label} can only go in a view or app, where its state can be"
         }
     }
 

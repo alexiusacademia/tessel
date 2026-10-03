@@ -38,6 +38,10 @@ struct DesignView {
     parent: Int
     blockLo: Int
     blockHi: Int
+    // Where a new `state` of the `view` (or `app`) it's in can be written,
+    // and a statement whose line gives the indentation (-1 if not known).
+    stateAt: Int
+    indentAt: Int
     custom: Bool
     base: DesignCall
     mods: [DesignCall]
@@ -335,6 +339,9 @@ fn designOrder(name: String) -> [String] {
     if name == "VStack" || name == "HStack" {
         return ["spacing", "alignment"]
     }
+    if name == "offset" {
+        return ["x", "y"]
+    }
     [""]
 }
 
@@ -389,10 +396,25 @@ fn designWithArgs(text: String, call: DesignCall, args: [String]) -> String {
 // modifier that isn't there yet is added after the others; one left
 // without what it needs is taken away.
 fn designSet(text: String, item: DesignView, target: String, label: String, value: String) -> String {
+    // `#2` is the view's third modifier, to take away.
+    if target.hasPrefix("#") {
+        let i = Int(target.substring(from: 1, to: target.count)) ?? -1
+        if i < 0 || i >= item.mods.count {
+            return text
+        }
+        return designReplace(text: text, lo: item.mods[i].lo, hi: item.mods[i].hi, with: "")
+    }
     if target == "" {
         return designWithArgs(text: text, call: item.base, args: designArgs(text: text, call: item.base, label: label, value: value))
     }
     let m = designMod(item: item, name: target)
+    // `()` turns a modifier like `.hidden()` on, and "" off.
+    if value == "()" {
+        if m >= 0 {
+            return text
+        }
+        return designReplace(text: text, lo: item.hi, hi: item.hi, with: ".{target}()")
+    }
     if m < 0 {
         if value == "" {
             return text
@@ -516,15 +538,22 @@ fn designMove(d: Design, moved: Int, place: DesignPlace) -> DesignChange {
 // ----- the palette -----
 
 // A kind of view that can be added: its name, and the code that's written.
+// A control that needs `state` has one written too: `declares` is its
+// declaration, and `NAME` in both is the name it gets (`name` and a number).
 struct DesignItem {
     label: String
     code: String
+    name: String = ""
+    declares: String = ""
 }
 
 fn designItems() -> [DesignItem] {
     [
         DesignItem(label: "Text", code: "Text(\"Text\")"),
         DesignItem(label: "Button", code: "Button(\"Button\") \{ }"),
+        DesignItem(label: "Field", code: "TextField(\"Placeholder\", text: NAME)", name: "text", declares: "NAME = \"\""),
+        DesignItem(label: "Toggle", code: "Toggle(\"Toggle\", isOn: NAME)", name: "isOn", declares: "NAME = false"),
+        DesignItem(label: "Picker", code: "Picker(selection: NAME) \{\n    Text(\"One\").tag(1)\n    Text(\"Two\").tag(2)\n}", name: "choice", declares: "NAME = 1"),
         DesignItem(label: "VStack", code: "VStack(spacing: 8) \{\n    Text(\"Text\")\n}"),
         DesignItem(label: "HStack", code: "HStack(spacing: 8) \{\n    Text(\"Text\")\n}"),
         DesignItem(label: "Spacer", code: "Spacer()"),
@@ -533,9 +562,51 @@ fn designItems() -> [DesignItem] {
     ]
 }
 
+// A name for new state that isn't in the text yet: `name`, `name2`, …
+fn designFreeName(text: String, name: String) -> String {
+    var n = 1
+    var candidate = name
+    while text.contains(candidate) {
+        n += 1
+        candidate = "{name}{n}"
+    }
+    candidate
+}
+
+// The text of a file with a new view of a kind in it, and the `state` it
+// needs (in the `view` or `app` the place is in).
+fn designInsertItem(d: Design, file: Int, place: DesignPlace, item: DesignItem) -> DesignChange {
+    if item.declares == "" {
+        return designInsert(d: d, file: file, place: place, code: item.code)
+    }
+    let anchor = d.views[max(place.container, max(place.before, place.after))]
+    if anchor.stateAt < 0 {
+        return DesignChange()
+    }
+    let text = d.texts[file]
+    let name = designFreeName(text: text, name: item.name)
+    let s = designSplice(text: text, d: d, place: place, code: item.code.replace("NAME", with: name))
+    if s.pos < 0 {
+        return DesignChange()
+    }
+    let indent = if anchor.indentAt >= 0 {
+        designIndent(text: text, pos: anchor.indentAt)
+    } else {
+        designIndent(text: text, pos: anchor.stateAt - 1) + "    "
+    }
+    let line = "\n" + indent + "state " + item.declares.replace("NAME", with: name)
+    // (The later place first, so the earlier one doesn't move.)
+    if anchor.stateAt <= s.pos {
+        let added = designReplace(text: text, lo: s.pos, hi: s.pos, with: s.text)
+        return DesignChange(ok: true, text: designReplace(text: added, lo: anchor.stateAt, hi: anchor.stateAt, with: line), lo: s.lo + line.count)
+    }
+    let added = designReplace(text: text, lo: anchor.stateAt, hi: anchor.stateAt, with: line)
+    DesignChange(ok: true, text: designReplace(text: added, lo: s.pos, hi: s.pos, with: s.text), lo: s.lo)
+}
+
 // The palette is drawn at the top of the canvas, in rows of chips this size.
-fn designChipWidth() -> Float { 56.0 }
-fn designChipHeight() -> Float { 24.0 }
+fn designChipWidth() -> Float { 54.0 }
+fn designChipHeight() -> Float { 22.0 }
 
 fn designChipsPerRow(width: Float) -> Int {
     max(1, Int((width - 12.0) / (designChipWidth() + 6.0)))
@@ -576,86 +647,11 @@ fn designScale(d: Design, width: Float, height: Float) -> Float {
     max(0.05, min(1.0, min((width - 24.0) / d.width, room / d.height)))
 }
 
-// ----- colors and other choices -----
-
-struct DesignColor {
-    name: String
-    color: Color
-}
-
-fn designColors() -> [DesignColor] {
-    [
-        DesignColor(name: "primary", color: Color.primary),
-        DesignColor(name: "secondary", color: Color.secondary),
-        DesignColor(name: "red", color: Color.red),
-        DesignColor(name: "orange", color: Color.orange),
-        DesignColor(name: "yellow", color: Color.yellow),
-        DesignColor(name: "green", color: Color.green),
-        DesignColor(name: "blue", color: Color.blue),
-        DesignColor(name: "purple", color: Color.purple),
-        DesignColor(name: "pink", color: Color.pink),
-        DesignColor(name: "white", color: Color.white),
-        DesignColor(name: "lightGray", color: Color.lightGray),
-        DesignColor(name: "black", color: Color.black)
-    ]
-}
-
-// A row of the properties: a label, and what's next to it.
-view DesignRow(label: String, content: View) {
-    HStack(spacing: 6) {
-        Text(label).font(size: 12).color(.secondary).frame(width: 78, alignment: .leading)
-        content
-        Spacer()
-    }
-}
-
-// A value typed in: Enter gives it to `apply`.
-view DesignField(label: String, value: String, wide: Bool = false, apply: fn(String)) {
-    state text = value
-
-    DesignRow(label: label) {
-        TextField("", text: text)
-            .font(size: 12)
-            .onSubmit { apply(text.trim()) }
-            .frame(width: if wide { 210 } else { 70 })
-    }
-}
-
-// One of a few values: a click picks it, and a click on the one picked
-// takes it away.
-view DesignChoice(label: String, options: [String], value: String, apply: fn(String)) {
-    DesignRow(label: label) {
-        for option in options {
-            Text(option)
-                .font(size: 11)
-                .padding(horizontal: 6, vertical: 3)
-                .background(if value == ".{option}" { .highlight } else { .clear }, radius: 4)
-                .border(.separator, radius: 4)
-                .onTap { apply(if value == ".{option}" { "" } else { ".{option}" }) }
-        }
-    }
-}
-
-view DesignSwatches(label: String, value: String, apply: fn(String)) {
-    DesignRow(label: label) {
-        HStack(spacing: 3) {
-            for c in designColors() {
-                Spacer()
-                    .frame(width: 15, height: 15)
-                    .background(c.color, radius: 4)
-                    .border(if value == ".{c.name}" { .blue } else { .separator }, width: if value == ".{c.name}" { 2 } else { 1 }, radius: 4)
-                    .tooltip(c.name)
-                    .onTap { apply(if value == ".{c.name}" { "" } else { ".{c.name}" }) }
-            }
-        }
-    }
-}
-
 // ----- the panel -----
 
 // `ready` is whether the picture shows the code as it is now: only then
 // can views be changed. `change` is given a target, a label and a value
-// (see `designSet`).
+// (see `designSet`); `insert` a kind of view (its place in `designItems`).
 view DesignPanel(
     width: Float,
     design: Design,
@@ -664,7 +660,7 @@ view DesignPanel(
     status: String,
     select: fn(Int),
     change: fn(String, String, String),
-    insert: fn(String, DesignPlace),
+    insert: fn(Int, DesignPlace),
     move: fn(Int, DesignPlace),
     remove: fn(),
     close: fn()
@@ -683,11 +679,15 @@ view DesignPanel(
     state mouseX = 0.0
     state mouseY = 0.0
     state drop = DesignDrop()
+    // The height of the inspector, below the picture: its top edge can be dragged.
+    state inspectorHeight = 340.0
 
     VStack(spacing: 0, alignment: .leading) {
-        HStack(spacing: 6) {
+        HStack(spacing: 2) {
             Text("DESIGN").font(size: 11, weight: .semibold).color(.secondary)
             Spacer()
+            IconButton(icon: .undo) { undoTextEdit() }.tooltip("Undo (Cmd+Z)")
+            IconButton(icon: .redo) { redoTextEdit() }.tooltip("Redo (Shift+Cmd+Z)")
             IconButton(icon: .close) { close() }
         }
         .padding(8)
@@ -703,7 +703,7 @@ view DesignPanel(
                 let y = designChipY(index: i, width: g.width)
                 g.fillRect(x: x, y: y, width: designChipWidth(), height: designChipHeight(), color: if i == chip { .highlight } else { .background }, radius: 5)
                 g.strokeRect(x: x, y: y, width: designChipWidth(), height: designChipHeight(), color: .separator, radius: 5)
-                g.text(item.label, x: x + designChipWidth() / 2.0, y: y + designChipHeight() / 2.0, size: 12, align: .center)
+                g.text(item.label, x: x + designChipWidth() / 2.0, y: y + designChipHeight() / 2.0, size: 11, align: .center)
             }
             if design.picture == "" {
                 g.text(if status == "" { "No preview yet" } else { status }, x: g.width / 2.0, y: g.height / 2.0, size: 13, color: .secondary, align: .center)
@@ -731,7 +731,7 @@ view DesignPanel(
             if dragging && chip >= 0 {
                 let item = designItems()[chip]
                 g.fillRect(x: mouseX + 8.0, y: mouseY + 10.0, width: designChipWidth(), height: designChipHeight(), color: .highlight, radius: 5)
-                g.text(item.label, x: mouseX + 8.0 + designChipWidth() / 2.0, y: mouseY + 10.0 + designChipHeight() / 2.0, size: 12, align: .center)
+                g.text(item.label, x: mouseX + 8.0 + designChipWidth() / 2.0, y: mouseY + 10.0 + designChipHeight() / 2.0, size: 11, align: .center)
             }
             if dragging && drop.ok && ready && design.picture != "" {
                 let s = designScale(d: design, width: g.width, height: g.height)
@@ -762,73 +762,28 @@ view DesignPanel(
                 _ -> {}
             }
         }
-        Divider()
-
-        Scroll {
-            VStack(spacing: 6, alignment: .leading) {
-                if selected < 0 || selected >= design.views.count {
-                    Text("Click a view in the picture to change it. Drag a kind of view from the top into the picture to add one, and drag a view in the picture to move it.")
-                        .font(size: 12)
-                        .color(.secondary)
-                } else {
-                    properties(item: design.views[selected])
-                }
+        // Delete takes the selected view away; Escape selects none.
+        .onKey { key in
+            if (key == "backspace" || key == "delete") && selected >= 0 && ready {
+                remove()
+            } else if key == "escape" {
+                select(-1)
             }
-            .padding(10)
-            // (A view's values are read again when another is selected, or the code changes.)
-            .id("{selected} {design.picture}")
         }
-        .frame(height: 240)
+
+        // The edge above the inspector: drag it to give the picture or the
+        // inspector more room.
+        Spacer()
+            .frame(height: 5, maxWidth: .infinity)
+            .background(.separator)
+            .hoverBackground(.blue)
+            .onDrag { dx, dy in inspectorHeight = (inspectorHeight - dy).clamped(min: 120, max: 700) }
+
+        Inspector(design: design, selected: selected, ready: ready, change: change, remove: remove)
+            .frame(height: inspectorHeight)
     }
     .frame(width: width)
     .background(.sidebar)
-
-    // What the selected view is given, and can be given.
-    fn properties(item: DesignView) -> View {
-        let text = design.texts[item.file]
-        let name = item.base.name
-        let first = designValue(text: text, item: item, target: "", label: "")
-        VStack(spacing: 6, alignment: .leading) {
-            HStack(spacing: 6) {
-                Text(name).font(size: 13, weight: .bold)
-                Text("{design.files[item.file].fileName}:{item.line}").font(size: 11).color(.secondary)
-                Spacer()
-                IconButton(icon: .trash) { remove() }.disabled(!ready)
-            }
-            if !item.custom && (name == "Text" || name == "Button" || name == "Image" || name == "TextField" || name == "Toggle") {
-                if let literal = designLiteral(source: first) {
-                    DesignField(label: "Text", value: literal, wide: true) { v in change("", "", designQuoted(text: v)) }
-                } else {
-                    DesignField(label: "Text (code)", value: first, wide: true) { v in
-                        if v != "" {
-                            change("", "", v)
-                        }
-                    }
-                }
-            }
-            if !item.custom && (name == "VStack" || name == "HStack") {
-                DesignField(label: "Spacing", value: designValue(text: text, item: item, target: "", label: "spacing")) { v in change("", "spacing", v) }
-                DesignChoice(
-                    label: "Alignment",
-                    options: if name == "VStack" { ["leading", "center", "trailing"] } else { ["top", "center", "bottom"] },
-                    value: designValue(text: text, item: item, target: "", label: "alignment")
-                ) { v in change("", "alignment", v) }
-            }
-            DesignField(label: "Padding", value: designValue(text: text, item: item, target: "padding", label: "")) { v in change("padding", "", v) }
-            DesignField(label: "Font size", value: designValue(text: text, item: item, target: "font", label: "size")) { v in change("font", "size", v) }
-            DesignChoice(label: "Weight", options: ["regular", "medium", "semibold", "bold"], value: designValue(text: text, item: item, target: "font", label: "weight")) { v in
-                change("font", "weight", v)
-            }
-            DesignSwatches(label: "Color", value: designValue(text: text, item: item, target: "color", label: "")) { v in change("color", "", v) }
-            DesignSwatches(label: "Background", value: designValue(text: text, item: item, target: "background", label: "")) { v in change("background", "", v) }
-            if designMod(item: item, name: "background") >= 0 {
-                DesignField(label: "Corners", value: designValue(text: text, item: item, target: "background", label: "radius")) { v in change("background", "radius", v) }
-            }
-            DesignField(label: "Width", value: designValue(text: text, item: item, target: "frame", label: "width")) { v in change("frame", "width", v) }
-            DesignField(label: "Height", value: designValue(text: text, item: item, target: "frame", label: "height")) { v in change("frame", "height", v) }
-        }
-        .disabled(!ready)
-    }
 
     // Where the picture is drawn on the canvas, and a point of the canvas
     // as a point of the picture.
@@ -883,16 +838,16 @@ view DesignPanel(
         if ready {
             if chip >= 0 && dragging {
                 if drop.ok {
-                    insert(designItems()[chip].code, drop.place)
+                    insert(chip, drop.place)
                 }
             } else if chip >= 0 {
                 // A click on a kind of view: into the selected stack, or
                 // after the selected view.
                 if selected >= 0 && selected < design.views.count {
                     if design.views[selected].blockLo >= 0 {
-                        insert(designItems()[chip].code, DesignPlace(container: selected))
+                        insert(chip, DesignPlace(container: selected))
                     } else {
-                        insert(designItems()[chip].code, DesignPlace(after: selected))
+                        insert(chip, DesignPlace(after: selected))
                     }
                 }
             } else if grabbed >= 0 && dragging && drop.ok {

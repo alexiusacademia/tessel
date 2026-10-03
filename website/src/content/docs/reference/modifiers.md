@@ -371,6 +371,11 @@ VStack {
   [`shortcut`](#shortcut).
 - If several views have `onKey`, the first one (from the top of the view
   tree) that is shown and enabled gets the key.
+- Pressing a view with [`onPointer`](#onpointer) ends text editing, so keys
+  come here. If that view has `onKey` too, it keeps the keyboard until a text
+  field or code editor is clicked: a code editor whose
+  [`line:`](/ui/code-editor/#following-and-moving-the-cursor) changes only
+  scrolls to it.
 
 ## cursor
 

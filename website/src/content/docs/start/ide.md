@@ -119,15 +119,17 @@ drag new views in, and drag views to other places. Everything you do there
 is written into the code, so you can go back and forth between the picture
 and the editor as you like.
 
-![The IDE with the Design panel open on the right: a row of kinds of views, a picture of a counter app with its title selected, and the title's text, font size, weight and colors below](../../../assets/screens/ide-design.png)
+![The IDE with the Design panel open on the right: a row of kinds of views, a picture of a counter app with its title selected, and the inspector below with the title's text, font, colors and padding](../../../assets/screens/ide-design.png)
 
-The panel has three parts:
+The panel runs down the right side of the window and has three parts:
 
 - **The kinds of views** you can add, at the top: `Text`, `Button`,
-  `VStack`, `HStack`, `Spacer`, `Divider` and `Icon`.
+  `TextField` (Field), `Toggle`, `Picker`, `VStack`, `HStack`, `Spacer`,
+  `Divider` and `Icon`.
 - **The picture**: the app's window as it first appears, made smaller if it
-  doesn't fit.
-- **The selected view's properties**, at the bottom.
+  doesn't fit. It's in the same appearance as the IDE, light or dark.
+- **The inspector**, below it: everything the selected view is given. Drag
+  the edge above it to give the picture or the inspector more room.
 
 ### The picture follows the code
 
@@ -142,34 +144,50 @@ picture while it doesn't match the code.
 ### Selecting a view
 
 Click a view in the picture to select it. It gets a blue outline, and the
-editor goes to the line where it's written. It works the other way too:
+editor scrolls to the line where it's written. It works the other way too:
 put the cursor on a line in the editor, and the view written there is
-selected in the picture.
+selected in the picture. Escape selects none.
 
 A view made by a `for` loop is written once and shown several times: all of
 them are outlined. Views inside one of your own `view`s are selected where
 the `view` declares them, in its file.
 
-### Changing a view
+### The inspector
 
-The properties of the selected view are what its code gives it. Type a
-value and press **Enter**; click a weight, an alignment or a color to pick
-it, and click it again to take it away.
+The inspector shows the selected view's name and where it's written, and
+below that its properties in sections, each a row with a label: click a
+section's title to close or open it. Type in **Filter properties** to see
+only the rows whose label has that text.
 
-| Property | What it writes |
-|---|---|
-| Text | The text of a `Text`, `Button`, `TextField`, `Toggle` or `Image`: `Text("Hello")`. Write `{count}` in it to show a value. If the code has something other than plain text there, the field shows the code itself. |
-| Spacing, Alignment | For a `VStack` or `HStack`: `VStack(spacing: 12, alignment: .leading)`. |
-| Padding | `.padding(12)` |
-| Font size, Weight | `.font(size: 20, weight: .bold)` |
-| Color | `.color(.blue)` |
-| Background, Corners | `.background(.lightGray, radius: 6)` |
-| Width, Height | `.frame(width: 200, height: 40)` |
+| Section | Rows | What they write |
+|---|---|---|
+| Content | Text, Title, Placeholder, Label, Path; Text, Is on, Selection; Icon | The view's own arguments: `Text("Hello")`, `TextField("Name", text: name)`, `Icon(.star)`. |
+| Arguments | One per argument | For one of your own views: what it's given, as code. |
+| Stack | Spacing, Alignment | For a `VStack` or `HStack`: `VStack(spacing: 12, alignment: .leading)`. |
+| Font | Size, Weight, Text alignment | `.font(size: 20, weight: .bold)`, `.textAlignment(.center)` |
+| Color | Foreground, Background, Corner radius, Border, Border width | `.color(.blue)`, `.background(.lightGray, radius: 6)`, `.border(.gray, width: 2)` |
+| Padding | All edges, Horizontal, Vertical, Top, Leading, Bottom, Trailing | `.padding(12)`, `.padding(horizontal: 8, vertical: 4)` |
+| Size and place | Width, Height, Min and Max width and height, Offset X and Y | `.frame(width: 200, maxWidth: .infinity)`, `.offset(x: 4)` |
+| Appearance | Opacity, Hidden, Disabled, Clipped, Tooltip | `.opacity(0.5)`, `.hidden()`, `.tooltip("Saves the file")` |
+| Modifiers | Every modifier, as written | Each one's **−** takes it away, including ones the other sections don't show, like `.onTap`. |
 
-An empty field takes that part of the code away. A value can be any
-expression, not only a number: `Float(count) * 2`, say.
+How to change a value:
 
-The trash button next to the view's name deletes the view from the code.
+- **Text and numbers:** type and press **Enter**. Numbers have **−** and
+  **+** to step them. A value can be any expression, not only a number:
+  `Float(count) * 2`, say, or `.infinity` for a maximum width.
+- **Choices** (weight, alignment): click one to pick it, and click it again
+  to take it away.
+- **Colors:** click a color to pick it, and again to take it away, or type
+  one like `.rgb(255, 136, 0)` in the field below them.
+- **On or off** (Hidden, Disabled, Clipped): click the box.
+
+An empty field takes that part of the code away; a modifier left with
+nothing to say goes too. A text whose code isn't plain text (a call, say)
+shows the code itself, marked "(code)".
+
+The trash button next to the view's name, or the Delete key after clicking
+the view in the picture, deletes the view from the code.
 
 ### Adding a view
 
@@ -182,13 +200,28 @@ A click on a kind of view (without dragging) adds one after the selected
 view, or inside it if a stack is selected.
 
 A new `VStack` or `HStack` comes with a `Text` in it, so there's something
-to see and to click.
+to see and to click. A `TextField`, `Toggle` or `Picker` needs `state` to
+hold what it shows: one is added for it, after the other `state` of the
+`view` or `app` it goes in, with a name that's free (`text`, `text2`, …):
+
+```tessel
+state text = ""
+…
+TextField("Placeholder", text: text)
+```
 
 ### Moving a view
 
 Drag a view in the picture to another place: elsewhere in its stack, or
 into another stack. The green line shows where it would go. Its code is
 moved there, with everything in it.
+
+### Undo and redo
+
+Every change the panel makes can be undone with **Cmd+Z** and redone with
+**Cmd+Shift+Z**, or with the arrows at the top of the panel. A change in
+the panel is one step of the editor's own undo history: Cmd+Z in the editor
+undoes it just as it undoes typing, in the order things happened.
 
 ### What the panel doesn't do
 
@@ -201,9 +234,8 @@ moved there, with everything in it.
   `Scroll`, or of one of your own views that takes content. Views in a `for`
   loop or an `if` can be selected, changed and moved out, but nothing can be
   dropped among them.
-- Controls that need `state` (`TextField`, `Toggle`, `Picker`) aren't among
-  the kinds to add: write those in the editor, then select them in the
-  picture to style them.
+- A `TextField`, `Toggle` or `Picker` can only be added inside a `view` or
+  `app`, where its `state` can go (not in a function that returns a view).
 - A program needs an `app` to have a picture.
 
 Drag the edge between the editor and the panel to make the panel wider.

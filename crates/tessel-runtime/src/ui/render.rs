@@ -170,6 +170,15 @@ pub struct Interaction {
     pub pointer: Option<(f64, f64)>,
     /// Undo and redo history of text fields and code editors, by key.
     pub history: HashMap<u64, super::edit::History>,
+    /// The text field or code editor whose text changed last (by typing, or
+    /// by the program, for a code editor): Cmd+Z undoes there while
+    /// nothing is being edited.
+    pub last_edited: Option<u64>,
+    /// A view with `.onKey` was pressed last, so it has the keyboard: a code
+    /// editor whose `line:` changes then scrolls to it without taking it.
+    pub keys_to_view: bool,
+    /// A code editor to scroll to a character, once it's laid out.
+    pub scroll_to: Option<(u64, usize)>,
     /// The code editor's completion list, laid out, when one shows.
     pub popup: Option<Popup>,
     /// Text an input method is composing in the view being edited.

@@ -91,7 +91,9 @@ line the cursor is on:
   show "Line 5" under the editor.
 - **When your code changes the value,** the editor puts the cursor at the
   start of that line, scrolls it into view, and starts editing, ready for the
-  user to type.
+  user to type. If the user last pressed a view with
+  [`.onKey`](/reference/modifiers/#onkey), that view keeps the keyboard: the
+  editor only scrolls to the line.
 
 That's how you jump to an error: store the line in the bound value, for
 example when the user clicks an error in a list. Setting it to the line the

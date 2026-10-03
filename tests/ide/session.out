@@ -39,42 +39,44 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "helpers.tsl"
-                Spacer
-              HStack
-                Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["main.tsl", "• helpers.tsl"] selected 1
-          CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl", "• helpers.tsl"] selected 1
+              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Root
   View
     VStack
@@ -116,42 +118,44 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-              HStack
-                Spacer
-                Spacer
-                Icon fileCode
-                Text "math.tsl"
-                Spacer
-        Spacer
-        TabView ["math.tsl"] selected 0
-          CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "math.tsl"
+                    Spacer
+            Spacer
+            TabView ["math.tsl"] selected 0
+              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Root
   View
     VStack
@@ -193,37 +197,39 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        VStack
-          Icon fileCode
-          Text "Open a file from the explorer"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            VStack
+              Icon fileCode
+              Text "Open a file from the explorer"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Root
   View
     VStack
@@ -265,36 +271,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Completions: [uppercase]
 Root
   View
@@ -337,36 +345,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Completions: [greeting] Graphics background
 Root
   View
@@ -409,36 +419,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Completions: [count]
 Root
   View
@@ -481,36 +493,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Root
   View
     VStack
@@ -552,29 +566,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
         Spacer
         View
           VStack
@@ -592,13 +615,6 @@ Root
             Divider
             Scroll
               Markdown "Second page" links ["first page"]
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
 (open https://example.com)
 Root
   View
@@ -641,29 +657,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
         Spacer
         View
           VStack
@@ -688,13 +713,6 @@ Root
                 HStack
                   Text "Second page"
                   Spacer
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
 Root
   View
     VStack
@@ -736,29 +754,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
         Spacer
         View
           VStack
@@ -784,13 +811,6 @@ Root
                     Text "Guide"
                     Spacer
                   Text "Back to the first page."
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
 Root
   View
     VStack
@@ -832,29 +852,38 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-        Spacer
-        TabView ["• main.tsl"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
         Spacer
         View
           VStack
@@ -875,13 +904,6 @@ Root
             Scroll
               VStack
                 Text "Nothing found for \"BACK toxyz\""
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
 Root
   View
     VStack
@@ -927,42 +949,44 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-              HStack
-                Spacer
-                Spacer
-                Icon file
-                Text "notes.md"
-                Spacer
-        Spacer
-        TabView ["• main.tsl", "• notes.md"] selected 1
-          CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon file
+                    Text "notes.md"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "• notes.md"] selected 1
+              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 Root
   View
     VStack
@@ -1008,35 +1032,44 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-              HStack
-                Spacer
-                Spacer
-                Icon file
-                Text "notes.md"
-                Spacer
-        Spacer
-        TabView ["• main.tsl", "• notes.md"] selected 1
-          CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon file
+                    Text "notes.md"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "• notes.md"] selected 1
+              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
         Spacer
         View
           VStack
@@ -1049,13 +1082,6 @@ Root
             Divider
             Scroll
               Markdown "Notes" links ["link"]
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
 Root
   View
     VStack
@@ -1097,40 +1123,42 @@ Root
       HStack
         VStack
           HStack
-            Text "EXPLORER"
-            Spacer
-            View
-              Icon filePlus
-            View
-              Icon folderPlus
-            View
-              Icon pencil
-            View
-              Icon trash
-          Text "PROJECT"
-          Spacer
-          Scroll
             VStack
               HStack
+                Text "EXPLORER"
                 Spacer
-                Spacer
-                Icon fileCode
-                Text "main.tsl"
-                Spacer
-              HStack
-                Spacer
-                Spacer
-                Icon file
-                Text "notes.md"
-                Spacer
-        Spacer
-        TabView ["• main.tsl", "• notes.md"] selected 0
-          CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
-      Spacer
-      TabView ["Problems (0)", "Console"] selected 0
-        Scroll
-          VStack
-            HStack
-              Icon circleCheck
-              Text "No problems"
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon file
+                    Text "notes.md"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "• notes.md"] selected 0
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
 --- files: main.tsl, notes.md

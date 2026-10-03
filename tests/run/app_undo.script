@@ -1,0 +1,23 @@
+click "Rename"
+click "Add line"
+tree
+key cmd+z
+tree
+key cmd+z
+tree
+key cmd+z
+tree
+click "Redo"
+tree
+click "Redo"
+tree
+click "Undo"
+key end
+type  + 2
+tree
+key cmd+z
+tree
+click "Undo"
+tree
+key cmd+shift+z
+tree

@@ -98,6 +98,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let mut names: Vec<String> = self.view_decls.keys().cloned().collect();
         names.sort();
         for name in names {
+            // (For `tessel preview`: where the views being compiled are declared.)
+            self.design_body = Some(self.view_decls[&name].body);
             self.compile_view(&name);
             let src = self.view_decls[&name];
             for s in &src.body.stmts {
@@ -105,6 +107,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.compile_view_fn(&name, fd);
                 }
             }
+            self.design_body = None;
         }
     }
 
@@ -415,7 +418,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 // (the whole one, with its modifiers).
                 if let (Some(views), false) = (self.design, self.design_inner.contains(&e.id)) {
                     let parent = self.design_blocks.last().copied().unwrap_or(e.span);
-                    let number = views.borrow_mut().number(e, parent, self.checked, self.sources);
+                    let number = views.borrow_mut().number(e, parent, self.design_body, self.checked, self.sources);
                     if let Some(n) = number {
                         let n = self.ctx.i32_type().const_int(n as u64, false);
                         self.call_rt("tsl_ui_source", &[n.into()]);

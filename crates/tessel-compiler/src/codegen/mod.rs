@@ -395,6 +395,8 @@ struct Gen<'ctx, 'a> {
     /// the views that have modifiers after them (the expression goes on).
     design_blocks: Vec<Span>,
     design_inner: HashSet<ExprId>,
+    /// The body of the `view` (or `app`) being compiled.
+    design_body: Option<&'a Block>,
 }
 
 /// A view's source: a `view` declaration or the `app`.
@@ -448,6 +450,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             design: None,
             design_blocks: Vec::new(),
             design_inner: HashSet::new(),
+            design_body: None,
         }
     }
 

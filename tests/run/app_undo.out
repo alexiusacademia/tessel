@@ -1,0 +1,90 @@
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1\nprint(total)"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let a = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let a = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1\nprint(total)"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1+ 2"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let a = 1"
+Root
+  View
+    VStack
+      HStack
+        Button "Rename"
+        Button "Add line"
+        Button "Undo"
+        Button "Redo"
+      CodeEditor errors [] = "let total = 1"

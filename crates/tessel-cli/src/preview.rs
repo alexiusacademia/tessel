@@ -22,7 +22,8 @@ use tessel_compiler::source::SourceMap;
 
 /// `texts`: (file, the file to read its text from instead), for text an
 /// editor hasn't saved.
-pub fn run(path: &Path, out: &str, texts: &[(PathBuf, PathBuf)]) -> ExitCode {
+/// `dark`: in the dark appearance (unless the app asks for one).
+pub fn run(path: &Path, out: &str, texts: &[(PathBuf, PathBuf)], dark: bool) -> ExitCode {
     let files = match crate::program_files(path) {
         Ok(files) => files,
         Err(msg) => {
@@ -78,7 +79,8 @@ pub fn run(path: &Path, out: &str, texts: &[(PathBuf, PathBuf)]) -> ExitCode {
     };
     // (No other thread is running yet.)
     unsafe {
-        std::env::set_var("TESSEL_SCRIPT", format!("snapshot {out}.png\nlayout {out}.layout.json"));
+        let appearance = if dark { "appearance dark\n" } else { "" };
+        std::env::set_var("TESSEL_SCRIPT", format!("{appearance}snapshot {out}.png\nlayout {out}.layout.json"));
         if let Ok(me) = std::env::current_exe() {
             std::env::set_var("TESSEL_EXE", me);
         }

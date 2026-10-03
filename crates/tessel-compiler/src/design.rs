@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::ast::{Arg, Expr, ExprKind};
+use crate::ast::{Arg, Block, Expr, ExprKind, Stmt};
 use crate::check::{ArgRef, Callee, Checked};
 use crate::source::{SourceMap, Span, FILE_MASK, PRELUDE_FILE};
 use crate::types::Ty;
@@ -28,6 +28,12 @@ pub struct View {
     pub base: Call,
     /// The modifiers, in the order they're written.
     pub mods: Vec<Call>,
+    /// For a new `state` of the `view` (or `app`) it's in: where it can be
+    /// written (after the last one, or at the start of the body), and a
+    /// statement of the body that gives the indentation. `None` for a view
+    /// that isn't in one (in a function, say).
+    pub state_at: Option<u32>,
+    pub indent_at: Option<u32>,
 }
 
 /// The view's own call (`Text("Hi")`), or a modifier (`.padding(8)`).
@@ -60,7 +66,7 @@ pub struct Views {
 impl Views {
     /// The number of the view expression `e` (a statement of the block that
     /// starts at `parent`); `None` if it isn't one that can be described.
-    pub fn number(&mut self, e: &Expr, parent: Span, checked: &Checked, sources: &SourceMap) -> Option<u32> {
+    pub fn number(&mut self, e: &Expr, parent: Span, body: Option<&Block>, checked: &Checked, sources: &SourceMap) -> Option<u32> {
         let file = e.span.file & FILE_MASK;
         if file == PRELUDE_FILE {
             return None;
@@ -69,7 +75,25 @@ impl Views {
         if let Some(n) = self.known.get(&key) {
             return Some(*n);
         }
-        let view = describe(e, parent, checked, sources)?;
+        let mut view = describe(e, parent, checked, sources)?;
+        if let Some(body) = body.filter(|b| b.span.file & FILE_MASK == file) {
+            let last_state = body.stmts.iter().rev().find_map(|s| match s {
+                Stmt::State(d) => Some(d),
+                _ => None,
+            });
+            view.state_at = Some(match last_state {
+                Some(d) => d.span.hi.max(d.value.span.hi),
+                None => body.span.lo + 1,
+            });
+            view.indent_at = match last_state {
+                Some(d) => Some(d.span.lo),
+                None => body.stmts.iter().find_map(|s| match s {
+                    Stmt::Expr(e) => Some(e.span.lo),
+                    Stmt::Let(d) | Stmt::Var(d) => Some(d.span.lo),
+                    _ => None,
+                }),
+            };
+        }
         self.list.push(view);
         let n = (self.list.len() - 1) as u32;
         self.known.insert(key, n);
@@ -136,8 +160,10 @@ impl Views {
                     Some((lo, hi)) => (at(v.file, lo) as i64, at(v.file, hi) as i64),
                     None => (-1, -1),
                 };
+                let state_at = v.state_at.map_or(-1, |p| at(v.file, p) as i64);
+                let indent_at = v.indent_at.map_or(-1, |p| at(v.file, p) as i64);
                 format!(
-                    "{{\"file\":{},\"lo\":{},\"hi\":{},\"line\":{line},\"endLine\":{end_line},\"parent\":{},\"blockLo\":{block_lo},\"blockHi\":{block_hi},\"custom\":{},\"base\":{base},\"mods\":[{}]}}",
+                    "{{\"file\":{},\"lo\":{},\"hi\":{},\"line\":{line},\"endLine\":{end_line},\"parent\":{},\"blockLo\":{block_lo},\"blockHi\":{block_hi},\"stateAt\":{state_at},\"indentAt\":{indent_at},\"custom\":{},\"base\":{base},\"mods\":[{}]}}",
                     v.file,
                     at(v.file, v.lo),
                     at(v.file, v.hi),
@@ -228,7 +254,18 @@ fn describe(e: &Expr, parent: Span, checked: &Checked, sources: &SourceMap) -> O
                 };
                 let base = call(name, cur.span.lo, cur.span.hi, callee.span.hi, args);
                 mods.reverse();
-                return Some(View { file, lo: e.span.lo, hi: e.span.hi, parent: parent.lo, block, custom, base, mods });
+                return Some(View {
+                    file,
+                    lo: e.span.lo,
+                    hi: e.span.hi,
+                    parent: parent.lo,
+                    block,
+                    custom,
+                    base,
+                    mods,
+                    state_at: None,
+                    indent_at: None,
+                });
             }
             _ => return None,
         }

@@ -1,0 +1,488 @@
+// The inspector, below the Design panel's picture: what the selected view
+// is given, in sections of labelled rows (like the property panels of Xcode
+// and Visual Studio). Every change is a change to the view's code.
+
+struct DesignColor {
+    name: String
+    color: Color
+}
+
+fn designColors() -> [DesignColor] {
+    [
+        DesignColor(name: "primary", color: Color.primary),
+        DesignColor(name: "secondary", color: Color.secondary),
+        DesignColor(name: "red", color: Color.red),
+        DesignColor(name: "orange", color: Color.orange),
+        DesignColor(name: "yellow", color: Color.yellow),
+        DesignColor(name: "green", color: Color.green),
+        DesignColor(name: "blue", color: Color.blue),
+        DesignColor(name: "purple", color: Color.purple),
+        DesignColor(name: "pink", color: Color.pink),
+        DesignColor(name: "white", color: Color.white),
+        DesignColor(name: "lightGray", color: Color.lightGray),
+        DesignColor(name: "black", color: Color.black)
+    ]
+}
+
+// A number as code: `12` rather than `12.0`.
+fn inspectorNumber(_ value: Float) -> String {
+    if value == floor(value) && abs(value) < 1000000000.0 {
+        return "{Int(value)}"
+    }
+    "{round(value * 1000.0) / 1000.0}"
+}
+
+// A section: a title that opens and closes it, and its rows.
+view InspectorSection(title: String, open: Bool, toggle: fn(), content: View) {
+    VStack(spacing: 0, alignment: .leading) {
+        HStack(spacing: 5) {
+            Icon(if open { .chevronDown } else { .chevronRight }).font(size: 10).color(.secondary)
+            Text(title).font(size: 11, weight: .bold).color(.secondary)
+            Spacer()
+        }
+        .padding(horizontal: 10, vertical: 5)
+        .background(.lightGray)
+        .onTap { toggle() }
+        if open {
+            VStack(spacing: 5, alignment: .leading) {
+                content
+            }
+            .padding(horizontal: 10, vertical: 8)
+        }
+    }
+}
+
+// A row: its label on the left, right-aligned, and what changes it.
+view InspectorRow(label: String, content: View) {
+    HStack(spacing: 8) {
+        Text(label).font(size: 12).color(.secondary).frame(width: 92, alignment: .trailing)
+        content
+        Spacer()
+    }
+}
+
+// A value typed in: Enter gives it to `apply`.
+view InspectorText(label: String, value: String, width: Float = 180, apply: fn(String)) {
+    state text = value
+
+    InspectorRow(label: label) {
+        TextField("", text: text)
+            .font(size: 12)
+            .onSubmit { apply(text.trim()) }
+            .frame(width: width)
+    }
+}
+
+// A small square button with an icon, for steppers.
+view InspectorStep(icon: IconName, action: fn()) {
+    Icon(icon)
+        .font(size: 10)
+        .color(.secondary)
+        .padding(5)
+        .border(.separator, radius: 4)
+        .hoverBackground(.lightGray, radius: 4)
+        .onTap { action() }
+}
+
+// A number: typed in, or made larger or smaller by `step` with − and +.
+view InspectorNumber(label: String, value: String, step: Float = 1, minimum: Float = 0, apply: fn(String)) {
+    state text = value
+
+    InspectorRow(label: label) {
+        HStack(spacing: 3) {
+            TextField("", text: text)
+                .font(size: 12)
+                .onSubmit { apply(text.trim()) }
+                .frame(width: 70)
+            InspectorStep(icon: .minus) { nudge(by: -step) }
+            InspectorStep(icon: .plus) { nudge(by: step) }
+        }
+    }
+
+    // (Only a number can be stepped; nothing counts as 0.)
+    fn nudge(by: Float) {
+        let t = text.trim()
+        let current = if t == "" { 0.0 } else { Float(t) ?? -1000000000.0 }
+        if current > -1000000000.0 {
+            apply(inspectorNumber(max(minimum, current + by)))
+        }
+    }
+}
+
+// One of a few values, side by side: a click picks it, and a click on the
+// one picked takes it away.
+view InspectorChoice(label: String, options: [String], value: String, apply: fn(String)) {
+    InspectorRow(label: label) {
+        HStack(spacing: 0) {
+            for option in options {
+                Text(option)
+                    .font(size: 11)
+                    .padding(horizontal: 6, vertical: 3)
+                    .background(if value == ".{option}" { .highlight } else { .background })
+                    .border(.separator)
+                    .onTap { apply(if value == ".{option}" { "" } else { ".{option}" }) }
+            }
+        }
+    }
+}
+
+// A color: picked from the named ones, or typed (like `.rgb(255, 136, 0)`).
+view InspectorColor(label: String, value: String, apply: fn(String)) {
+    state text = value
+
+    InspectorRow(label: label) {
+        VStack(spacing: 4, alignment: .leading) {
+            HStack(spacing: 3) {
+                for c in designColors() {
+                    Spacer()
+                        .frame(width: 13, height: 13)
+                        .background(c.color, radius: 3)
+                        .border(if value == ".{c.name}" { .blue } else { .separator }, width: if value == ".{c.name}" { 2 } else { 1 }, radius: 3)
+                        .tooltip(c.name)
+                        .onTap { apply(if value == ".{c.name}" { "" } else { ".{c.name}" }) }
+                }
+            }
+            TextField("", text: text)
+                .font(size: 12)
+                .onSubmit { apply(text.trim()) }
+                .frame(width: 180)
+        }
+    }
+}
+
+// On or off: a modifier like `.hidden()`.
+view InspectorFlag(label: String, on: Bool, apply: fn(Bool)) {
+    InspectorRow(label: label) {
+        ZStack {
+            Spacer()
+                .frame(width: 16, height: 16)
+                .background(if on { .blue } else { .background }, radius: 4)
+                .border(if on { .blue } else { .separator }, radius: 4)
+            if on {
+                Icon(.check).font(size: 11).color(.white)
+            }
+        }
+        .onTap { apply(!on) }
+    }
+}
+
+// `change` is given a target, a label and a value (see `designSet`).
+view Inspector(design: Design, selected: Int, ready: Bool, change: fn(String, String, String), remove: fn()) {
+    // The sections closed, and the text the rows are filtered by.
+    state closed: [String] = []
+    state filter = ""
+
+    VStack(spacing: 0, alignment: .leading) {
+        if selected < 0 || selected >= design.views.count {
+            Text("Select a view in the picture, or put the cursor on it in the code, to see what it's given here.")
+                .font(size: 12)
+                .color(.secondary)
+                .padding(12)
+        } else {
+            header(item: design.views[selected])
+            Divider()
+            Scroll {
+                VStack(spacing: 0, alignment: .leading) {
+                    sections(item: design.views[selected])
+                }
+                .disabled(!ready)
+                // (The values are read again when another view is selected, or the code changes.)
+                .id("{selected} {design.picture}")
+            }
+        }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(.sidebar)
+
+    fn header(item: DesignView) -> View {
+        VStack(spacing: 6, alignment: .leading) {
+            HStack(spacing: 6) {
+                VStack(spacing: 1, alignment: .leading) {
+                    Text(item.base.name).font(size: 14, weight: .bold)
+                    Text("{if item.custom { "Your view" } else { "Built-in view" }} · {design.files[item.file].fileName}:{item.line}")
+                        .font(size: 11)
+                        .color(.secondary)
+                }
+                Spacer()
+                IconButton(icon: .trash) { remove() }.tooltip("Delete (Delete key)").disabled(!ready)
+            }
+            HStack(spacing: 5) {
+                Icon(.search).font(size: 11).color(.secondary)
+                TextField("Filter properties", text: filter).font(size: 12)
+            }
+        }
+        .padding(10)
+    }
+
+    // ----- what's shown -----
+
+    fn shows(_ label: String) -> Bool {
+        let f = filter.trim().lowercase()
+        f == "" || label.lowercase().contains(f)
+    }
+
+    fn any(_ labels: [String]) -> Bool {
+        labels.first(where: { l in shows(l) }) != nil
+    }
+
+    fn isOpen(_ title: String) -> Bool {
+        filter.trim() != "" || !closed.contains(title)
+    }
+
+    fn flip(_ title: String) {
+        if closed.contains(title) {
+            closed.removeAll(where: { t in t == title })
+        } else {
+            closed.append(title)
+        }
+    }
+
+    fn value(item: DesignView, target: String, label: String) -> String {
+        designValue(text: design.texts[item.file], item: item, target: target, label: label)
+    }
+
+    fn has(item: DesignView, target: String) -> Bool {
+        let m = designMod(item: item, name: target)
+        m >= 0 && value(item: item, target: target, label: "") != "false"
+    }
+
+    // The label of the view's first argument, for the views that have text.
+    fn textLabel(name: String) -> String {
+        if name == "Text" {
+            return "Text"
+        }
+        if name == "Button" {
+            return "Title"
+        }
+        if name == "TextField" {
+            return "Placeholder"
+        }
+        if name == "Toggle" {
+            return "Label"
+        }
+        if name == "Image" {
+            return "Path"
+        }
+        ""
+    }
+
+    // ----- the sections -----
+
+    fn sections(item: DesignView) -> View {
+        let name = item.base.name
+        let textLabel = if item.custom { "" } else { textLabel(name: name) }
+        let stack = !item.custom && (name == "VStack" || name == "HStack")
+        VStack(spacing: 0, alignment: .leading) {
+            // What the view shows, or is bound to.
+            if item.custom && !item.base.args.isEmpty && any(item.base.args.map { a in if a.label == "" { "Value" } else { a.label } }) {
+                InspectorSection(title: "Arguments", open: isOpen("Arguments"), toggle: { flip("Arguments") }) {
+                    for a in item.base.args {
+                        if shows(if a.label == "" { "Value" } else { a.label }) {
+                            InspectorText(label: if a.label == "" { "Value" } else { a.label }, value: value(item: item, target: "", label: a.label)) { v in
+                                if v != "" {
+                                    change("", a.label, v)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if textLabel != "" || (!item.custom && (name == "Icon" || name == "Picker")) {
+                if any([textLabel, "Text", "Is on", "Selection", "Icon"]) {
+                    InspectorSection(title: "Content", open: isOpen("Content"), toggle: { flip("Content") }) {
+                        if textLabel != "" && shows(textLabel) {
+                            literal(label: textLabel, source: value(item: item, target: "", label: ""))
+                        }
+                        if name == "TextField" && shows("Text") {
+                            InspectorText(label: "Text", value: value(item: item, target: "", label: "text")) { v in
+                                if v != "" {
+                                    change("", "text", v)
+                                }
+                            }
+                        }
+                        if name == "Toggle" && shows("Is on") {
+                            InspectorText(label: "Is on", value: value(item: item, target: "", label: "isOn")) { v in
+                                if v != "" {
+                                    change("", "isOn", v)
+                                }
+                            }
+                        }
+                        if name == "Picker" && shows("Selection") {
+                            InspectorText(label: "Selection", value: value(item: item, target: "", label: "selection")) { v in
+                                if v != "" {
+                                    change("", "selection", v)
+                                }
+                            }
+                        }
+                        if name == "Icon" && shows("Icon") {
+                            InspectorText(label: "Icon", value: value(item: item, target: "", label: "")) { v in
+                                if v != "" {
+                                    change("", "", v)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if stack && any(["Spacing", "Alignment"]) {
+                InspectorSection(title: "Stack", open: isOpen("Stack"), toggle: { flip("Stack") }) {
+                    if shows("Spacing") {
+                        InspectorNumber(label: "Spacing", value: value(item: item, target: "", label: "spacing")) { v in change("", "spacing", v) }
+                    }
+                    if shows("Alignment") {
+                        InspectorChoice(
+                            label: "Alignment",
+                            options: if name == "VStack" { ["leading", "center", "trailing"] } else { ["top", "center", "bottom"] },
+                            value: value(item: item, target: "", label: "alignment")
+                        ) { v in change("", "alignment", v) }
+                    }
+                }
+            }
+            if any(["Size", "Weight", "Text alignment"]) {
+                InspectorSection(title: "Font", open: isOpen("Font"), toggle: { flip("Font") }) {
+                    if shows("Size") {
+                        InspectorNumber(label: "Size", value: value(item: item, target: "font", label: "size")) { v in change("font", "size", v) }
+                    }
+                    if shows("Weight") {
+                        InspectorChoice(label: "Weight", options: ["regular", "medium", "semibold", "bold"], value: value(item: item, target: "font", label: "weight")) { v in
+                            change("font", "weight", v)
+                        }
+                    }
+                    if shows("Text alignment") {
+                        InspectorChoice(label: "Text alignment", options: ["leading", "center", "trailing"], value: value(item: item, target: "textAlignment", label: "")) { v in
+                            change("textAlignment", "", v)
+                        }
+                    }
+                }
+            }
+            if any(["Foreground", "Background", "Corner radius", "Border", "Border width"]) {
+                InspectorSection(title: "Color", open: isOpen("Color"), toggle: { flip("Color") }) {
+                    if shows("Foreground") {
+                        InspectorColor(label: "Foreground", value: value(item: item, target: "color", label: "")) { v in change("color", "", v) }
+                    }
+                    if shows("Background") {
+                        InspectorColor(label: "Background", value: value(item: item, target: "background", label: "")) { v in change("background", "", v) }
+                    }
+                    if has(item: item, target: "background") && shows("Corner radius") {
+                        InspectorNumber(label: "Corner radius", value: value(item: item, target: "background", label: "radius")) { v in change("background", "radius", v) }
+                    }
+                    if shows("Border") {
+                        InspectorColor(label: "Border", value: value(item: item, target: "border", label: "")) { v in change("border", "", v) }
+                    }
+                    if has(item: item, target: "border") && shows("Border width") {
+                        InspectorNumber(label: "Border width", value: value(item: item, target: "border", label: "width")) { v in change("border", "width", v) }
+                    }
+                }
+            }
+            if any(["All edges", "Horizontal", "Vertical", "Top", "Leading", "Bottom", "Trailing"]) {
+                InspectorSection(title: "Padding", open: isOpen("Padding"), toggle: { flip("Padding") }) {
+                    if shows("All edges") {
+                        InspectorNumber(label: "All edges", value: value(item: item, target: "padding", label: ""), step: 4) { v in change("padding", "", v) }
+                    }
+                    for edge in ["horizontal", "vertical", "top", "leading", "bottom", "trailing"] {
+                        if shows(edge.capitalized()) {
+                            InspectorNumber(label: edge.capitalized(), value: value(item: item, target: "padding", label: edge), step: 4) { v in change("padding", edge, v) }
+                        }
+                    }
+                }
+            }
+            if any(["Width", "Height", "Min width", "Max width", "Min height", "Max height", "Offset X", "Offset Y"]) {
+                InspectorSection(title: "Size and place", open: isOpen("Size and place"), toggle: { flip("Size and place") }) {
+                    if shows("Width") {
+                        InspectorNumber(label: "Width", value: value(item: item, target: "frame", label: "width"), step: 10) { v in change("frame", "width", v) }
+                    }
+                    if shows("Height") {
+                        InspectorNumber(label: "Height", value: value(item: item, target: "frame", label: "height"), step: 10) { v in change("frame", "height", v) }
+                    }
+                    if shows("Min width") {
+                        InspectorNumber(label: "Min width", value: value(item: item, target: "frame", label: "minWidth"), step: 10) { v in change("frame", "minWidth", v) }
+                    }
+                    if shows("Max width") {
+                        InspectorNumber(label: "Max width", value: value(item: item, target: "frame", label: "maxWidth"), step: 10) { v in change("frame", "maxWidth", v) }
+                    }
+                    if shows("Min height") {
+                        InspectorNumber(label: "Min height", value: value(item: item, target: "frame", label: "minHeight"), step: 10) { v in change("frame", "minHeight", v) }
+                    }
+                    if shows("Max height") {
+                        InspectorNumber(label: "Max height", value: value(item: item, target: "frame", label: "maxHeight"), step: 10) { v in change("frame", "maxHeight", v) }
+                    }
+                    if shows("Offset X") {
+                        InspectorNumber(label: "Offset X", value: value(item: item, target: "offset", label: "x"), minimum: -100000) { v in change("offset", "x", v) }
+                    }
+                    if shows("Offset Y") {
+                        InspectorNumber(label: "Offset Y", value: value(item: item, target: "offset", label: "y"), minimum: -100000) { v in change("offset", "y", v) }
+                    }
+                }
+            }
+            if any(["Opacity", "Hidden", "Disabled", "Clipped", "Tooltip"]) {
+                InspectorSection(title: "Appearance", open: isOpen("Appearance"), toggle: { flip("Appearance") }) {
+                    if shows("Opacity") {
+                        InspectorNumber(label: "Opacity", value: value(item: item, target: "opacity", label: ""), step: 0.1) { v in change("opacity", "", v) }
+                    }
+                    for flag in ["hidden", "disabled", "clipped"] {
+                        if shows(flag.capitalized()) {
+                            InspectorFlag(label: flag.capitalized(), on: has(item: item, target: flag)) { on in change(flag, "", if on { "()" } else { "" }) }
+                        }
+                    }
+                    if shows("Tooltip") {
+                        literal(label: "Tooltip", source: value(item: item, target: "tooltip", label: ""), target: "tooltip")
+                    }
+                }
+            }
+            // Every modifier, as written: here they can be taken away,
+            // including the ones the sections above don't show.
+            if !item.mods.isEmpty && any(item.mods.map { m in m.name }) {
+                InspectorSection(title: "Modifiers", open: isOpen("Modifiers"), toggle: { flip("Modifiers") }) {
+                    for (i, m) in item.mods.enumerated() {
+                        if shows(m.name) {
+                            HStack(spacing: 6) {
+                                Text(written(item: item, m: m)).font(size: 11)
+                                Spacer()
+                                InspectorStep(icon: .minus) { change("#{i}", "", "") }.tooltip("Take .{m.name} away")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // A text: as plain text when the code has a string literal, otherwise
+    // as the code itself.
+    fn literal(label: String, source: String, target: String = "") -> View {
+        let plain = designLiteral(source: source)
+        VStack(spacing: 0) {
+            if source == "" {
+                InspectorText(label: label, value: "") { v in
+                    if v != "" {
+                        change(target, "", designQuoted(text: v))
+                    } else if target != "" {
+                        change(target, "", "")
+                    }
+                }
+            } else if let text = plain {
+                InspectorText(label: label, value: text) { v in
+                    if v == "" && target != "" {
+                        change(target, "", "")
+                    } else {
+                        change(target, "", designQuoted(text: v))
+                    }
+                }
+            } else {
+                InspectorText(label: "{label} (code)", value: source) { v in
+                    if v != "" || target != "" {
+                        change(target, "", v)
+                    }
+                }
+            }
+        }
+    }
+
+    // A modifier as written, on one line.
+    fn written(item: DesignView, m: DesignCall) -> String {
+        let text = design.texts[item.file]
+        let code = text.substring(from: m.nameHi - m.name.count - 1, to: m.hi)
+        let line = code.replace("\n", with: " ")
+        if line.count > 60 { line.substring(from: 0, to: 57) + "…" } else { line }
+    }
+}

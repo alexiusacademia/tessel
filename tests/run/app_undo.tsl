@@ -1,0 +1,16 @@
+// Undo and redo in a code editor, of typing and of changes the program
+// makes to its text: with Cmd+Z, also while nothing is being edited, and
+// with undoTextEdit() and redoTextEdit().
+app Undo(width: 400, height: 300) {
+    state code = "let a = 1"
+
+    VStack {
+        HStack {
+            Button("Rename") { code = code.replace("a", with: "total") }
+            Button("Add line") { code += "\nprint(total)" }
+            Button("Undo") { undoTextEdit() }
+            Button("Redo") { redoTextEdit() }
+        }
+        CodeEditor(text: code)
+    }
+}

@@ -220,8 +220,14 @@ is longer than the field.
 
 Undo remembers each change separately, except that a run of typed letters and
 digits is undone in one step. Each field keeps its own undo history. If the
-program itself changes the text (for example by loading a file), the history
-is cleared.
+program itself changes a text field's text, its history is cleared. In a
+[code editor](/ui/code-editor/), a change the program makes is kept as a step
+of the history instead, so it can be undone like typing.
+
+While nothing is being edited, Cmd+Z and Cmd+Shift+Z undo and redo in the
+field or editor whose text changed last, which is then edited, with the
+cursor where the change was. [`undoTextEdit()`](/reference/stdlib/#undotextedit-and-redotextedit)
+and `redoTextEdit()` do the same, for Undo and Redo buttons of your own.
 
 Pasting into a text field turns line breaks into spaces, since it holds a
 single line. The [code editor](/ui/code-editor/) adds a few keys of its own

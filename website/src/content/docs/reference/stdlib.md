@@ -1400,6 +1400,30 @@ Button("Open…") {
 
 In a program without a window, it does nothing.
 
+### undoTextEdit and redoTextEdit
+
+```text
+undoTextEdit()
+redoTextEdit()
+```
+
+Undo and redo the last change to a text, as Cmd+Z and Cmd+Shift+Z do: in
+the text field or code editor being edited, or, while none is, in the one
+whose text changed last. For Undo and Redo buttons:
+
+```tessel
+HStack {
+    Button("Undo") { undoTextEdit() }
+    Button("Redo") { redoTextEdit() }
+}
+CodeEditor(text: code)
+```
+
+A code editor's history includes the changes the program makes to its text,
+so a button that rewrites the code can be undone too. See
+[Editing text](/ui/controls/#editing-text). In a program without a window,
+they do nothing.
+
 ### openURL
 
 ```text
