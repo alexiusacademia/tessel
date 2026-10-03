@@ -233,6 +233,7 @@ each add their code only to programs that use them.
   and ImageIO), so none of that is in the app.
 - **Windows:** an app carries its own renderer, which draws with the
   graphics card (DirectX 12), and its own text layout: it's several MB.
+  A renderer that uses what comes with Windows is on its way.
 
 A program without a window is smaller still.
 
