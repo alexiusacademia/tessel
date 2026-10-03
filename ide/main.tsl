@@ -268,6 +268,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     insert: { kind, place in insertDesign(kind: kind, place: place) },
                     move: { index, place in moveDesign(index: index, place: place) },
                     remove: { removeDesign() },
+                    command: { name in commandDesign(name: name) },
                     close: { toggleDesign() }
                 )
             }
@@ -754,6 +755,34 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         let change = designMove(d: design, moved: index, place: place)
         if change.ok {
             applyDesign(path: design.files[design.views[index].file], text: change.text, lo: change.lo)
+        }
+    }
+
+    // Copy, cut, paste or duplicate, for the selected view. What's copied
+    // is the view's code, so it can be pasted in the editor too; what's
+    // pasted goes into the selected stack, or after the selected view.
+    fn commandDesign(name: String) {
+        if !designReady() || designSelected < 0 {
+            return
+        }
+        let v = design.views[designSelected]
+        let code = designCode(text: design.texts[v.file], item: v)
+        if name == "copy" || name == "cut" {
+            copyToClipboard(code)
+            designStatus = ""
+            if name == "cut" {
+                removeDesign()
+            }
+            return
+        }
+        let pasted = if name == "paste" { (clipboardText() ?? "").trim() } else { code }
+        if pasted == "" {
+            return
+        }
+        let place = if name == "paste" && v.blockLo >= 0 { DesignPlace(container: designSelected) } else { DesignPlace(after: designSelected) }
+        let change = designInsert(d: design, file: v.file, place: place, code: pasted)
+        if change.ok {
+            applyDesign(path: design.files[v.file], text: change.text, lo: change.lo)
         }
     }
 

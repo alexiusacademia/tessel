@@ -174,9 +174,10 @@ pub struct Interaction {
     /// by the program, for a code editor): Cmd+Z undoes there while
     /// nothing is being edited.
     pub last_edited: Option<u64>,
-    /// A view with `.onKey` was pressed last, so it has the keyboard: a code
-    /// editor whose `line:` changes then scrolls to it without taking it.
-    pub keys_to_view: bool,
+    /// The view with `.onKey` pressed last, which has the keyboard: keys go
+    /// to it (Cmd ones too), and a code editor whose `line:` changes then
+    /// scrolls to it without taking it.
+    pub keys_to: Option<u64>,
     /// A code editor to scroll to a character, once it's laid out.
     pub scroll_to: Option<(u64, usize)>,
     /// The code editor's completion list, laid out, when one shows.

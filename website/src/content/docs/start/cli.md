@@ -308,7 +308,7 @@ With `--out /tmp/todos` it writes three files:
 | File | |
 |---|---|
 | `/tmp/todos.png` | The window, at twice its size in pixels. |
-| `/tmp/todos.layout.json` | The views in the window, outermost first: each one's `depth` in the tree, `kind` (`Text`, `VStack`, …), place (`x`, `y`, `width`, `height`, in points) and `source`: the number of the view expression it was made by, or -1. |
+| `/tmp/todos.layout.json` | The views in the window, outermost first: each one's `depth` in the tree, `kind` (`Text`, `VStack`, …), place (`x`, `y`, `width`, `height`, in points; a view that doesn't show has no width or height) and `source`: the number of the view expression it was made by, or -1. |
 | `/tmp/todos.views.json` | The program's `files`, and its view expressions (`views`), numbered from 0 in the order they're listed. |
 
 A view expression is a view with its modifiers, like

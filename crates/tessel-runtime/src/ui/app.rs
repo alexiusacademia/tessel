@@ -1132,7 +1132,7 @@ impl App {
             text.match_indices('\n').nth((line - 2) as usize).map_or(text.len(), |(i, _)| i + 1)
         };
         // (While a view with `.onKey` has the keyboard, it keeps it.)
-        if self.ui.keys_to_view {
+        if self.ui.keys_to.is_some() {
             self.ui.scroll_to = Some((key, offset));
             return;
         }
@@ -1351,6 +1351,29 @@ impl App {
     }
 
     /// The view with `.onPointer` at a point.
+    /// The innermost shown view with `.onKey` that a point is in: a click
+    /// there gives it the keyboard.
+    fn on_key_at(&self, x: f64, y: f64) -> Option<u64> {
+        fn find(n: &Node, x: f64, y: f64, found: &mut Option<u64>) {
+            if n.mods.hidden || n.layout.style.disabled {
+                return;
+            }
+            let r = n.layout.rect;
+            if x < r.x || y < r.y || x >= r.x + r.w || y >= r.y + r.h {
+                return;
+            }
+            if n.mods.on_key.is_some() {
+                *found = Some(n.key);
+            }
+            n.visible_children().iter().for_each(|c| find(c, x, y, found));
+        }
+        let mut found = None;
+        if let Some(t) = &self.tree {
+            find(t, x, y, &mut found);
+        }
+        found
+    }
+
     fn pointer_at(&self, x: f64, y: f64) -> Option<u64> {
         match self.hit(x, y) {
             Some(Hit::Pointer(key)) => Some(key),
@@ -1364,12 +1387,11 @@ impl App {
         let Some(node) = self.node(key) else { return };
         let Some(on_pointer) = node.mods.on_pointer.clone() else { return };
         let origin = node.layout.rect.inset_by(node.mods.padding);
-        // Pressing a view like a canvas ends text editing; with `.onKey`, it
-        // takes the keyboard.
+        // Pressing a view like a canvas ends text editing, and gives the
+        // keyboard to a view with `.onKey` it's in (or is).
         if kind == DOWN {
-            let has_keys = node.mods.on_key.is_some();
             self.ui.editing = None;
-            self.ui.keys_to_view = has_keys;
+            self.ui.keys_to = self.on_key_at(at.0, at.1);
         }
         let mut event = super::PointerC {
             kind,
@@ -1531,7 +1553,9 @@ impl App {
         if key.is_empty() {
             return false;
         }
-        let Some(cb) = self.tree.as_ref().and_then(find) else { return false };
+        // The view with the keyboard first, then the first one with `.onKey`.
+        let to = self.ui.keys_to.and_then(|k| self.node(k)).filter(|n| !n.mods.hidden && !n.layout.style.disabled);
+        let Some(cb) = to.and_then(|n| n.mods.on_key.clone()).or_else(|| self.tree.as_ref().and_then(find)) else { return false };
         cb.call_with(crate::str_new(key) as *mut u8);
         self.dirty = true;
         true
@@ -1561,7 +1585,8 @@ impl App {
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
         }
-        self.ui.keys_to_view = false;
+        // A click in a view with `.onKey` gives it the keyboard.
+        self.ui.keys_to = if matches!(hit, Some(Hit::Field(_))) { None } else { self.on_key_at(x, y) };
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
         match (&hit, &node.kind) {
@@ -1741,6 +1766,14 @@ impl App {
         if self.ui.editing.is_none() && !mods.primary && self.run_on_key(name) {
             return;
         }
+        // The view with the keyboard gets Cmd keys the shortcuts don't take,
+        // as "cmd+c" (Cmd+Z stays undo).
+        if self.ui.editing.is_none() && mods.primary && name != "z" && self.ui.keys_to.is_some() {
+            let shift = if mods.shift { "shift+" } else { "" };
+            if self.run_on_key(&format!("cmd+{shift}{name}")) {
+                return;
+            }
+        }
         // (While nothing is being edited: in the view whose text changed last.)
         if self.ui.editing.is_none() && mods.primary && name == "z" {
             self.undo(mods.shift);
@@ -1801,7 +1834,7 @@ impl App {
 
     /// A mouse press on a text field or code editor: place the caret or select.
     fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32) {
-        self.ui.keys_to_view = false;
+        self.ui.keys_to = None;
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
         let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
@@ -2047,8 +2080,8 @@ impl App {
 
     /// The views on screen as JSON, for `tessel preview`: each one's depth
     /// in the tree, kind, place in the window, and which view expression of
-    /// the source it is (see `Mods::source`; -1 when that isn't known, or
-    /// when nothing of the view shows).
+    /// the source it is (see `Mods::source`; -1 when that isn't known). A
+    /// view that doesn't show has no width or height.
     fn layout_json(&self) -> String {
         fn visit(n: &Node, depth: usize, shift: (f64, f64), clip: Rect, out: &mut Vec<String>) {
             if n.mods.hidden {
@@ -2082,10 +2115,7 @@ impl App {
             // What can be seen of it: the part inside the scroll views around it.
             let (x0, y0) = (x.max(clip.x), y.max(clip.y));
             let (x1, y1) = ((x + r.w).min(clip.x + clip.w), (y + r.h).min(clip.y + clip.h));
-            let view = match n.mods.source {
-                Some(view) if x1 > x0 && y1 > y0 => view as i64,
-                _ => -1,
-            };
+            let view = n.mods.source.map_or(-1, |v| v as i64);
             out.push(format!(
                 "{{\"depth\":{depth},\"kind\":\"{kind}\",\"x\":{x0:.1},\"y\":{y0:.1},\"width\":{:.1},\"height\":{:.1},\"source\":{view}}}",
                 (x1 - x0).max(0.0),

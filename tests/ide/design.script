@@ -57,3 +57,21 @@ wait 1
 key cmd+s
 wait 1
 tree
+click "Outline"
+wait 0
+tree
+click "HStack"
+key cmd+c
+click "Card"
+key cmd+v
+wait 1
+wait 0
+key cmd+d
+wait 1
+wait 0
+key cmd+x
+wait 1
+wait 0
+key cmd+s
+wait 1
+tree

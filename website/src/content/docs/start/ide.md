@@ -128,8 +128,9 @@ The panel runs down the right side of the window and has three parts:
   `Divider` and `Icon`.
 - **The picture**: the app's window as it first appears, made smaller if it
   doesn't fit. It's in the same appearance as the IDE, light or dark.
-- **The inspector**, below it: everything the selected view is given. Drag
-  the edge above it to give the picture or the inspector more room.
+- **The inspector**, below it: everything the selected view is given, or,
+  with **Outline**, the views as a tree. Drag the edge above it to give the
+  picture or the inspector more room.
 
 ### The picture follows the code
 
@@ -148,8 +149,13 @@ editor scrolls to the line where it's written. It works the other way too:
 put the cursor on a line in the editor, and the view written there is
 selected in the picture. Escape selects none.
 
+**Outline**, above the inspector, lists the views in the picture as a tree,
+with the text of each one that has some (`Text "Count: {count}"`). Click a
+row to select its view: the way to get to one that's too small to click, or
+hidden behind another. **Properties** goes back to the inspector.
+
 A view made by a `for` loop is written once and shown several times: all of
-them are outlined. Views inside one of your own `view`s are selected where
+them are outlined (and it's listed once). Views inside one of your own `view`s are selected where
 the `view` declares them, in its file.
 
 ### The inspector
@@ -186,8 +192,23 @@ An empty field takes that part of the code away; a modifier left with
 nothing to say goes too. A text whose code isn't plain text (a call, say)
 shows the code itself, marked "(code)".
 
-The trash button next to the view's name, or the Delete key after clicking
-the view in the picture, deletes the view from the code.
+The trash button next to the view's name, or the Delete key, deletes the
+view from the code; the copy button next to it duplicates it.
+
+### Keys
+
+After a click in the panel (anywhere but in a text field), these keys work
+on the selected view:
+
+| Key | |
+|---|---|
+| Delete, Backspace | Delete it. |
+| Cmd+C | Copy its code, to paste in the panel or in the editor. |
+| Cmd+X | Cut it: copy its code and delete it. |
+| Cmd+V | Paste the code that was copied: into the selected stack, at its end, or after the selected view. Code copied from the editor can be pasted too. |
+| Cmd+D | Duplicate it: a copy goes right after it. |
+| Escape | Select none. |
+| Cmd+Z, Cmd+Shift+Z | Undo and redo (see below). |
 
 ### Adding a view
 

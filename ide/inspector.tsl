@@ -167,7 +167,7 @@ view InspectorFlag(label: String, on: Bool, apply: fn(Bool)) {
 }
 
 // `change` is given a target, a label and a value (see `designSet`).
-view Inspector(design: Design, selected: Int, ready: Bool, change: fn(String, String, String), remove: fn()) {
+view Inspector(design: Design, selected: Int, ready: Bool, change: fn(String, String, String), remove: fn(), command: fn(String)) {
     // The sections closed, and the text the rows are filtered by.
     state closed: [String] = []
     state filter = ""
@@ -204,6 +204,7 @@ view Inspector(design: Design, selected: Int, ready: Bool, change: fn(String, St
                         .color(.secondary)
                 }
                 Spacer()
+                IconButton(icon: .copy) { command("duplicate") }.tooltip("Duplicate (Cmd+D)").disabled(!ready)
                 IconButton(icon: .trash) { remove() }.tooltip("Delete (Delete key)").disabled(!ready)
             }
             HStack(spacing: 5) {

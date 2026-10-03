@@ -1,0 +1,14 @@
+Root
+  View
+    VStack
+      VStack
+        Text "Keys: a cmd+c cmd+shift+k x"
+        Button "Line 3"
+      CodeEditor errors [] = "one\ntwo\nthree"
+Root
+  View
+    VStack
+      VStack
+        Text "Keys: a cmd+c cmd+shift+k x"
+        Button "Line 3"
+      CodeEditor errors [] = "one\ntwo\nthree!"

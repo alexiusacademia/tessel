@@ -516,13 +516,17 @@ fn designInsert(d: Design, file: Int, place: DesignPlace, code: String) -> Desig
     DesignChange(ok: true, text: designReplace(text: text, lo: s.pos, hi: s.pos, with: s.text), lo: s.lo)
 }
 
+// A view's code, as if it started at the edge of the page.
+fn designCode(text: String, item: DesignView) -> String {
+    text.substring(from: item.lo, to: item.hi).replace("\n" + designIndent(text: text, pos: item.lo), with: "\n")
+}
+
 // The text of a view's file with the view moved to another place in it.
 fn designMove(d: Design, moved: Int, place: DesignPlace) -> DesignChange {
     let v = d.views[moved]
     let text = d.texts[v.file]
     let lines = designLines(text: text, lo: v.lo, hi: v.hi)
-    // The view's code, as if it started at the edge of the page.
-    let code = text.substring(from: v.lo, to: v.hi).replace("\n" + designIndent(text: text, pos: v.lo), with: "\n")
+    let code = designCode(text: text, item: v)
     let s = designSplice(text: text, d: d, place: place, code: code)
     if s.pos < 0 || (s.pos >= lines[0] && s.pos < lines[1]) {
         return DesignChange()
@@ -533,6 +537,49 @@ fn designMove(d: Design, moved: Int, place: DesignPlace) -> DesignChange {
     }
     let removed = designReplace(text: text, lo: lines[0], hi: lines[1], with: "")
     DesignChange(ok: true, text: designReplace(text: removed, lo: s.pos, hi: s.pos, with: s.text), lo: s.lo)
+}
+
+// ----- the outline -----
+
+// A row of the outline: a view expression, how deep it is among the
+// others, and what it's called.
+struct DesignOutlineRow {
+    source: Int
+    depth: Int
+    label: String
+}
+
+// The views in the picture as a tree, in the order they're shown. A view
+// shown several times (by a `for` loop) is listed once.
+fn designOutline(d: Design) -> [DesignOutlineRow] {
+    var rows: [DesignOutlineRow] = []
+    var seen: [Int] = []
+    // The depths (in `nodes`) of the listed views around the one at hand.
+    var around: [Int] = []
+    for n in d.nodes {
+        while !around.isEmpty && (around.last ?? -1) >= n.depth {
+            around.removeLast()
+        }
+        if n.source >= 0 {
+            if !seen.contains(n.source) {
+                seen.append(n.source)
+                rows.append(DesignOutlineRow(source: n.source, depth: around.count, label: designLabel(d: d, source: n.source)))
+            }
+            around.append(n.depth)
+        }
+    }
+    rows
+}
+
+// A view's name, with its text if it has some: `Text "Count: {count}"`.
+fn designLabel(d: Design, source: Int) -> String {
+    let v = d.views[source]
+    let first = designArg(text: d.texts[v.file], call: v.base, label: "")
+    if let text = designLiteral(source: first) {
+        let short = if text.count > 28 { text.substring(from: 0, to: 27) + "…" } else { text }
+        return "{v.base.name} \"{short}\""
+    }
+    v.base.name
 }
 
 // ----- the palette -----
@@ -663,6 +710,8 @@ view DesignPanel(
     insert: fn(Int, DesignPlace),
     move: fn(Int, DesignPlace),
     remove: fn(),
+    // "copy", "cut", "paste" or "duplicate", for the selected view.
+    command: fn(String),
     close: fn()
 ) {
     // The canvas's size, and what the mouse is doing on it.
@@ -681,6 +730,8 @@ view DesignPanel(
     state drop = DesignDrop()
     // The height of the inspector, below the picture: its top edge can be dragged.
     state inspectorHeight = 340.0
+    // What's below the picture: the inspector or the outline.
+    state below = "Properties"
 
     VStack(spacing: 0, alignment: .leading) {
         HStack(spacing: 2) {
@@ -762,14 +813,6 @@ view DesignPanel(
                 _ -> {}
             }
         }
-        // Delete takes the selected view away; Escape selects none.
-        .onKey { key in
-            if (key == "backspace" || key == "delete") && selected >= 0 && ready {
-                remove()
-            } else if key == "escape" {
-                select(-1)
-            }
-        }
 
         // The edge above the inspector: drag it to give the picture or the
         // inspector more room.
@@ -779,11 +822,30 @@ view DesignPanel(
             .hoverBackground(.blue)
             .onDrag { dx, dy in inspectorHeight = (inspectorHeight - dy).clamped(min: 120, max: 700) }
 
-        Inspector(design: design, selected: selected, ready: ready, change: change, remove: remove)
-            .frame(height: inspectorHeight)
+        VStack(spacing: 0, alignment: .leading) {
+            HStack {
+                Picker(selection: below) {
+                    Text("Properties").font(size: 12).tag("Properties")
+                    Text("Outline").font(size: 12).tag("Outline")
+                }
+                Spacer()
+            }
+            .padding(horizontal: 10, vertical: 6)
+            Divider()
+            if below == "Outline" {
+                Outline(design: design, selected: selected, select: select)
+            } else {
+                Inspector(design: design, selected: selected, ready: ready, change: change, remove: remove, command: command)
+            }
+        }
+        .frame(height: inspectorHeight)
     }
     .frame(width: width)
     .background(.sidebar)
+    // After a click in the panel (and not in a field): Delete takes the
+    // selected view away, Escape selects none, and Cmd+C, X, V and D copy,
+    // cut, paste and duplicate it.
+    .onKey { key in keyPressed(key: key) }
 
     // Where the picture is drawn on the canvas, and a point of the canvas
     // as a point of the picture.
@@ -802,6 +864,25 @@ view DesignPanel(
 
     fn pictureY(y: Float) -> Float {
         (y - originY()) / designScale(d: design, width: canvasWidth, height: canvasHeight)
+    }
+
+    fn keyPressed(key: String) {
+        if !ready {
+            return
+        }
+        if (key == "backspace" || key == "delete") && selected >= 0 {
+            remove()
+        } else if key == "escape" {
+            select(-1)
+        } else if key == "cmd+c" {
+            command("copy")
+        } else if key == "cmd+x" {
+            command("cut")
+        } else if key == "cmd+v" {
+            command("paste")
+        } else if key == "cmd+d" {
+            command("duplicate")
+        }
     }
 
     fn press(x: Float, y: Float) {
@@ -859,4 +940,25 @@ view DesignPanel(
         dragging = false
         drop = DesignDrop()
     }
+}
+
+// The views of the picture as a tree: a click selects one.
+view Outline(design: Design, selected: Int, select: fn(Int)) {
+    Scroll {
+        VStack(spacing: 0, alignment: .leading) {
+            for row in designOutline(d: design) {
+                HStack(spacing: 4) {
+                    Spacer().frame(width: Float(row.depth) * 14)
+                    Text(row.label).font(size: 12)
+                    Spacer()
+                }
+                .padding(horizontal: 8, vertical: 3)
+                .background(if row.source == selected { .highlight } else { .clear })
+                .hoverBackground(.lightGray)
+                .onTap { select(row.source) }
+            }
+        }
+        .padding(vertical: 4)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
 }

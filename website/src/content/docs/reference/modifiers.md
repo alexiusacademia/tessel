@@ -371,11 +371,16 @@ VStack {
   [`shortcut`](#shortcut).
 - If several views have `onKey`, the first one (from the top of the view
   tree) that is shown and enabled gets the key.
-- Pressing a view with [`onPointer`](#onpointer) ends text editing, so keys
-  come here. If that view has `onKey` too, it keeps the keyboard until a text
-  field or code editor is clicked: a code editor whose
+- A click inside a view with `onKey` (anywhere in it, except in a text
+  field or code editor) gives it the keyboard: keys go to it rather than to
+  the first view with `onKey`, until a text field or code editor is clicked.
+  Pressing a view with [`onPointer`](#onpointer) also ends text editing.
+- While a view has the keyboard, keys pressed with Cmd (Ctrl on Windows)
+  that no [`shortcut`](#shortcut) takes come to it too, as `"cmd+c"` or
+  `"cmd+shift+k"`. Cmd+Z and Cmd+Shift+Z stay undo and redo.
+- While a view has the keyboard, a code editor whose
   [`line:`](/ui/code-editor/#following-and-moving-the-cursor) changes only
-  scrolls to it.
+  scrolls to it, without taking the keyboard.
 
 ## cursor
 

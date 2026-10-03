@@ -86,378 +86,387 @@ Root
             Divider
             Canvas (11 fills, 12 strokes, 10 texts, 1 image)
             Spacer
-            View
-              VStack
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
                 VStack
-                  HStack
-                    VStack
-                      Text "Text"
-                      Text "Built-in view · main.tsl:5"
-                    Spacer
-                    View
-                      Icon trash
-                  HStack
-                    Icon search
-                    TextField "Filter properties" = ""
-                Divider
-                Scroll
                   VStack
+                    HStack
+                      VStack
+                        Text "Text"
+                        Text "Built-in view · main.tsl:5"
+                      Spacer
+                      View
+                        Icon copy
+                      View
+                        Icon trash
+                    HStack
+                      Icon search
+                      TextField "Filter properties" = ""
+                  Divider
+                  Scroll
                     VStack
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Content"
-                            Spacer
-                          VStack
-                            VStack
-                              View
-                                View
-                                  HStack
-                                    Text "Text"
-                                    TextField "" = "Count: {count}"
-                                    Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Font"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Size"
-                                  HStack
-                                    TextField "" = "24"
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Weight"
-                                  HStack
-                                    Text "regular"
-                                    Text "medium"
-                                    Text "semibold"
-                                    Text "bold"
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text alignment"
-                                  HStack
-                                    Text "leading"
-                                    Text "center"
-                                    Text "trailing"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Color"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Foreground"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Background"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Border"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Padding"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "All edges"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Horizontal"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Vertical"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Top"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Leading"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Bottom"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Trailing"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Size and place"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset X"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset Y"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Appearance"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Opacity"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Hidden"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Disabled"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Clipped"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            VStack
-                              View
-                                View
-                                  HStack
-                                    Text "Tooltip"
-                                    TextField "" = ""
-                                    Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Modifiers"
-                            Spacer
+                      VStack
+                        View
                           VStack
                             HStack
-                              Text ".font(size: 24, weight: .bold)"
+                              Icon chevronDown
+                              Text "Content"
                               Spacer
+                            VStack
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Text"
+                                      TextField "" = "Count: {count}"
+                                      Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Font"
+                              Spacer
+                            VStack
                               View
-                                Icon minus
+                                View
+                                  HStack
+                                    Text "Size"
+                                    HStack
+                                      TextField "" = "24"
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Weight"
+                                    HStack
+                                      Text "regular"
+                                      Text "medium"
+                                      Text "semibold"
+                                      Text "bold"
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Text alignment"
+                                    HStack
+                                      Text "leading"
+                                      Text "center"
+                                      Text "trailing"
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Color"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Foreground"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Background"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Border"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Padding"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "All edges"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Horizontal"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Vertical"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Top"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Leading"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Bottom"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Trailing"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Size and place"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset X"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset Y"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Appearance"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Opacity"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Hidden"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Disabled"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Clipped"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Tooltip"
+                                      TextField "" = ""
+                                      Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Modifiers"
+                              Spacer
+                            VStack
+                              HStack
+                                Text ".font(size: 24, weight: .bold)"
+                                Spacer
+                                View
+                                  Icon minus
 Root
   View
     VStack
@@ -546,372 +555,381 @@ Root
             Divider
             Canvas (11 fills, 12 strokes, 10 texts, 1 image)
             Spacer
-            View
-              VStack
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
                 VStack
-                  HStack
-                    VStack
-                      Text "TextField"
-                      Text "Built-in view · main.tsl:9"
-                    Spacer
-                    View
-                      Icon trash
-                  HStack
-                    Icon search
-                    TextField "Filter properties" = ""
-                Divider
-                Scroll
                   VStack
+                    HStack
+                      VStack
+                        Text "TextField"
+                        Text "Built-in view · main.tsl:9"
+                      Spacer
+                      View
+                        Icon copy
+                      View
+                        Icon trash
+                    HStack
+                      Icon search
+                      TextField "Filter properties" = ""
+                  Divider
+                  Scroll
                     VStack
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Content"
-                            Spacer
+                      VStack
+                        View
                           VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Content"
+                              Spacer
+                            VStack
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Placeholder"
+                                      TextField "" = "Placeholder"
+                                      Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Text"
+                                    TextField "" = "text"
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Font"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Placeholder"
-                                    TextField "" = "Placeholder"
-                                    Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text"
-                                  TextField "" = "text"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Font"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Size"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Weight"
-                                  HStack
-                                    Text "regular"
-                                    Text "medium"
-                                    Text "semibold"
-                                    Text "bold"
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text alignment"
-                                  HStack
-                                    Text "leading"
-                                    Text "center"
-                                    Text "trailing"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Color"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Foreground"
-                                  VStack
+                                    Text "Size"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
                               View
-                                HStack
-                                  Text "Background"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Weight"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      Text "regular"
+                                      Text "medium"
+                                      Text "semibold"
+                                      Text "bold"
+                                    Spacer
                               View
-                                HStack
-                                  Text "Border"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Text alignment"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Padding"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "All edges"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Horizontal"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Vertical"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Top"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Leading"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Bottom"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Trailing"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Size and place"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset X"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset Y"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Appearance"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Opacity"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Hidden"
-                                  ZStack
+                                      Text "leading"
+                                      Text "center"
+                                      Text "trailing"
                                     Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Disabled"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Clipped"
-                                  ZStack
-                                    Spacer
-                                  Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Color"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Tooltip"
-                                    TextField "" = ""
+                                    Text "Foreground"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
                                     Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Background"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Border"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Padding"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "All edges"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Horizontal"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Vertical"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Top"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Leading"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Bottom"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Trailing"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Size and place"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset X"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset Y"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Appearance"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Opacity"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Hidden"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Disabled"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Clipped"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Tooltip"
+                                      TextField "" = ""
+                                      Spacer
 Root
   View
     VStack
@@ -1000,366 +1018,375 @@ Root
             Divider
             Canvas (11 fills, 12 strokes, 10 texts, 1 image)
             Spacer
-            View
-              VStack
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
                 VStack
-                  HStack
-                    VStack
-                      Text "Text"
-                      Text "Built-in view · main.tsl:13"
-                    Spacer
-                    View
-                      Icon trash
-                  HStack
-                    Icon search
-                    TextField "Filter properties" = ""
-                Divider
-                Scroll
                   VStack
+                    HStack
+                      VStack
+                        Text "Text"
+                        Text "Built-in view · main.tsl:13"
+                      Spacer
+                      View
+                        Icon copy
+                      View
+                        Icon trash
+                    HStack
+                      Icon search
+                      TextField "Filter properties" = ""
+                  Divider
+                  Scroll
                     VStack
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Content"
-                            Spacer
+                      VStack
+                        View
                           VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Content"
+                              Spacer
+                            VStack
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Text"
+                                      TextField "" = "inside"
+                                      Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Font"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Text"
-                                    TextField "" = "inside"
-                                    Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Font"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Size"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Weight"
-                                  HStack
-                                    Text "regular"
-                                    Text "medium"
-                                    Text "semibold"
-                                    Text "bold"
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text alignment"
-                                  HStack
-                                    Text "leading"
-                                    Text "center"
-                                    Text "trailing"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Color"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Foreground"
-                                  VStack
+                                    Text "Size"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
                               View
-                                HStack
-                                  Text "Background"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Weight"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      Text "regular"
+                                      Text "medium"
+                                      Text "semibold"
+                                      Text "bold"
+                                    Spacer
                               View
-                                HStack
-                                  Text "Border"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Text alignment"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Padding"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "All edges"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Horizontal"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Vertical"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Top"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Leading"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Bottom"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Trailing"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Size and place"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset X"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset Y"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Appearance"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Opacity"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Hidden"
-                                  ZStack
+                                      Text "leading"
+                                      Text "center"
+                                      Text "trailing"
                                     Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Disabled"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Clipped"
-                                  ZStack
-                                    Spacer
-                                  Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Color"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Tooltip"
-                                    TextField "" = ""
+                                    Text "Foreground"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
                                     Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Background"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Border"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Padding"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "All edges"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Horizontal"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Vertical"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Top"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Leading"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Bottom"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Trailing"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Size and place"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset X"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset Y"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Appearance"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Opacity"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Hidden"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Disabled"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Clipped"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Tooltip"
+                                      TextField "" = ""
+                                      Spacer
 Root
   View
     VStack
@@ -1449,366 +1476,375 @@ Root
             Divider
             Canvas (11 fills, 11 strokes, 10 texts, 1 image)
             Spacer
-            View
-              VStack
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
                 VStack
-                  HStack
-                    VStack
-                      Text "Text"
-                      Text "Built-in view · main.tsl:13"
-                    Spacer
-                    View disabled
-                      Icon trash
-                  HStack
-                    Icon search
-                    TextField "Filter properties" = ""
-                Divider
-                Scroll
-                  VStack disabled
-                    VStack
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Content"
-                            Spacer
+                  VStack
+                    HStack
+                      VStack
+                        Text "Text"
+                        Text "Built-in view · main.tsl:13"
+                      Spacer
+                      View disabled
+                        Icon copy
+                      View disabled
+                        Icon trash
+                    HStack
+                      Icon search
+                      TextField "Filter properties" = ""
+                  Divider
+                  Scroll
+                    VStack disabled
+                      VStack
+                        View
                           VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Content"
+                              Spacer
+                            VStack
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Text"
+                                      TextField "" = "inside"
+                                      Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Font"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Text"
-                                    TextField "" = "inside"
-                                    Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Font"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Size"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Weight"
-                                  HStack
-                                    Text "regular"
-                                    Text "medium"
-                                    Text "semibold"
-                                    Text "bold"
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text alignment"
-                                  HStack
-                                    Text "leading"
-                                    Text "center"
-                                    Text "trailing"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Color"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Foreground"
-                                  VStack
+                                    Text "Size"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
                               View
-                                HStack
-                                  Text "Background"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Weight"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
+                                      Text "regular"
+                                      Text "medium"
+                                      Text "semibold"
+                                      Text "bold"
+                                    Spacer
                               View
-                                HStack
-                                  Text "Border"
-                                  VStack
+                                View
+                                  HStack
+                                    Text "Text alignment"
                                     HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Padding"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "All edges"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Horizontal"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Vertical"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Top"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Leading"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Bottom"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Trailing"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Size and place"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset X"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset Y"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Appearance"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Opacity"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Hidden"
-                                  ZStack
+                                      Text "leading"
+                                      Text "center"
+                                      Text "trailing"
                                     Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Disabled"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Clipped"
-                                  ZStack
-                                    Spacer
-                                  Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Color"
+                              Spacer
                             VStack
                               View
                                 View
                                   HStack
-                                    Text "Tooltip"
-                                    TextField "" = ""
+                                    Text "Foreground"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
                                     Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Background"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Border"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Padding"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "All edges"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Horizontal"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Vertical"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Top"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Leading"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Bottom"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Trailing"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Size and place"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset X"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset Y"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Appearance"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Opacity"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Hidden"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Disabled"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Clipped"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Tooltip"
+                                      TextField "" = ""
+                                      Spacer
 Root
   View
     VStack
@@ -1897,366 +1933,687 @@ Root
             Divider
             Canvas (11 fills, 12 strokes, 10 texts, 1 image)
             Spacer
-            View
-              VStack
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
+                VStack
+                  VStack
+                    HStack
+                      VStack
+                        Text "Text"
+                        Text "Built-in view · main.tsl:13"
+                      Spacer
+                      View
+                        Icon copy
+                      View
+                        Icon trash
+                    HStack
+                      Icon search
+                      TextField "Filter properties" = ""
+                  Divider
+                  Scroll
+                    VStack
+                      VStack
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Content"
+                              Spacer
+                            VStack
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Text"
+                                      TextField "" = "inside"
+                                      Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Font"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Size"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Weight"
+                                    HStack
+                                      Text "regular"
+                                      Text "medium"
+                                      Text "semibold"
+                                      Text "bold"
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Text alignment"
+                                    HStack
+                                      Text "leading"
+                                      Text "center"
+                                      Text "trailing"
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Color"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Foreground"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Background"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Border"
+                                    VStack
+                                      HStack
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                        Spacer
+                                      TextField "" = ""
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Padding"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "All edges"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Horizontal"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Vertical"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Top"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Leading"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Bottom"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Trailing"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Size and place"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max width"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Min height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Max height"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset X"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Offset Y"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                        View
+                          VStack
+                            HStack
+                              Icon chevronDown
+                              Text "Appearance"
+                              Spacer
+                            VStack
+                              View
+                                View
+                                  HStack
+                                    Text "Opacity"
+                                    HStack
+                                      TextField "" = ""
+                                      View
+                                        Icon minus
+                                      View
+                                        Icon plus
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Hidden"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Disabled"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              View
+                                View
+                                  HStack
+                                    Text "Clipped"
+                                    ZStack
+                                      Spacer
+                                    Spacer
+                              VStack
+                                View
+                                  View
+                                    HStack
+                                      Text "Tooltip"
+                                      TextField "" = ""
+                                      Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
                 VStack
                   HStack
-                    VStack
-                      Text "Text"
-                      Text "Built-in view · main.tsl:13"
                     Spacer
-                    View
-                      Icon trash
-                  HStack
-                    Icon search
-                    TextField "Filter properties" = ""
-                Divider
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon undo
+              View
+                Icon redo
+              View
+                Icon close
+            Divider
+            Canvas (11 fills, 12 strokes, 10 texts, 1 image)
+            Spacer
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
                 Scroll
                   VStack
-                    VStack
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Content"
-                            Spacer
-                          VStack
-                            VStack
-                              View
-                                View
-                                  HStack
-                                    Text "Text"
-                                    TextField "" = "inside"
-                                    Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Font"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Size"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Weight"
-                                  HStack
-                                    Text "regular"
-                                    Text "medium"
-                                    Text "semibold"
-                                    Text "bold"
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Text alignment"
-                                  HStack
-                                    Text "leading"
-                                    Text "center"
-                                    Text "trailing"
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Color"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Foreground"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Background"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Border"
-                                  VStack
-                                    HStack
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                      Spacer
-                                    TextField "" = ""
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Padding"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "All edges"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Horizontal"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Vertical"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Top"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Leading"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Bottom"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Trailing"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Size and place"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max width"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Min height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Max height"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset X"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Offset Y"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                      View
-                        VStack
-                          HStack
-                            Icon chevronDown
-                            Text "Appearance"
-                            Spacer
-                          VStack
-                            View
-                              View
-                                HStack
-                                  Text "Opacity"
-                                  HStack
-                                    TextField "" = ""
-                                    View
-                                      Icon minus
-                                    View
-                                      Icon plus
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Hidden"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Disabled"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            View
-                              View
-                                HStack
-                                  Text "Clipped"
-                                  ZStack
-                                    Spacer
-                                  Spacer
-                            VStack
-                              View
-                                View
-                                  HStack
-                                    Text "Tooltip"
-                                    TextField "" = ""
-                                    Spacer
+                    HStack
+                      Spacer
+                      Text "VStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "HStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Add one\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "TextField \"Placeholder\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Button\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Reset\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Card"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "VStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"inside\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"row {i}\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"Count: {count}\""
+                      Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n            HStack {\n                Button(\"Add one\") { count += 1 }\n                TextField(\"Placeholder\", text: text)\n                Button(\"Button\") { }\n                Button(\"Reset\") { count = 0 }.padding(4)\n            }\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+        Spacer
+        View
+          VStack
+            HStack
+              Text "DESIGN"
+              Spacer
+              View
+                Icon undo
+              View
+                Icon redo
+              View
+                Icon close
+            Divider
+            Canvas (11 fills, 11 strokes, 10 texts, 1 image)
+            Spacer
+            VStack
+              HStack
+                Picker
+                  Text "Properties"
+                  Text "Outline"
+                Spacer
+              Divider
+              View
+                Scroll
+                  VStack
+                    HStack
+                      Spacer
+                      Text "VStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "HStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Add one\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "TextField \"Placeholder\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Button\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Reset\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Card"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "VStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"inside\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "HStack"
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Add one\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "TextField \"Placeholder\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Button\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Button \"Reset\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"row {i}\""
+                      Spacer
+                    HStack
+                      Spacer
+                      Text "Text \"Count: {count}\""
+                      Spacer
 --- files: main.tsl
 --- main.tsl
 app Hello(width: 400, height: 300) {
@@ -2272,6 +2629,12 @@ app Hello(width: 400, height: 300) {
         }
         Card(title: "é card") {
             Text("inside")
+            HStack {
+                Button("Add one") { count += 1 }
+                TextField("Placeholder", text: text)
+                Button("Button") { }
+                Button("Reset") { count = 0 }.padding(4)
+            }
         }
         for i in 0..2 {
             Text("row {i}")

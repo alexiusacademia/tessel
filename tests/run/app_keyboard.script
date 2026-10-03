@@ -1,0 +1,11 @@
+click "Line 3"
+key a
+key cmd+c
+key cmd+shift+k
+type x
+tree
+click editor 1
+key end
+type !
+key cmd+c
+tree
