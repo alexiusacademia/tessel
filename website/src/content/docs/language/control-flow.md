@@ -86,6 +86,43 @@ Best score: 90
 
 The type is the unwrapped type (`[Int]`, not `[Int]?`).
 
+### Taking a tuple apart
+
+When the optional holds a [tuple](/language/collections/#tuples), `if let`
+can name its items directly, as `let (a, b) = pair` does. `_` skips an item:
+
+```tessel
+fn setting(_ line: String) -> (String, Int)? {
+    let parts = line.split("=")
+    if parts.count != 2 {
+        return nil
+    }
+    if let value = Int(parts[1]) {
+        return (parts[0], value)
+    }
+    return nil
+}
+
+fn main() {
+    if let (name, value) = setting("width=40") {
+        print("{name} is {value}")
+    }
+    if let (name, _) = setting("height=tall") {
+        print("{name} is set")
+    } else {
+        print("not a number")
+    }
+}
+```
+
+```text
+width is 40
+not a number
+```
+
+The names can't have types (`if let (a, b): (Int, Int) = …`); give the
+function a return type instead.
+
 ## for loops
 
 `for` runs its body once for each item of a list, or each number in a range:
@@ -236,6 +273,23 @@ took two
 took three
 ```
 
+Like `if let`, `while let` can take an optional tuple apart:
+
+```tessel
+fn main() {
+    var queue = [(1, "one"), (2, "two")]
+    while let (n, word) = queue.first {
+        queue.removeFirst()
+        print("{n} is {word}")
+    }
+}
+```
+
+```text
+1 is one
+2 is two
+```
+
 ## break and continue
 
 In any loop, `for` or `while`:
@@ -345,6 +399,7 @@ Take an umbrella
 | `.name(a, _)` | the same, ignoring the second value |
 | `42`, `-1`, `2.5`, `"text"`, `true` | a value equal to this literal |
 | `_` | anything |
+| `.a, .b`, `1, 2, 3` | any of the patterns (see [below](#several-patterns-in-one-arm)) |
 
 ```tessel
 fn describe(n: Int) -> String {
@@ -357,8 +412,47 @@ fn describe(n: Int) -> String {
 }
 ```
 
-Patterns can't be nested or combined, and there are no ranges or conditions
-in patterns. Use `if` for those.
+### Several patterns in one arm
+
+An arm can list several patterns, separated by commas; it runs when any of
+them fits. The list may continue on the next line after a comma:
+
+```tessel
+enum Direction { north, south, east, west }
+
+fn isVertical(_ d: Direction) -> Bool {
+    match d {
+        .north, .south -> true
+        .east, .west -> false
+    }
+}
+
+fn kind(_ letter: String) -> String {
+    match letter {
+        "a", "e", "i",
+        "o", "u" -> "vowel"
+        _ -> "consonant"
+    }
+}
+
+fn main() {
+    print(isVertical(.south))
+    print(kind("e"))
+}
+```
+
+```text
+true
+vowel
+```
+
+Each pattern counts towards handling every value, so the two arms of
+`isVertical` cover all four cases. An arm with several patterns can't name
+an enum case's values, since it couldn't tell which case they came from:
+write `.circle(_), .square(_) -> …`, or give each case its own arm.
+
+Patterns can't be nested, and there are no ranges or conditions in patterns.
+Use `if` for those.
 
 ### Every value must be handled
 

@@ -925,20 +925,50 @@ print(bytes == Data(text: "Hi!"))       // true
 | `bytes` | `[Int]` | The bytes, each from 0 to 255. |
 | `text` | `String?` | The bytes read as UTF-8 text, or `nil` if they aren't valid UTF-8. |
 | `base64` | `String` | The bytes as [base64](#base64) text. |
-
 | `latin1` | `String` | Each byte as the character with that number, up to the first zero byte: the text of old files that aren't UTF-8. |
 | `slice(from: Int, to: Int)` | `Data` | The bytes from index `from` up to `to`. |
 | `int8(at:)`, `int16(at:)`, `uint16(at:)`, `int32(at:)`, `uint32(at:)`, `int64(at:)` | `Int` | The whole number stored in the bytes starting at an index. |
 | `float32(at:)`, `float64(at:)` | `Float` | The decimal number stored there. |
 | `compressed(_ format: String = "zlib")` | `Data` | The bytes, made smaller. |
 | `decompressed(_ format: String = "zlib")` | `Data?` | Compressed bytes, as they were. |
+| `append(_ data: Data)` | | Adds the bytes of `data` to the end. Changes the value, so it must be a `var`. |
+| `append(byte: Int)` | | Adds one byte (from 0 to 255; other values are wrapped into that range, as in `Data(bytes:)`). |
 
 - `data[i]` is the byte at index `i` (from 0), as an `Int`. An index outside
-  the data stops the program with an error. `Data` can't be changed in place;
-  make a new one instead.
+  the data stops the program with an error. Bytes can't be changed one at a
+  time; add to the end, or make a new `Data` (for example from `bytes`).
+- `a + b` is a new `Data` with the bytes of both.
 - `==` and `!=` compare the bytes.
 - Read and write files of bytes with [`readData`](#readdata) and
   [`writeData`](#writedata).
+
+### Building bytes
+
+To build a file's bytes, start with `Data()` and add to the end with `+=`,
+`append(_:)` or `append(byte:)`. These change the `Data` in place, with room
+to grow, so adding many small pieces takes time in proportion to the bytes
+added, as `+=` on a list does. (A list of `Int`s would take 8 bytes of memory
+for each byte.)
+
+```tessel
+/// A whole number as 4 bytes, the lowest first (little-endian).
+fn uint32(_ n: Int) -> Data {
+    var out = Data()
+    for i in 0..4 {
+        out.append(byte: n >> (8 * i) & 0xff)
+    }
+    return out
+}
+
+fn main() {
+    var file = Data(text: "TSL")
+    file.append(byte: 1)
+    file += uint32(258)
+    print(file.bytes)              // [84, 83, 76, 1, 2, 1, 0, 0]
+    let both = Data(bytes: [1]) + Data(bytes: [2, 3])
+    print(both.bytes)              // [1, 2, 3]
+}
+```
 
 ### Numbers in bytes
 
@@ -2765,6 +2795,7 @@ error: index 5 is out of range for a list of 3 items
 | `index … is out of range` | `list[i]`, `remove(at:)` or `insert(at:)` with an index outside the list, `removeFirst()` or `removeLast()` on an empty list, or `data[i]` outside the data. |
 | `integer overflow` | `Int` arithmetic whose result is too big for an `Int`. |
 | `division by zero` | `Int` division or remainder (`/`, `%`) by `0`. |
+| `negative shift amount` | `a << n` or `a >> n` with `n` less than `0`. |
 
 `Float` arithmetic never stops the program: dividing by `0.0` gives an
 infinite value (printed as `inf`).

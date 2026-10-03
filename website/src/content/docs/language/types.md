@@ -42,7 +42,11 @@ An `Int` is a whole number from −9,223,372,036,854,775,808 to
 let year = 2026
 let big = 1_000_000
 let negative = -40
+let mask = 0xff
 ```
+
+An `Int` can also be worked on bit by bit with `&`, `|`, `^`, `~`, `<<` and
+`>>`; see [Bit operations](/language/basics/#bit-operations).
 
 `Int` arithmetic never silently wraps around. If a result is too large or too
 small to fit, the program stops with an `integer overflow` error. Dividing by
@@ -155,7 +159,9 @@ print(greeting.count)       // 2
 print(greeting[0])          // 72
 ```
 
-See [Data](/reference/stdlib/#data) in the standard library reference.
+`a + b` joins two `Data` values, and `data += more`, `data.append(more)` and
+`data.append(byte: 255)` add to the end of a `Data` variable, in place. See
+[Data](/reference/stdlib/#data) in the standard library reference.
 
 ## Lists
 

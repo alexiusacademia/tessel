@@ -294,3 +294,64 @@ fn main() {
 ```text
 6765
 ```
+
+## Functions inside functions
+
+A function can be declared inside another function, a method, or a
+function of a view or app (and in a block, like a button's action). It's
+known from its declaration to the end of the block it's in, so it doesn't
+clutter the rest of the file. It can call itself, and it can use the
+functions declared before it in the same place:
+
+```tessel
+fn report(scores: [Int]) {
+    fn grade(_ score: Int) -> String {
+        if score >= 90 { "A" } else if score >= 75 { "B" } else { "C" }
+    }
+    fn line(_ score: Int) -> String {
+        "{score}: {grade(score)}"
+    }
+    for s in scores {
+        print(line(s))
+    }
+}
+
+fn main() {
+    report(scores: [95, 80, 60])
+}
+```
+
+```text
+95: A
+80: B
+60: C
+```
+
+Like a [closure](/language/closures/#capturing-variables), it can use the
+variables, constants and parameters around it. It uses the variables
+themselves, not copies: it sees their values as they are when it's called,
+and it can change a `var`. (Constants and parameters can't change, so it
+simply has their values.)
+
+```tessel
+fn main() {
+    var total = 0
+    fn add(_ n: Int, times: Int = 1) {
+        total += n * times
+    }
+    add(5)
+    add(2, times: 3)
+    print(total)
+}
+```
+
+```text
+11
+```
+
+It's called like any function, with labels and default values. It can also
+be used as a value, as in `numbers.map(grade)`.
+
+A function inside a function can't be generic (it can use the type
+parameters of the function around it), and it isn't visible before its
+declaration, so two of them can't call each other.
