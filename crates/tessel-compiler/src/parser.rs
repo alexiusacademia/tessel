@@ -810,12 +810,13 @@ impl<'a> Parser<'a> {
             }
             Tok::While => {
                 self.bump();
-                let cond = self.condition()?;
+                let (cond, unpack) = self.condition()?;
                 if !self.at(&Tok::LBrace) {
                     self.condition_end_error("while");
                     return Err(Reported);
                 }
-                let body = self.block()?;
+                let mut body = self.block()?;
+                body.stmts.splice(0..0, unpack);
                 Ok(Stmt::While { cond, body, span: lo.to(self.prev_span()) })
             }
             Tok::Break => Ok(Stmt::Break(self.bump().span)),
@@ -844,20 +845,41 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let target = self.expr()?;
-                let op = match self.peek() {
-                    Tok::Eq => AssignOp::Set,
-                    Tok::PlusEq => AssignOp::Add,
-                    Tok::MinusEq => AssignOp::Sub,
-                    Tok::StarEq => AssignOp::Mul,
-                    Tok::SlashEq => AssignOp::Div,
-                    _ => return Ok(Stmt::Expr(target)),
-                };
+                let Some(op) = self.assign_op() else { return Ok(Stmt::Expr(target)) };
+                if op == AssignOp::Op(BinOp::Shr) {
+                    self.bump(); // the first `>` of `>>=`
+                }
                 self.bump();
                 self.skip_newlines();
                 let value = self.expr()?;
                 Ok(Stmt::Assign { target, op, value, span: lo.to(self.prev_span()) })
             }
         }
+    }
+
+    /// The assignment operator at the current token, if there is one.
+    fn assign_op(&self) -> Option<AssignOp> {
+        Some(match self.peek() {
+            Tok::Eq => AssignOp::Set,
+            Tok::PlusEq => AssignOp::Op(BinOp::Add),
+            Tok::MinusEq => AssignOp::Op(BinOp::Sub),
+            Tok::StarEq => AssignOp::Op(BinOp::Mul),
+            Tok::SlashEq => AssignOp::Op(BinOp::Div),
+            Tok::PercentEq => AssignOp::Op(BinOp::Rem),
+            Tok::AmpEq => AssignOp::Op(BinOp::BitAnd),
+            Tok::PipeEq => AssignOp::Op(BinOp::BitOr),
+            Tok::CaretEq => AssignOp::Op(BinOp::BitXor),
+            Tok::ShlEq => AssignOp::Op(BinOp::Shl),
+            _ if self.at_joined(&Tok::Gt, &Tok::Ge) => AssignOp::Op(BinOp::Shr),
+            _ => return None,
+        })
+    }
+
+    /// Are the current token and the next one `a` and `b`, with nothing
+    /// between them? (`>>` is two `>`s, and `>>=` is `>` and `>=`, so that
+    /// the `>>` closing `Stack<Stack<Int>>` isn't a shift.)
+    fn at_joined(&self, a: &Tok, b: &Tok) -> bool {
+        self.peek() == a && self.peek_at(1) == b && self.span().hi == self.toks[(self.pos + 1).min(self.toks.len() - 1)].span.lo
     }
 
     /// `(a, b, _)` before `=` or `in`: the names a tuple is taken apart into.
@@ -994,12 +1016,6 @@ impl<'a> Parser<'a> {
         let mut lhs = next(self)?;
         while let Some(op) = op_of(self.peek()) {
             self.bump();
-            if op == BinOp::Rem && self.at(&Tok::Eq) {
-                let span = self.prev_span().to(self.span());
-                self.error(span, "Tessel has no `%=`")
-                    .help("write it out: `x = x % 5`");
-                return Err(Reported);
-            }
             self.skip_newlines();
             let rhs = next(self)?;
             let span = lhs.span.to(rhs.span);
@@ -1029,6 +1045,10 @@ impl<'a> Parser<'a> {
             })
         };
         let lhs = self.cast_expr()?;
+        // `x >>= 1` is an assignment, not `x > (>= 1)`.
+        if self.at_joined(&Tok::Gt, &Tok::Ge) {
+            return Ok(lhs);
+        }
         let Some(op) = cmp_op(self.peek()) else { return Ok(lhs) };
         self.bump();
         self.skip_newlines();
@@ -1092,16 +1112,10 @@ impl<'a> Parser<'a> {
         self.skip_newlines();
         let parenthesized = self.at(&Tok::LParen);
         let rhs = self.coalesce_expr()?; // right-associative
-        if let (false, ExprKind::Binary(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem), _, _)) =
-            (parenthesized, &rhs.kind)
+        if let (false, ExprKind::Binary(op, _, _)) = (parenthesized, &rhs.kind)
+            && (op.is_bitwise() || matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem))
         {
-            let sym = match op {
-                BinOp::Add => "+",
-                BinOp::Sub => "-",
-                BinOp::Mul => "*",
-                BinOp::Div => "/",
-                _ => "%",
-            };
+            let sym = op.symbol();
             self.error(rhs.span, format!("`??` with `{sym}` after it is ambiguous"))
                 .label(format!("this is all the default, so `{sym}` only applies to it"))
                 .help(format!("add parentheses: `(value ?? 0) {sym} 1` to do it to the result, or `value ?? (0 {sym} 1)`"));
@@ -1110,21 +1124,46 @@ impl<'a> Parser<'a> {
         Ok(self.new_expr(ExprKind::Binary(BinOp::Coalesce, Box::new(lhs), Box::new(rhs)), span))
     }
 
+    /// `+`, `-`, and (as in Swift) `|` and `^`.
     fn add_expr(&mut self) -> PResult<Expr> {
         self.binary_left(Self::mul_expr, |t| match t {
             Tok::Plus => Some(BinOp::Add),
             Tok::Minus => Some(BinOp::Sub),
+            Tok::Pipe => Some(BinOp::BitOr),
+            Tok::Caret => Some(BinOp::BitXor),
             _ => None,
         })
     }
 
+    /// `*`, `/`, `%`, and (as in Swift) `&`.
     fn mul_expr(&mut self) -> PResult<Expr> {
-        self.binary_left(Self::unary_expr, |t| match t {
+        self.binary_left(Self::shift_expr, |t| match t {
             Tok::Star => Some(BinOp::Mul),
             Tok::Slash => Some(BinOp::Div),
             Tok::Percent => Some(BinOp::Rem),
+            Tok::Amp => Some(BinOp::BitAnd),
             _ => None,
         })
+    }
+
+    /// `<<` and `>>`, which bind tighter than `*` (as in Swift).
+    fn shift_expr(&mut self) -> PResult<Expr> {
+        let mut lhs = self.unary_expr()?;
+        loop {
+            let op = if self.at(&Tok::Shl) {
+                BinOp::Shl
+            } else if self.at_joined(&Tok::Gt, &Tok::Gt) {
+                self.bump(); // the first `>`
+                BinOp::Shr
+            } else {
+                return Ok(lhs);
+            };
+            self.bump();
+            self.skip_newlines();
+            let rhs = self.unary_expr()?;
+            let span = lhs.span.to(rhs.span);
+            lhs = self.new_expr(ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)), span);
+        }
     }
 
     fn unary_expr(&mut self) -> PResult<Expr> {
@@ -1139,6 +1178,7 @@ impl<'a> Parser<'a> {
         let op = match self.peek() {
             Tok::Minus => UnaryOp::Neg,
             Tok::Bang => UnaryOp::Not,
+            Tok::Tilde => UnaryOp::BitNot,
             _ => return self.postfix_expr(),
         };
         let lo = self.bump().span;
@@ -1152,6 +1192,8 @@ impl<'a> Parser<'a> {
         let mut depth = 0usize;
         while i < self.toks.len() {
             match self.toks[i].tok {
+                // `.a,` then `.b -> …` on the next line: one arm's patterns.
+                Tok::Newline if depth == 0 && i > 0 && self.toks[i - 1].tok == Tok::Comma => {}
                 Tok::Newline | Tok::Eof if depth == 0 => return false,
                 Tok::Eof => return false,
                 Tok::Arrow if depth == 0 => return true,
@@ -1507,27 +1549,44 @@ impl<'a> Parser<'a> {
     }
 
     /// The condition of `if` or `while`: `x > 0`, or `let x = optional`.
-    fn condition(&mut self) -> PResult<Cond> {
-        self.with_trailing(false, |p| -> PResult<Cond> {
-            if p.eat(&Tok::Let) {
-                let name = p.ident("a name")?;
-                let ty = if p.eat(&Tok::Colon) { Some(p.type_expr()?) } else { None };
-                p.expect(Tok::Eq)?;
-                Ok(Cond::Let(name, ty, Box::new(p.expr()?)))
-            } else {
-                Ok(Cond::Expr(Box::new(p.expr()?)))
+    /// For `let (a, b) = optionalPair`, the optional is unwrapped into a
+    /// hidden name, and the statements that take it apart are returned, to
+    /// go first in the body.
+    fn condition(&mut self) -> PResult<(Cond, Vec<Stmt>)> {
+        self.with_trailing(false, |p| -> PResult<(Cond, Vec<Stmt>)> {
+            if !p.eat(&Tok::Let) {
+                return Ok((Cond::Expr(Box::new(p.expr()?)), Vec::new()));
             }
+            if p.at(&Tok::LParen) {
+                let (names, span) = p.tuple_names()?;
+                if p.at(&Tok::Colon) {
+                    let s = p.span();
+                    p.error(s, "the names of a tuple can't have types here")
+                        .help("take it apart in the body instead: `if let pair: (Int, String) = … { let (a, b) = pair }`");
+                    return Err(Reported);
+                }
+                p.expect(Tok::Eq)?;
+                let value = p.expr()?;
+                let tuple = p.hidden(span);
+                let lets = p.unpack(&tuple, names, false);
+                return Ok((Cond::Let(tuple, None, Box::new(value)), lets));
+            }
+            let name = p.ident("a name")?;
+            let ty = if p.eat(&Tok::Colon) { Some(p.type_expr()?) } else { None };
+            p.expect(Tok::Eq)?;
+            Ok((Cond::Let(name, ty, Box::new(p.expr()?)), Vec::new()))
         })
     }
 
     fn if_expr(&mut self) -> PResult<Expr> {
         let lo = self.bump().span; // if
-        let cond = self.condition()?;
+        let (cond, unpack) = self.condition()?;
         if !self.at(&Tok::LBrace) {
             self.condition_end_error("if");
             return Err(Reported);
         }
-        let then = self.block()?;
+        let mut then = self.block()?;
+        then.stmts.splice(0..0, unpack);
         // Allow `else` on the line after the closing brace.
         if *self.peek() == Tok::Newline && *self.peek_at(1) == Tok::Else {
             self.bump();
@@ -1566,8 +1625,7 @@ impl<'a> Parser<'a> {
                     arms.push(arm);
                     if !matches!(self.peek(), Tok::Newline | Tok::RBrace) {
                         // `.a -> x = 1`: an assignment is a statement, not a value.
-                        let assigns =
-                            matches!(self.peek(), Tok::Eq | Tok::PlusEq | Tok::MinusEq | Tok::StarEq | Tok::SlashEq);
+                        let assigns = self.assign_op().is_some();
                         let span = self.span();
                         let found = describe(self.peek());
                         let e = self.error(span, format!("expected end of line after the match arm, found {found}"));
@@ -1584,7 +1642,7 @@ impl<'a> Parser<'a> {
                     self.recover_line();
                     let span = lo.to(self.prev_span());
                     let body = self.new_expr(ExprKind::Error, span);
-                    arms.push(Arm { pattern: Pattern::Error(span), body, span });
+                    arms.push(Arm { patterns: vec![Pattern::Error(span)], body, span });
                 }
             }
         }
@@ -1593,6 +1651,39 @@ impl<'a> Parser<'a> {
     }
 
     fn arm(&mut self) -> PResult<Arm> {
+        let lo = self.span();
+        // `.north, .south -> …`: several patterns for one arm.
+        let mut patterns = vec![self.pattern()?];
+        while self.eat(&Tok::Comma) {
+            self.skip_newlines();
+            patterns.push(self.pattern()?);
+        }
+        if !self.at(&Tok::Arrow) {
+            let span = self.span();
+            self.error(span, "expected `->` after the match pattern").help("write each arm as `pattern -> value`");
+            return Err(Reported);
+        }
+        self.bump();
+        if let t @ (Tok::Break | Tok::Continue | Tok::Return) = self.peek().clone() {
+            let span = self.span();
+            let word = keyword_text(&t);
+            self.error(span, format!("`{word}` in a match arm goes in braces"))
+                .help(format!("write `-> {{ {word} }}`"));
+            return Err(Reported);
+        }
+        let body = if self.at(&Tok::LBrace) {
+            // `-> { … }` is a block, not a closure.
+            let block = self.block()?;
+            let span = block.span;
+            self.new_expr(ExprKind::Block(block), span)
+        } else {
+            self.expr()?
+        };
+        Ok(Arm { patterns, span: lo.to(body.span), body })
+    }
+
+    /// One pattern of a match arm: `.name`, `.name(a, b)`, `_` or a literal.
+    fn pattern(&mut self) -> PResult<Pattern> {
         let lo = self.span();
         let pattern = match self.peek().clone() {
             Tok::Dot => {
@@ -1627,28 +1718,7 @@ impl<'a> Parser<'a> {
             }
             _ => return Err(self.unexpected("a pattern like `.name`, `_` or a literal")),
         };
-        if !self.at(&Tok::Arrow) {
-            let span = self.span();
-            self.error(span, "expected `->` after the match pattern").help("write each arm as `pattern -> value`");
-            return Err(Reported);
-        }
-        self.bump();
-        if let t @ (Tok::Break | Tok::Continue | Tok::Return) = self.peek().clone() {
-            let span = self.span();
-            let word = keyword_text(&t);
-            self.error(span, format!("`{word}` in a match arm goes in braces"))
-                .help(format!("write `-> {{ {word} }}`"));
-            return Err(Reported);
-        }
-        let body = if self.at(&Tok::LBrace) {
-            // `-> { … }` is a block, not a closure.
-            let block = self.block()?;
-            let span = block.span;
-            self.new_expr(ExprKind::Block(block), span)
-        } else {
-            self.expr()?
-        };
-        Ok(Arm { pattern, span: lo.to(body.span), body })
+        Ok(pattern)
     }
 }
 

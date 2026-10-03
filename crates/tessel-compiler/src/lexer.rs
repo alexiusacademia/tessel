@@ -59,11 +59,23 @@ pub enum Tok {
     MinusEq,
     StarEq,
     SlashEq,
+    PercentEq,
+    AmpEq,
+    PipeEq,
+    CaretEq,
+    ShlEq,
     Plus,
     Minus,
     Star,
     Slash,
     Percent,
+    /// `&`, `|`, `^`, `~` and `<<`: bit operations on `Int`. (`>>` is two
+    /// `>` tokens next to each other, so `Stack<Stack<Int>>` still parses.)
+    Amp,
+    Pipe,
+    Caret,
+    Tilde,
+    Shl,
     EqEq,
     NotEq,
     Lt,
@@ -173,11 +185,21 @@ pub fn describe(tok: &Tok) -> String {
         Tok::MinusEq => "`-=`",
         Tok::StarEq => "`*=`",
         Tok::SlashEq => "`/=`",
+        Tok::PercentEq => "`%=`",
+        Tok::AmpEq => "`&=`",
+        Tok::PipeEq => "`|=`",
+        Tok::CaretEq => "`^=`",
+        Tok::ShlEq => "`<<=`",
         Tok::Plus => "`+`",
         Tok::Minus => "`-`",
         Tok::Star => "`*`",
         Tok::Slash => "`/`",
         Tok::Percent => "`%`",
+        Tok::Amp => "`&`",
+        Tok::Pipe => "`|`",
+        Tok::Caret => "`^`",
+        Tok::Tilde => "`~`",
+        Tok::Shl => "`<<`",
         Tok::EqEq => "`==`",
         Tok::NotEq => "`!=`",
         Tok::Lt => "`<`",
@@ -284,6 +306,10 @@ impl Lexer<'_> {
 
     fn number(&mut self) {
         let lo = self.pos;
+        if self.peek(0) == b'0' && matches!(self.peek(1), b'x' | b'b' | b'o' | b'X' | b'B' | b'O') {
+            self.radix_number();
+            return;
+        }
         let digits = |lx: &mut Self| {
             while lx.peek(0).is_ascii_digit() || lx.peek(0) == b'_' {
                 lx.pos += 1;
@@ -323,6 +349,59 @@ impl Lexer<'_> {
                     );
                     self.push(Tok::Int(0), lo);
                 }
+            }
+        }
+    }
+
+    /// `0xff`, `0b1010` or `0o17`: an `Int` in base 16, 2 or 8 (with `_`
+    /// between digits allowed, like `0xFF_FF`).
+    fn radix_number(&mut self) {
+        let lo = self.pos;
+        let letter = self.peek(1);
+        self.pos += 2;
+        // The digits, and anything else a name could continue with (to report it).
+        while self.peek(0).is_ascii_alphanumeric() || self.peek(0) == b'_' {
+            self.pos += 1;
+        }
+        let (radix, name) = match letter.to_ascii_lowercase() {
+            b'x' => (16, "hexadecimal"),
+            b'b' => (2, "binary"),
+            _ => (8, "octal"),
+        };
+        if letter.is_ascii_uppercase() {
+            let lower = letter.to_ascii_lowercase() as char;
+            let example = format!("like `0{lower}{}`", &self.src[lo + 2..self.pos]);
+            self.error(lo, lo + 2, format!("write the `0{lower}` of a {name} number in lowercase")).help(example);
+            self.push(Tok::Int(0), lo);
+            return;
+        }
+        let digits: String = self.src[lo + 2..self.pos].chars().filter(|&c| c != '_').collect();
+        if digits.is_empty() {
+            let example = match radix {
+                16 => "0xff",
+                2 => "0b1010",
+                _ => "0o17",
+            };
+            self.error(lo, self.pos, format!("this {name} number has no digits")).help(format!("write it like `{example}`"));
+            self.push(Tok::Int(0), lo);
+            return;
+        }
+        if let Some(bad) = digits.chars().find(|c| !c.is_digit(radix)) {
+            let allowed = match radix {
+                16 => "0–9 and a–f",
+                2 => "0 and 1",
+                _ => "0–7",
+            };
+            self.error(lo, self.pos, format!("`{bad}` isn't a {name} digit")).help(format!("{name} numbers use the digits {allowed}"));
+            self.push(Tok::Int(0), lo);
+            return;
+        }
+        match i64::from_str_radix(&digits, radix) {
+            Ok(n) => self.push(Tok::Int(n), lo),
+            Err(_) => {
+                self.error(lo, self.pos, "this number is too large for an `Int`")
+                    .help("the largest `Int` is 0x7fff_ffff_ffff_ffff (9_223_372_036_854_775_807)");
+                self.push(Tok::Int(0), lo);
             }
         }
     }
@@ -452,6 +531,8 @@ impl Lexer<'_> {
         let lo = self.pos;
         let (c0, c1) = (self.peek(0), self.peek(1));
         let (tok, len) = match (c0, c1) {
+            (b'<', b'<') if self.peek(2) == b'=' => (Tok::ShlEq, 3),
+            (b'<', b'<') => (Tok::Shl, 2),
             (b'-', b'>') => (Tok::Arrow, 2),
             (b'.', b'.') => (Tok::DotDot, 2),
             (b'?', b'.') => (Tok::QuestionDot, 2),
@@ -466,6 +547,10 @@ impl Lexer<'_> {
             (b'-', b'=') => (Tok::MinusEq, 2),
             (b'*', b'=') => (Tok::StarEq, 2),
             (b'/', b'=') => (Tok::SlashEq, 2),
+            (b'%', b'=') => (Tok::PercentEq, 2),
+            (b'&', b'=') => (Tok::AmpEq, 2),
+            (b'|', b'=') => (Tok::PipeEq, 2),
+            (b'^', b'=') => (Tok::CaretEq, 2),
             (b'(', _) => (Tok::LParen, 1),
             (b')', _) => (Tok::RParen, 1),
             (b'{', _) => (Tok::LBrace, 1),
@@ -485,18 +570,10 @@ impl Lexer<'_> {
             (b'<', _) => (Tok::Lt, 1),
             (b'>', _) => (Tok::Gt, 1),
             (b'!', _) => (Tok::Bang, 1),
-            (b'&', _) => {
-                self.pos += 1;
-                self.error(lo, self.pos, "unexpected `&`").help("use `&&` for \"and\"");
-                self.push(Tok::AndAnd, lo);
-                return;
-            }
-            (b'|', _) => {
-                self.pos += 1;
-                self.error(lo, self.pos, "unexpected `|`").help("use `||` for \"or\"");
-                self.push(Tok::OrOr, lo);
-                return;
-            }
+            (b'&', _) => (Tok::Amp, 1),
+            (b'|', _) => (Tok::Pipe, 1),
+            (b'^', _) => (Tok::Caret, 1),
+            (b'~', _) => (Tok::Tilde, 1),
             (b';', _) => {
                 self.pos += 1;
                 self.error(lo, self.pos, "Tessel doesn't use semicolons")
@@ -553,6 +630,27 @@ mod tests {
         assert_eq!(kinds("2e+2")[0], Tok::Float(200.0));
         // `e` not followed by digits is a name: `2.each` isn't a number.
         assert_eq!(kinds("3e")[0], Tok::Int(3));
+    }
+
+    #[test]
+    fn hex_binary_and_octal_numbers() {
+        assert_eq!(kinds("0xff")[0], Tok::Int(255));
+        assert_eq!(kinds("0xFF_FF")[0], Tok::Int(65535));
+        assert_eq!(kinds("0b1010")[0], Tok::Int(10));
+        assert_eq!(kinds("0o17")[0], Tok::Int(15));
+        assert_eq!(kinds("0x1e5")[0], Tok::Int(0x1e5));
+        assert_eq!(kinds("0")[0], Tok::Int(0));
+    }
+
+    #[test]
+    fn shifts_are_one_token_left_and_two_right() {
+        assert_eq!(kinds("a << b")[1], Tok::Shl);
+        assert_eq!(kinds("a <<= b")[1], Tok::ShlEq);
+        // `>>` is two `>`s, so `Stack<Stack<Int>>` closes twice.
+        assert_eq!(kinds("a >> b")[1..3], [Tok::Gt, Tok::Gt]);
+        assert_eq!(kinds("a & b | c ^ ~d")[1], Tok::Amp);
+        assert_eq!(kinds("a &= b")[1], Tok::AmpEq);
+        assert_eq!(kinds("a %= b")[1], Tok::PercentEq);
     }
 
     #[test]

@@ -1,0 +1,36 @@
+// Functions declared inside an app's functions and inside button actions,
+// and a `match` with several patterns in an arm, in a view.
+
+app LocalFns(width: 320, height: 200) {
+    state log: [String] = []
+    state total = 0
+
+    fn addAll(_ numbers: [Int]) {
+        fn add(_ n: Int) {
+            total += n
+            log.append("+{n}")
+        }
+        for n in numbers {
+            add(n)
+        }
+    }
+
+    VStack {
+        Text("Total: {total}")
+        Text(log.joined(separator: " "))
+        match total {
+            0, 1 -> Text("small")
+            6, 12 -> Text("a multiple of six")
+            _ -> Text("something else")
+        }
+        Button("Add") {
+            addAll([1, 2, 3])
+        }
+        Button("Double") {
+            fn double(_ n: Int) -> Int {
+                return n * 2
+            }
+            total = double(total)
+        }
+    }
+}

@@ -1,0 +1,8 @@
+fn shift(_ n: Int, by: Int) -> Int {
+    n << by
+}
+
+fn main() {
+    print(shift(1, by: 3))
+    print(shift(1, by: -1))
+}

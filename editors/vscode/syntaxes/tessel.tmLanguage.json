@@ -71,6 +71,8 @@
     "constant": {
       "patterns": [
         { "name": "constant.language.tessel", "match": "\\b(true|false|nil)\\b" },
+        { "name": "constant.numeric.integer.tessel", "match": "\\b0(x[0-9A-Fa-f_]+|b[01_]+|o[0-7_]+)\\b" },
+        { "name": "constant.numeric.float.tessel", "match": "\\b[0-9][0-9_]*(\\.[0-9][0-9_]*)?[eE][+-]?[0-9][0-9_]*\\b" },
         { "name": "constant.numeric.float.tessel", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b" },
         { "name": "constant.numeric.integer.tessel", "match": "\\b[0-9][0-9_]*\\b" }
       ]
@@ -90,7 +92,7 @@
     "operator": {
       "patterns": [
         { "name": "keyword.operator.arrow.tessel", "match": "->" },
-        { "name": "keyword.operator.tessel", "match": "\\?\\?|\\?\\.|\\.\\.|&&|\\|\\||==|!=|<=|>=|\\+=|-=|\\*=|/=|[+\\-*/%<>=!?]" }
+        { "name": "keyword.operator.tessel", "match": "\\?\\?|\\?\\.|\\.\\.|&&|\\|\\||==|!=|<<=|>>=|<<|>>|<=|>=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|[+\\-*/%<>=!?&|^~]" }
       ]
     }
   }

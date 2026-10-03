@@ -138,7 +138,11 @@ impl Copier<'_> {
                 }
                 self.expr(&mut d.value);
             }
-            Stmt::Fn(f) => self.func(f),
+            // A function declared inside: its name is a local name too.
+            Stmt::Fn(f) => {
+                self.name(&mut f.name);
+                self.func(f);
+            }
             Stmt::Assign { target, value, .. } => {
                 self.expr(target);
                 self.expr(value);
@@ -234,10 +238,12 @@ impl Copier<'_> {
             ExprKind::Match { subject, arms } => {
                 self.expr(subject);
                 for arm in arms {
-                    match &mut arm.pattern {
-                        Pattern::Literal(l) => self.expr(l),
-                        Pattern::Case { bindings, .. } => bindings.iter_mut().for_each(|b| self.name(b)),
-                        _ => {}
+                    for pattern in &mut arm.patterns {
+                        match pattern {
+                            Pattern::Literal(l) => self.expr(l),
+                            Pattern::Case { bindings, .. } => bindings.iter_mut().for_each(|b| self.name(b)),
+                            _ => {}
+                        }
                     }
                     self.expr(&mut arm.body);
                 }

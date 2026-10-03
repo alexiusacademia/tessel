@@ -1,0 +1,16 @@
+Root
+  View
+    VStack
+      Text "Total: 0"
+      Text ""
+      Text "small"
+      Button "Add"
+      Button "Double"
+Root
+  View
+    VStack
+      Text "Total: 12"
+      Text "+1 +2 +3"
+      Text "a multiple of six"
+      Button "Add"
+      Button "Double"

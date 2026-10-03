@@ -1,0 +1,80 @@
+// Several patterns in one arm, bit operations, number literals, tuples in
+// `if let`, functions inside functions, and building `Data`.
+
+enum Shape { circle(r: Float), square(side: Float), dot }
+
+fn patterns(s: Shape) -> Float {
+    match s {
+        .circle(r), .square(r) -> r // error: an arm with several patterns can't name values
+        .dot -> 0.0
+    }
+}
+
+fn missing(s: Shape) -> Int {
+    match s { // error: doesn't handle `.dot`
+        .circle(_), .square(_) -> 1
+    }
+}
+
+fn twice(s: Shape) -> Int {
+    match s {
+        .circle(_), .dot -> 1
+        .square(_), .dot -> 2 // error: `.dot` is already handled above
+    }
+}
+
+fn bits(a: Bool, b: Bool, x: Float) {
+    let c = a | b // error: for `Bool`s, use `||`
+    let d = a ^ b // error: write `a != b`
+    let e = ~a // error: to negate a `Bool`, use `!`
+    let f = x << 2 // error: can't use `<<` on `Float`
+    var g = 1.5
+    g &= 2.0 // error: `&=` can't be used on `Float`
+    var h = "text"
+    h %= 2 // error: `%=` can't be used on `String`
+}
+
+fn literals() {
+    let a = 0xZZ // error: `Z` isn't a hexadecimal digit
+    let b = 0x // error: this hexadecimal number has no digits
+    let c = 0b102 // error: `2` isn't a binary digit
+    let d = 0XFF // error: write the `0x` of a hexadecimal number in lowercase
+    let e = 0x8000_0000_0000_0000 // error: too large for an `Int`
+}
+
+fn pair() -> (Int, String)? {
+    return nil
+}
+
+fn tuples() {
+    if let (a, b) = (1, "one") { // error: needs an optional value
+    }
+    if let (a, b): (Int, String) = pair() { // error: the names of a tuple can't have types here
+    }
+    let n: Int? = 1
+    while let (a, b) = n { // error: only a tuple can be taken apart into names, but this is `Int`
+    }
+    let (c, d) = 5 // error: only a tuple can be taken apart
+}
+
+fn inner() {
+    print(later(1)) // error: cannot find `later`
+    fn later(_ n: Int) -> Int {
+        return n
+    }
+    fn generic<T>(_ x: T) -> T { // error: can't be generic
+        return x
+    }
+    fn add(a: Int, b: Int) -> Int {
+        return a + b
+    }
+    print(add(1, b: 2)) // error: needs its label `a:`
+}
+
+fn bytes() {
+    var d = Data()
+    let e = d + 1 // error: can't use `+` on `Data` and `Int`
+    d.append(byte: "A") // error: expected `Int`, found `String`
+    let f = Data()
+    f += d // error: can't change `f`, which is a constant
+}

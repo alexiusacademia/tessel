@@ -10,7 +10,7 @@ fn strings() {
 }
 
 fn operators(a: Bool, b: Bool) {
-    let c = a & b // error: unexpected `&`
+    let c = a & b // error: for `Bool`s, use `&&`
     let d = 1 < 2 < 3 // error: can't be chained
 }
 

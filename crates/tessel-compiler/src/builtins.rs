@@ -596,6 +596,8 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             _ => return None,
         },
         Ty::Data => match name {
+            // (Also `append(byte: Int)`, which the checker handles.)
+            "append" => mutating(vec![P::unlabeled("data", Ty::Data)], Ty::Void),
             "slice" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::Data),
             "compressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::Data),
             "decompressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::opt(Ty::Data)),
@@ -711,7 +713,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::Float => &["formatted", "clamped", "isNaN", "isFinite", "bytes"],
         Ty::Data => &[
             "count", "isEmpty", "bytes", "text", "base64", "latin1", "slice", "int8", "int16", "uint16", "int32", "uint32",
-            "int64", "float32", "float64", "compressed", "decompressed",
+            "int64", "float32", "float64", "compressed", "decompressed", "append",
         ],
         t if *t == GRAPHICS => &[
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",

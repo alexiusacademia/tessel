@@ -218,10 +218,17 @@ pub struct LocalDecl {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AssignOp {
     Set,
-    Add,
-    Sub,
-    Mul,
-    Div,
+    /// `x += v`, `x %= v`, `x <<= v`, …: `x = x op v`.
+    Op(BinOp),
+}
+
+impl AssignOp {
+    pub fn symbol(self) -> String {
+        match self {
+            AssignOp::Set => "=".into(),
+            AssignOp::Op(op) => format!("{}=", op.symbol()),
+        }
+    }
 }
 
 pub type ExprId = u32;
@@ -436,7 +443,8 @@ pub enum Else {
 
 #[derive(Debug, Clone)]
 pub struct Arm {
-    pub pattern: Pattern,
+    /// One or more patterns (`.a, .b -> …`); the arm runs if any matches.
+    pub patterns: Vec<Pattern>,
     pub body: Expr,
     pub span: Span,
 }
@@ -464,6 +472,8 @@ impl Pattern {
 pub enum UnaryOp {
     Neg,
     Not,
+    /// `~x`: every bit of an `Int` flipped.
+    BitNot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -483,9 +493,20 @@ pub enum BinOp {
     Mul,
     Div,
     Rem,
+    /// Bit operations on `Int`: `&`, `|`, `^`, `<<` and `>>`.
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 impl BinOp {
+    /// `&`, `|`, `^`, `<<` or `>>`?
+    pub fn is_bitwise(self) -> bool {
+        matches!(self, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr)
+    }
+
     pub fn symbol(self) -> &'static str {
         match self {
             BinOp::Or => "||",
@@ -503,6 +524,11 @@ impl BinOp {
             BinOp::Mul => "*",
             BinOp::Div => "/",
             BinOp::Rem => "%",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
         }
     }
 }
