@@ -133,7 +133,9 @@ fn repl_sessions() {
         );
         for (kind, got) in [("out", &out.stdout), ("err", &out.stderr)] {
             let expected = std::fs::read_to_string(dir.join(format!("{name}.{kind}"))).unwrap_or_default();
+            // (Paths in messages have the system's separators.)
             let got = String::from_utf8_lossy(got);
+            let got = if cfg!(windows) { got.replace('\\', "/") } else { got.to_string() };
             assert!(got == expected, "{name}: std{kind} differs\n--- expected\n{expected}--- got\n{got}");
         }
     }
