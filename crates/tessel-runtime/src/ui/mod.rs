@@ -461,9 +461,17 @@ pub fn build(root: &Callback) -> Node {
     builder.stack.pop().unwrap()
 }
 
+/// Releases the pictures, drawings and fonts kept for reuse. At exit this
+/// must happen before the process ends: Windows may have unloaded the
+/// libraries they belong to by the time thread-local values are dropped.
+pub fn release_caches() {
+    canvas::forget_all();
+    image::forget_all();
+}
+
 /// Releases all view state (at exit, so leak checkers see a clean heap).
 pub fn release_all_state() {
-    canvas::forget_all();
+    release_caches();
     let records: Vec<*mut Header> = STATES.with(|s| s.borrow_mut().drain().map(|(_, v)| v.record).collect());
     for r in records {
         unsafe { tsl_release(r) };

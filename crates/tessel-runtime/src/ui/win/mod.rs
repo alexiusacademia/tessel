@@ -44,19 +44,21 @@ pub(crate) struct Factories {
 }
 
 thread_local! {
-    static FACTORIES: Rc<Factories> = unsafe {
+    // Never released: at exit, Windows may unload their libraries before
+    // thread-local values are dropped, and releasing them then would crash.
+    static FACTORIES: &'static Factories = unsafe {
         // (WIC is a COM object; COM may already be on, in some mode.)
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        Rc::new(Factories {
+        Box::leak(Box::new(Factories {
             d2d: D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).expect("Direct2D"),
             dwrite: DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("DirectWrite"),
             wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).expect("WIC"),
-        })
+        }))
     };
 }
 
-pub(crate) fn factories() -> Rc<Factories> {
-    FACTORIES.with(|f| f.clone())
+pub(crate) fn factories() -> &'static Factories {
+    FACTORIES.with(|f| *f)
 }
 
 fn matrix(a: Affine) -> Matrix3x2 {
@@ -384,7 +386,19 @@ pub fn save_rgba(path: &str, width: u32, height: u32, rgba: Vec<u8>) -> bool {
             } else {
                 (GUID_WICPixelFormat32bppRGBA, rgba.clone(), width * 4)
             };
+            // The encoder may take another format than the one asked for
+            // (BGRA rather than RGBA, say): the pixels go in the one it took.
+            let asked = pixel_format;
             frame.SetPixelFormat(&mut pixel_format)?;
+            let data = if pixel_format == asked {
+                data
+            } else if pixel_format == GUID_WICPixelFormat32bppBGRA && !jpeg {
+                rgba.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect()
+            } else if pixel_format == GUID_WICPixelFormat24bppRGB && jpeg {
+                rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+            } else {
+                return Err(windows::core::Error::empty());
+            };
             frame.WritePixels(height, stride, &data)?;
             frame.Commit()?;
             encoder.Commit()?;

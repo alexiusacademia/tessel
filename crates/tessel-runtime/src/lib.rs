@@ -1516,6 +1516,8 @@ pub extern "C" fn tsl_start(program: extern "C" fn()) -> i32 {
     // Apps never get here (their event loop ends the process); a program
     // with only `fn main` still runs its timers and background callbacks.
     ui::run_until_idle();
+    // (While the system's libraries are still there to release them.)
+    ui::release_caches();
     let _ = std::io::stdout().flush();
     0
 }

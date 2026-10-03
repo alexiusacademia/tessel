@@ -54,6 +54,11 @@ pub fn enable() {
     let _ = DECODE.set(super::backend::decode_picture);
 }
 
+/// Drops the pictures kept (at exit).
+pub fn forget_all() {
+    CACHE.with(|c| *c.borrow_mut() = Cache::default());
+}
+
 fn size(picture: &Option<Rc<Picture>>) -> usize {
     picture.as_ref().map_or(0, |p| p.width as usize * p.height as usize * 4)
 }
