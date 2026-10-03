@@ -569,11 +569,13 @@ fn linker(obj: &Path, runtime: &Path, out: &Path, gui: bool, resources: Option<&
     }
 }
 
-/// Windows libraries the runtime needs (windowing, GPU, fonts, networking).
+/// Windows libraries the runtime needs (windowing, drawing, fonts, networking).
 const WINDOWS_LIBS: &[&str] = &[
     "kernel32", "advapi32", "bcrypt", "ntdll", "userenv", "ws2_32", "synchronization", "user32", "gdi32", "ole32",
     "oleaut32", "shell32", "uuid", "dwmapi", "uxtheme", "imm32", "comctl32", "winmm", "dxgi", "d3d12", "d3dcompiler",
     "opengl32", "propsys", "runtimeobject", "secur32", "crypt32", "ncrypt", "dbghelp", "pathcch",
+    // The Windows renderer: Direct2D, DirectWrite, WIC.
+    "d2d1", "dwrite", "windowscodecs",
 ];
 
 /// System libraries the runtime needs (windowing, GPU, fonts, networking).
@@ -584,7 +586,7 @@ fn platform_link_args() -> Vec<String> {
     if cfg!(target_os = "macos") {
         let frameworks = [
             "AppKit", "ApplicationServices", "Carbon", "CoreFoundation", "CoreGraphics", "CoreText", "CoreVideo",
-            "Foundation", "Metal", "QuartzCore",
+            "Foundation", "ImageIO", "Metal", "QuartzCore",
         ];
         let mut args: Vec<String> = frameworks.iter().flat_map(|f| ["-framework".to_string(), f.to_string()]).collect();
         args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-Wl,-x", "-Wl,-S", "-mmacosx-version-min=11.0"].map(String::from));

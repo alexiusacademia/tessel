@@ -16,7 +16,7 @@ cp "$(ls "$MINGW"/lib/clang/*/lib/windows/libclang_rt.builtins-x86_64.a | head -
 # Must match WINDOWS_LIBS in crates/tessel-cli/src/main.rs, plus the C runtime.
 for name in kernel32 advapi32 bcrypt ntdll userenv ws2_32 synchronization user32 gdi32 ole32 \
     oleaut32 shell32 uuid dwmapi uxtheme imm32 comctl32 winmm dxgi d3d12 d3dcompiler \
-    opengl32 propsys runtimeobject secur32 crypt32 ncrypt dbghelp pathcch \
+    opengl32 propsys runtimeobject secur32 crypt32 ncrypt dbghelp pathcch d2d1 dwrite windowscodecs \
     unwind mingw32 moldname mingwex msvcrt; do
   cp "$LIB/lib$name.a" "$OUT/"
 done

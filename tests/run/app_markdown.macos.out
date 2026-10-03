@@ -1,0 +1,15 @@
+Root
+  View
+    VStack
+      Text "Followed: nothing"
+      Scroll
+        Markdown "Notes" links ["link"]
+      Markdown "Find out more on the web." links ["the web"]
+(open https://example.com/more)
+Root [0,0 420x360]
+  View [0,0 420x360]
+    VStack [0,0 420x360]
+      Text "Followed: /there/" [16,16 107x16]
+      Scroll [16,40 388x278]
+        Markdown "Notes" links ["link"] [16,40 388x242]
+      Markdown "Find out more on the web." links ["the web"] [16,327 388x17]

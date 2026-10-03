@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use super::render::{Paint, TextEngine, CODE_PAD_Y, GUTTER_PAD};
+use super::render::{TextEngine, CODE_PAD_Y, GUTTER_PAD};
 use super::theme::{self, theme};
 use super::{Kind, Node, Rgba};
 
@@ -76,9 +76,9 @@ pub struct Box {
     /// Where the content is drawn: `rect` less padding, placed by the frame's alignment.
     pub content: Rect,
     /// Laid-out text (labels, text, field contents).
-    pub text: Option<parley::Layout<Paint>>,
+    pub text: Option<std::rc::Rc<super::text::TextLayout>>,
     /// A text field's placeholder, and whether the field is empty.
-    pub placeholder: Option<parley::Layout<Paint>>,
+    pub placeholder: Option<std::rc::Rc<super::text::TextLayout>>,
     pub empty: bool,
     /// For code editors: the width of the line-number gutter.
     pub gutter: f64,
@@ -95,7 +95,7 @@ pub struct Box {
 }
 
 pub struct Tab {
-    pub title: parley::Layout<Paint>,
+    pub title: std::rc::Rc<super::text::TextLayout>,
     pub rect: Rect,
     pub close: Option<Rect>,
 }
@@ -169,24 +169,13 @@ impl Layouter<'_> {
         text
     }
 
-    fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> parley::Layout<Paint> {
-        self.text.layout(s, style.size, style.weight, style.color, max_w)
+    fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
+        std::rc::Rc::new(self.text.layout(s, style.size, style.weight, style.color, max_w))
     }
 
     /// A `Text`'s layout: like `text_layout`, with its lines aligned.
-    fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> parley::Layout<Paint> {
-        let mut t = self.text_layout(s, style, max_w);
-        let align = match style.text_align {
-            1 => parley::Alignment::Center,
-            2 => parley::Alignment::End,
-            _ => return t,
-        };
-        // Parley aligns within the width lines were broken at; use the widest
-        // line's, so the lines line up inside the text's own box.
-        let w = t.width();
-        t.break_all_lines(Some(w + 0.5));
-        t.align(align, parley::AlignmentOptions::default());
-        t
+    fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
+        std::rc::Rc::new(self.text.aligned(s, style.size, style.weight, style.color, max_w, style.text_align))
     }
 
     fn measure(&mut self, n: &mut Node, avail: Size, parent: &Style) -> Size {
@@ -225,14 +214,14 @@ impl Layouter<'_> {
             Kind::Text(s) => {
                 let s = s.clone();
                 let t = self.text_block(&s, style, finite(avail.w));
-                let size = Size { w: t.width() as f64, h: t.height() as f64 };
+                let size = Size { w: t.width(), h: t.height() };
                 n.layout.text = Some(t);
                 size
             }
             Kind::Button { label, .. } => {
                 let label = label.clone();
                 let t = self.text_layout(&label, style, None);
-                let size = Size { w: t.width() as f64 + 2.0 * BUTTON_PAD.0, h: t.height() as f64 + 2.0 * BUTTON_PAD.1 };
+                let size = Size { w: t.width() + 2.0 * BUTTON_PAD.0, h: t.height() + 2.0 * BUTTON_PAD.1 };
                 n.layout.text = Some(t);
                 size
             }
@@ -241,8 +230,8 @@ impl Layouter<'_> {
                 let placeholder = placeholder.clone();
                 let ph = self.text_layout(&placeholder, style, None);
                 let t = self.text_layout(&value, style, None);
-                let line_h = (ph.height() as f64).max(t.height() as f64);
-                let w = (t.width().max(ph.width()) as f64 + 2.0 * FIELD_PAD.0).max(120.0);
+                let line_h = (ph.height()).max(t.height());
+                let w = (t.width().max(ph.width()) + 2.0 * FIELD_PAD.0).max(120.0);
                 n.layout.empty = value.is_empty();
                 n.layout.text = Some(t);
                 n.layout.placeholder = Some(ph);
@@ -254,21 +243,21 @@ impl Layouter<'_> {
                 }
                 let label = label.clone();
                 let t = self.text_layout(&label, style, None);
-                let size = Size { w: t.width() as f64 + 8.0 + SWITCH.w, h: (t.height() as f64).max(SWITCH.h) };
+                let size = Size { w: t.width() + 8.0 + SWITCH.w, h: (t.height()).max(SWITCH.h) };
                 n.layout.text = Some(t);
                 size
             }
             Kind::CodeEditor { text, .. } => {
                 let value = self.shown_text(n.key, read_string(text));
                 let t = self.text.code_layout(&value, 13.0);
-                let count = t.lines().count().max(1);
+                let count = t.lines.len().max(1);
                 let digits = count.to_string().len().max(2);
                 let numbers: Vec<String> = (1..=count).map(|i| format!("{i:>digits$}")).collect();
                 let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, theme().line_number);
-                n.layout.gutter = numbers.width() as f64 + GUTTER_PAD.0 + GUTTER_PAD.1;
-                n.layout.content_h = t.height() as f64 + 2.0 * CODE_PAD_Y;
-                n.layout.text = Some(t);
-                n.layout.placeholder = Some(numbers);
+                n.layout.gutter = numbers.width() + GUTTER_PAD.0 + GUTTER_PAD.1;
+                n.layout.content_h = t.height() + 2.0 * CODE_PAD_Y;
+                n.layout.text = Some(std::rc::Rc::new(t));
+                n.layout.placeholder = Some(std::rc::Rc::new(numbers));
                 let w = if avail.w.is_finite() { avail.w } else { 480.0 };
                 let h = if avail.h.is_finite() { avail.h } else { 320.0 };
                 Size { w: w.max(160.0), h: h.max(80.0) }
@@ -502,7 +491,7 @@ impl Layouter<'_> {
             Kind::TabView { .. } => {
                 let mut x = content.x;
                 for tab in &mut n.layout.tabs {
-                    let w = (tab.title.width() as f64 + 28.0 + if tab.close.is_some() { 18.0 } else { 0.0 }).max(90.0);
+                    let w = (tab.title.width() + 28.0 + if tab.close.is_some() { 18.0 } else { 0.0 }).max(90.0);
                     tab.rect = Rect { x, y: content.y, w, h: TAB_BAR };
                     if let Some(close) = &mut tab.close {
                         *close = Rect { x: x + w - 24.0, y: content.y + (TAB_BAR - 16.0) / 2.0, w: 16.0, h: 16.0 };
@@ -559,7 +548,7 @@ impl Layouter<'_> {
                     let style = c.layout.style;
                     let s = s.clone();
                     let t = self.text_block(&s, &style, Some((r.w - c.mods.padding.horizontal()).max(0.0)));
-                    c.layout.natural = Size { w: t.width() as f64, h: t.height() as f64 };
+                    c.layout.natural = Size { w: t.width(), h: t.height() };
                     c.layout.text = Some(t);
                 }
             }

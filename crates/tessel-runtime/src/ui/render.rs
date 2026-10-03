@@ -1,155 +1,26 @@
-//! Drawing: turns a laid-out tree into a vello scene, and renders scenes
-//! with the GPU (to a window, or off-screen to a PNG for tests).
+//! Drawing: turns a laid-out tree into a drawing (`DrawList`), which the
+//! renderer (`ui::backend`) shows in the window or saves as a PNG.
 
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
+use std::rc::Rc;
 
-use parley::{FontContext, GenericFamily, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty};
-use vello::kurbo::{Affine, Circle, RoundedRect, Stroke};
-use vello::peniko::{Color, Fill, Mix};
-use vello::util::RenderContext;
-use vello::{wgpu, AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
+use kurbo::{Affine, Circle, RoundedRect, Stroke};
 
+use super::draw::{DrawList, FillRule};
 use super::layout::Rect;
+use super::text::TextLayout;
 use super::theme::{self, theme};
 use super::{Kind, Node, Rgba};
 
-/// Text color carried through parley layouts.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Paint(pub [u8; 4]);
+pub use super::text::TextEngine;
 
 // A code editor's spacing, in points.
-/// The height of a line of code (its text is 13 points): room to read.
-const CODE_LINE: f32 = 20.0;
 /// Left and right of the line numbers.
 pub const GUTTER_PAD: (f64, f64) = (12.0, 10.0);
 /// Between the line numbers and the code, and after the longest line.
 pub const CODE_PAD_X: f64 = 12.0;
 /// Above the first line and below the last.
 pub const CODE_PAD_Y: f64 = 10.0;
-
-pub struct TextEngine {
-    fonts: FontContext,
-    layouts: LayoutContext<Paint>,
-}
-
-impl TextEngine {
-    pub fn new() -> TextEngine {
-        TextEngine { fonts: FontContext::new(), layouts: LayoutContext::new() }
-    }
-
-    /// Code: monospaced, not wrapped, with syntax colors.
-    pub fn code_layout(&mut self, text: &str, size: f64) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::Monospace));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::LineHeight(LineHeight::Absolute(CODE_LINE)));
-        b.push_default(StyleProperty::Brush(Paint(theme().colors[theme::PRIMARY].0)));
-        for (range, color) in super::highlight::highlight(text) {
-            b.push(StyleProperty::Brush(Paint(color.0)), range);
-        }
-        let mut layout = b.build(text);
-        layout.break_all_lines(None);
-        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
-        layout
-    }
-
-    /// Monospaced text, left-aligned, in one color.
-    pub fn mono_line(&mut self, text: &str, size: f64, weight: f32, color: Rgba) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::Monospace));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
-        b.push_default(StyleProperty::Brush(Paint(color.0)));
-        let mut layout = b.build(text);
-        layout.break_all_lines(None);
-        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
-        layout
-    }
-
-    /// Monospaced gray text (line numbers), on the lines of the code.
-    pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::Monospace));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::LineHeight(LineHeight::Absolute(CODE_LINE)));
-        b.push_default(StyleProperty::Brush(Paint(color.0)));
-        let mut layout = b.build(text);
-        layout.break_all_lines(None);
-        layout.align(parley::Alignment::End, parley::AlignmentOptions::default());
-        layout
-    }
-
-    /// Text with stretches in other styles (bold, italic, code, links), for
-    /// `Markdown`: wrapped at `max_w`, with room between its lines.
-    pub fn rich(
-        &mut self,
-        text: &str,
-        size: f64,
-        weight: f32,
-        color: Rgba,
-        spans: &[(std::ops::Range<usize>, super::markdown::Inline)],
-        max_w: Option<f64>,
-    ) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::SystemUi));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
-        b.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(1.45)));
-        b.push_default(StyleProperty::Brush(Paint(color.0)));
-        for (range, style) in spans {
-            if style.bold {
-                b.push(StyleProperty::FontWeight(parley::FontWeight::new(700.0)), range.clone());
-            }
-            if style.italic {
-                b.push(StyleProperty::FontStyle(parley::FontStyle::Italic), range.clone());
-            }
-            if style.code {
-                b.push(StyleProperty::from(GenericFamily::Monospace), range.clone());
-                b.push(StyleProperty::FontSize(size as f32 * 0.92), range.clone());
-                b.push(StyleProperty::Brush(Paint(theme().code.type_name.0)), range.clone());
-            }
-            if style.link.is_some() {
-                b.push(StyleProperty::Brush(Paint(theme().accent.0)), range.clone());
-            }
-        }
-        let mut layout = b.build(text);
-        layout.break_all_lines(max_w.map(|w| w as f32 + 0.5));
-        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
-        layout
-    }
-
-    /// A block of code in a `Markdown` view: monospaced, wrapped at `width`,
-    /// with syntax colors if it's Tessel.
-    pub fn code_block(&mut self, text: &str, size: f64, tessel: bool, width: f64) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::Monospace));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(1.45)));
-        b.push_default(StyleProperty::Brush(Paint(theme().colors[theme::PRIMARY].0)));
-        if tessel {
-            for (range, color) in super::highlight::highlight(text) {
-                b.push(StyleProperty::Brush(Paint(color.0)), range);
-            }
-        }
-        let mut layout = b.build(text);
-        layout.break_all_lines(Some(width as f32 + 0.5));
-        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
-        layout
-    }
-
-    pub fn layout(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>) -> parley::Layout<Paint> {
-        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::SystemUi));
-        b.push_default(StyleProperty::FontSize(size as f32));
-        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
-        b.push_default(StyleProperty::Brush(Paint(color.0)));
-        let mut layout = b.build(text);
-        layout.break_all_lines(max_w.map(|w| w as f32 + 0.5));
-        layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
-        layout
-    }
-}
 
 /// What the user is doing right now, which changes how views are drawn.
 #[derive(Default)]
@@ -193,7 +64,7 @@ pub struct Interaction {
 pub struct Tooltip {
     pub rect: Rect,
     pub text: String,
-    pub layout: parley::Layout<Paint>,
+    pub layout: Rc<TextLayout>,
 }
 
 /// Text being composed with an input method (for Chinese, Japanese, accents
@@ -281,7 +152,7 @@ pub fn scroll_bars(n: &Node, ui: &Interaction) -> (Option<Bar>, Option<Bar>) {
         Kind::CodeEditor { .. } => {
             let code = Rect { x: content.x + n.layout.gutter, w: (content.w - n.layout.gutter).max(0.0), ..content };
             let across = ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
-            let width = n.layout.text.as_ref().map_or(0.0, |t| t.width() as f64) + 2.0 * CODE_PAD_X;
+            let width = n.layout.text.as_ref().map_or(0.0, |t| t.width()) + 2.0 * CODE_PAD_X;
             let bottom = Bar::along(code, false, width, across, 0.0);
             // (The two don't meet in the corner.)
             let shorter = if bottom.is_some() { Bar::THICKNESS + Bar::MARGIN } else { 0.0 };
@@ -304,10 +175,10 @@ pub struct Popup {
 pub struct PopupRow {
     /// Index into the matching suggestions.
     pub index: usize,
-    pub badge: parley::Layout<Paint>,
+    pub badge: Rc<TextLayout>,
     pub badge_color: Rgba,
-    pub label: parley::Layout<Paint>,
-    pub detail: parley::Layout<Paint>,
+    pub label: Rc<TextLayout>,
+    pub detail: Rc<TextLayout>,
 }
 
 impl Popup {
@@ -321,16 +192,12 @@ impl Popup {
     }
 }
 
-fn color(c: Rgba) -> Color {
-    Color::from_rgba8(c.0[0], c.0[1], c.0[2], c.0[3])
-}
-
 fn rounded(r: Rect, radius: f64) -> RoundedRect {
     RoundedRect::new(r.x, r.y, r.x + r.w, r.y + r.h, radius)
 }
 
 pub struct Painter<'a> {
-    pub scene: &'a mut Scene,
+    pub scene: &'a mut DrawList,
     pub ui: &'a Interaction,
     /// Points to pixels.
     pub scale: f64,
@@ -357,7 +224,7 @@ impl Painter<'_> {
 
     /// Underlines the text an input method is composing in view `n`, whose
     /// text is drawn at (x, y).
-    fn underline_composing(&mut self, n: &Node, layout: &parley::Layout<Paint>, x: f64, y: f64) {
+    fn underline_composing(&mut self, n: &Node, layout: &TextLayout, x: f64, y: f64) {
         let Some((range, c)) = self.ui.composing_in(n.key) else { return };
         let mut span = super::edit::Editing::new(n.key, "");
         (span.anchor, span.focus) = (range.start, range.start + c.text.len());
@@ -368,52 +235,35 @@ impl Painter<'_> {
     }
 
     /// Draws `svg` centered in `r`, scaled to fit.
-    fn draw_svg(&mut self, svg: &super::svg::Svg, r: Rect) {
+    fn draw_svg(&mut self, svg: Rc<super::svg::Svg>, r: Rect) {
         let s = (r.w / svg.width.max(1.0)).min(r.h / svg.height.max(1.0));
         let x = r.x + (r.w - svg.width * s) / 2.0;
         let y = r.y + (r.h - svg.height * s) / 2.0;
         let t = self.t() * Affine::translate((x, y)) * Affine::scale(s);
-        self.scene.append(&svg.scene, Some(t));
+        self.scene.svg(svg, t);
     }
 
     /// Draws the built-in icon `name` in `r`.
     fn svg(&mut self, name: &str, r: Rect, c: Rgba) {
         if let Some(svg) = super::svg::icon(name, c) {
-            self.draw_svg(&svg, r);
+            self.draw_svg(svg, r);
         }
     }
 
     fn fill(&mut self, r: Rect, radius: f64, c: Rgba) {
         let t = self.t();
-        self.scene.fill(Fill::NonZero, t, color(c), None, &rounded(r, radius));
+        self.scene.fill(FillRule::NonZero, t, c, &rounded(r, radius));
     }
 
     fn stroke(&mut self, r: Rect, radius: f64, width: f64, c: Rgba) {
         let t = self.t();
         let inner = r.inset(width / 2.0);
-        self.scene.stroke(&Stroke::new(width), t, color(c), None, &rounded(inner, radius));
+        self.scene.stroke(&Stroke::new(width), t, c, &rounded(inner, radius));
     }
 
-    fn text(&mut self, layout: &parley::Layout<Paint>, x: f64, y: f64, tint: Option<Rgba>) {
+    fn text(&mut self, layout: &Rc<TextLayout>, x: f64, y: f64, tint: Option<Rgba>) {
         let t = self.t() * Affine::translate((x, y));
-        for line in layout.lines() {
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(run) = item else { continue };
-                let brush = tint.map(|c| c.0).unwrap_or(run.style().brush.0);
-                let r = run.run();
-                self.scene
-                    .draw_glyphs(r.font())
-                    .brush(Color::from_rgba8(brush[0], brush[1], brush[2], brush[3]))
-                    .hint(false)
-                    .transform(t)
-                    .font_size(r.font_size())
-                    .normalized_coords(r.normalized_coords())
-                    .draw(
-                        Fill::NonZero,
-                        run.positioned_glyphs().map(|g| vello::Glyph { id: g.id, x: g.x, y: g.y }),
-                    );
-            }
-        }
+        self.scene.text(layout.clone(), t, tint);
     }
 
     /// Draws the completion list, if one shows (after the tree, so it's on top).
@@ -424,7 +274,7 @@ impl Painter<'_> {
         self.fill(shadow.inset(-2.0), 8.0, Rgba([0, 0, 0, 22]));
         self.fill(r, 6.0, theme().popup);
         let t = self.t();
-        self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(r, 6.0));
+        self.scene.push(FillRule::NonZero, 1.0, t, &rounded(r, 6.0));
         for (i, row) in p.rows.iter().enumerate() {
             let y = r.y + 4.0 + i as f64 * p.row_h;
             if p.selected == Some(i) {
@@ -432,15 +282,15 @@ impl Painter<'_> {
             }
             let badge = Rect { x: r.x + 8.0, y: y + (p.row_h - 16.0) / 2.0, w: 16.0, h: 16.0 };
             self.fill(badge, 4.0, row.badge_color);
-            let (bw, bh) = (row.badge.width() as f64, row.badge.height() as f64);
+            let (bw, bh) = (row.badge.width(), row.badge.height());
             self.text(&row.badge, badge.x + (16.0 - bw) / 2.0, badge.y + (16.0 - bh) / 2.0, None);
-            let ty = y + (p.row_h - row.label.height() as f64) / 2.0;
+            let ty = y + (p.row_h - row.label.height()) / 2.0;
             self.text(&row.label, r.x + 32.0, ty, None);
-            let dx = (r.x + r.w - 10.0 - row.detail.width() as f64).max(r.x + 44.0 + row.label.width() as f64);
-            let dy = y + (p.row_h - row.detail.height() as f64) / 2.0;
+            let dx = (r.x + r.w - 10.0 - row.detail.width()).max(r.x + 44.0 + row.label.width());
+            let dy = y + (p.row_h - row.detail.height()) / 2.0;
             self.text(&row.detail, dx, dy, None);
         }
-        self.scene.pop_layer();
+        self.scene.pop();
         self.stroke(r, 6.0, 1.0, theme().field_border);
     }
 
@@ -470,7 +320,7 @@ impl Painter<'_> {
         let layered = alpha < 1.0;
         if layered {
             let t = self.t();
-            self.scene.push_layer(Fill::NonZero, Mix::Normal, alpha as f32, t, &rounded(r, 0.0));
+            self.scene.push(FillRule::NonZero, alpha as f32, t, &rounded(r, 0.0));
         }
         if let Some((c, radius)) = shown.map_or(n.mods.background, |s| s.background) {
             self.fill(r, radius, c);
@@ -480,7 +330,7 @@ impl Painter<'_> {
         if n.mods.clipped {
             let radius = n.mods.background.map(|b| b.1).or(n.mods.border.map(|b| b.2)).unwrap_or(0.0);
             let t = self.t();
-            self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(r, radius));
+            self.scene.push(FillRule::NonZero, 1.0, t, &rounded(r, radius));
         }
         if let (Some((c, radius)), true) = (n.mods.hover_background, self.ui.hover_background == Some(n.key)) {
             self.fill(r, radius, c);
@@ -502,8 +352,8 @@ impl Painter<'_> {
                     self.fill(content, 7.0, bg);
                 }
                 if let Some(t) = &n.layout.text {
-                    let x = content.x + (content.w - t.width() as f64) / 2.0;
-                    let y = content.y + (content.h - t.height() as f64) / 2.0;
+                    let x = content.x + (content.w - t.width()) / 2.0;
+                    let y = content.y + (content.h - t.height()) / 2.0;
                     let tint = if n.mods.color.is_none() { Some(theme().accent) } else { None };
                     self.text(t, x, y, tint);
                 }
@@ -519,9 +369,9 @@ impl Painter<'_> {
                 }
                 if let (Some(t), Some(ph)) = (&n.layout.text, &n.layout.placeholder) {
                     let (x0, y0) = field_origin(n);
-                    let line_h = (ph.height() as f64).max(t.height() as f64);
+                    let line_h = ph.height().max(t.height());
                     let t_scene = self.t();
-                    self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
+                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
                     let scroll = editing.map_or(0.0, |e| e.scroll);
                     if let Some(e) = editing {
                         let (caret, rects) = super::edit::geometry(t, e);
@@ -543,7 +393,7 @@ impl Painter<'_> {
                         self.text(t, x0 - scroll, y0, None);
                         self.underline_composing(n, t, x0 - scroll, y0);
                     }
-                    self.scene.pop_layer();
+                    self.scene.pop();
                 }
             }
             Kind::Toggle { is_on, .. } => {
@@ -557,9 +407,9 @@ impl Painter<'_> {
                 self.fill(sw, 11.0, track);
                 let knob_x = sw.x + 11.0 + (sw.w - 22.0) * on;
                 let t = self.t();
-                self.scene.fill(Fill::NonZero, t, color(Rgba([255, 255, 255, 255])), None, &Circle::new((knob_x, sw.y + 11.0), 9.0));
+                self.scene.fill(FillRule::NonZero, t, Rgba([255, 255, 255, 255]), &Circle::new((knob_x, sw.y + 11.0), 9.0));
                 if let Some(label) = &n.layout.text {
-                    self.text(label, content.x, content.y + (content.h - label.height() as f64) / 2.0, None);
+                    self.text(label, content.x, content.y + (content.h - label.height()) / 2.0, None);
                 }
             }
             Kind::Picker { selection } => {
@@ -579,17 +429,14 @@ impl Painter<'_> {
                 let editing = editing.as_ref();
                 let t_scene = self.t();
                 self.fill(content, 6.0, theme().field);
-                self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(content, 6.0));
+                self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(content, 6.0));
                 let gutter = Rect { x: content.x, y: content.y, w: n.layout.gutter, h: content.h };
                 self.fill(gutter, 0.0, theme().gutter);
                 let (x0, y0) = code_origin(n);
                 let scroll_y = self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
                 let scroll_x = self.ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
                 if let Some(t) = &n.layout.text {
-                    let lines: Vec<(f64, f64)> = t
-                        .lines()
-                        .map(|l| (l.metrics().block_min_coord as f64, l.metrics().block_max_coord as f64))
-                        .collect();
+                    let lines: Vec<(f64, f64)> = t.lines.iter().map(|l| (l.top, l.bottom)).collect();
                     for &line in error_lines {
                         let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
                         let y = y0 - scroll_y + top;
@@ -601,7 +448,7 @@ impl Painter<'_> {
                         self.text(numbers, content.x + GUTTER_PAD.0, y0 - scroll_y, None);
                     }
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
-                    self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t_scene, &rounded(code_area, 0.0));
+                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(code_area, 0.0));
                     if let Some(e) = editing {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
@@ -619,9 +466,9 @@ impl Painter<'_> {
                     }
                     self.text(t, x0 - scroll_x, y0 - scroll_y, None);
                     self.underline_composing(n, t, x0 - scroll_x, y0 - scroll_y);
-                    self.scene.pop_layer();
+                    self.scene.pop();
                 }
-                self.scene.pop_layer();
+                self.scene.pop();
                 self.paint_scroll_bars(n);
                 if editing.is_some() {
                     self.stroke(content, 6.0, 2.0, theme().accent);
@@ -645,7 +492,7 @@ impl Painter<'_> {
                     }
                     self.fill(Rect { x: r.x + r.w - 1.0, y: r.y, w: 1.0, h: r.h }, 0.0, theme().colors[theme::SEPARATOR]);
                     let tint = if i == selected { None } else { Some(theme().colors[theme::SECONDARY]) };
-                    let ty = r.y + (r.h - tab.title.height() as f64) / 2.0;
+                    let ty = r.y + (r.h - tab.title.height()) / 2.0;
                     self.text(&tab.title, r.x + 14.0, ty, tint);
                     if let (Some(c), true) = (tab.close, i == selected || hovered) {
                         let over = self.ui.pointer.is_some_and(|(x, y)| c.contains(x, y));
@@ -664,14 +511,14 @@ impl Painter<'_> {
             }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
-                    self.draw_svg(&svg, n.layout.content);
+                    self.draw_svg(svg, n.layout.content);
                 }
             }
             Kind::Image { picture: Some(p), .. } => {
                 let c = n.layout.content;
                 let s = (c.w / p.width.max(1.0)).min(c.h / p.height.max(1.0));
                 let t = self.t() * Affine::translate((c.x, c.y)) * Affine::scale(s);
-                self.scene.draw_image(&p.image, t);
+                self.scene.image(p.clone(), t, 1.0);
             }
             Kind::Image { .. } => {
                 self.fill(content, 8.0, theme().control);
@@ -682,19 +529,19 @@ impl Painter<'_> {
                 // nothing of it outside the canvas.
                 let drawing = super::canvas::drawing(n.key, draw, *redraw, content.w, content.h);
                 let t = self.t();
-                self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
-                self.scene.append(&drawing.scene, Some(t * Affine::translate((content.x, content.y))));
-                self.scene.pop_layer();
+                self.scene.push(FillRule::NonZero, 1.0, t, &rounded(content, 0.0));
+                self.scene.append(drawing.list.clone(), t * Affine::translate((content.x, content.y)));
+                self.scene.pop();
             }
             Kind::Scroll => {
                 let t = self.t();
-                self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
+                self.scene.push(FillRule::NonZero, 1.0, t, &rounded(content, 0.0));
                 let outer = self.clip.replace(content);
                 for c in &n.children {
                     self.paint(c);
                 }
                 self.clip = outer;
-                self.scene.pop_layer();
+                self.scene.pop();
                 self.paint_scroll_bars(n);
             }
             Kind::Markdown { .. } => {
@@ -715,7 +562,7 @@ impl Painter<'_> {
                             super::markdown::Item::Picture { rect, picture } => {
                                 let s = rect.w / picture.width.max(1.0);
                                 let t = self.t() * Affine::translate((x0 + rect.x, y0 + rect.y)) * Affine::scale(s);
-                                self.scene.draw_image(&picture.image, t);
+                                self.scene.image(picture.clone(), t, 1.0);
                             }
                         }
                     }
@@ -730,13 +577,13 @@ impl Painter<'_> {
             }
         }
         if n.mods.clipped {
-            self.scene.pop_layer();
+            self.scene.pop();
         }
         if let Some((c, width, radius)) = n.mods.border {
             self.stroke(r, radius, width, c);
         }
         if layered {
-            self.scene.pop_layer();
+            self.scene.pop();
         }
         self.offset = outer;
     }
@@ -752,86 +599,8 @@ pub fn code_origin(n: &Node) -> (f64, f64) {
 pub fn field_origin(n: &Node) -> (f64, f64) {
     let content = n.layout.rect.inset_by(n.mods.padding);
     let line_h = match (&n.layout.text, &n.layout.placeholder) {
-        (Some(t), Some(p)) => (p.height() as f64).max(t.height() as f64),
+        (Some(t), Some(p)) => p.height().max(t.height()),
         _ => 0.0,
     };
     (content.x + 8.0, content.y + (content.h - line_h) / 2.0)
-}
-
-// ===== GPU =====
-
-pub fn renderer(device: &wgpu::Device) -> Renderer {
-    Renderer::new(
-        device,
-        RendererOptions {
-            use_cpu: false,
-            antialiasing_support: AaSupport::area_only(),
-            num_init_threads: NonZeroUsize::new(1),
-            pipeline_cache: None,
-        },
-    )
-    .expect("can't create the renderer")
-}
-
-pub fn params(width: u32, height: u32) -> RenderParams {
-    RenderParams { base_color: color(theme().colors[theme::BACKGROUND]), width, height, antialiasing_method: AaConfig::Area }
-}
-
-/// Renders a scene off-screen and saves it as a PNG.
-pub fn render_png(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene: &Scene, width: u32, height: u32, path: &str) {
-    let pixels = render_pixels(cx, renderer, scene, width, height, color(theme().colors[theme::BACKGROUND]));
-    let file = std::fs::File::create(path).expect("can't create snapshot file");
-    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().and_then(|mut w| w.write_image_data(&pixels)).expect("can't write snapshot");
-}
-
-/// Renders a scene off-screen, over `base`: its pixels, four bytes each
-/// (red, green, blue, opacity), row by row.
-pub fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene: &Scene, width: u32, height: u32, base: Color) -> Vec<u8> {
-    let dev = pollster::block_on(cx.device(None)).expect("no GPU device");
-    let handle = &cx.devices[dev];
-    let (device, queue) = (&handle.device, &handle.queue);
-    let renderer = renderer.get_or_insert_with(|| self::renderer(device));
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("snapshot"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let params = RenderParams { base_color: base, width, height, antialiasing_method: AaConfig::Area };
-    renderer.render_to_texture(device, queue, scene, &view, &params).expect("render failed");
-    let row = (width * 4).div_ceil(256) * 256;
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("snapshot"),
-        size: (row * height) as u64,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    encoder.copy_texture_to_buffer(
-        texture.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buffer,
-            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: None },
-        },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-    );
-    queue.submit([encoder.finish()]);
-    let slice = buffer.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("GPU poll failed");
-    let data = slice.get_mapped_range();
-    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
-    for y in 0..height {
-        let start = (y * row) as usize;
-        pixels.extend_from_slice(&data[start..start + (width * 4) as usize]);
-    }
-    pixels
 }

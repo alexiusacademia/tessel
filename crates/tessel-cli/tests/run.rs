@@ -52,7 +52,11 @@ fn run_programs() {
         let out = run_with_input(&mut cmd, &stdin);
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        let expected_out = std::fs::read_to_string(dir.join(format!("{name}.out"))).unwrap_or_default();
+        // (On macOS, where text is laid out by the system, a program whose
+        // output has text sizes in it may expect `<name>.macos.out` instead.)
+        let mac_out = dir.join(format!("{name}.macos.out"));
+        let out_file = if cfg!(target_os = "macos") && mac_out.exists() { mac_out } else { dir.join(format!("{name}.out")) };
+        let expected_out = std::fs::read_to_string(out_file).unwrap_or_default();
         let expected_err = std::fs::read_to_string(dir.join(format!("{name}.err"))).ok();
         // `<name>.stderr`: what a program that succeeds writes to stderr.
         let expected_stderr = std::fs::read_to_string(dir.join(format!("{name}.stderr"))).unwrap_or_default();
@@ -270,7 +274,8 @@ fn preview() {
             read("views.json");
         }
     }
-    let expected = std::fs::read_to_string(root.join("tests/preview/expected.out")).unwrap_or_default();
+    let expected_file = if cfg!(target_os = "macos") { "tests/preview/expected.macos.out" } else { "tests/preview/expected.out" };
+    let expected = std::fs::read_to_string(root.join(expected_file)).unwrap_or_default();
     if got != expected {
         std::fs::write(root.join("tests/preview/actual.out"), &got).unwrap();
         panic!("tessel preview differs; see tests/preview/actual.out\n--- got\n{got}");

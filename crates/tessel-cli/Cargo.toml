@@ -9,6 +9,11 @@ name = "tessel"
 path = "src/main.rs"
 
 [features]
+# The runtime's renderers (see tessel-runtime's features): the GPU one, and
+# on macOS the system's, which is used when it's there.
+default = ["gpu", "native"]
+gpu = ["tessel-runtime/gpu"]
+native = ["tessel-runtime/native"]
 # Build LLVM's linker (lld) into `tessel` (release packages), so building apps
 # doesn't need Apple's Command Line Tools or Visual Studio's linker.
 bundled-linker = []
@@ -32,7 +37,7 @@ tessel-compiler = { path = "../tessel-compiler" }
 # Building the CLI also builds the runtime library (libtessel_runtime.a)
 # that `tessel build` links programs against. `tessel` contains the runtime
 # too, for the code `tessel repl` runs.
-tessel-runtime = { path = "../tessel-runtime" }
+tessel-runtime = { path = "../tessel-runtime", default-features = false }
 
 [dev-dependencies]
 # The WebSocket echo server of the networking test.

@@ -52,14 +52,13 @@
 mod net;
 
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use vello::util::{RenderContext, RenderSurface};
-use vello::{wgpu, Renderer, Scene};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -930,12 +929,12 @@ impl App {
             };
             let row = render::PopupRow {
                 index,
-                badge: self.text.mono_line(letter, 11.0, 700.0, Rgba([255, 255, 255, 255])),
+                badge: Rc::new(self.text.mono_line(letter, 11.0, 700.0, Rgba([255, 255, 255, 255]))),
                 badge_color,
-                label: self.text.mono_line(&s.label, 13.0, 400.0, theme().colors[theme::PRIMARY]),
-                detail: self.text.layout(&detail, 11.5, 400.0, theme().colors[theme::GRAY], None),
+                label: Rc::new(self.text.mono_line(&s.label, 13.0, 400.0, theme().colors[theme::PRIMARY])),
+                detail: Rc::new(self.text.layout(&detail, 11.5, 400.0, theme().colors[theme::GRAY], None)),
             };
-            widest = widest.max(row.label.width() as f64 + row.detail.width() as f64);
+            widest = widest.max(row.label.width() + row.detail.width());
             rows.push(row);
         }
         let row_h = 22.0;
@@ -975,7 +974,7 @@ impl App {
         let content = node.layout.rect.inset_by(node.mods.padding);
         // Scroll so the caret shows, when it (or the text) changed: not all
         // the time, or the view couldn't be scrolled away from it.
-        let now = (e.key, at.anchor, at.focus, layout.len());
+        let now = (e.key, at.anchor, at.focus, layout.len);
         let moved = self.followed != Some(now);
         self.followed = Some(now);
         let keep = |offset: &mut f64, lo: f64, hi: f64, visible: f64, total: f64| {
@@ -994,14 +993,14 @@ impl App {
                 let visible_w = (content.w - node.layout.gutter - 2.0 * render::CODE_PAD_X).max(1.0);
                 let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
                 let sx = self.ui.scroll_x.entry(e.key).or_insert(0.0);
-                keep(sx, cx0, cx1, visible_w, layout.width() as f64 + 2.0);
+                keep(sx, cx0, cx1, visible_w, layout.width() + 2.0);
                 let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
-                keep(sy, cy0, cy1, visible_h, layout.height() as f64);
+                keep(sy, cy0, cy1, visible_h, layout.height());
             }
             _ => {
                 let caret_x = caret.map_or(0.0, |c| c.x0);
                 let visible = (node.layout.rect.w - 16.0).max(1.0);
-                keep(&mut e.scroll, caret_x, caret_x, visible, layout.width() as f64);
+                keep(&mut e.scroll, caret_x, caret_x, visible, layout.width());
             }
         }
     }
@@ -1153,7 +1152,7 @@ impl App {
         let Some(c) = caret else { return };
         let content = node.layout.rect.inset_by(node.mods.padding);
         let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
-        let total = layout.height() as f64;
+        let total = layout.height();
         let y = (c.y0 - visible_h / 3.0).min((total - visible_h).max(0.0)).max(0.0);
         self.ui.scroll.insert(key, y);
         self.ui.scroll_x.insert(key, 0.0);
@@ -1237,15 +1236,16 @@ impl App {
         }
     }
 
-    fn scene(&mut self, scale: f64) -> Scene {
+    /// The window's drawing, in pixels (`scale` to the point).
+    fn scene(&mut self, scale: f64) -> super::draw::DrawList {
         self.update();
-        let mut scene = Scene::new();
+        let mut list = super::draw::DrawList::new();
         let tree = self.tree.as_ref().unwrap();
-        let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
+        let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
         painter.paint(tree);
         painter.paint_popup();
         painter.paint_tooltip();
-        scene
+        list
     }
 
     fn hit(&self, x: f64, y: f64) -> Option<Hit> {
@@ -1507,8 +1507,8 @@ impl App {
             self.tip = None;
             return false;
         };
-        let layout = self.text.layout(&text, 12.0, 400.0, theme().colors[theme::PRIMARY], Some(280.0));
-        let (w, h) = (layout.width() as f64 + 16.0, layout.height() as f64 + 10.0);
+        let layout = Rc::new(self.text.layout(&text, 12.0, 400.0, theme().colors[theme::PRIMARY], Some(280.0)));
+        let (w, h) = (layout.width() + 16.0, layout.height() + 10.0);
         // Below and to the right of the pointer, inside the window.
         let (px, py) = self.ui.pointer.unwrap_or((0.0, 0.0));
         let x = (px + 12.0).min(self.width - w - 4.0).max(4.0);
@@ -1896,7 +1896,7 @@ impl App {
         let max_y = (n.layout.content_h - content.h).max(0.0);
         let max_x = match &n.kind {
             Kind::CodeEditor { .. } => {
-                let width = n.layout.text.as_ref().map_or(0.0, |t| t.width() as f64) + 2.0 * render::CODE_PAD_X;
+                let width = n.layout.text.as_ref().map_or(0.0, |t| t.width()) + 2.0 * render::CODE_PAD_X;
                 (width - (content.w - n.layout.gutter)).max(0.0)
             }
             _ => 0.0,
@@ -2206,8 +2206,7 @@ fn run_script(app: App, script: &str) -> i32 {
 
 fn script_steps(app: &mut App, script: &str) -> i32 {
     CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(0.0));
-    let mut cx = RenderContext::new();
-    let mut renderer: Option<Renderer> = None;
+    let mut offscreen: Option<super::backend::Offscreen> = None;
     let mut commands: Vec<String> = Vec::new();
     for cmd in script.split([';', '\n']).map(str::trim).filter(|c| !c.is_empty()) {
         match cmd.strip_prefix("repeat ").and_then(|r| r.split_once(' ')) {
@@ -2513,9 +2512,14 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "snapshot" => {
                 let scale = 2.0;
-                let scene = app.scene(scale);
+                let list = app.scene(scale);
                 let (w, h) = ((app.width * scale) as u32, (app.height * scale) as u32);
-                render::render_png(&mut cx, &mut renderer, &scene, w, h, rest);
+                let background = theme().colors[theme::BACKGROUND];
+                let pixels = offscreen.get_or_insert_with(Default::default).rgba(&list, w, h, Some(background));
+                if !super::backend::save_rgba(rest, w, h, pixels) {
+                    eprintln!("script: can't write `{rest}`");
+                    return 2;
+                }
             }
             "layout" => {
                 app.update();
@@ -2554,9 +2558,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
 
 struct WindowApp {
     app: App,
-    cx: RenderContext,
-    renderer: Option<Renderer>,
-    surface: Option<RenderSurface<'static>>,
+    screen: Option<super::backend::Screen>,
     window: Option<Arc<Window>>,
     cursor: (f64, f64),
     mods: Mods,
@@ -2590,9 +2592,7 @@ fn run_window(app: App) -> i32 {
     *WAKE.lock().unwrap() = Some(event_loop.create_proxy());
     let mut w = WindowApp {
         app,
-        cx: RenderContext::new(),
-        renderer: None,
-        surface: None,
+        screen: None,
         window: None,
         cursor: (0.0, 0.0),
         mods: Mods::default(),
@@ -2623,7 +2623,7 @@ impl WindowApp {
     }
 
     fn redraw(&mut self) {
-        let (Some(surface), Some(window)) = (self.surface.as_ref(), self.window.as_ref()) else { return };
+        let (Some(screen), Some(window)) = (self.screen.as_mut(), self.window.as_ref()) else { return };
         if let Some(title) = NEW_TITLE.with(|t| t.borrow_mut().take()) {
             window.set_title(&title);
             self.app.title = title;
@@ -2632,27 +2632,11 @@ impl WindowApp {
         let size = window.inner_size();
         self.app.width = size.width as f64 / scale;
         self.app.height = size.height as f64 / scale;
-        let scene = self.app.scene(scale);
-        let dev = &self.cx.devices[surface.dev_id];
-        let renderer = self.renderer.get_or_insert_with(|| render::renderer(&dev.device));
-        let (w, h) = (surface.config.width, surface.config.height);
-        if renderer.render_to_texture(&dev.device, &dev.queue, &scene, &surface.target_view, &render::params(w, h)).is_err() {
+        let list = self.app.scene(scale);
+        if !screen.present(&list, theme().colors[theme::BACKGROUND]) {
+            window.request_redraw();
             return;
         }
-        let frame = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-            _ => {
-                // Outdated or lost: reconfigure and try on the next frame.
-                self.cx.configure_surface(surface);
-                self.request_redraw();
-                return;
-            }
-        };
-        let mut encoder = dev.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        surface.blitter.copy(&dev.device, &mut encoder, &surface.target_view, &view);
-        dev.queue.submit([encoder.finish()]);
-        frame.present();
         // The input method shows its candidates next to the caret.
         let caret = self.app.caret_rect();
         if let (Some(c), true) = (caret, caret != self.ime_caret) {
@@ -2720,15 +2704,8 @@ impl ApplicationHandler for WindowApp {
         if self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
             self.app.dirty = true;
         }
-        let size = window.inner_size();
-        let surface = pollster::block_on(self.cx.create_surface(
-            window.clone(),
-            size.width.max(1),
-            size.height.max(1),
-            wgpu::PresentMode::AutoVsync,
-        ));
-        match surface {
-            Ok(s) => self.surface = Some(s),
+        match super::backend::Screen::new(window.clone()) {
+            Ok(s) => self.screen = Some(s),
             Err(e) => {
                 eprintln!("error: can't draw to the window: {e}");
                 event_loop.exit();
@@ -2753,8 +2730,8 @@ impl ApplicationHandler for WindowApp {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                if let Some(s) = self.surface.as_mut() {
-                    self.cx.resize_surface(s, size.width.max(1), size.height.max(1));
+                if let Some(s) = self.screen.as_mut() {
+                    s.resize(size.width, size.height);
                 }
                 self.request_redraw();
             }

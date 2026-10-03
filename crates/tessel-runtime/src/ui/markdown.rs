@@ -10,13 +10,15 @@ use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use super::edit::{self, Editing};
 use super::image::{self, Picture};
 use super::layout::{Rect, Style};
-use super::render::{Paint, TextEngine};
+use super::render::TextEngine;
+use super::text::TextLayout;
 use super::theme::{self, theme};
 use super::Rgba;
 
@@ -197,7 +199,7 @@ fn parse(source: &str) -> (Vec<Placed>, Vec<String>) {
 
 /// One thing to draw, at its place from the view's top left.
 pub enum Item {
-    Text { x: f64, y: f64, layout: parley::Layout<Paint> },
+    Text { x: f64, y: f64, layout: Rc<TextLayout> },
     Fill { rect: Rect, radius: f64, color: Rgba },
     Picture { rect: Rect, picture: Rc<Picture> },
 }
@@ -206,7 +208,7 @@ impl Item {
     /// The rows of the view it's in: from `y` to `y + h`.
     pub fn rows(&self) -> (f64, f64) {
         match self {
-            Item::Text { y, layout, .. } => (*y, *y + layout.height() as f64),
+            Item::Text { y, layout, .. } => (*y, *y + layout.height()),
             Item::Fill { rect, .. } | Item::Picture { rect, .. } => (rect.y, rect.y + rect.h),
         }
     }
@@ -258,7 +260,27 @@ const CELL_PAD: (f64, f64) = (8.0, 5.0);
 
 /// Lays out `source` at `width`, in the text style of `style`. Pictures are
 /// looked for in `folder`.
+type LayoutFn = fn(&mut TextEngine, &str, &str, f64, &Style) -> Rc<Laid>;
+
+/// Only apps that show Markdown have the parser and this layout:
+/// `tsl_ui_markdown` turns them on, and `layout` reaches them through a
+/// function pointer, so the linker leaves them out of other apps.
+static LAYOUT: OnceLock<LayoutFn> = OnceLock::new();
+
+pub fn enable() {
+    let _ = LAYOUT.set(cached);
+    super::image::enable();
+}
+
+/// The Markdown laid out at `width` (nothing if Markdown isn't on).
 pub fn layout(text: &mut TextEngine, source: &str, folder: &str, width: f64, style: &Style) -> Rc<Laid> {
+    match LAYOUT.get() {
+        Some(f) => f(text, source, folder, width, style),
+        None => Rc::new(Laid { height: 0.0, items: Vec::new(), links: Vec::new(), title: String::new() }),
+    }
+}
+
+fn cached(text: &mut TextEngine, source: &str, folder: &str, width: f64, style: &Style) -> Rc<Laid> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (source, folder).hash(&mut h);
     let key =
@@ -278,7 +300,7 @@ pub fn layout(text: &mut TextEngine, source: &str, folder: &str, width: f64, sty
 }
 
 /// The rectangles of the bytes `range` of a laid-out text.
-fn rects_of(layout: &parley::Layout<Paint>, range: &Range<usize>, x: f64, y: f64) -> Vec<Rect> {
+fn rects_of(layout: &TextLayout, range: &Range<usize>, x: f64, y: f64) -> Vec<Rect> {
     let mut span = Editing::new(0, "");
     (span.anchor, span.focus) = (range.start, range.end);
     edit::geometry(layout, &span).1.iter().map(|b| Rect { x: x + b.x0, y: y + b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }).collect()
@@ -345,11 +367,11 @@ fn lay_out(text: &mut TextEngine, source: &str, folder: &str, width: f64, style:
                 }
                 if let Some(marker) = marker {
                     let m = text.rich(marker, size, style.weight, th.colors[theme::SECONDARY], &[], None);
-                    let mx = x - 8.0 - m.width() as f64;
-                    items.push(Item::Text { x: mx.max(0.0), y, layout: m });
+                    let mx = x - 8.0 - m.width();
+                    items.push(Item::Text { x: mx.max(0.0), y, layout: Rc::new(m) });
                 }
-                let height = layout.height() as f64;
-                items.push(Item::Text { x, y, layout });
+                let height = layout.height();
+                items.push(Item::Text { x, y, layout: Rc::new(layout) });
                 y += height;
                 // A line under the two largest headings.
                 if matches!(heading, 1 | 2) {
@@ -361,9 +383,9 @@ fn lay_out(text: &mut TextEngine, source: &str, folder: &str, width: f64, style:
             Block::Code { text: code, tessel } => {
                 let inner = (room - 2.0 * CODE_PAD).max(40.0);
                 let layout = text.code_block(code, size * 0.9, *tessel, inner);
-                let height = layout.height() as f64 + 2.0 * CODE_PAD;
+                let height = layout.height() + 2.0 * CODE_PAD;
                 items.push(Item::Fill { rect: Rect { x, y, w: room, h: height }, radius: 6.0, color: th.gutter });
-                items.push(Item::Text { x: x + CODE_PAD, y: y + CODE_PAD, layout });
+                items.push(Item::Text { x: x + CODE_PAD, y: y + CODE_PAD, layout: Rc::new(layout) });
                 y += height;
             }
             Block::Image { path, alt } => {
@@ -380,9 +402,9 @@ fn lay_out(text: &mut TextEngine, source: &str, folder: &str, width: f64, style:
                         let words = if alt.is_empty() { path } else { alt };
                         let italic = [(0..words.len(), Inline { italic: true, ..Inline::default() })];
                         let layout = text.rich(words, size, style.weight, th.colors[theme::SECONDARY], &italic, Some(room));
-                        y += layout.height() as f64;
-                        let top = y - layout.height() as f64;
-                        items.push(Item::Text { x, y: top, layout });
+                        y += layout.height();
+                        let top = y - layout.height();
+                        items.push(Item::Text { x, y: top, layout: Rc::new(layout) });
                     }
                 }
             }
@@ -420,8 +442,8 @@ fn lay_out(text: &mut TextEngine, source: &str, folder: &str, width: f64, style:
                                     links.push(Link { rects, text: cell.text[range.clone()].to_string(), url: url.clone() });
                                 }
                             }
-                            height = height.max(layout.height() as f64);
-                            items.push(Item::Text { x: cx + CELL_PAD.0, y: top, layout });
+                            height = height.max(layout.height());
+                            items.push(Item::Text { x: cx + CELL_PAD.0, y: top, layout: Rc::new(layout) });
                             cx += widths[c] + 2.0 * CELL_PAD.0;
                         }
                         y += height + 2.0 * CELL_PAD.1;
@@ -495,6 +517,7 @@ mod tests {
 
     #[test]
     fn lays_out_down_the_page() {
+        enable();
         let mut text = TextEngine::new();
         let style = Style::default();
         let laid = layout(&mut text, PAGE, "", 400.0, &style);

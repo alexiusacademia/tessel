@@ -1,0 +1,38 @@
+--- as saved
+Root [0,0 320x240] -1
+  View [0,29 320x182] -1
+    VStack [0,29 320x182] 8
+      Text [123,41 73x24] 1
+      HStack [12,75 296x29] 4
+        Button [12,75 65x29] 2
+        Spacer [85,89 223x0] 3
+      View [133,113 54x33] 6
+        VStack [133,113 54x33] 0
+          Text [141,121 38x17] 5
+      Text [142,156 36x17] 7
+      Text [143,182 34x17] 7
+{"files":["tests/preview/app/main.tsl"],"views":[
+{"file":0,"lo":507,"hi":613,"line":22,"endLine":26,"parent":501,"blockLo":535,"blockHi":558,"stateAt":502,"indentAt":507,"custom":false,"base":{"name":"VStack","lo":507,"hi":558,"nameHi":513,"argsLo":514,"argsHi":533,"args":[{"label":"alignment","lo":514,"valueLo":525,"hi":533}]},"mods":[{"name":"padding","lo":558,"hi":574,"nameHi":571,"argsLo":572,"argsHi":573,"args":[{"label":"","lo":572,"valueLo":572,"hi":573}]},{"name":"background","lo":574,"hi":613,"nameHi":590,"argsLo":591,"argsHi":612,"args":[{"label":"","lo":591,"valueLo":591,"hi":601},{"label":"radius","lo":603,"valueLo":611,"hi":612}]}]},
+{"file":0,"lo":178,"hi":222,"line":5,"endLine":5,"parent":168,"blockLo":-1,"blockHi":-1,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"Text","lo":178,"hi":192,"nameHi":182,"argsLo":183,"argsHi":191,"args":[{"label":"","lo":183,"valueLo":183,"hi":191}]},"mods":[{"name":"font","lo":192,"hi":222,"nameHi":197,"argsLo":198,"argsHi":221,"args":[{"label":"size","lo":198,"valueLo":204,"hi":206},{"label":"weight","lo":208,"valueLo":216,"hi":221}]}]},
+{"file":0,"lo":252,"hi":271,"line":7,"endLine":7,"parent":238,"blockLo":-1,"blockHi":-1,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"Button","lo":252,"hi":271,"nameHi":258,"argsLo":259,"argsHi":266,"args":[{"label":"","lo":259,"valueLo":259,"hi":266}]},"mods":[]},
+{"file":0,"lo":284,"hi":292,"line":8,"endLine":8,"parent":238,"blockLo":-1,"blockHi":-1,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"Spacer","lo":284,"hi":292,"nameHi":290,"argsLo":291,"argsHi":291,"args":[]},"mods":[]},
+{"file":0,"lo":231,"hi":302,"line":6,"endLine":9,"parent":168,"blockLo":238,"blockHi":302,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"HStack","lo":231,"hi":302,"nameHi":237,"argsLo":-1,"argsHi":-1,"args":[]},"mods":[]},
+{"file":0,"lo":329,"hi":378,"line":11,"endLine":12,"parent":315,"blockLo":-1,"blockHi":-1,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"Text","lo":329,"hi":343,"nameHi":333,"argsLo":334,"argsHi":342,"args":[{"label":"","lo":334,"valueLo":334,"hi":342}]},"mods":[{"name":"color","lo":343,"hi":378,"nameHi":366,"argsLo":367,"argsHi":377,"args":[{"label":"","lo":367,"valueLo":367,"hi":377}]}]},
+{"file":0,"lo":311,"hi":388,"line":10,"endLine":13,"parent":168,"blockLo":315,"blockHi":388,"stateAt":143,"indentAt":148,"custom":true,"base":{"name":"Box","lo":311,"hi":388,"nameHi":314,"argsLo":-1,"argsHi":-1,"args":[]},"mods":[]},
+{"file":0,"lo":425,"hi":440,"line":15,"endLine":15,"parent":411,"blockLo":-1,"blockHi":-1,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"Text","lo":425,"hi":440,"nameHi":429,"argsLo":430,"argsHi":439,"args":[{"label":"","lo":430,"valueLo":430,"hi":439}]},"mods":[]},
+{"file":0,"lo":148,"hi":473,"line":4,"endLine":18,"parent":142,"blockLo":168,"blockHi":456,"stateAt":143,"indentAt":148,"custom":false,"base":{"name":"VStack","lo":148,"hi":456,"nameHi":154,"argsLo":155,"argsHi":166,"args":[{"label":"spacing","lo":155,"valueLo":164,"hi":166}]},"mods":[{"name":"padding","lo":456,"hi":473,"nameHi":469,"argsLo":470,"argsHi":472,"args":[{"label":"","lo":470,"valueLo":470,"hi":472}]}]}
+]}
+--- with unsaved text
+Root [0,0 320x240] -1
+  View [0,29 320x182] -1
+    VStack [0,29 320x182] 9
+      Text [123,41 73x24] 1
+      HStack [12,75 296x29] 5
+        Button [12,75 65x29] 2
+        Spacer [85,89 161x0] 3
+        Text [254,81 54x17] 4
+      View [133,113 54x33] 7
+        VStack [133,113 54x33] 0
+          Text [141,121 38x17] 6
+      Text [142,156 36x17] 8
+      Text [143,182 34x17] 8

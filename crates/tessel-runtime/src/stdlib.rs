@@ -546,15 +546,7 @@ pub unsafe extern "C" fn tsl_write_image(path: *const Str, width: i64, height: i
         let p = unsafe { *(crate::tsl_list_get(pixels, i, std::ptr::null()) as *const i64) } as u32;
         bytes.extend_from_slice(&p.to_be_bytes());
     }
-    let Some(picture) = image::RgbaImage::from_raw(width as u32, height as u32, bytes) else { return 0 };
-    let lower = path.to_lowercase();
-    let saved = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
-        // JPEG has no opacity.
-        image::DynamicImage::ImageRgba8(picture).to_rgb8().save_with_format(path, image::ImageFormat::Jpeg)
-    } else {
-        picture.save_with_format(path, image::ImageFormat::Png)
-    };
-    saved.is_ok() as u8
+    crate::ui::backend::save_rgba(path, width as u32, height as u32, bytes) as u8
 }
 
 /// For the prelude's `imageSize`: the width and height of a PNG or JPEG
@@ -563,7 +555,7 @@ pub unsafe extern "C" fn tsl_write_image(path: *const Str, width: i64, height: i
 pub unsafe extern "C" fn tsl_image_size(path: *const Str) -> *mut crate::List {
     let path = unsafe { text(path) };
     let mut slot = unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, 2) };
-    if let Ok((w, h)) = image::image_dimensions(path) {
+    if let Some((w, h)) = crate::ui::backend::image_size(path) {
         for v in [w as i64, h as i64] {
             unsafe { crate::tsl_list_push(&mut slot, &v as *const i64 as *const u8) };
         }
@@ -577,13 +569,12 @@ pub unsafe extern "C" fn tsl_image_size(path: *const Str) -> *mut crate::List {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_image_pixels(path: *const Str) -> *mut crate::List {
     let path = unsafe { text(path) };
-    let Ok(picture) = image::open(path) else {
+    let Some((width, height, rgba)) = crate::ui::backend::read_rgba(path) else {
         return unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, 0) };
     };
-    let picture = picture.to_rgba8();
-    let mut slot = unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, (picture.width() * picture.height()) as i64) };
-    for p in picture.pixels() {
-        let v = u32::from_be_bytes(p.0) as i64;
+    let mut slot = unsafe { crate::tsl_list_new(&crate::codec::INT_TYPE, (width * height) as i64) };
+    for p in rgba.chunks_exact(4) {
+        let v = u32::from_be_bytes([p[0], p[1], p[2], p[3]]) as i64;
         unsafe { crate::tsl_list_push(&mut slot, &v as *const i64 as *const u8) };
     }
     slot

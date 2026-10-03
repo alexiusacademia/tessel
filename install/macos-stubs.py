@@ -23,7 +23,7 @@ import tempfile
 # Must match platform_link_args() in crates/tessel-cli/src/main.rs.
 FRAMEWORKS = [
     "AppKit", "ApplicationServices", "Carbon", "CoreFoundation", "CoreGraphics", "CoreText", "CoreVideo",
-    "Foundation", "Metal", "QuartzCore",
+    "Foundation", "ImageIO", "Metal", "QuartzCore",
 ]
 LIBS = ["objc", "iconv"]
 MIN_MACOS = "11.0"

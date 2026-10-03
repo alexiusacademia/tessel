@@ -4,18 +4,28 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# The renderers: the GPU one (vello, wgpu and parley), and the system's on
+# macOS (`native`). With both, macOS apps use the system's and the others
+# the GPU's.
+default = ["gpu", "native"]
+gpu = ["dep:vello", "dep:vello_svg", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
+# The macOS renderer: Core Graphics, Core Text and ImageIO, which come with
+# the system (see ui/mac).
+native = ["dep:objc2", "dep:windows", "dep:windows-numerics"]
+
 [dependencies]
-arboard = "3.6.1"
-parley = "0.11"
-png = "0.18.1"
-pollster = "1.0.1"
+# The clipboard, for text only (its picture support would bring image decoders).
+arboard = { version = "3.6.1", default-features = false }
+parley = { version = "0.11", optional = true }
+pollster = { version = "1.0.1", optional = true }
 # Dates in the computer's time zone (formatDate, parseDate, date).
 # Reading Markdown, for the `Markdown` view.
 pulldown-cmark = { version = "0.13", default-features = false }
 # zlib, deflate and gzip for `data.compressed()` and `data.decompressed()`.
 flate2 = "1"
 # PNG and JPEG files for `Image`.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # Named time zones ("Europe/Paris"): the tz database, built into programs
 # that use dates. And the name of the computer's own zone.
@@ -31,9 +41,36 @@ rfd = { version = "0.17.2", default-features = false }
 ureq = "3.4.2"
 # WebSockets (openWebSocket), over the same TLS as ureq.
 tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
-vello = "0.10"
-vello_svg = "0.11"
+# Without wgpu's default backends: each platform gets only its own (below).
+vello = { version = "0.10", default-features = false, features = ["wgpu"], optional = true }
+vello_svg = { version = "0.11", optional = true }
+# Reading SVG (both renderers), and the geometry drawings are made of.
+usvg = "0.48"
+kurbo = "0.13"
 winit = "0.30"
+
+# The GPU backend each platform draws with, and no others: every backend
+# brings its own code and shader translator into every app.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "metal"] }
+[target.'cfg(windows)'.dependencies]
+# The Windows renderer: Direct2D, DirectWrite and WIC (see ui/win).
+windows = { version = "0.62", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+] }
+windows-numerics = { version = "0.3", optional = true }
+wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "dx12"] }
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "vulkan", "gles"] }
 
 [target.'cfg(unix)'.dependencies]
 # The stack overflow handler (sigaltstack, sigaction, the stack's bounds).

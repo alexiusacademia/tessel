@@ -221,6 +221,21 @@ installed.
 On Windows, apps (programs with an `app`) are built without a console
 window.
 
+### How big an app is
+
+The executable is one file with all of Tessel it needs inside, so it runs
+on a computer without Tessel. Only the parts of Tessel a program uses are in
+it: icons and SVGs, pictures, Markdown, the network, dates and file dialogs
+each add their code only to programs that use them.
+
+- **macOS:** an app with a window is about 1 MB. It draws, lays out text
+  and reads pictures with what comes with macOS (Core Graphics, Core Text
+  and ImageIO), so none of that is in the app.
+- **Windows:** an app carries its own renderer, which draws with the
+  graphics card (DirectX 12), and its own text layout: it's several MB.
+
+A program without a window is smaller still.
+
 ### The app's icon
 
 Put a square PNG image called `icon.png` next to your program's `.tsl`

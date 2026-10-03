@@ -18,12 +18,10 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use parley::PositionedLayoutItem;
-use vello::kurbo::{Affine, Arc, BezPath, Cap, Circle, Ellipse, Join, PathEl, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
-use vello::peniko::{Color, Fill, ImageBrush};
-use vello::Scene;
+use kurbo::{Affine, Arc, BezPath, Cap, Circle, Ellipse, Join, PathEl, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
+use super::draw::{DrawList, FillRule};
 
-use super::render::TextEngine;
+use super::text::TextEngine;
 use super::{theme, Callback, Rgba, WEIGHTS};
 use crate::{Header, List, Str};
 
@@ -59,13 +57,13 @@ impl Stats {
 
 /// A finished drawing: in points, from the canvas's top left corner.
 pub struct Drawing {
-    pub scene: Scene,
+    pub list: Rc<DrawList>,
     pub stats: Stats,
 }
 
 /// The canvas being drawn.
 struct Current {
-    scene: Scene,
+    scene: DrawList,
     w: f64,
     h: f64,
     path: BezPath,
@@ -92,16 +90,11 @@ struct Kept {
     drawing: Rc<Drawing>,
 }
 
-/// The GPU, for `renderImage` (an app's window has its own).
-struct Gpu {
-    cx: vello::util::RenderContext,
-    renderer: Option<vello::Renderer>,
-}
-
 thread_local! {
-    // (Not dropped when the thread ends: the GPU's own cleanup can't run
-    // that late. The process is ending anyway.)
-    static GPU: RefCell<Option<std::mem::ManuallyDrop<Gpu>>> = const { RefCell::new(None) };
+    // The renderer for `renderImage` (an app's window has its own). (Not
+    // dropped when the thread ends: the GPU's own cleanup can't run that
+    // late. The process is ending anyway.)
+    static OFFSCREEN: RefCell<Option<std::mem::ManuallyDrop<super::backend::Offscreen>>> = const { RefCell::new(None) };
     static CURRENT: RefCell<Option<Current>> = const { RefCell::new(None) };
     static TEXT: RefCell<Option<TextEngine>> = const { RefCell::new(None) };
     static KEPT: RefCell<HashMap<u64, Kept>> = RefCell::new(HashMap::new());
@@ -110,7 +103,7 @@ thread_local! {
 /// Runs a canvas's block, and returns what it drew.
 fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
     let current = Current {
-        scene: Scene::new(),
+        scene: DrawList::new(),
         w,
         h,
         path: BezPath::new(),
@@ -127,9 +120,9 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
     block.call_with_floats(w, h);
     let mut done = CURRENT.with(|c| std::mem::replace(&mut *c.borrow_mut(), outer)).expect("the canvas being drawn");
     for _ in 0..done.clips {
-        done.scene.pop_layer();
+        done.scene.pop();
     }
-    Drawing { scene: done.scene, stats: done.stats }
+    Drawing { list: Rc::new(done.scene), stats: done.stats }
 }
 
 /// The drawing of the canvas with key `key`: its block's, or the one kept
@@ -177,33 +170,16 @@ pub unsafe extern "C" fn tsl_render_image(
         return 0;
     }
     let drawing = draw(&block, width, height);
-    let mut scene = Scene::new();
-    scene.append(&drawing.scene, Some(Affine::scale(scale)));
+    let mut list = DrawList::new();
+    list.append(drawing.list.clone(), Affine::scale(scale));
     let (w, h) = (w as u32, h as u32);
     let jpeg = path.to_lowercase().ends_with(".jpg") || path.to_lowercase().ends_with(".jpeg");
-    let base = if jpeg { Color::WHITE } else { Color::TRANSPARENT };
-    let mut pixels = GPU.with(|g| {
-        let mut g = g.borrow_mut();
-        let gpu = g.get_or_insert_with(|| std::mem::ManuallyDrop::new(Gpu { cx: vello::util::RenderContext::new(), renderer: None }));
-        let gpu: &mut Gpu = gpu;
-        super::render::render_pixels(&mut gpu.cx, &mut gpu.renderer, &scene, w, h, base)
+    let base = jpeg.then_some(Rgba([255, 255, 255, 255]));
+    let pixels = OFFSCREEN.with(|o| {
+        let mut o = o.borrow_mut();
+        o.get_or_insert_with(|| std::mem::ManuallyDrop::new(super::backend::Offscreen::default())).rgba(&list, w, h, base)
     });
-    // The GPU gives colors already multiplied by their opacity; files don't.
-    for p in pixels.chunks_exact_mut(4) {
-        let a = p[3] as u32;
-        if a > 0 && a < 255 {
-            for c in &mut p[..3] {
-                *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
-            }
-        }
-    }
-    let Some(picture) = image::RgbaImage::from_raw(w, h, pixels) else { return 0 };
-    let saved = if jpeg {
-        image::DynamicImage::ImageRgba8(picture).to_rgb8().save_with_format(&path, image::ImageFormat::Jpeg)
-    } else {
-        picture.save_with_format(&path, image::ImageFormat::Png)
-    };
-    saved.is_ok() as u8
+    super::backend::save_rgba(&path, w, h, pixels) as u8
 }
 
 /// Drops the drawings kept for canvases that aren't in the tree any more.
@@ -215,9 +191,9 @@ pub fn keep_only(keys: &HashSet<u64>) {
 pub fn forget_all() {
     KEPT.with(|k| k.borrow_mut().clear());
     TEXT.with(|t| *t.borrow_mut() = None);
-    GPU.with(|g| {
-        if let Some(mut gpu) = g.borrow_mut().take() {
-            unsafe { std::mem::ManuallyDrop::drop(&mut gpu) };
+    OFFSCREEN.with(|o| {
+        if let Some(mut offscreen) = o.borrow_mut().take() {
+            unsafe { std::mem::ManuallyDrop::drop(&mut offscreen) };
         }
     });
 }
@@ -232,10 +208,6 @@ fn with(f: impl FnOnce(&mut Current)) {
 
 fn with_text<R>(f: impl FnOnce(&mut TextEngine) -> R) -> R {
     TEXT.with(|t| f(t.borrow_mut().get_or_insert_with(TextEngine::new)))
-}
-
-fn color(c: Rgba) -> Color {
-    Color::from_rgba8(c.0[0], c.0[1], c.0[2], c.0[3])
 }
 
 /// The items of a `[Float]`.
@@ -534,13 +506,13 @@ pub extern "C" fn tsl_canvas_arc(x: f64, y: f64, radius: f64, from: f64, to: f64
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_fill(tag: i32, payload: *const Header, even_odd: u8) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         if c.path.elements().is_empty() {
             return;
         }
-        let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
-        c.scene.fill(rule, Affine::IDENTITY, col, None, &c.path);
+        let rule = if even_odd != 0 { FillRule::EvenOdd } else { FillRule::NonZero };
+        c.scene.fill(rule, Affine::IDENTITY, col, &c.path);
         c.stats.fills += 1;
     });
 }
@@ -553,14 +525,14 @@ fn stroke_style(width: f64, dash: &[f64]) -> Stroke {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_stroke(tag: i32, payload: *const Header, width: f64, dash: *const List) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     let dash = unsafe { floats(dash) };
     with(|c| {
         if c.path.elements().is_empty() || width <= 0.0 {
             return;
         }
         let dash: Vec<f64> = dash.iter().map(|d| d * c.zoom).collect();
-        c.scene.stroke(&stroke_style(width * c.zoom, &dash), Affine::IDENTITY, col, None, &c.path);
+        c.scene.stroke(&stroke_style(width * c.zoom, &dash), Affine::IDENTITY, col, &c.path);
         c.stats.strokes += 1;
     });
 }
@@ -569,13 +541,13 @@ pub unsafe extern "C" fn tsl_canvas_stroke(tag: i32, payload: *const Header, wid
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_line(x1: f64, y1: f64, x2: f64, y2: f64, tag: i32, payload: *const Header, width: f64) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         if width <= 0.0 {
             return;
         }
-        let line = vello::kurbo::Line::new(c.transform * Point::new(x1, y1), c.transform * Point::new(x2, y2));
-        c.scene.stroke(&Stroke::new(width * c.zoom), Affine::IDENTITY, col, None, &line);
+        let line = kurbo::Line::new(c.transform * Point::new(x1, y1), c.transform * Point::new(x2, y2));
+        c.scene.stroke(&Stroke::new(width * c.zoom), Affine::IDENTITY, col, &line);
         c.stats.strokes += 1;
     });
 }
@@ -588,10 +560,10 @@ fn shape_path(c: &Current, shape: &impl Shape) -> BezPath {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_fill_rect(x: f64, y: f64, w: f64, h: f64, tag: i32, payload: *const Header, radius: f64) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         let p = shape_path(c, &RoundedRect::new(x, y, x + w, y + h, radius.max(0.0)));
-        c.scene.fill(Fill::NonZero, Affine::IDENTITY, col, None, &p);
+        c.scene.fill(FillRule::NonZero, Affine::IDENTITY, col, &p);
         c.stats.fills += 1;
     });
 }
@@ -608,7 +580,7 @@ pub unsafe extern "C" fn tsl_canvas_stroke_rect(
     line_width: f64,
     radius: f64,
 ) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         if line_width <= 0.0 {
             return;
@@ -616,30 +588,30 @@ pub unsafe extern "C" fn tsl_canvas_stroke_rect(
         let p = shape_path(c, &RoundedRect::new(x, y, x + w, y + h, radius.max(0.0)));
         // Square corners stay square.
         let style = Stroke::new(line_width * c.zoom).with_join(Join::Miter);
-        c.scene.stroke(&style, Affine::IDENTITY, col, None, &p);
+        c.scene.stroke(&style, Affine::IDENTITY, col, &p);
         c.stats.strokes += 1;
     });
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_fill_circle(x: f64, y: f64, radius: f64, tag: i32, payload: *const Header) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         let p = shape_path(c, &Circle::new((x, y), radius.max(0.0)));
-        c.scene.fill(Fill::NonZero, Affine::IDENTITY, col, None, &p);
+        c.scene.fill(FillRule::NonZero, Affine::IDENTITY, col, &p);
         c.stats.fills += 1;
     });
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_stroke_circle(x: f64, y: f64, radius: f64, tag: i32, payload: *const Header, line_width: f64) {
-    let col = color(unsafe { theme::color(tag, payload) });
+    let col = unsafe { theme::color(tag, payload) };
     with(|c| {
         if line_width <= 0.0 {
             return;
         }
         let p = shape_path(c, &Circle::new((x, y), radius.max(0.0)));
-        c.scene.stroke(&Stroke::new(line_width * c.zoom), Affine::IDENTITY, col, None, &p);
+        c.scene.stroke(&Stroke::new(line_width * c.zoom), Affine::IDENTITY, col, &p);
         c.stats.strokes += 1;
     });
 }
@@ -669,46 +641,23 @@ pub unsafe extern "C" fn tsl_canvas_text(
 ) {
     let text = unsafe { crate::str_text(text) };
     let ink = unsafe { theme::color(tag, payload) };
-    let halo = color(unsafe { theme::color(halo_tag, halo_payload) });
+    let halo = unsafe { theme::color(halo_tag, halo_payload) };
     if text.is_empty() || size <= 0.0 {
         return;
     }
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
     with(|c| {
         let (size, halo_width) = (size * c.zoom, halo_width * c.zoom);
-        let layout = with_text(|t| t.layout(text, size, weight, ink, None));
+        let layout = Rc::new(with_text(|t| t.layout(text, size, weight, ink, None)));
         let (h, v) = super::align_2d(align.clamp(0, 8) as u8);
-        let (w, ht) = (layout.width() as f64, layout.height() as f64);
+        let (w, ht) = (layout.width(), layout.height());
         let anchor = c.transform * Point::new(x, y);
         let t = Affine::translate(anchor.to_vec2())
             * Affine::rotate(angle)
             * Affine::translate(Vec2::new(-w * h as f64 / 2.0, -ht * v as f64 / 2.0));
-        let outline = Stroke::new(halo_width * 2.0);
-        for pass in 0..2 {
-            // The halo first, under the text.
-            if pass == 0 && halo_width <= 0.0 {
-                continue;
-            }
-            for line in layout.lines() {
-                for item in line.items() {
-                    let PositionedLayoutItem::GlyphRun(run) = item else { continue };
-                    let r = run.run();
-                    let glyphs = run.positioned_glyphs().map(|g| vello::Glyph { id: g.id, x: g.x, y: g.y });
-                    let draw = c
-                        .scene
-                        .draw_glyphs(r.font())
-                        .hint(false)
-                        .transform(t)
-                        .font_size(r.font_size())
-                        .normalized_coords(r.normalized_coords());
-                    if pass == 0 {
-                        draw.brush(halo).draw(&outline, glyphs);
-                    } else {
-                        draw.brush(color(ink)).draw(Fill::NonZero, glyphs);
-                    }
-                }
-            }
-        }
+        // The halo first, under the text.
+        let halo = (halo_width > 0.0).then_some((halo, halo_width * 2.0));
+        c.scene.ops.push(super::draw::Op::Text { layout, transform: t, tint: Some(ink), halo });
         c.stats.texts += 1;
     });
 }
@@ -721,7 +670,7 @@ pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weig
         return 0.0;
     }
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
-    with_text(|t| t.layout(text, size, weight, Rgba([0, 0, 0, 255]), None).width() as f64)
+    with_text(|t| t.layout(text, size, weight, Rgba([0, 0, 0, 255]), None).width())
 }
 
 /// `g.image(path, …)`: a PNG or JPEG file, in the rectangle given. Returns
@@ -729,12 +678,12 @@ pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weig
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_canvas_image(path: *const Str, x: f64, y: f64, w: f64, h: f64, opacity: f64) -> u8 {
     let path = unsafe { crate::str_text(path) };
+    super::image::enable();
     let Some(picture) = super::image::load(path) else { return 0 };
     let mut drawn = 0;
     with(|c| {
         let t = c.transform * Affine::translate((x, y)) * Affine::scale_non_uniform(w / picture.width.max(1.0), h / picture.height.max(1.0));
-        let brush = ImageBrush::new(picture.image.clone()).with_alpha(opacity.clamp(0.0, 1.0) as f32);
-        c.scene.draw_image(&brush, t);
+        c.scene.image(picture.clone(), t, opacity.clamp(0.0, 1.0) as f32);
         c.stats.images += 1;
         drawn = 1;
     });
@@ -790,7 +739,7 @@ pub extern "C" fn tsl_canvas_restore() {
         c.transform = transform;
         c.zoom = zoom;
         while c.clips > clips {
-            c.scene.pop_layer();
+            c.scene.pop();
             c.clips -= 1;
         }
     });
@@ -802,7 +751,7 @@ pub extern "C" fn tsl_canvas_restore() {
 pub extern "C" fn tsl_canvas_clip(x: f64, y: f64, w: f64, h: f64) {
     with(|c| {
         let p = shape_path(c, &Rect::new(x, y, x + w, y + h));
-        c.scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, &p);
+        c.scene.push(FillRule::NonZero, 1.0, Affine::IDENTITY, &p);
         c.clips += 1;
     });
 }
@@ -812,8 +761,8 @@ pub extern "C" fn tsl_canvas_clip(x: f64, y: f64, w: f64, h: f64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_canvas_clip_path(even_odd: u8) {
     with(|c| {
-        let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
-        c.scene.push_clip_layer(rule, Affine::IDENTITY, &c.path);
+        let rule = if even_odd != 0 { FillRule::EvenOdd } else { FillRule::NonZero };
+        c.scene.push(rule, 1.0, Affine::IDENTITY, &c.path);
         c.clips += 1;
     });
 }

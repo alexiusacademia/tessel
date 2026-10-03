@@ -9,6 +9,7 @@
 mod anim;
 mod app;
 mod canvas;
+mod draw;
 mod edit;
 mod highlight;
 mod image;
@@ -16,6 +17,25 @@ mod layout;
 mod markdown;
 mod render;
 mod svg;
+mod text;
+
+// The renderer: what draws, lays text out and reads pictures. On macOS and
+// Windows the system's (`mac`, `win`), when the `native` feature is on;
+// otherwise the GPU's.
+#[cfg(all(feature = "gpu", not(all(feature = "native", any(target_os = "macos", windows)))))]
+pub(crate) mod gpu;
+#[cfg(all(feature = "gpu", not(all(feature = "native", any(target_os = "macos", windows)))))]
+pub(crate) use gpu as backend;
+#[cfg(all(feature = "native", target_os = "macos"))]
+pub(crate) mod mac;
+#[cfg(all(feature = "native", target_os = "macos"))]
+pub(crate) use mac as backend;
+#[cfg(all(feature = "native", windows))]
+pub(crate) mod win;
+#[cfg(all(feature = "native", windows))]
+pub(crate) use win as backend;
+#[cfg(all(feature = "native", any(target_os = "macos", windows)))]
+mod svg_list;
 mod theme;
 
 use std::cell::RefCell;
@@ -535,6 +555,8 @@ pub extern "C" fn tsl_ui_spacer() {
 pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
     let path = unsafe { text_of(path) };
     let svg = path.to_lowercase().ends_with(".svg").then(|| std::fs::read_to_string(&path).ok()).flatten();
+    svg::enable();
+    image::enable();
     let kind = match svg {
         Some(source) => Kind::Svg { source: source.into(), icon: None },
         None => {
@@ -550,12 +572,14 @@ pub unsafe extern "C" fn tsl_ui_image(path: *const Str) {
 pub unsafe extern "C" fn tsl_ui_markdown(source: *const Str, folder: *const Str, f: *const c_void, env: *mut Header) {
     let (source, folder) = unsafe { (text_of(source), text_of(folder)) };
     let on_link = (!f.is_null()).then(|| Callback::new(f, env));
+    markdown::enable();
     with_builder(|b| b.leaf(Kind::Markdown { source: source.into(), folder, on_link }));
 }
 
 /// `Icon(.name)`: a built-in icon, by its index in `IconName`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_icon(index: i32) {
+    svg::enable_icons();
     let Some(&(name, source)) = svg::ICONS.get(index as usize) else { return };
     with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: Some(name) }));
 }
@@ -564,6 +588,7 @@ pub extern "C" fn tsl_ui_icon(index: i32) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_svg(source: *const Str) {
     let source = unsafe { text_of(source) };
+    svg::enable();
     with_builder(|b| b.leaf(Kind::Svg { source: source.into(), icon: None }));
 }
 
@@ -621,6 +646,10 @@ pub unsafe extern "C" fn tsl_ui_begin_picker(f: *const c_void, env: *mut Header)
 pub unsafe extern "C" fn tsl_ui_begin_tabs(f: *const c_void, env: *mut Header, close_f: *const c_void, close_env: *mut Header) {
     let selection = Callback::new(f, env);
     let close = (!close_f.is_null()).then(|| Callback::new(close_f, close_env));
+    // (The close buttons are an icon.)
+    if close.is_some() {
+        svg::enable_icons();
+    }
     with_builder(|b| b.begin(Kind::TabView { selection, close }, 0));
 }
 
@@ -992,12 +1021,12 @@ mod tests {
         let field = &vstack.children[2];
         assert!((field.layout.rect.w - (320.0 - 48.0)).abs() < 1.0, "{:?}", field.layout.rect);
 
-        let mut scene = vello::Scene::new();
+        let mut list = draw::DrawList::new();
         let ui = render::Interaction::default();
-        render::Painter { scene: &mut scene, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None }.paint(&tree);
+        render::Painter { scene: &mut list, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None }.paint(&tree);
         let path = std::env::temp_dir().join("tessel-runtime-counter.png");
-        let mut cx = vello::util::RenderContext::new();
-        render::render_png(&mut cx, &mut None, &scene, 640, 520, path.to_str().unwrap());
+        let pixels = backend::Offscreen::default().rgba(&list, 640, 520, Some(theme::theme().colors[theme::BACKGROUND]));
+        assert!(backend::save_rgba(path.to_str().unwrap(), 640, 520, pixels));
         assert!(std::fs::metadata(&path).unwrap().len() > 1000);
     }
 }

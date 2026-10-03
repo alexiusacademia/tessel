@@ -3,9 +3,7 @@
 //! The field's text lives in the program's state; the runtime only keeps the
 //! selection (as byte offsets), so it survives rebuilds of the view tree.
 
-use parley::{Affinity, Cursor, Layout, Selection};
-
-use super::render::Paint;
+use super::text::{self, Bounds, TextLayout};
 
 /// One undo step: the text and selection before a change.
 #[derive(Clone, Debug)]
@@ -75,16 +73,12 @@ impl Editing {
         self.focus = fix(self.focus);
     }
 
-    fn to_parley(&self, layout: &Layout<Paint>) -> Selection {
-        Selection::new(
-            Cursor::from_byte_index(layout, self.anchor, Affinity::Downstream),
-            Cursor::from_byte_index(layout, self.focus, Affinity::Downstream),
-        )
-    }
-
-    fn set(&mut self, s: Selection) {
-        self.anchor = s.anchor().index();
-        self.focus = s.focus().index();
+    /// Moves the caret to `to`; with `extend`, the selection's other end stays.
+    fn go(&mut self, to: usize, extend: bool) {
+        if !extend {
+            self.anchor = to;
+        }
+        self.focus = to;
     }
 
     fn collapse_to(&mut self, i: usize) {
@@ -158,7 +152,7 @@ impl Clipboard {
 /// changed. `multiline` is true for code editors, false for one-line fields.
 pub fn apply(
     text: &str,
-    layout: &Layout<Paint>,
+    layout: &TextLayout,
     e: &mut Editing,
     edit: Edit,
     clip: &mut Clipboard,
@@ -174,7 +168,7 @@ pub fn apply(
         e.collapse_to(r.start + with.len());
         Some(out)
     };
-    let sel = e.to_parley(layout);
+    let focus = e.focus;
     match edit {
         Edit::Insert(s) => replace(e, &s),
         Edit::Paste => {
@@ -194,15 +188,15 @@ pub fn apply(
         Edit::Backspace(unit) | Edit::Delete(unit) => {
             if e.range().is_empty() {
                 let forward = matches!(edit, Edit::Delete(_));
-                let s = match (unit, forward) {
-                    (Unit::Char, false) => sel.previous_visual(layout, true),
-                    (Unit::Char, true) => sel.next_visual(layout, true),
-                    (Unit::Word, false) => sel.previous_visual_word(layout, true),
-                    (Unit::Word, true) => sel.next_visual_word(layout, true),
-                    (Unit::Line, false) => sel.line_start(layout, true),
-                    (Unit::Line, true) => sel.line_end(layout, true),
+                let to = match (unit, forward) {
+                    (Unit::Char, false) => layout.previous(focus),
+                    (Unit::Char, true) => layout.next(focus),
+                    (Unit::Word, false) => text::word_before(text, focus),
+                    (Unit::Word, true) => text::word_after(text, focus),
+                    (Unit::Line, false) => layout.line_start(focus),
+                    (Unit::Line, true) => layout.line_end(focus),
                 };
-                e.set(s);
+                e.go(to, true);
                 if e.range().is_empty() {
                     return None;
                 }
@@ -217,23 +211,23 @@ pub fn apply(
                 e.collapse_to(if right { r.end } else { r.start });
                 return None;
             }
-            let s = match (unit, right) {
-                (Unit::Char, false) => sel.previous_visual(layout, extend),
-                (Unit::Char, true) => sel.next_visual(layout, extend),
-                (Unit::Word, false) => sel.previous_visual_word(layout, extend),
-                (Unit::Word, true) => sel.next_visual_word(layout, extend),
-                (Unit::Line, false) => sel.line_start(layout, extend),
-                (Unit::Line, true) => sel.line_end(layout, extend),
+            let to = match (unit, right) {
+                (Unit::Char, false) => layout.previous(focus),
+                (Unit::Char, true) => layout.next(focus),
+                (Unit::Word, false) => text::word_before(text, focus),
+                (Unit::Word, true) => text::word_after(text, focus),
+                (Unit::Line, false) => layout.line_start(focus),
+                (Unit::Line, true) => layout.line_end(focus),
             };
-            e.set(s);
+            e.go(to, extend);
             None
         }
         Edit::Up { extend } => {
-            e.set(sel.previous_line(layout, extend));
+            e.go(layout.vertical(focus, true), extend);
             None
         }
         Edit::Down { extend } => {
-            e.set(sel.next_line(layout, extend));
+            e.go(layout.vertical(focus, false), extend);
             None
         }
         Edit::SelectAll => {
@@ -242,20 +236,22 @@ pub fn apply(
             None
         }
         Edit::Click { x, y, extend, clicks } => {
-            let (x, y) = (x as f32, y as f32);
             e.drag = DragBy::Character;
-            let s = match clicks {
-                _ if extend => sel.shift_click_extension(layout, x, y),
-                1 => Selection::from_point(layout, x, y),
-                2 => Selection::word_from_point(layout, x, y),
+            let at = layout.offset_at(x, y);
+            match clicks {
+                _ if extend => e.go(at, true),
+                1 => e.go(at, false),
+                2 => {
+                    let word = text::word_at(text, at);
+                    (e.anchor, e.focus) = (word.start, word.end);
+                }
                 _ => {
                     e.anchor = 0;
                     e.focus = text.len();
                     e.drag = DragBy::Nothing;
                     return None;
                 }
-            };
-            e.set(s);
+            }
             if clicks == 2 && !extend {
                 let word = e.range();
                 e.drag = DragBy::Word(word.start, word.end);
@@ -264,13 +260,11 @@ pub fn apply(
         }
         Edit::Drag { x, y } => {
             match e.drag {
-                DragBy::Character => e.set(sel.extend_to_point(layout, x as f32, y as f32)),
+                DragBy::Character => e.go(layout.offset_at(x, y), true),
                 // From the clicked word to the word under the mouse: the
                 // slightest move after a double click mustn't undo it.
                 DragBy::Word(start, end) => {
-                    let mut there = e.clone();
-                    there.set(Selection::word_from_point(layout, x as f32, y as f32));
-                    let there = there.range();
+                    let there = text::word_at(text, layout.offset_at(x, y));
                     if there.start < start {
                         (e.anchor, e.focus) = (end, there.start);
                     } else {
@@ -285,18 +279,14 @@ pub fn apply(
 }
 
 /// Caret and selection rectangles, in the text's coordinates.
-pub fn geometry(layout: &Layout<Paint>, e: &Editing) -> (Option<parley::BoundingBox>, Vec<parley::BoundingBox>) {
-    let sel = e.to_parley(layout);
-    let caret = Cursor::from_byte_index(layout, e.focus, Affinity::Downstream).geometry(layout, 1.5);
-    let rects = if sel.is_collapsed() { Vec::new() } else { sel.geometry(layout).into_iter().map(|(b, _)| b).collect() };
-    let caret = (caret.y1 > caret.y0).then_some(caret);
-    (caret, rects)
+pub fn geometry(layout: &TextLayout, e: &Editing) -> (Option<Bounds>, Vec<Bounds>) {
+    (layout.caret(e.focus, 1.5), layout.selection(e.range()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::render::TextEngine;
+    use crate::ui::text::TextEngine;
     use crate::ui::Rgba;
 
     const COLOR: Rgba = Rgba([0, 0, 0, 255]);

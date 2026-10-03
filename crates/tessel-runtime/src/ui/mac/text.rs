@@ -1,0 +1,387 @@
+//! Laying text out with Core Text, for the macOS renderer: the system font
+//! (San Francisco) and its monospaced one, shaped and broken into lines by
+//! macOS, and drawn by it too (see `mac::play`).
+
+use std::collections::HashMap;
+use std::ffi::c_void;
+use std::ops::Range;
+
+use super::ffi::*;
+use crate::ui::text::{Line, TextLayout, CODE_LINE};
+use crate::ui::theme::{self, theme};
+use crate::ui::Rgba;
+
+/// A font: the system's, or its monospaced one.
+#[derive(Clone, Copy, PartialEq)]
+struct Font {
+    mono: bool,
+    size: f64,
+    weight: f32,
+    italic: bool,
+}
+
+impl Font {
+    fn key(&self) -> (bool, u64, u32, bool) {
+        (self.mono, self.size.to_bits(), self.weight.to_bits(), self.italic)
+    }
+}
+
+/// What a stretch of the text looks like, where it isn't as the rest.
+struct Span {
+    range: Range<usize>,
+    font: Option<Font>,
+    color: Option<Rgba>,
+}
+
+/// How tall lines are.
+#[derive(Clone, Copy)]
+enum LineHeight {
+    /// As the font says.
+    Natural,
+    /// This many points.
+    Absolute(f64),
+    /// This many times the font's size.
+    Relative(f64),
+}
+
+/// A line as Core Text made it, and where it's drawn: its left end and baseline.
+pub struct ShapedLine {
+    pub line: Option<Owned>,
+    pub x: f64,
+    pub baseline: f64,
+}
+
+/// A layout's lines, ready to draw.
+pub struct Shaped {
+    pub lines: Vec<ShapedLine>,
+}
+
+pub struct TextEngine {
+    fonts: HashMap<(bool, u64, u32, bool), Owned>,
+    /// The attribute that holds each stretch's color (Core Text is told to
+    /// take the color from the context, so it can be drawn in another one).
+    color_key: Owned,
+}
+
+/// The weight trait Core Text uses, for a CSS weight (400 regular, 700 bold).
+fn weight_trait(weight: f32) -> f64 {
+    match weight {
+        w if w <= 400.0 => 0.0,
+        w if w <= 500.0 => 0.23 * (w as f64 - 400.0) / 100.0,
+        w if w <= 600.0 => 0.23 + 0.07 * (w as f64 - 500.0) / 100.0,
+        w => 0.3 + 0.1 * ((w as f64 - 600.0) / 100.0).min(1.0),
+    }
+}
+
+fn packed(c: Rgba) -> i32 {
+    i32::from_be_bytes(c.0)
+}
+
+impl TextEngine {
+    pub fn new() -> TextEngine {
+        TextEngine { fonts: HashMap::new(), color_key: cfstring("TesselColor") }
+    }
+
+    fn font(&mut self, f: Font) -> CTFontRef {
+        if let Some(font) = self.fonts.get(&f.key()) {
+            return font.get();
+        }
+        let font = unsafe {
+            let kind = if f.mono { kCTFontUIFontUserFixedPitch } else { kCTFontUIFontSystem };
+            let mut font = Owned(CTFontCreateUIFontForLanguage(kind, f.size, std::ptr::null()));
+            if f.weight != 400.0 {
+                let w = cfnumber_f64(weight_trait(f.weight));
+                let traits = cfdict(&[(kCTFontWeightTrait, w.get())]);
+                let attrs = cfdict(&[(kCTFontTraitsAttribute, traits.get())]);
+                let d = Owned::new(CTFontCopyFontDescriptor(font.get()));
+                let d2 = d.and_then(|d| Owned::new(CTFontDescriptorCreateCopyWithAttributes(d.get(), attrs.get())));
+                if let Some(weighted) = d2.and_then(|d2| Owned::new(CTFontCreateWithFontDescriptor(d2.get(), f.size, std::ptr::null()))) {
+                    font = weighted;
+                }
+            }
+            if f.italic {
+                let slanted = CTFontCreateCopyWithSymbolicTraits(font.get(), f.size, std::ptr::null(), kCTFontItalicTrait, kCTFontItalicTrait);
+                if let Some(slanted) = Owned::new(slanted) {
+                    font = slanted;
+                }
+            }
+            font
+        };
+        let r = font.get();
+        self.fonts.insert(f.key(), font);
+        r
+    }
+
+    /// Lays `text` out in `font` and `color`, with `spans` in others.
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        &mut self,
+        text: &str,
+        font: Font,
+        color: Rgba,
+        spans: &[Span],
+        height: LineHeight,
+        max_w: Option<f64>,
+        align: u8,
+    ) -> TextLayout {
+        // Core Text counts in UTF-16 units: where each starts, in bytes.
+        let mut bytes: Vec<usize> = Vec::with_capacity(text.len() + 1);
+        for (i, c) in text.char_indices() {
+            for _ in 0..c.len_utf16() {
+                bytes.push(i);
+            }
+        }
+        bytes.push(text.len());
+        let n16 = bytes.len() - 1;
+        let unit = |b: usize| bytes.partition_point(|&x| x < b);
+        let base_font = self.font(font);
+        let span_fonts: Vec<Option<CTFontRef>> = spans.iter().map(|s| s.font.map(|f| self.font(f))).collect();
+
+        let mut lines: Vec<Line> = Vec::new();
+        let mut shaped: Vec<ShapedLine> = Vec::new();
+        unsafe {
+            let s = cfstring(text);
+            let attributed = Owned(CFAttributedStringCreateMutable(std::ptr::null(), 0) as CFTypeRef);
+            let a = attributed.get() as CFMutableAttributedStringRef;
+            CFAttributedStringReplaceString(a, CFRange::new(0, 0), s.get());
+            CFAttributedStringBeginEditing(a);
+            let all = CFRange::new(0, n16);
+            if n16 > 0 {
+                CFAttributedStringSetAttribute(a, all, kCTFontAttributeName, base_font);
+                CFAttributedStringSetAttribute(a, all, kCTForegroundColorFromContextAttributeName, kCFBooleanTrue);
+                let c = cfnumber_i32(packed(color));
+                CFAttributedStringSetAttribute(a, all, self.color_key.get(), c.get());
+                for (span, f) in spans.iter().zip(&span_fonts) {
+                    let (from, to) = (unit(span.range.start), unit(span.range.end));
+                    if to <= from {
+                        continue;
+                    }
+                    let r = CFRange::new(from, to - from);
+                    if let Some(f) = f {
+                        CFAttributedStringSetAttribute(a, r, kCTFontAttributeName, *f);
+                    }
+                    if let Some(c) = span.color {
+                        let c = cfnumber_i32(packed(c));
+                        CFAttributedStringSetAttribute(a, r, self.color_key.get(), c.get());
+                    }
+                }
+            }
+            CFAttributedStringEndEditing(a);
+
+            // (No text has no typesetter.)
+            let typesetter = if n16 > 0 { Owned::new(CTTypesetterCreateWithAttributedString(a as CFAttributedStringRef)) } else { None };
+            let width = max_w.map_or(1.0e9, |w| w + 0.5);
+            let mut start = 0;
+            let mut made: Vec<(usize, usize, Option<Owned>)> = Vec::new();
+            while let (true, Some(t)) = (start < n16, &typesetter) {
+                let count = (CTTypesetterSuggestLineBreak(t.get(), start as CFIndex, width) as usize).max(1);
+                let line = Owned::new(CTTypesetterCreateLine(t.get(), CFRange::new(start, count)));
+                made.push((start, count, line));
+                start += count;
+            }
+            // After a final line break (or for no text at all), an empty line.
+            if n16 == 0 || text.ends_with('\n') {
+                made.push((n16, 0, None));
+            }
+
+            let size = font.size;
+            let (fa, fd, fl) = (CTFontGetAscent(base_font), CTFontGetDescent(base_font), CTFontGetLeading(base_font));
+            let mut measured = Vec::new();
+            let mut widest: f64 = 0.0;
+            for (start, count, line) in &made {
+                let (mut asc, mut desc, mut lead) = (fa, fd, fl);
+                let mut visible = 0.0;
+                if let Some(l) = line {
+                    let w = CTLineGetTypographicBounds(l.get(), &mut asc, &mut desc, &mut lead);
+                    visible = (w - CTLineGetTrailingWhitespaceWidth(l.get())).max(0.0);
+                }
+                widest = widest.max(visible);
+                measured.push((*start, *count, asc, desc, lead, visible));
+            }
+            let mut top = 0.0;
+            for ((start, count, line), (_, _, asc, desc, lead, visible)) in made.into_iter().zip(measured) {
+                let (h, baseline) = match height {
+                    LineHeight::Natural => (asc + desc + lead, lead / 2.0 + asc),
+                    LineHeight::Absolute(h) => (h, (h - asc - desc) / 2.0 + asc),
+                    LineHeight::Relative(k) => (k * size, (k * size - asc - desc) / 2.0 + asc),
+                };
+                let x = match align {
+                    1 => (widest - visible) / 2.0,
+                    2 => widest - visible,
+                    _ => 0.0,
+                };
+                let range = bytes[start]..bytes[start + count];
+                let mut stops: Vec<(usize, f64)> = Vec::new();
+                if let Some(l) = &line {
+                    let runs = CTLineGetGlyphRuns(l.get());
+                    for r in 0..CFArrayGetCount(runs) {
+                        let run = CFArrayGetValueAtIndex(runs, r);
+                        let n = CTRunGetGlyphCount(run) as usize;
+                        let mut positions = vec![CGPoint::default(); n];
+                        let mut indices = vec![0 as CFIndex; n];
+                        CTRunGetPositions(run, CFRange::new(0, 0), positions.as_mut_ptr());
+                        CTRunGetStringIndices(run, CFRange::new(0, 0), indices.as_mut_ptr());
+                        for (p, i) in positions.iter().zip(&indices) {
+                            if let Some(&b) = bytes.get(*i as usize) {
+                                stops.push((b, x + p.x));
+                            }
+                        }
+                    }
+                }
+                stops.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+                stops.dedup_by_key(|s| s.0);
+                let end_x = x + visible;
+                // The line break: where the line ends.
+                if text[range.clone()].ends_with('\n') {
+                    let nl = range.end - 1;
+                    stops.retain(|s| s.0 != nl);
+                    stops.push((nl, end_x));
+                }
+                if stops.is_empty() {
+                    stops.push((range.start, x));
+                }
+                lines.push(Line { range, top, bottom: top + h, stops, end_x });
+                shaped.push(ShapedLine { line, x, baseline: top + baseline });
+                top += h;
+            }
+            let height = top;
+            TextLayout { width: widest, height, lines, len: text.len(), shaped: Shaped { lines: shaped } }
+        }
+    }
+
+    /// Code: monospaced, not wrapped, with syntax colors.
+    pub fn code_layout(&mut self, text: &str, size: f64) -> TextLayout {
+        let spans = colors(crate::ui::highlight::highlight(text));
+        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let color = theme().colors[theme::PRIMARY];
+        self.build(text, font, color, &spans, LineHeight::Absolute(CODE_LINE as f64), None, 0)
+    }
+
+    /// Monospaced text, left-aligned, in one color.
+    pub fn mono_line(&mut self, text: &str, size: f64, weight: f32, color: Rgba) -> TextLayout {
+        self.build(text, Font { mono: true, size, weight, italic: false }, color, &[], LineHeight::Natural, None, 0)
+    }
+
+    /// Monospaced gray text (line numbers), on the lines of the code, right-aligned.
+    pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> TextLayout {
+        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        self.build(text, font, color, &[], LineHeight::Absolute(CODE_LINE as f64), None, 2)
+    }
+
+    /// Text with stretches in other styles (bold, italic, code, links), for
+    /// `Markdown`: wrapped at `max_w`, with room between its lines.
+    pub fn rich(
+        &mut self,
+        text: &str,
+        size: f64,
+        weight: f32,
+        color: Rgba,
+        spans: &[(Range<usize>, crate::ui::markdown::Inline)],
+        max_w: Option<f64>,
+    ) -> TextLayout {
+        let base = Font { mono: false, size, weight, italic: false };
+        let spans: Vec<Span> = spans
+            .iter()
+            .map(|(range, style)| {
+                let mut font = base;
+                if style.bold {
+                    font.weight = 700.0;
+                }
+                if style.italic {
+                    font.italic = true;
+                }
+                if style.code {
+                    font.mono = true;
+                    font.size = size * 0.92;
+                }
+                let color = if style.code {
+                    Some(theme().code.type_name)
+                } else if style.link.is_some() {
+                    Some(theme().accent)
+                } else {
+                    None
+                };
+                Span { range: range.clone(), font: Some(font), color }
+            })
+            .collect();
+        self.build(text, base, color, &spans, LineHeight::Relative(1.45), max_w, 0)
+    }
+
+    /// A block of code in a `Markdown` view: monospaced, wrapped at `width`,
+    /// with syntax colors if it's Tessel.
+    pub fn code_block(&mut self, text: &str, size: f64, tessel: bool, width: f64) -> TextLayout {
+        let spans = if tessel { colors(crate::ui::highlight::highlight(text)) } else { Vec::new() };
+        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let color = theme().colors[theme::PRIMARY];
+        self.build(text, font, color, &spans, LineHeight::Relative(1.45), Some(width), 0)
+    }
+
+    pub fn layout(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>) -> TextLayout {
+        self.aligned(text, size, weight, color, max_w, 0)
+    }
+
+    /// Like `layout`, with the lines lined up (0 leading, 1 center, 2
+    /// trailing) inside the width of the widest.
+    pub fn aligned(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
+        self.build(text, Font { mono: false, size, weight, italic: false }, color, &[], LineHeight::Natural, max_w, align)
+    }
+}
+
+fn colors(ranges: Vec<(Range<usize>, Rgba)>) -> Vec<Span> {
+    ranges.into_iter().map(|(range, color)| Span { range, font: None, color: Some(color) }).collect()
+}
+
+/// Draws a layout's lines in a context whose y grows downwards, with its
+/// top left at (0, 0): each stretch in its color, or all in `tint`.
+pub fn draw(ctx: CGContextRef, layout: &TextLayout, tint: Option<Rgba>, color_key: CFStringRef, halo: Option<(Rgba, f64)>) {
+    unsafe {
+        // Glyphs are drawn y-up: flip them back.
+        CGContextSetTextMatrix(ctx, CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: -1.0, tx: 0.0, ty: 0.0 });
+        for pass in [true, false] {
+            let outline = pass;
+            if outline && halo.is_none() {
+                continue;
+            }
+            if let (true, Some((c, width))) = (outline, halo) {
+                CGContextSetTextDrawingMode(ctx, kCGTextStroke);
+                CGContextSetLineWidth(ctx, width);
+                CGContextSetLineJoin(ctx, kCGLineJoinRound);
+                let [r, g, b, a] = c.0.map(|v| v as f64 / 255.0);
+                CGContextSetRGBStrokeColor(ctx, r, g, b, a);
+            } else {
+                CGContextSetTextDrawingMode(ctx, kCGTextFill);
+            }
+            for l in &layout.shaped.lines {
+                let Some(line) = &l.line else { continue };
+                CGContextSetTextPosition(ctx, l.x, l.baseline);
+                let runs = CTLineGetGlyphRuns(line.get());
+                for i in 0..CFArrayGetCount(runs) {
+                    let run = CFArrayGetValueAtIndex(runs, i);
+                    if !outline {
+                        let c = tint.unwrap_or_else(|| {
+                            let value = CFDictionaryGetValue(CTRunGetAttributes(run), color_key);
+                            let mut v: i32 = -1;
+                            if !value.is_null() {
+                                CFNumberGetValue(value, kCFNumberSInt32Type, &mut v as *mut i32 as *mut c_void);
+                            }
+                            Rgba(v.to_be_bytes())
+                        });
+                        let [r, g, b, a] = c.0.map(|v| v as f64 / 255.0);
+                        CGContextSetRGBFillColor(ctx, r, g, b, a);
+                    }
+                    CTRunDraw(run, ctx, CFRange::new(0, 0));
+                }
+            }
+        }
+        CGContextSetTextDrawingMode(ctx, kCGTextFill);
+    }
+}
+
+thread_local! {
+    static COLOR_KEY: Owned = cfstring("TesselColor");
+}
+
+/// The attribute the engines keep colors in (the same text in each).
+pub fn color_key() -> CFStringRef {
+    COLOR_KEY.with(|k| k.get())
+}

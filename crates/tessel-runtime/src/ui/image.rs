@@ -2,18 +2,20 @@
 //!
 //! The tree is rebuilt on every change, so decoded pictures are kept by path
 //! (and read again when the file changes).
+//!
+//! Only apps that show pictures have the decoders: the views that do turn
+//! them on (`enable`), and `load` reaches them through a function pointer, so
+//! the linker leaves them out of other apps.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
-use image::ImageDecoder;
-use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
-
 pub struct Picture {
-    pub image: ImageData,
+    /// The renderer's.
+    pub image: super::backend::ImageData,
     /// In points: one for each pixel.
     pub width: f64,
     pub height: f64,
@@ -45,8 +47,15 @@ thread_local! {
     static CACHE: RefCell<Cache> = RefCell::new(Cache::default());
 }
 
+static DECODE: OnceLock<fn(&str) -> Option<Picture>> = OnceLock::new();
+
+/// Turns the picture decoders on (see the module's comment).
+pub fn enable() {
+    let _ = DECODE.set(super::backend::decode_picture);
+}
+
 fn size(picture: &Option<Rc<Picture>>) -> usize {
-    picture.as_ref().map_or(0, |p| p.image.width as usize * p.image.height as usize * 4)
+    picture.as_ref().map_or(0, |p| p.width as usize * p.height as usize * 4)
 }
 
 /// The picture in the file at `path`; `None` if it's missing or not a PNG or JPEG.
@@ -60,7 +69,7 @@ pub fn load(path: &str) -> Option<Rc<Picture>> {
             e.used = now;
             return e.picture.clone();
         }
-        let picture = decode(path).map(Rc::new);
+        let picture = DECODE.get().and_then(|decode| decode(path)).map(Rc::new);
         let added = size(&picture);
         if let Some(old) = c.entries.insert(path.to_string(), Entry { modified, picture: picture.clone(), used: now }) {
             c.bytes -= size(&old.picture);
@@ -79,26 +88,5 @@ pub fn load(path: &str) -> Option<Rc<Picture>> {
             }
         }
         picture
-    })
-}
-
-fn decode(path: &str) -> Option<Picture> {
-    let mut decoder = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.into_decoder().ok()?;
-    // Photos from cameras and phones say which way up they are.
-    let orientation = decoder.orientation().ok()?;
-    let mut picture = image::DynamicImage::from_decoder(decoder).ok()?;
-    picture.apply_orientation(orientation);
-    let rgba = picture.into_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some(Picture {
-        image: ImageData {
-            data: Blob::new(Arc::new(rgba.into_raw())),
-            format: ImageFormat::Rgba8,
-            alpha_type: ImageAlphaType::Alpha,
-            width,
-            height,
-        },
-        width: width as f64,
-        height: height as f64,
     })
 }

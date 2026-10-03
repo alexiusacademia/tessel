@@ -1,0 +1,32 @@
+Root [0,0 400x200]
+  View [0,0 400x200]
+    HStack [0,0 400x200]
+      Text "Left" [0,0 150x200]
+      Spacer [150,0 6x200]
+      VStack [156,0 244x200]
+        Text "Moved 0, 0" [242,72 72x16]
+        Text "Drag me" [243,96 71x32]
+Root [0,0 400x200]
+  View [0,0 400x200]
+    HStack [0,0 400x200]
+      Text "Left" [0,0 300x200]
+      Spacer [300,0 6x200]
+      VStack [306,0 94x200]
+        Text "Moved 0, 0" [317,72 72x16]
+        Text "Drag me" [318,96 71x32]
+Root [0,0 400x200]
+  View [0,0 400x200]
+    HStack [0,0 400x200]
+      Text "Left" [0,0 60x200]
+      Spacer [60,0 6x200]
+      VStack [66,0 334x200]
+        Text "Moved 0, 0" [197,72 72x16]
+        Text "Drag me" [198,96 71x32]
+Root
+  View
+    HStack
+      Text "Left"
+      Spacer
+      VStack
+        Text "Moved 15, -1"
+        Text "Drag me"
