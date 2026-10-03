@@ -1,0 +1,41 @@
+// Reordering a list by dragging its rows: a layers panel.
+
+view LayerRow(name: String, index: Int, move: fn(String, Int)) {
+    state targeted = false
+
+    HStack {
+        Text(name)
+        Spacer()
+    }
+    .padding(horizontal: 8, vertical: 4)
+    .background(if targeted { .highlight } else { .clear }, radius: 4)
+    .draggable(name)
+    .dropTarget(isTargeted: targeted) { payload, x, y in
+        // Dropped on the lower half (of the 16 points inside the padding): after this row.
+        move(payload, if y > 8 { index + 1 } else { index })
+    }
+}
+
+app Layers(width: 260, height: 240) {
+    state layers = ["Roads", "Rivers", "Parcels", "Imagery"]
+    state log = ""
+
+    VStack(spacing: 0, alignment: .leading) {
+        for (i, name) in layers.enumerated() {
+            LayerRow(name: name, index: i, move: { payload, to in
+                moveLayer(payload, to: to)
+            })
+            .id(name)
+        }
+        Text(log).padding(8)
+    }
+    .padding(8)
+
+    fn moveLayer(_ name: String, to: Int) {
+        if let from = layers.index(of: name) {
+            layers.remove(at: from)
+            layers.insert(name, at: if to > from { to - 1 } else { to })
+            log = "moved {name}"
+        }
+    }
+}

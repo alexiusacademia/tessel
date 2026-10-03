@@ -251,6 +251,9 @@ enum Body<'b> {
     /// A function declared in a view or app, used as a value (`action: save`):
     /// calling it calls the function.
     ViewFnRef(String),
+    /// Content built for a number (`LazyVStack`'s rows, `{ i in … }`):
+    /// calling it with the number emits the views.
+    Rows(&'b Ident, &'b Block),
 }
 
 /// How a closure captures a variable.
@@ -1102,6 +1105,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),
             "tsl_ui_on_pointer" | "tsl_ui_on_key" | "tsl_ui_on_key_event" => (vec![p, p], None),
+            "tsl_ui_slider" => (vec![p, p, f64t, f64t, f64t, p, p], None),
+            "tsl_ui_stepper" => (vec![p, p, i8t, f64t, f64t, f64t, i, p, p], None),
+            "tsl_ui_color_picker" | "tsl_ui_drop_target" => (vec![p, p, p, p], None),
+            "tsl_ui_begin_disclosure" => (vec![p, p, p], Some(i8t)),
+            "tsl_ui_lazy" => (vec![i, f64t, p, p], None),
+            "tsl_ui_draggable" => (vec![p], None),
             "tsl_ui_cursor" => (vec![i32t], None),
             "tsl_ui_offset" => (vec![f64t, f64t], None),
             "tsl_ui_clipped" => (vec![i8t], None),
@@ -3396,6 +3405,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone())
             }
             (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
+            (Body::Rows(..), _) => {
+                (self.ctx.void_type().fn_type(&[self.ptr_ty().into(), self.i64().into()], false), vec![Ty::Int], Ty::Void)
+            }
             _ => (self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
         };
         self.closures += 1;
@@ -3408,6 +3420,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 free_block(b, &mut bound, &mut free);
             }
             Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
+            Body::Rows(p, b) => free_block(b, &mut vec![p.name.clone()], &mut free),
             Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
             Body::ViewFnRef(name) => {
                 free.insert(name.clone());
@@ -3575,7 +3588,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
         }
         let boxed = match &body {
-            Body::Fn(_, b) | Body::Content(b) => boxed_vars(b),
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => boxed_vars(b),
             _ => HashSet::new(),
         };
         self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record });
@@ -3589,6 +3602,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.finish_function(v);
             }
             Body::Content(b) => {
+                self.content_block(b, false);
+                self.finish_function(None);
+            }
+            Body::Rows(p, b) => {
+                let v = f.get_nth_param(1).unwrap();
+                self.declare_value(&p.name, &Ty::Int, Some(v));
                 self.content_block(b, false);
                 self.finish_function(None);
             }

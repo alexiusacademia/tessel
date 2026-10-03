@@ -132,6 +132,23 @@ const FIELD_PAD: (f64, f64) = (8.0, 6.0);
 const SEGMENT_PAD: f64 = 12.0;
 const SWITCH: Size = Size { w: 38.0, h: 22.0 };
 const GROUP_SPACING: f64 = 8.0;
+/// A `Slider`'s height, and the radius of its knob.
+pub const SLIDER_H: f64 = 22.0;
+pub const KNOB: f64 = 9.0;
+/// The width of a `Stepper`'s − and + buttons.
+pub const STEPPER_BUTTON: f64 = 26.0;
+/// A `ColorPicker`'s swatch.
+const PICKER: Size = Size { w: 44.0, h: 24.0 };
+/// How far a `DisclosureGroup`'s content is indented, the size of its
+/// arrow, and the space between its title and content.
+pub const DISCLOSURE_INDENT: f64 = 18.0;
+pub const ARROW: f64 = 12.0;
+const DISCLOSURE_GAP: f64 = 4.0;
+
+thread_local! {
+    /// The window's size, for what's laid out over the rest (a palette).
+    static WINDOW: std::cell::Cell<Size> = const { std::cell::Cell::new(Size { w: 0.0, h: 0.0 }) };
+}
 
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
@@ -143,6 +160,7 @@ pub struct Layouter<'a> {
 
 impl Layouter<'_> {
     pub fn run(&mut self, root: &mut Node, w: f64, h: f64) {
+        WINDOW.with(|s| s.set(Size { w, h }));
         self.measure(root, Size { w, h }, &Style::default());
         self.place(root, Rect { x: 0.0, y: 0.0, w, h });
     }
@@ -344,6 +362,47 @@ impl Layouter<'_> {
                 }
                 Size { w: w + 4.0, h: h + 4.0 }
             }
+            Kind::Slider { .. } => Size { w: 160f64.min(avail.w).max(60.0), h: SLIDER_H },
+            Kind::Stepper { value, int, decimals, .. } => {
+                let shown = super::controls::format_number(super::controls::read_number(value, *int), *decimals);
+                let t = self.text_layout(&shown, style, None);
+                let size = Size {
+                    w: 2.0 * STEPPER_BUTTON + (t.width() as f64 + 16.0).max(36.0),
+                    h: (t.height() as f64 + 8.0).max(24.0),
+                };
+                n.layout.text = Some(t);
+                size
+            }
+            Kind::ColorPicker { .. } => {
+                // The palette (when it's open) has its own size.
+                for c in &mut n.children {
+                    self.measure(c, Size { w: f64::INFINITY, h: f64::INFINITY }, style);
+                }
+                PICKER
+            }
+            Kind::Swatch(_) => Size { w: 18.0, h: 18.0 },
+            Kind::Disclosure { title, .. } => {
+                let title = title.clone();
+                let t = self.text_layout(&title, style, None);
+                let header = Size { w: ARROW + 6.0 + t.width() as f64 + 4.0, h: (t.height() as f64).max(ARROW + 4.0) + 6.0 };
+                n.layout.text = Some(t);
+                n.layout.segments = vec![Rect { x: 0.0, y: 0.0, w: header.w, h: header.h }];
+                let inner = Size { w: (avail.w - DISCLOSURE_INDENT).max(0.0), h: (avail.h - header.h - DISCLOSURE_GAP).max(0.0) };
+                let content = self.measure_stack(n, DISCLOSURE_GAP, Axis::Y, inner, style);
+                let open = n.children.iter().any(|c| !c.mods.hidden);
+                Size {
+                    w: header.w.max(if open { DISCLOSURE_INDENT + content.w } else { 0.0 }),
+                    h: header.h + if open { DISCLOSURE_GAP + content.h } else { 0.0 },
+                }
+            }
+            Kind::Lazy { count, row_height, .. } => {
+                let (count, row_height) = (*count, *row_height);
+                let mut w: f64 = 0.0;
+                for c in &mut n.children {
+                    w = w.max(self.measure(c, Size { w: avail.w, h: row_height }, style).w);
+                }
+                Size { w: if avail.w.is_finite() { avail.w } else { w }, h: count as f64 * row_height }
+            }
             Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
             Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
@@ -518,6 +577,45 @@ impl Layouter<'_> {
             Kind::TextField { .. } => {
                 // Re-wrap nothing; the field just takes the width it was given.
             }
+            Kind::ColorPicker { .. } => {
+                // The palette goes below the swatch (above it if there's no
+                // room), inside the window.
+                let window = WINDOW.with(|w| w.get());
+                if let Some(c) = n.children.first_mut() {
+                    let size = c.layout.size;
+                    let x = rect.x.min(window.w - size.w - 4.0).max(4.0);
+                    let below = rect.y + rect.h + 4.0;
+                    let above = rect.y - 4.0 - size.h;
+                    let y = if below + size.h <= window.h - 4.0 {
+                        below
+                    } else if above >= 4.0 {
+                        above
+                    } else {
+                        // Room on neither side: as much of it as fits.
+                        (window.h - 4.0 - size.h).max(4.0)
+                    };
+                    self.place(c, Rect { x, y, w: size.w, h: size.h });
+                }
+            }
+            Kind::Disclosure { .. } => {
+                let header_h = n.layout.segments.first().map_or(0.0, |s| s.h);
+                n.layout.segments = vec![Rect { x: content.x, y: content.y, w: content.w, h: header_h }];
+                let top = header_h + DISCLOSURE_GAP;
+                let inner = Rect {
+                    x: content.x + DISCLOSURE_INDENT,
+                    y: content.y + top,
+                    w: (content.w - DISCLOSURE_INDENT).max(0.0),
+                    h: (content.h - top).max(0.0),
+                };
+                self.place_stack(n, DISCLOSURE_GAP, 0, Axis::Y, inner);
+            }
+            Kind::Lazy { row_height, first, .. } => {
+                let (row_height, first) = (*row_height, *first);
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let y = content.y + (first + i) as f64 * row_height;
+                    self.place(c, Rect { x: content.x, y, w: content.w, h: row_height });
+                }
+            }
             _ => {}
         }
     }
@@ -590,7 +688,8 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     }
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
-        Kind::TextField { .. } | Kind::Markdown { .. } => axis == Axis::X,
+        Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } => axis == Axis::X,
+        Kind::Disclosure { .. } => axis == Axis::X,
         Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } => true,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),

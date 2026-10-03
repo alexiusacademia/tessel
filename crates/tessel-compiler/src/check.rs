@@ -867,6 +867,7 @@ impl Checker<'_> {
                 bind: p.bind && allow_bind,
                 sets_tag: false,
                 tag_fn: false,
+                rows: false,
             });
         }
         out
@@ -2772,6 +2773,16 @@ impl Checker<'_> {
                     let saved = self.tag_ty.take();
                     self.args(&what, &params, args, trailing, span);
                     self.tag_ty = saved;
+                    // A stepper counts in `Int`s or `Float`s.
+                    if n == "Stepper" {
+                        if let Some(a) = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "value")) {
+                            let t = self.types.get(&a.value.id).cloned().unwrap_or(Ty::Error);
+                            if !matches!(t, Ty::Int | Ty::Float) && !t.has_error() {
+                                let what = self.a(&t);
+                                self.error(a.value.span, format!("a `Stepper` changes an `Int` or a `Float`, not {what}"));
+                            }
+                        }
+                    }
                     return Ty::View;
                 }
                 if builtins::FUNCTION_NAMES.contains(&n) {
@@ -3590,6 +3601,27 @@ impl Checker<'_> {
         if p.ty == Ty::View {
             self.content_closure(v);
             return;
+        }
+        // Content built for each number (`LazyVStack`'s rows): `{ i in … }`.
+        if let (Ty::Fn(ps, _), true) = (&p.ty, p.rows) {
+            {
+                let pt = ps[0].clone();
+                match &v.kind {
+                    ExprKind::Closure { params, body } if params.len() == 1 => self.with_scope(|c| {
+                        c.declare(&params[0], pt, Kind::Let);
+                        c.content_block(body, false);
+                    }),
+                    ExprKind::Closure { .. } => {
+                        self.error(v.span, "this block gets each row's number; name it at the start, like `{ i in … }`");
+                    }
+                    _ => {
+                        self.expr(v, None);
+                        self.error(v.span, "write the rows as a block, like `{ i in Text(\"Row {i}\") }`");
+                    }
+                }
+                self.types.insert(v.id, p.ty.clone());
+                return;
+            }
         }
         if p.tag_fn {
             let t = self.tag_ty.clone().unwrap_or(Ty::Error);

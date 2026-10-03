@@ -9,23 +9,29 @@
 //! click 40 60           click at a point
 //! close "main.tsl"      click the close button of the tab with this title
 //! click toggle 2        click the 2nd view of a kind (toggle, button, field,
-//!                       text, editor)
+//!                       text, editor, slider, stepper, colorpicker)
 //! type hello world      type into the text field or code editor being edited
 //! type "two words "     quoted, to keep leading or trailing spaces
 //! key backspace         a key, optionally with modifiers: `key shift+left`,
 //!                       `key alt+backspace`, `key cmd+a` (cmd means Ctrl on
-//!                       Windows). Keys: backspace delete left right up down
-//!                       home end enter tab escape, and letters for shortcuts
+//!                       Windows; `control` is the Ctrl key itself, and
+//!                       `repeat` makes it a key held down). Keys: backspace
+//!                       delete left right up down home end pageup pagedown
+//!                       enter tab escape space f1 … f12, and characters
+//!                       (`key a` types "a" in a field, `key shift+a` "A")
 //! hover "Add"           move the pointer over a labelled view (or `hover 40 60`)
 //! answer "/tmp/a.och"   what the next openFile/saveFile dialog returns
 //!                       (`answer cancel` for cancelling it)
 //! drag 300 40 -80 0     press at a point, and move by (dx, dy) with the
-//!                       button held (for views with `.onDrag`)
+//!                       button held (for views with `.onDrag`, and sliders)
+//! dragto "A" "B"        drag the view with `.draggable` at A onto B (labels,
+//!                       or `dragto 40 60 40 200`), and let go
 //! scroll 0 120          scroll the view under the middle of the window by
 //!                       (dx, dy) points
 //! wheel 40 60 0 120     the same, at a point
 //! press 40 60           press the mouse on a view with `.onPointer` (add
-//!                       `right` or `middle` for another button), then
+//!                       `right` or `middle` for another button) or
+//!                       `.draggable` (or `press "Label"`), then
 //! move 80 60            move it there (a drag while pressed), and
 //! release               let go; `click`, `drag` and `hover` work on such
 //!                       views too, and so do
@@ -603,16 +609,32 @@ enum Hit {
     Drag(u64),
     /// A view with `.onPointer`.
     Pointer(u64),
+    Slider(u64),
+    /// A stepper's − (-1) or + (1) button, or its value (0).
+    Stepper(u64, i8),
+    ColorPicker(u64),
+    /// A color in an open color picker's palette.
+    Swatch(u64),
+    /// Somewhere else on the palette.
+    Palette(u64),
+    /// A disclosure group's title.
+    Disclosure(u64),
 }
 
 impl Hit {
     fn key(&self) -> u64 {
         match *self {
             Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) | Hit::Drag(k) => k,
-            Hit::Pointer(k) => k,
+            Hit::Pointer(k) | Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Swatch(k) | Hit::Palette(k) => k,
+            Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
     }
+}
+
+/// Can the keyboard go to this view with Tab (besides text fields)?
+fn focusable(n: &Node) -> bool {
+    matches!(n.kind, Kind::Slider { .. } | Kind::Stepper { .. } | Kind::ColorPicker { .. } | Kind::Disclosure { .. })
 }
 
 struct App {
@@ -781,9 +803,18 @@ impl App {
                 self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
             let tree = self.tree.as_mut().unwrap();
             Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run(tree, self.width, self.height);
-            if !self.run_on_resize() {
+            let resized = self.run_on_resize();
+            let rows = self.lazy_rows();
+            if !(resized || rows) {
                 break;
             }
+        }
+        // The keyboard leaves a control that's gone, and a palette whose picker is gone closes.
+        if self.ui.editing.is_some() || self.ui.focused.is_some_and(|k| self.node(k).is_none()) {
+            self.ui.focused = None;
+        }
+        if super::controls::OPEN_PICKER.get().is_some_and(|k| self.node(k).is_none()) {
+            super::controls::OPEN_PICKER.set(None);
         }
         self.follow_caret();
         self.layout_popup();
@@ -808,17 +839,21 @@ impl App {
     }
 
     /// Tab and Shift+Tab: edits the next (or previous) text field or code
-    /// editor, with a field's text selected.
+    /// editor, with a field's text selected, or puts the keyboard on the next
+    /// slider, stepper, color picker or disclosure group.
     fn focus_next(&mut self, back: bool) {
         fn fields<'n>(n: &'n Node, out: &mut Vec<&'n Node>) {
             if n.mods.hidden || n.layout.style.disabled {
                 return;
             }
-            if editable_text(n).is_some() {
+            if editable_text(n).is_some() || focusable(n) {
                 out.push(n);
             }
-            for c in n.visible_children() {
-                fields(c, out);
+            // (Not into a color picker's palette.)
+            if !matches!(n.kind, Kind::ColorPicker { .. }) {
+                for c in n.visible_children() {
+                    fields(c, out);
+                }
             }
         }
         let mut found = Vec::new();
@@ -829,7 +864,8 @@ impl App {
         if count == 0 {
             return;
         }
-        let current = self.ui.editing.as_ref().and_then(|e| found.iter().position(|n| n.key == e.key));
+        let at = self.ui.editing.as_ref().map(|e| e.key).or(self.ui.focused);
+        let current = at.and_then(|key| found.iter().position(|n| n.key == key));
         let next = match (current, back) {
             (Some(i), false) => (i + 1) % count,
             (Some(i), true) => (i + count - 1) % count,
@@ -837,13 +873,19 @@ impl App {
             (None, true) => count - 1,
         };
         let node = found[next];
+        self.ui.composing = None;
+        self.completing.asked = None;
+        if focusable(node) {
+            self.ui.focused = Some(node.key);
+            self.ui.editing = None;
+            return;
+        }
         let mut e = Editing::new(node.key, &editable_text(node).map(read_string).unwrap_or_default());
         if matches!(node.kind, Kind::TextField { .. }) {
             e.anchor = 0;
         }
         self.ui.editing = Some(e);
-        self.ui.composing = None;
-        self.completing.asked = None;
+        self.ui.focused = None;
     }
 
     // ===== code completion =====
@@ -1105,6 +1147,61 @@ impl App {
         ran
     }
 
+    /// After layout: the rows each `LazyVStack` should build, from the part
+    /// of it that shows (inside the window and the scroll views around it).
+    /// When those aren't the ones it built, it's to be built again: returns
+    /// whether any is.
+    fn lazy_rows(&mut self) -> bool {
+        fn visit(n: &Node, clip: Rect, out: &mut Vec<(u64, usize, usize)>, seen: &mut Vec<u64>) {
+            if n.mods.hidden {
+                return;
+            }
+            let r = n.layout.rect;
+            let mut clip = clip;
+            if matches!(n.kind, Kind::Scroll) || n.mods.clipped {
+                let c = r.inset_by(n.mods.padding);
+                let (x0, y0) = (clip.x.max(c.x), clip.y.max(c.y));
+                let (x1, y1) = ((clip.x + clip.w).min(c.x + c.w), (clip.y + clip.h).min(c.y + c.h));
+                clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
+            }
+            if let Kind::Lazy { count, row_height, first } = n.kind {
+                seen.push(n.key);
+                let c = r.inset_by(n.mods.padding);
+                let (top, bottom) = (clip.y.max(c.y), (clip.y + clip.h).min(c.y + c.h));
+                let built = (first, first + n.children.len());
+                if bottom > top {
+                    let from = ((top - c.y) / row_height).floor().max(0.0) as usize;
+                    let to = (((bottom - c.y) / row_height).ceil() as usize).min(count);
+                    let screen = (to - from).max(10);
+                    // Rebuild when what shows isn't built, or far more is built than shows.
+                    let missing = from < built.0 || to > built.1;
+                    let wasteful = built.1 - built.0 > 5 * screen;
+                    if missing || wasteful {
+                        out.push((n.key, from.saturating_sub(screen), (to + screen).min(count)));
+                    }
+                }
+            }
+            for c in n.visible_children() {
+                visit(c, clip, out, seen);
+            }
+        }
+        let (mut wanted, mut seen) = (Vec::new(), Vec::new());
+        if let Some(t) = &self.tree {
+            visit(t, Rect { x: 0.0, y: 0.0, w: self.width, h: self.height }, &mut wanted, &mut seen);
+        }
+        super::controls::LAZY.with(|l| {
+            let mut l = l.borrow_mut();
+            l.retain(|k, _| seen.contains(k));
+            for &(key, from, to) in &wanted {
+                l.insert(key, (from, to));
+            }
+        });
+        if !wanted.is_empty() {
+            self.dirty = true;
+        }
+        !wanted.is_empty()
+    }
+
     /// Runs `.onAppear` for views that weren't in the previous tree.
     fn run_on_appear(&mut self) {
         type Keys = std::collections::HashSet<u64>;
@@ -1130,7 +1227,12 @@ impl App {
         self.keys = keys;
         super::canvas::keep_only(&self.keys);
         if let Some((key, text)) = focus {
-            self.ui.editing = Some(Editing::new(key, &text));
+            let mut e = Editing::new(key, &text);
+            // A color picker's hex field starts with its text selected, to type over.
+            if Some(key) == super::controls::HEX_FIELD.get() {
+                e.anchor = 0;
+            }
+            self.ui.editing = Some(e);
         }
         for cb in appeared {
             cb.call();
@@ -1258,6 +1360,8 @@ impl App {
         let tree = self.tree.as_ref().unwrap();
         let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
         painter.paint(tree);
+        painter.paint_overlay(tree);
+        painter.paint_dragged(tree);
         painter.paint_popup();
         painter.paint_tooltip();
         scene
@@ -1292,6 +1396,15 @@ impl App {
                 }
                 return None;
             }
+            // (Its palette is found first, by `overlay_hit`.)
+            if let Kind::ColorPicker { .. } = n.kind {
+                return n.layout.rect.contains(x, y).then_some(Hit::ColorPicker(n.key));
+            }
+            if let Kind::Disclosure { .. } = n.kind {
+                if n.layout.segments.first().is_some_and(|h| h.contains(x, y)) {
+                    return Some(Hit::Disclosure(n.key));
+                }
+            }
             for c in n.children.iter().rev() {
                 if let Some(h) = visit(c, x, y) {
                     return Some(h);
@@ -1310,13 +1423,32 @@ impl App {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
                 Kind::Toggle { .. } => Some(Hit::Toggle(n.key)),
                 Kind::TextField { .. } | Kind::CodeEditor { .. } => Some(Hit::Field(n.key)),
+                Kind::Slider { .. } => Some(Hit::Slider(n.key)),
+                Kind::Stepper { .. } => {
+                    let r = n.layout.rect.inset_by(n.mods.padding);
+                    let b = super::layout::STEPPER_BUTTON;
+                    let dir = if x < r.x + b { -1 } else if x >= r.x + r.w - b { 1 } else { 0 };
+                    Some(Hit::Stepper(n.key, dir))
+                }
+                Kind::Swatch(_) => Some(Hit::Swatch(n.key)),
                 _ if n.mods.on_pointer.is_some() => Some(Hit::Pointer(n.key)),
                 _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
             }
         }
+        // An open color picker's palette is over everything else.
+        if let Some(palette) = self.palette() {
+            if palette.layout.rect.contains(x, y) {
+                return Some(visit(palette, x, y).unwrap_or(Hit::Palette(palette.key)));
+            }
+        }
         visit(self.tree.as_ref()?, x, y)
+    }
+
+    /// The open color picker's palette, if one is open.
+    fn palette(&self) -> Option<&Node> {
+        self.node(super::controls::OPEN_PICKER.get()?)?.children.first()
     }
 
     /// Moves the pointer to a point (as the window does on mouse moves).
@@ -1524,6 +1656,80 @@ impl App {
         true
     }
 
+    // ===== dragging views onto drop targets =====
+
+    /// The innermost visible, enabled view with `.draggable` (or
+    /// `.dropTarget`, with `target`) at a point.
+    fn drag_view_at(&self, x: f64, y: f64, target: bool) -> Option<u64> {
+        fn visit(n: &Node, x: f64, y: f64, target: bool) -> Option<u64> {
+            if n.mods.hidden || n.layout.style.disabled || (n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
+                return None;
+            }
+            let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y, target));
+            let has = if target { n.mods.drop_target.is_some() } else { n.mods.draggable.is_some() };
+            inner.or_else(|| (has && n.layout.rect.contains(x, y)).then_some(n.key))
+        }
+        if self.palette().is_some_and(|p| p.layout.rect.contains(x, y)) {
+            return None;
+        }
+        visit(self.tree.as_ref()?, x, y, target)
+    }
+
+    /// Starts dragging view `key` (which has `.draggable`), held at (x, y).
+    fn begin_drag(&mut self, key: u64, x: f64, y: f64) {
+        let Some(n) = self.node(key) else { return };
+        let Some(payload) = n.mods.draggable.clone() else { return };
+        let r = n.layout.rect;
+        self.ui.dragging = Some(render::Dragging { key, payload, at: (x, y), grab: (x - r.x, y - r.y), target: None });
+        self.ui.pressed = None;
+        self.ui.editing = None;
+        self.tip_hide();
+        self.drag_to(x, y);
+    }
+
+    /// The view being dragged moves with the pointer to (x, y): the drop
+    /// target under it (if any) is told it's targeted, and the one it left that it isn't.
+    fn drag_to(&mut self, x: f64, y: f64) {
+        let target = self.drag_view_at(x, y, true);
+        let Some(d) = self.ui.dragging.as_mut() else { return };
+        d.at = (x, y);
+        let old = std::mem::replace(&mut d.target, target);
+        if old != target {
+            if let Some(old) = old {
+                self.set_targeted(old, false);
+            }
+            if let Some(new) = target {
+                self.set_targeted(new, true);
+            }
+        }
+        self.dirty = true;
+    }
+
+    /// Sets a drop target's `isTargeted:` binding.
+    fn set_targeted(&mut self, key: u64, on: bool) {
+        let Some(t) = self.node(key).and_then(|n| n.mods.drop_target.as_ref()) else { return };
+        if let Some(b) = &t.targeted {
+            unsafe { *b.locate() = on as u8 };
+        }
+    }
+
+    /// The drag ends: let go at `at` (the target under it gets the
+    /// payload), or cancelled (`None`).
+    fn end_drag(&mut self, at: Option<(f64, f64)>) {
+        if let Some((x, y)) = at {
+            self.drag_to(x, y);
+        }
+        let Some(d) = self.ui.dragging.take() else { return };
+        self.dirty = true;
+        let Some(target) = d.target else { return };
+        self.set_targeted(target, false);
+        let (Some((x, y)), Some(n)) = (at, self.node(target)) else { return };
+        let Some(t) = n.mods.drop_target.as_ref() else { return };
+        let origin = n.layout.rect.inset_by(n.mods.padding);
+        let action = t.action.clone();
+        action.call_with_ptr_floats(crate::str_new(&d.payload) as *mut u8, x - origin.x, y - origin.y);
+    }
+
     /// Runs `.onKey` with a key pressed while no text is edited: the first
     /// visible, enabled view with one gets it. Returns whether one did.
     fn run_on_key(&mut self, key: &str) -> bool {
@@ -1579,18 +1785,40 @@ impl App {
     /// modifiers, `"left"`, `"f5"`, `"space"`…) and the text it types
     /// (`"A"` with Shift; empty for keys that type nothing).
     fn press(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) {
-        // Shortcuts first, then `.onKeyEvent` (while no text is edited).
+        use super::controls::{hex_field_text, parse_hex, HEX_FIELD, OPEN_PICKER};
+        let plain = !(mods.primary || mods.alt || mods.control);
+        // Escape puts away what's being dragged, then an open palette.
+        if name == "escape" && self.ui.dragging.is_some() {
+            self.end_drag(None);
+            return;
+        }
+        if name == "escape" && OPEN_PICKER.get().is_some() {
+            self.close_picker();
+            return;
+        }
+        // Enter in the palette's hex field picks that color.
+        let editing = self.ui.editing.as_ref().map(|e| e.key);
+        if name == "enter" && editing.is_some() && editing == HEX_FIELD.get() {
+            match parse_hex(&hex_field_text()) {
+                Some(c) => self.pick(c),
+                None => self.dirty = true,
+            }
+            return;
+        }
+        // Shortcuts first, then the control the keyboard is on, then
+        // `.onKeyEvent` (while no text is edited).
         if self.ui.editing.is_none() {
             if mods.primary && self.run_shortcut(name, mods) {
+                return;
+            }
+            if plain && self.control_key(name) {
                 return;
             }
             if self.run_on_key_event(name, text, mods, repeated) {
                 return;
             }
         }
-        if EDIT_KEYS.contains(&name) {
-            self.key(name, mods);
-        } else if mods.primary {
+        if EDIT_KEYS.contains(&name) || mods.primary {
             self.key(name, mods);
         } else if !text.is_empty() && !text.chars().any(char::is_control) {
             self.type_text(text);
@@ -1624,9 +1852,36 @@ impl App {
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
         }
+        let on_palette = self.close_palette_unless(&hit);
+        // The keyboard goes to the control clicked.
+        self.ui.focused = match &hit {
+            Some(Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Disclosure(k)) => Some(*k),
+            _ if on_palette => self.ui.focused,
+            _ => None,
+        };
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
         match (&hit, &node.kind) {
+            (Hit::Slider(key), Kind::Slider { .. }) => {
+                let key = *key;
+                self.slide(key, x);
+            }
+            (Hit::Stepper(key, dir), Kind::Stepper { .. }) => {
+                let (key, dir) = (*key, *dir);
+                self.step(key, dir as f64);
+            }
+            (Hit::ColorPicker(key), _) => {
+                let key = *key;
+                self.toggle_picker(key, false);
+            }
+            (Hit::Swatch(_), Kind::Swatch(c)) => {
+                let c = *c;
+                self.pick(c);
+            }
+            (Hit::Disclosure(_), Kind::Disclosure { expanded, .. }) => {
+                let p = expanded.locate();
+                unsafe { *p = (*p & 1) ^ 1 };
+            }
             (Hit::Button(_), Kind::Button { action, .. }) => {
                 let action = action.clone();
                 action.call();
@@ -1682,6 +1937,135 @@ impl App {
             _ => {}
         }
         self.dirty = true;
+    }
+
+    // ===== sliders, steppers, color pickers =====
+
+    /// Moves a slider's knob to `x` in the window.
+    fn slide(&mut self, key: u64, x: f64) {
+        let Some(n) = self.node(key) else { return };
+        let Kind::Slider { value, from, to, step, on_change } = &n.kind else { return };
+        let c = n.layout.rect.inset_by(n.mods.padding);
+        let knob = super::layout::KNOB;
+        let t = (x - c.x - knob) / (c.w - 2.0 * knob).max(1.0);
+        let v = super::controls::slider_value(*from, *to, *step, t);
+        if super::controls::write_number(value, false, v) {
+            if let Some(cb) = on_change.clone() {
+                cb.call();
+            }
+        }
+        self.dirty = true;
+    }
+
+    /// Moves a slider (by a twentieth of its range, or a step) or a stepper
+    /// (by its step) up (`dir` 1) or down (-1). Returns whether it's one.
+    fn step(&mut self, key: u64, dir: f64) -> bool {
+        let Some(n) = self.node(key) else { return false };
+        let (value, int, step, from, to, on_change) = match &n.kind {
+            Kind::Stepper { value, int, step, from, to, on_change, .. } => (value, *int, *step, *from, *to, on_change),
+            Kind::Slider { value, from, to, step, on_change } => {
+                let by = if *step > 0.0 { *step } else { (to - from) / 20.0 };
+                (value, false, by, *from, *to, on_change)
+            }
+            _ => return false,
+        };
+        let v = super::controls::stepped(super::controls::read_number(value, int), step, dir, from, to);
+        if super::controls::write_number(value, int, v) {
+            if let Some(cb) = on_change.clone() {
+                cb.call();
+            }
+        }
+        self.dirty = true;
+        true
+    }
+
+    /// Opens a color picker's palette, or closes it. From the keyboard, its
+    /// hex field starts out being edited.
+    fn toggle_picker(&mut self, key: u64, keyboard: bool) {
+        use super::controls::{hex, read_color, set_hex_field_text, FOCUS_HEX, OPEN_PICKER};
+        if OPEN_PICKER.get() == Some(key) {
+            self.close_picker();
+            return;
+        }
+        let Some(Kind::ColorPicker { color, .. }) = self.node(key).map(|n| &n.kind) else { return };
+        set_hex_field_text(&hex(read_color(color)));
+        OPEN_PICKER.set(Some(key));
+        FOCUS_HEX.set(keyboard);
+        self.dirty = true;
+    }
+
+    /// A press outside an open palette (and its picker) closes it. Returns
+    /// whether it's on the palette.
+    fn close_palette_unless(&mut self, hit: &Option<Hit>) -> bool {
+        let open = super::controls::OPEN_PICKER.get();
+        let on_palette = matches!(hit, Some(Hit::Swatch(_) | Hit::Palette(_)))
+            || matches!(hit, Some(Hit::Field(k)) if Some(*k) == super::controls::HEX_FIELD.get());
+        if open.is_some() && !on_palette && !matches!(hit, Some(Hit::ColorPicker(k)) if Some(*k) == open) {
+            self.close_picker();
+        }
+        on_palette
+    }
+
+    fn close_picker(&mut self) {
+        use super::controls::{HEX_FIELD, OPEN_PICKER};
+        if OPEN_PICKER.take().is_some() {
+            if self.ui.editing.as_ref().is_some_and(|e| Some(e.key) == HEX_FIELD.get()) {
+                self.ui.editing = None;
+            }
+            HEX_FIELD.set(None);
+            self.dirty = true;
+        }
+    }
+
+    /// A color chosen in the open palette (a swatch, or the hex field):
+    /// the picker gets it, and the palette closes.
+    fn pick(&mut self, c: Rgba) {
+        let Some(key) = super::controls::OPEN_PICKER.get() else { return };
+        if let Some(Kind::ColorPicker { color, on_change }) = self.node(key).map(|n| &n.kind) {
+            if super::controls::write_color(color, c) {
+                if let Some(cb) = on_change.clone() {
+                    cb.call();
+                }
+            }
+        }
+        self.close_picker();
+        self.dirty = true;
+    }
+
+    /// Keys for the control the keyboard is on: arrows move a slider or
+    /// stepper, open or close a disclosure group; Enter or Space opens a
+    /// color picker or a disclosure group. Returns whether it took the key.
+    fn control_key(&mut self, name: &str) -> bool {
+        let Some(key) = self.ui.focused else { return false };
+        let Some(n) = self.node(key) else {
+            self.ui.focused = None;
+            return false;
+        };
+        match (&n.kind, name) {
+            (Kind::Slider { .. } | Kind::Stepper { .. }, "right" | "up") => self.step(key, 1.0),
+            (Kind::Slider { .. } | Kind::Stepper { .. }, "left" | "down") => self.step(key, -1.0),
+            (Kind::ColorPicker { .. }, "enter" | "space") => {
+                self.toggle_picker(key, true);
+                true
+            }
+            (Kind::Disclosure { expanded, .. }, "enter" | "space" | "left" | "right") => {
+                let p = expanded.locate();
+                let open = unsafe { *p } & 1 != 0;
+                let want = match name {
+                    "left" => false,
+                    "right" => true,
+                    _ => !open,
+                };
+                unsafe { *p = want as u8 };
+                self.dirty = true;
+                true
+            }
+            (_, "escape") => {
+                self.ui.focused = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Applies an edit to the text field being edited.
@@ -1851,6 +2235,11 @@ impl App {
 
     /// A mouse press on a text field or code editor: place the caret or select.
     fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32) {
+        // Another field than an open palette's own closes the palette.
+        if super::controls::OPEN_PICKER.get().is_some() && Some(key) != super::controls::HEX_FIELD.get() {
+            self.close_picker();
+        }
+        self.ui.focused = None;
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
         let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
@@ -1975,10 +2364,17 @@ impl App {
                     return Some((c.x + r.x + r.w / 2.0, c.y + r.y + r.h / 2.0));
                 }
             }
+            // A disclosure group by its title (which is what's clicked).
+            if let (Kind::Disclosure { title, .. }, Some(h), false) = (&n.kind, n.layout.segments.first(), n.mods.hidden) {
+                if title == label {
+                    return Some((h.x + h.w.min(40.0) / 2.0, h.y + h.h / 2.0));
+                }
+            }
             let matches = match &n.kind {
                 Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } => s == label,
                 Kind::TextField { placeholder, .. } => placeholder == label,
                 Kind::Svg { icon: Some(name), .. } => *name == label,
+                Kind::Swatch(c) => super::controls::hex(*c) == label,
                 _ => false,
             };
             if matches && !n.mods.hidden {
@@ -2013,6 +2409,9 @@ impl App {
                 (&node.kind, kind),
                 (Kind::Toggle { .. }, "toggle") | (Kind::Button { .. }, "button") | (Kind::TextField { .. }, "field") | (Kind::Text(_), "text")
                     | (Kind::CodeEditor { .. }, "editor")
+                    | (Kind::Slider { .. }, "slider")
+                    | (Kind::Stepper { .. }, "stepper")
+                    | (Kind::ColorPicker { .. }, "colorpicker")
             );
             if matches && !node.mods.hidden {
                 out.push(node);
@@ -2068,6 +2467,29 @@ impl App {
                 Kind::CodeEditor { text, error_lines, .. } => {
                     format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
                 }
+                Kind::Slider { value, .. } => format!("Slider = {}", super::controls::read_number(value, false)),
+                Kind::Stepper { value, int, decimals, .. } => {
+                    let v = super::controls::read_number(value, *int);
+                    format!("Stepper = {}", super::controls::format_number(v, *decimals))
+                }
+                Kind::ColorPicker { color, .. } => {
+                    let open = if super::controls::OPEN_PICKER.get() == Some(n.key) { " open" } else { "" };
+                    format!("ColorPicker = {}{open}", super::controls::hex(super::controls::read_color(color)))
+                }
+                Kind::Swatch(c) => format!("Swatch {}", super::controls::hex(*c)),
+                Kind::Disclosure { title, expanded } => {
+                    let open = unsafe { *expanded.locate() } & 1 != 0;
+                    format!("DisclosureGroup {title:?} {}", if open { "open" } else { "closed" })
+                }
+                Kind::Lazy { count, first, .. } => {
+                    format!("LazyVStack {count} rows, built {}..{}", first, first + n.children.len())
+                }
+            };
+            let what = if ui.focused == Some(n.key) { format!("{what} focused") } else { what };
+            let what = match &ui.dragging {
+                Some(d) if d.key == n.key => format!("{what} dragged"),
+                Some(d) if d.target == Some(n.key) => format!("{what} drop target"),
+                _ => what,
             };
             let flags = [(n.mods.hidden, " hidden"), (n.mods.disabled, " disabled")]
                 .iter()
@@ -2127,6 +2549,12 @@ impl App {
                 Kind::Svg { icon: Some(_), .. } => "Icon",
                 Kind::Svg { .. } => "Svg",
                 Kind::CodeEditor { .. } => "CodeEditor",
+                Kind::Slider { .. } => "Slider",
+                Kind::Stepper { .. } => "Stepper",
+                Kind::ColorPicker { .. } => "ColorPicker",
+                Kind::Swatch(_) => "Swatch",
+                Kind::Disclosure { .. } => "DisclosureGroup",
+                Kind::Lazy { .. } => "LazyVStack",
             };
             // What can be seen of it: the part inside the scroll views around it.
             let (x0, y0) = (x.max(clip.x), y.max(clip.y));
@@ -2243,7 +2671,17 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
     let mut held: Option<(u64, i32)> = None;
     let mut mouse = (0.0, 0.0);
     let mut mods = Mods::default();
+    // A view with `.draggable` pressed on (and where), not yet moved.
+    let mut drag_pending: Option<(u64, (f64, f64))> = None;
     let numbers = |text: &str| -> Vec<f64> { text.split_whitespace().filter_map(|x| x.parse().ok()).collect() };
+    // A point: `40 60` (and anything after), or a view's label in quotes.
+    let point_of = |app: &App, text: &str| -> Option<(f64, f64)> {
+        if text.starts_with('"') {
+            return app.find_label(text.split('"').nth(1)?);
+        }
+        let n: Vec<f64> = text.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        (n.len() >= 2).then(|| (n[0], n[1]))
+    };
     for cmd in commands.iter().map(String::as_str) {
         app.update();
         let (word, rest) = cmd.split_once(' ').unwrap_or((cmd, ""));
@@ -2261,7 +2699,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
-                } else if let [kind @ ("toggle" | "button" | "field" | "text" | "editor"), n] = words[..] {
+                } else if let [kind @ ("toggle" | "button" | "field" | "text" | "editor" | "slider" | "stepper" | "colorpicker"), n] =
+                    words[..]
+                {
                     app.find_nth(kind, n.parse().unwrap_or(1))
                 } else {
                     let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
@@ -2309,29 +2749,37 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     Some("middle") => 2,
                     _ => 0,
                 };
-                let n = numbers(rest);
-                let key = match n[..] {
-                    [x, y] => app.pointer_at(x, y),
-                    _ => None,
-                };
-                let (Some(key), [x, y]) = (key, &n[..]) else {
-                    eprintln!("script: no view with `.onPointer` for `{cmd}`");
+                let point = point_of(app, rest);
+                let key = point.and_then(|(x, y)| app.pointer_at(x, y));
+                // Not on a view with `.onPointer`: maybe on one with `.draggable`.
+                if let (None, Some((x, y))) = (key, point) {
+                    if let Some(key) = app.drag_view_at(x, y, false) {
+                        mouse = (x, y);
+                        drag_pending = Some((key, mouse));
+                        continue;
+                    }
+                }
+                let (Some(key), Some(at)) = (key, point) else {
+                    eprintln!("script: no view with `.onPointer` or `.draggable` for `{cmd}`");
                     return 2;
                 };
-                mouse = (*x, *y);
+                mouse = at;
                 app.ui.editing = None;
                 app.pointer(key, DOWN, mouse, (0.0, 0.0), button, 1, mods);
                 held = Some((key, button));
             }
             "move" => {
-                let n = numbers(rest);
-                let [x, y] = n[..] else {
-                    eprintln!("script: write it as `move 80 60`");
+                let Some((x, y)) = point_of(app, rest) else {
+                    eprintln!("script: write it as `move 80 60` (or `move \"Label\"`)");
                     return 2;
                 };
                 let delta = (x - mouse.0, y - mouse.1);
                 mouse = (x, y);
+                if let Some((key, (sx, sy))) = drag_pending.take() {
+                    app.begin_drag(key, sx, sy);
+                }
                 match held {
+                    _ if app.ui.dragging.is_some() => app.drag_to(x, y),
                     Some((key, button)) => app.pointer(key, DRAG, mouse, delta, button, 0, mods),
                     None => {
                         app.hover(x, y);
@@ -2340,12 +2788,37 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
             }
             "release" => {
-                if let [x, y] = numbers(rest)[..] {
-                    mouse = (x, y);
+                if let Some(at) = point_of(app, rest) {
+                    mouse = at;
                 }
-                if let Some((key, button)) = held.take() {
+                drag_pending = None;
+                if app.ui.dragging.is_some() {
+                    app.end_drag(Some(mouse));
+                } else if let Some((key, button)) = held.take() {
                     app.pointer(key, UP, mouse, (0.0, 0.0), button, 1, mods);
                 }
+            }
+            "dragto" => {
+                // `dragto "Row 1" "Row 3"` or `dragto 40 60 40 200`: drags the
+                // view with `.draggable` at the first place to the second.
+                let n = numbers(rest);
+                let labels: Vec<&str> = rest.split('"').skip(1).step_by(2).collect();
+                let (from, to) = match (&n[..], &labels[..]) {
+                    ([x1, y1, x2, y2], _) => (Some((*x1, *y1)), Some((*x2, *y2))),
+                    (_, [a, b]) => (app.find_label(a), app.find_label(b)),
+                    _ => (None, None),
+                };
+                let key = from.and_then(|(x, y)| app.drag_view_at(x, y, false));
+                let (Some(key), Some(from), Some(to)) = (key, from, to) else {
+                    eprintln!("script: nothing to drag for `{cmd}` (it needs a view with `.draggable`, and a place to drag it to)");
+                    return 2;
+                };
+                app.begin_drag(key, from.0, from.1);
+                app.update();
+                app.drag_to((from.0 + to.0) / 2.0, (from.1 + to.1) / 2.0);
+                app.update();
+                app.end_drag(Some(to));
+                mouse = to;
             }
             "pinch" => {
                 let n = numbers(rest);
@@ -2433,6 +2906,14 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "drag" => {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                // A slider's knob follows the pointer.
+                if let ([x, _, dx, _], Some(Hit::Slider(key))) = (&n[..], n.get(..2).and_then(|p| app.hit(p[0], p[1]))) {
+                    app.ui.focused = Some(key);
+                    app.slide(key, *x);
+                    app.update();
+                    app.slide(key, x + dx);
+                    continue;
+                }
                 // On a view with `.onPointer`: press, move and let go.
                 if let [x, y, dx, dy] = n[..] {
                     if let Some(key) = app.pointer_at(x, y) {
@@ -2599,6 +3080,11 @@ struct WindowApp {
     scrolling: Option<(u64, bool, f64)>,
     /// The view with `.onPointer` the mouse is pressed on, and the button.
     pointing: Option<(u64, i32)>,
+    /// The slider whose knob follows the mouse.
+    sliding: Option<u64>,
+    /// A view with `.draggable` the mouse is pressed on, and where: it's
+    /// dragged once the mouse moves far enough.
+    drag_start: Option<(u64, (f64, f64))>,
     /// The pointer that's showing (a resize one over a drag handle).
     pointer: winit::window::CursorIcon,
     /// For double and triple clicks: when and where the last click was, and the count.
@@ -2630,6 +3116,8 @@ fn run_window(app: App) -> i32 {
         dragging: None,
         scrolling: None,
         pointing: None,
+        sliding: None,
+        drag_start: None,
         pointer: winit::window::CursorIcon::Default,
         last_click: None,
         ime: false,
@@ -2811,6 +3299,24 @@ impl ApplicationHandler for WindowApp {
                     return;
                 }
                 let delta = (self.cursor.0 - before.0, self.cursor.1 - before.1);
+                if let Some(key) = self.sliding {
+                    self.app.slide(key, self.cursor.0);
+                    self.request_redraw();
+                    return;
+                }
+                // A view with `.draggable` starts moving once the mouse has
+                // gone a few points (less is a click).
+                if let (Some((key, (sx, sy))), None) = (self.drag_start, &self.app.ui.dragging) {
+                    if (self.cursor.0 - sx).hypot(self.cursor.1 - sy) > 4.0 {
+                        self.drag_start = None;
+                        self.app.begin_drag(key, sx, sy);
+                    }
+                }
+                if self.app.ui.dragging.is_some() {
+                    self.app.drag_to(self.cursor.0, self.cursor.1);
+                    self.request_redraw();
+                    return;
+                }
                 if let Some((key, button)) = self.pointing {
                     self.app.pointer(key, DRAG, self.cursor, delta, button, 0, self.mods);
                     self.request_redraw();
@@ -2896,6 +3402,8 @@ impl ApplicationHandler for WindowApp {
                         };
                         self.last_click = Some((now, (x, y), clicks));
                         self.app.ui.editing = None;
+                        self.app.ui.focused = None;
+                        self.app.close_palette_unless(&None);
                         self.app.pointer(key, DOWN, (x, y), (0.0, 0.0), pressed, clicks as i64, self.mods);
                         self.pointing = Some((key, pressed));
                     }
@@ -2923,8 +3431,20 @@ impl ApplicationHandler for WindowApp {
                     ElementState::Released if self.scrolling.is_some() => self.scrolling = None,
                     ElementState::Pressed => {
                         let hit = self.app.hit(x, y);
+                        if hit.is_none() {
+                            self.app.close_palette_unless(&hit);
+                            self.app.ui.focused = None;
+                        }
                         if let Some(Hit::Drag(key)) = hit {
                             self.dragging = Some(key);
+                        }
+                        if let Some(Hit::Slider(key)) = hit {
+                            self.sliding = Some(key);
+                            self.app.ui.focused = Some(key);
+                            self.app.slide(key, x);
+                        }
+                        if !matches!(hit, Some(Hit::Field(_) | Hit::Slider(_) | Hit::Drag(_))) {
+                            self.drag_start = self.app.drag_view_at(x, y, false).map(|key| (key, (x, y)));
                         }
                         if let Some(Hit::Field(key)) = hit {
                             let now = Instant::now();
@@ -2945,9 +3465,15 @@ impl ApplicationHandler for WindowApp {
                             self.app.ui.pressed = hit.map(|h| h.key());
                         }
                     }
+                    ElementState::Released if self.app.ui.dragging.is_some() => {
+                        self.drag_start = None;
+                        self.app.end_drag(Some((x, y)));
+                    }
                     ElementState::Released => {
                         self.selecting = false;
                         self.dragging = None;
+                        self.sliding = None;
+                        self.drag_start = None;
                         let pressed = self.app.ui.pressed.take();
                         let here = self.app.hit(x, y).map(|h| h.key());
                         if pressed.is_some() && pressed == here {

@@ -1,0 +1,13 @@
+tree
+click "Layers"
+click "project"
+click "styles"
+click "dark"
+tree
+key tab
+key tab
+key left
+tree
+key enter
+key escape
+tree

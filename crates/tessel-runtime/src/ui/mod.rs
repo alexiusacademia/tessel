@@ -9,6 +9,7 @@
 mod anim;
 mod app;
 mod canvas;
+mod controls;
 mod edit;
 mod highlight;
 mod image;
@@ -201,6 +202,23 @@ pub enum Kind {
     /// width and height when it's painted. With `redraw`, the drawing is kept
     /// until that number changes.
     Canvas { draw: Callback, redraw: Option<i64> },
+    /// `Slider(value:from:to:step:onChange:)`: `value` locates a `Float`;
+    /// a `step` of 0 means any value.
+    Slider { value: Callback, from: f64, to: f64, step: f64, on_change: Option<Callback> },
+    /// `Stepper(value:step:from:to:decimals:onChange:)`: `value` locates an
+    /// `Int` (`int`) or a `Float`. `decimals` is how many the value shows.
+    Stepper { value: Callback, int: bool, step: f64, from: f64, to: f64, decimals: usize, on_change: Option<Callback> },
+    /// `ColorPicker(color:onChange:)`: `color` locates a `Color`. While its
+    /// palette is open, its one child is the palette (see `picker`).
+    ColorPicker { color: Callback, on_change: Option<Callback> },
+    /// A color in a `ColorPicker`'s palette.
+    Swatch(Rgba),
+    /// `DisclosureGroup(title, isExpanded:)`: its children show while it's open.
+    Disclosure { title: String, expanded: Callback },
+    /// `LazyVStack(count:rowHeight:)`: rows `first ..` (its children, one
+    /// stack each) of `count`, each `row_height` tall; only those near
+    /// what shows are built (see `lazy`).
+    Lazy { count: usize, row_height: f64, first: usize },
 }
 
 #[derive(Default)]
@@ -265,6 +283,11 @@ pub struct Mods {
     pub clipped: bool,
     /// `.onDrop { path in … }`: called with each file dropped on the window.
     pub on_drop: Option<Callback>,
+    /// `.draggable("payload")`: the view can be dragged onto a `.dropTarget`,
+    /// which gets this text.
+    pub draggable: Option<String>,
+    /// `.dropTarget(isTargeted:) { payload, x, y in … }`.
+    pub drop_target: Option<DropTarget>,
     /// `.tooltip("…")`: shown next to the pointer when it rests on the view.
     pub tooltip: Option<String>,
     /// `.onResize { width, height in … }`: called with the view's size
@@ -273,6 +296,13 @@ pub struct Mods {
     /// Which view expression of the source this is, for `tessel preview`:
     /// its number among the ones the compiler listed.
     pub source: Option<u32>,
+}
+
+/// A `.dropTarget`: `action` gets what's dropped (`fn(env, String, x, y)`),
+/// and `targeted` (a `Bool` binding) says whether something is dragged over it.
+pub struct DropTarget {
+    pub action: Callback,
+    pub targeted: Option<Callback>,
 }
 
 /// A `.shortcut(…)`: the key (lowercase), and whether Shift or Alt must be
@@ -399,6 +429,12 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Svg { .. } => 17,
         Kind::Markdown { .. } => 18,
         Kind::Canvas { .. } => 19,
+        Kind::Slider { .. } => 20,
+        Kind::Stepper { .. } => 21,
+        Kind::ColorPicker { .. } => 22,
+        Kind::Swatch(_) => 23,
+        Kind::Disclosure { .. } => 24,
+        Kind::Lazy { .. } => 25,
     }
 }
 
@@ -502,6 +538,7 @@ pub fn build(root: &Callback) -> Node {
 /// Releases all view state (at exit, so leak checkers see a clean heap).
 pub fn release_all_state() {
     canvas::forget_all();
+    controls::forget_hex_text();
     let records: Vec<*mut Header> = STATES.with(|s| s.borrow_mut().drain().map(|(_, v)| v.record).collect());
     for r in records {
         unsafe { tsl_release(r) };
@@ -938,6 +975,22 @@ pub extern "C" fn tsl_ui_clipped(clipped: u8) {
 pub unsafe extern "C" fn tsl_ui_on_drop(f: *const c_void, env: *mut Header) {
     let cb = Callback::new(f, env);
     modify(|m| m.on_drop = Some(cb));
+}
+
+/// `.draggable(payload)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_draggable(payload: *const Str) {
+    let payload = unsafe { text_of(payload) };
+    modify(|m| m.draggable = Some(payload));
+}
+
+/// `.dropTarget(isTargeted:) { payload, x, y in … }`: `f` is called as
+/// `f(env, String, x, y)`; `targeted_f` (a locator) is null without `isTargeted`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_drop_target(f: *const c_void, env: *mut Header, targeted_f: *const c_void, targeted_env: *mut Header) {
+    let action = Callback::new(f, env);
+    let targeted = (!targeted_f.is_null()).then(|| Callback::new(targeted_f, targeted_env));
+    modify(|m| m.drop_target = Some(DropTarget { action, targeted }));
 }
 
 /// `.onResize { width, height in … }`: `f` is called as `f(env, width, height)`.

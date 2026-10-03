@@ -698,7 +698,71 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let adapter = self.graphics_adapter();
                 self.call_rt("tsl_ui_canvas", &[adapter.into(), bx.into(), has_redraw, redraw]);
             }
+            "Slider" | "Stepper" => {
+                let loc = self.locator(a(0).unwrap()).into_struct_value();
+                let (f, env) = (self.b.build_extract_value(loc, 0, "").unwrap(), self.b.build_extract_value(loc, 1, "").unwrap());
+                let f64t = self.ctx.f64_type();
+                let num = |g: &mut Self, x: Option<&Expr>, default: f64| match x {
+                    Some(x) => g.expr_as(x, &Ty::Float).unwrap(),
+                    None => f64t.const_float(default).into(),
+                };
+                if name == "Slider" {
+                    let (from, to, step) = (num(self, a(1), 0.0), num(self, a(2), 1.0), num(self, a(3), 0.0));
+                    let (cf, cenv) = self.optional_action(a(4));
+                    self.call_rt("tsl_ui_slider", &[f, env, from, to, step, cf, cenv]);
+                } else {
+                    let int = self.i8().const_int((self.ty(a(0).unwrap()) == Ty::Int) as u64, false);
+                    let step = num(self, a(1), 1.0);
+                    let (from, to) = (num(self, a(2), f64::NEG_INFINITY), num(self, a(3), f64::INFINITY));
+                    let decimals = match a(4) {
+                        Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
+                        None => self.i64().const_int(u64::MAX, true).into(),
+                    };
+                    let (cf, cenv) = self.optional_action(a(5));
+                    self.call_rt("tsl_ui_stepper", &[f, env, int.into(), step, from, to, decimals, cf, cenv]);
+                }
+            }
+            "ColorPicker" => {
+                let loc = self.locator(a(0).unwrap()).into_struct_value();
+                let (f, env) = (self.b.build_extract_value(loc, 0, "").unwrap(), self.b.build_extract_value(loc, 1, "").unwrap());
+                let (cf, cenv) = self.optional_action(a(1));
+                self.call_rt("tsl_ui_color_picker", &[f, env, cf, cenv]);
+            }
+            "DisclosureGroup" => {
+                // The content is built only while it's open.
+                let title = string(self, a(0));
+                let loc = self.locator(a(1).unwrap()).into_struct_value();
+                let (f, env) = (self.b.build_extract_value(loc, 0, "").unwrap(), self.b.build_extract_value(loc, 1, "").unwrap());
+                let open = self.call_rt("tsl_ui_begin_disclosure", &[title, f, env]).unwrap().into_int_value();
+                self.release(title, &Ty::Str);
+                let is_open = self.b.build_int_compare(IntPredicate::NE, open, self.i8().const_zero(), "").unwrap();
+                let (content, done) = (self.block_named("disclosed"), self.block_named("closed"));
+                self.b.build_conditional_branch(is_open, content, done).unwrap();
+                self.b.position_at_end(content);
+                self.content_inline(a(2).unwrap());
+                self.br(done);
+                self.b.position_at_end(done);
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "LazyVStack" => {
+                let count = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
+                let height = self.expr_as(a(1).unwrap(), &Ty::Float).unwrap();
+                let ExprKind::Closure { params, body } = &a(2).unwrap().kind else { unreachable!("checked: the rows are a block") };
+                let rows = self.make_closure(Body::Rows(&params[0], body), &Ty::View);
+                self.pass_closure("tsl_ui_lazy", &[count, height], rows);
+            }
             _ => unreachable!("built-in view {name}"),
+        }
+    }
+
+    /// An optional `fn()` argument as `(fn, env)`, both null when it's not given.
+    fn optional_action(&mut self, x: Option<&Expr>) -> (Val<'ctx>, Val<'ctx>) {
+        match x {
+            Some(x) => {
+                let c = self.expr_as(x, &Ty::func(vec![], Ty::Void)).unwrap().into_struct_value();
+                (self.b.build_extract_value(c, 0, "").unwrap(), self.b.build_extract_value(c, 1, "").unwrap())
+            }
+            None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
         }
     }
 
@@ -880,6 +944,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "onDrop" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_drop", &[], action);
+            }
+            "draggable" => {
+                let payload = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
+                self.call_rt("tsl_ui_draggable", &[payload]);
+                self.release(payload, &Ty::Str);
+            }
+            "dropTarget" => {
+                let action = self.expr_as(a(1).unwrap(), &Ty::func(vec![Ty::Str, Ty::Float, Ty::Float], Ty::Void)).unwrap();
+                let action = action.into_struct_value();
+                let (f, env) = (self.b.build_extract_value(action, 0, "").unwrap(), self.b.build_extract_value(action, 1, "").unwrap());
+                let (tf, tenv): (Val, Val) = match a(0) {
+                    Some(x) => {
+                        let l = self.locator(x).into_struct_value();
+                        (self.b.build_extract_value(l, 0, "").unwrap(), self.b.build_extract_value(l, 1, "").unwrap())
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                self.call_rt("tsl_ui_drop_target", &[f, env, tf, tenv]);
             }
             "onResize" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();

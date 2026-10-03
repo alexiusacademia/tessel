@@ -1,0 +1,13 @@
+tree
+dragto "Roads" "Parcels"
+tree
+press "Imagery"
+move "Rivers"
+tree
+release
+tree
+press "Rivers"
+move "Parcels"
+key escape
+release
+tree

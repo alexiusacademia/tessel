@@ -1,0 +1,100 @@
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "Roads"
+          Spacer
+      View
+        HStack
+          Text "Rivers"
+          Spacer
+      View
+        HStack
+          Text "Parcels"
+          Spacer
+      View
+        HStack
+          Text "Imagery"
+          Spacer
+      Text ""
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "Rivers"
+          Spacer
+      View
+        HStack
+          Text "Parcels"
+          Spacer
+      View
+        HStack
+          Text "Roads"
+          Spacer
+      View
+        HStack
+          Text "Imagery"
+          Spacer
+      Text "moved Roads"
+Root
+  View
+    VStack
+      View
+        HStack drop target
+          Text "Rivers"
+          Spacer
+      View
+        HStack
+          Text "Parcels"
+          Spacer
+      View
+        HStack
+          Text "Roads"
+          Spacer
+      View
+        HStack dragged
+          Text "Imagery"
+          Spacer
+      Text "moved Roads"
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "Rivers"
+          Spacer
+      View
+        HStack
+          Text "Imagery"
+          Spacer
+      View
+        HStack
+          Text "Parcels"
+          Spacer
+      View
+        HStack
+          Text "Roads"
+          Spacer
+      Text "moved Imagery"
+Root
+  View
+    VStack
+      View
+        HStack
+          Text "Rivers"
+          Spacer
+      View
+        HStack
+          Text "Imagery"
+          Spacer
+      View
+        HStack
+          Text "Parcels"
+          Spacer
+      View
+        HStack
+          Text "Roads"
+          Spacer
+      Text "moved Imagery"

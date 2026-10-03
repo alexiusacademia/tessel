@@ -176,7 +176,8 @@ impl Builtins {
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Slider", "Stepper", "ColorPicker",
+        "DisclosureGroup", "LazyVStack",
     ];
 
 impl Builtins {
@@ -226,6 +227,30 @@ impl Builtins {
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
             "Canvas" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void))],
+            "Slider" => vec![
+                P::new("value", Ty::Float).bind(),
+                P::new("from", Ty::Float).default(),
+                P::new("to", Ty::Float).default(),
+                P::new("step", Ty::Float).default(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
+            ],
+            // `value:` is an `Int` or a `Float` (checked specially).
+            "Stepper" => vec![
+                P::new("value", Ty::Any).bind(),
+                P::new("step", Ty::Float).default(),
+                P::new("from", Ty::Float).default(),
+                P::new("to", Ty::Float).default(),
+                P::new("decimals", Ty::Int).default(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
+            ],
+            "ColorPicker" => vec![P::new("color", self.color.clone()).bind(), P::new("onChange", Ty::func(vec![], Ty::Void)).default()],
+            "DisclosureGroup" => vec![P::unlabeled("title", Ty::Str), P::new("isExpanded", Ty::Bool).bind(), content()],
+            // The content block gets each row's number: `{ i in … }`.
+            "LazyVStack" => {
+                let mut rows = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
+                rows.rows = true;
+                vec![P::new("count", Ty::Int), P::new("rowHeight", Ty::Float), rows]
+            }
             _ => return None,
         })
     }
@@ -276,6 +301,11 @@ impl Builtins {
             "offset" => vec![P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
             "clipped" => vec![P::unlabeled("isClipped", Ty::Bool).default()],
             "onDrop" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "draggable" => vec![P::unlabeled("payload", Ty::Str)],
+            "dropTarget" => vec![
+                P::new("isTargeted", Ty::Bool).bind().default(),
+                P::unlabeled("action", Ty::func(vec![Ty::Str, Ty::Float, Ty::Float], Ty::Void)),
+            ],
             "tooltip" => vec![P::unlabeled("text", Ty::Str)],
             "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
@@ -756,7 +786,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
-            "tooltip", "onResize", "onKeyEvent",
+            "tooltip", "onResize", "onKeyEvent", "draggable", "dropTarget",
         ],
         _ => &[],
     }

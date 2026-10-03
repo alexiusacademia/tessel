@@ -1,0 +1,39 @@
+app Main {
+    state name = ""
+    state level = 0.5
+    state count = 3
+    state open = false
+    state fill: Color = .red
+    state hovered = false
+
+    Text("keys")
+        .onKeyEvent { e in name = e } // error: expected `String`, found `KeyEvent`
+        .onKeyEvent { e in name = e.code } // error: `KeyEvent` has no field `code`
+        .onKeyEvent { name = "" } // error: this block receives 1 value
+    Slider(value: name) // error: expected `Float`, found `String`
+    Slider(value: 0.5) // error: needs something it can change
+    Slider(value: level, from: 0, to: "one") // error: expected `Float`
+    Slider(value: level, onChange: { x in }) // error: should take 0 parameter
+    Stepper(value: name) // error: a `Stepper` changes an `Int` or a `Float`, not `String`
+    Stepper(value: count, step: 1, decimals: 1.5) // error: expected `Int`
+    Stepper(value: level, from: 0, to: 1)
+    ColorPicker(color: name) // error: expected `Color`, found `String`
+    ColorPicker(color: fill) { changed in } // error: should take 0 parameter
+    DisclosureGroup("More", isExpanded: name) { Text("x") } // error: expected `Bool`, found `String`
+    DisclosureGroup(isExpanded: open) { Text("x") } // error: missing
+    DisclosureGroup("More", isExpanded: open) { x in Text("x") } // error: doesn't take parameters
+    Scroll {
+        LazyVStack(count: 10, rowHeight: 20) { i in Text("Row {i}") }
+        LazyVStack(count: 10, rowHeight: 20) { Text("Row") } // error: name it at the start
+        LazyVStack(count: 10, rowHeight: 20) { i in name = "x" } // error: views can't change values while they're being built
+        LazyVStack(count: "ten", rowHeight: 20) { i in Text("Row") } // error: expected `Int`
+        LazyVStack(count: 10, rowHeight: 20) { i in Text(i) } // error: expected `String`, found `Int`
+    }
+    Text("drag")
+        .draggable(3) // error: expected `String`
+        .dropTarget { payload in } // error: should take 3 parameter
+        .dropTarget(isTargeted: name) { p, x, y in } // error: expected `Bool`, found `String`
+        .dropTarget(isTargeted: hovered) { p, x, y in name = p }
+        .shortcut("z") { name = "undo" }
+        .shortcut("shift+z") { name = "redo" }
+}

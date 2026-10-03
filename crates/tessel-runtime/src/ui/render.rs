@@ -177,6 +177,23 @@ pub struct Interaction {
     pub anim: super::anim::Animations,
     /// The `.tooltip` that shows, laid out.
     pub tooltip: Option<Tooltip>,
+    /// The control the keyboard is on (a slider, stepper, color picker or
+    /// disclosure group), when no text is edited.
+    pub focused: Option<u64>,
+    /// A view being dragged with `.draggable`.
+    pub dragging: Option<Dragging>,
+}
+
+/// A view being dragged (`.draggable`): it follows the pointer.
+pub struct Dragging {
+    /// The view, and its payload.
+    pub key: u64,
+    pub payload: String,
+    /// Where the pointer is, and where on the view it took hold of it.
+    pub at: (f64, f64),
+    pub grab: (f64, f64),
+    /// The view with `.dropTarget` under the pointer.
+    pub target: Option<u64>,
 }
 
 /// A view's `.tooltip`, shown next to the pointer.
@@ -376,6 +393,45 @@ impl Painter<'_> {
     fn fill(&mut self, r: Rect, radius: f64, c: Rgba) {
         let t = self.t();
         self.scene.fill(Fill::NonZero, t, color(c), None, &rounded(r, radius));
+    }
+
+    fn circle(&mut self, x: f64, y: f64, radius: f64, c: Rgba) {
+        let t = self.t();
+        self.scene.fill(Fill::NonZero, t, color(c), None, &Circle::new((x, y), radius));
+    }
+
+    fn stroke_circle(&mut self, x: f64, y: f64, radius: f64, width: f64, c: Rgba) {
+        let t = self.t();
+        self.scene.stroke(&Stroke::new(width), t, color(c), None, &Circle::new((x, y), radius - width / 2.0));
+    }
+
+    /// Draws the open `ColorPicker`'s palette over the rest of the window.
+    pub fn paint_overlay(&mut self, tree: &Node) {
+        let Some(key) = super::controls::OPEN_PICKER.get() else { return };
+        let Some(palette) = tree.find(key).and_then(|n| n.children.first()) else { return };
+        let r = palette.layout.rect;
+        self.fill(Rect { x: r.x, y: r.y + 4.0, w: r.w, h: r.h }.inset(-3.0), 11.0, Rgba([0, 0, 0, 30]));
+        self.paint(palette);
+    }
+
+    /// Draws the view being dragged (`.draggable`) under the pointer, see-through.
+    pub fn paint_dragged(&mut self, tree: &Node) {
+        let Some(d) = self.ui.dragging.as_ref() else { return };
+        let Some(n) = tree.find(d.key) else { return };
+        let r = n.layout.rect;
+        let (dx, dy) = (d.at.0 - d.grab.0 - r.x, d.at.1 - d.grab.1 - r.y);
+        let mut copy = Scene::new();
+        let mut painter = Painter { scene: &mut copy, ui: self.ui, scale: self.scale, offset: (0.0, 0.0), clip: None };
+        painter.paint(n);
+        // On a card, lifted off the window.
+        let t = self.t();
+        let moved = Rect { x: r.x + dx, y: r.y + dy, ..r };
+        self.scene.push_layer(Fill::NonZero, Mix::Normal, 0.8, t, &rounded(moved.inset(-8.0), 0.0));
+        self.fill(Rect { x: moved.x, y: moved.y + 3.0, ..moved }.inset(-2.0), 7.0, Rgba([0, 0, 0, 30]));
+        self.fill(moved, 6.0, theme().popup);
+        self.stroke(moved, 6.0, 1.0, theme().field_border);
+        self.scene.append(&copy, Some(Affine::translate((dx * self.scale, dy * self.scale))));
+        self.scene.pop_layer();
     }
 
     fn stroke(&mut self, r: Rect, radius: f64, width: f64, c: Rgba) {
@@ -676,6 +732,74 @@ impl Painter<'_> {
                 self.scene.append(&drawing.scene, Some(t * Affine::translate((content.x, content.y))));
                 self.scene.pop_layer();
             }
+            Kind::Slider { value, from, to, .. } => {
+                let v = super::controls::read_number(value, false);
+                let f = if to > from { ((v - from) / (to - from)).clamp(0.0, 1.0) } else { 0.0 };
+                let knob = super::layout::KNOB;
+                let (x0, x1) = (content.x + knob, content.x + content.w - knob);
+                let cy = content.y + content.h / 2.0;
+                let kx = x0 + f * (x1 - x0).max(0.0);
+                self.fill(Rect { x: x0, y: cy - 2.0, w: (x1 - x0).max(0.0), h: 4.0 }, 2.0, theme().control_pressed);
+                self.fill(Rect { x: x0, y: cy - 2.0, w: kx - x0, h: 4.0 }, 2.0, theme().accent);
+                self.circle(kx, cy + 1.0, knob + 0.5, Rgba([0, 0, 0, 40]));
+                self.circle(kx, cy, knob, if pressed { theme().control } else { Rgba([255, 255, 255, 255]) });
+                self.stroke_circle(kx, cy, knob, 1.0, theme().field_border);
+            }
+            Kind::Stepper { value, int, from, to, .. } => {
+                let v = super::controls::read_number(value, *int);
+                let b = super::layout::STEPPER_BUTTON;
+                self.fill(content, 7.0, theme().control);
+                let minus = Rect { x: content.x, y: content.y, w: b, h: content.h };
+                let plus = Rect { x: content.x + content.w - b, y: content.y, w: b, h: content.h };
+                for (half, enabled) in [(minus, v > *from), (plus, v < *to)] {
+                    let over = self.ui.pointer.is_some_and(|(x, y)| half.contains(x, y));
+                    if hovered && over && enabled {
+                        let bg = if pressed { theme().control_pressed } else { theme().control_hover };
+                        self.fill(half, 7.0, bg);
+                    }
+                }
+                let sep = theme().colors[theme::SEPARATOR];
+                self.fill(Rect { x: minus.x + b, y: content.y + 5.0, w: 1.0, h: content.h - 10.0 }, 0.0, sep);
+                self.fill(Rect { x: plus.x - 1.0, y: content.y + 5.0, w: 1.0, h: content.h - 10.0 }, 0.0, sep);
+                let icon = |r: Rect| Rect { x: r.x + r.w / 2.0 - 6.0, y: r.y + r.h / 2.0 - 6.0, w: 12.0, h: 12.0 };
+                let tint = |on: bool| if on { theme().accent } else { theme().colors[theme::GRAY] };
+                self.svg("minus", icon(minus), tint(v > *from));
+                self.svg("plus", icon(plus), tint(v < *to));
+                if let Some(t) = &n.layout.text {
+                    let x = content.x + (content.w - t.width() as f64) / 2.0;
+                    let y = content.y + (content.h - t.height() as f64) / 2.0;
+                    self.text(t, x, y, None);
+                }
+            }
+            Kind::ColorPicker { color: c, .. } => {
+                let c = super::controls::read_color(c);
+                let bg = if hovered { theme().control_hover } else { theme().control };
+                self.fill(content, 6.0, bg);
+                self.stroke(content, 6.0, 1.0, theme().field_border);
+                let inner = content.inset(4.0);
+                self.fill(inner, 3.0, c);
+                self.stroke(inner, 3.0, 1.0, Rgba([0, 0, 0, 40]));
+            }
+            Kind::Swatch(c) => {
+                self.fill(content, 4.0, *c);
+                self.stroke(content, 4.0, 1.0, Rgba([0, 0, 0, 36]));
+                if super::controls::PICKED.get() == Some(*c) {
+                    self.stroke(content.inset(-2.5), 6.0, 2.0, theme().accent);
+                } else if hovered {
+                    self.stroke(content.inset(-1.5), 5.0, 1.5, theme().colors[theme::PRIMARY]);
+                }
+            }
+            Kind::Disclosure { expanded, .. } => {
+                let open = unsafe { *expanded.locate() } & 1 != 0;
+                if let Some(header) = n.layout.segments.first().copied() {
+                    let a = super::layout::ARROW;
+                    let arrow = Rect { x: header.x, y: header.y + (header.h - a) / 2.0, w: a, h: a };
+                    self.svg(if open { "chevronDown" } else { "chevronRight" }, arrow, theme().colors[theme::SECONDARY]);
+                    if let Some(t) = &n.layout.text {
+                        self.text(t, header.x + a + 6.0, header.y + (header.h - t.height() as f64) / 2.0, None);
+                    }
+                }
+            }
             Kind::Scroll => {
                 let t = self.t();
                 self.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &rounded(content, 0.0));
@@ -714,10 +838,20 @@ impl Painter<'_> {
             _ => {}
         }
         self.offset = (0.0, 0.0);
-        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. }) {
+        // (A color picker's palette is drawn last, over everything: `paint_overlay`.)
+        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. } | Kind::ColorPicker { .. }) {
             for c in &n.children {
                 self.paint(c);
             }
+        }
+        // The control the keyboard is on.
+        if self.ui.focused == Some(n.key) {
+            let (ring, radius) = match &n.kind {
+                Kind::Disclosure { .. } => (n.layout.segments.first().copied().unwrap_or(content), 5.0),
+                Kind::Slider { .. } => (content.inset(2.0), 11.0),
+                _ => (content, 7.0),
+            };
+            self.stroke(ring.inset(-3.0), radius + 3.0, 2.0, theme().accent);
         }
         if n.mods.clipped {
             self.scene.pop_layer();

@@ -1,0 +1,175 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.5
+      HStack
+        Text "Width"
+        Stepper = 1.0
+        Text "Classes"
+        Stepper = 5
+      HStack
+        Text "Fill"
+        ColorPicker = #007aff
+      Text "0.50 1.0 5 changes 0"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7 focused
+      HStack
+        Text "Width"
+        Stepper = 1.0
+        Text "Classes"
+        Stepper = 5
+      HStack
+        Text "Fill"
+        ColorPicker = #007aff
+      Text "0.70 1.0 5 changes 2"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7
+      HStack
+        Text "Width"
+        Stepper = 3.0
+        Text "Classes"
+        Stepper = 2 focused
+      HStack
+        Text "Fill"
+        ColorPicker = #007aff
+      Text "0.70 3.0 2 changes 6"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7
+      HStack
+        Text "Width"
+        Stepper = 3.0
+        Text "Classes"
+        Stepper = 2
+      HStack
+        Text "Fill"
+        ColorPicker = #007aff open
+          VStack
+            HStack
+              Swatch #ffffff
+              Swatch #e6e6e6
+              Swatch #cccccc
+              Swatch #b2b2b2
+              Swatch #999999
+              Swatch #7f7f7f
+              Swatch #666666
+              Swatch #4c4c4c
+              Swatch #333333
+              Swatch #000000
+            HStack
+              Swatch #f4afaf
+              Swatch #f4d1af
+              Swatch #f4eaaf
+              Swatch #d1f4af
+              Swatch #aff4ba
+              Swatch #aff4e8
+              Swatch #afe8f4
+              Swatch #afcbf4
+              Swatch #d1aff4
+              Swatch #f4afd1
+            HStack
+              Swatch #ec5151
+              Swatch #ec9e51
+              Swatch #ecd751
+              Swatch #9eec51
+              Swatch #51ec6a
+              Swatch #51ecd2
+              Swatch #51d2ec
+              Swatch #5191ec
+              Swatch #9e51ec
+              Swatch #ec519e
+            HStack
+              Swatch #d61f1f
+              Swatch #d67a1f
+              Swatch #d6be1f
+              Swatch #7ad61f
+              Swatch #1fd63d
+              Swatch #1fd6b8
+              Swatch #1fb8d6
+              Swatch #1f6bd6
+              Swatch #7a1fd6
+              Swatch #d61f7a
+            HStack
+              Swatch #931a1a
+              Swatch #93571a
+              Swatch #93831a
+              Swatch #57931a
+              Swatch #1a932e
+              Swatch #1a937f
+              Swatch #1a7f93
+              Swatch #1a4d93
+              Swatch #571a93
+              Swatch #931a57
+            HStack
+              Swatch #5d1414
+              Swatch #5d3814
+              Swatch #5d5314
+              Swatch #385d14
+              Swatch #145d20
+              Swatch #145d50
+              Swatch #14505d
+              Swatch #14325d
+              Swatch #38145d
+              Swatch #5d1438
+            HStack
+              Text "Hex"
+              TextField "Hex" = "#007aff"
+      Text "0.70 3.0 2 changes 6"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7
+      HStack
+        Text "Width"
+        Stepper = 3.0
+        Text "Classes"
+        Stepper = 2
+      HStack
+        Text "Fill"
+        ColorPicker = #ff8800
+      Text "0.70 3.0 2 changes 7"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7
+      HStack
+        Text "Width"
+        Stepper = 3.0
+        Text "Classes"
+        Stepper = 2
+      HStack
+        Text "Fill"
+        ColorPicker = #000000 focused
+      Text "0.70 3.0 2 changes 8"
+Root
+  View
+    VStack
+      HStack
+        Text "Opacity"
+        Slider = 0.7
+      HStack
+        Text "Width"
+        Stepper = 3.0
+        Text "Classes"
+        Stepper = 2
+      HStack
+        Text "Fill"
+        ColorPicker = #000000
+      Text "0.70 3.0 2 changes 8"

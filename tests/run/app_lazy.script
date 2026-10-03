@@ -1,0 +1,9 @@
+tree
+click "Row 3"
+scroll 0 1000000
+tree
+scroll 0 -1000000
+wheel 150 100 0 40000
+dump
+click "Row 2003"
+tree

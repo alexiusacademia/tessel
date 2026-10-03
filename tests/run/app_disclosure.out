@@ -1,0 +1,43 @@
+Root
+  View
+    VStack
+      DisclosureGroup "Layers" open
+        Text "Roads"
+        Text "Rivers"
+      View
+        DisclosureGroup "project" closed
+      Text "layers shown"
+Root
+  View
+    VStack
+      DisclosureGroup "Layers" closed
+      View
+        DisclosureGroup "project" open
+          Text "main.tsl"
+          View
+            DisclosureGroup "data" closed
+          View
+            DisclosureGroup "styles" open
+              View
+                DisclosureGroup "dark" open focused
+                  Text "dark.json"
+      Text "layers hidden"
+Root
+  View
+    VStack
+      DisclosureGroup "Layers" closed
+      View
+        DisclosureGroup "project" closed focused
+      Text "layers hidden"
+Root
+  View
+    VStack
+      DisclosureGroup "Layers" closed
+      View
+        DisclosureGroup "project" open
+          Text "main.tsl"
+          View
+            DisclosureGroup "data" closed
+          View
+            DisclosureGroup "styles" closed
+      Text "layers hidden"
