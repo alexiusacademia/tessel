@@ -5,7 +5,8 @@
 //! operating system stops the program with a signal. Without a handler that
 //! shows up as a silent crash, so each thread gets a small separate stack
 //! for signal handlers, and the handler prints what happened and exits with
-//! status 101, like the other runtime errors.
+//! status 101, like the other runtime errors. On Windows the same is done
+//! with an exception handler, and stack kept back for it on each thread.
 
 
 #[cfg(unix)]
@@ -96,7 +97,80 @@ mod imp {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+mod imp {
+    use std::ffi::c_void;
+
+    /// `EXCEPTION_STACK_OVERFLOW`.
+    const STACK_OVERFLOW: u32 = 0xC000_00FD;
+    /// Stack kept for the handler when the rest runs out.
+    const GUARANTEE: u32 = 64 * 1024;
+
+    #[repr(C)]
+    struct ExceptionRecord {
+        code: u32,
+        // (The rest isn't read.)
+    }
+
+    #[repr(C)]
+    struct ExceptionPointers {
+        record: *const ExceptionRecord,
+        context: *mut c_void,
+    }
+
+    unsafe extern "system" {
+        fn AddVectoredExceptionHandler(first: u32, handler: unsafe extern "system" fn(*mut ExceptionPointers) -> i32) -> *mut c_void;
+        fn SetThreadStackGuarantee(size: *mut u32) -> i32;
+        fn GetStdHandle(which: u32) -> *mut c_void;
+        fn WriteFile(file: *mut c_void, data: *const u8, len: u32, written: *mut u32, overlapped: *mut c_void) -> i32;
+        fn ExitProcess(code: u32) -> !;
+    }
+
+    /// Installs the handler (once), and stack for it on the calling thread.
+    pub fn install() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            // First, before Rust's own (which only says the thread overflowed).
+            AddVectoredExceptionHandler(1, handler);
+        });
+        thread_init();
+    }
+
+    /// Keeps stack for the handler on the calling thread (each thread needs it).
+    pub fn thread_init() {
+        let mut size = GUARANTEE;
+        unsafe { SetThreadStackGuarantee(&mut size) };
+    }
+
+    fn say(text: &str) {
+        unsafe {
+            // STD_ERROR_HANDLE
+            let err = GetStdHandle((-12i32) as u32);
+            let mut written = 0;
+            WriteFile(err, text.as_ptr(), text.len() as u32, &mut written, std::ptr::null_mut());
+        }
+    }
+
+    unsafe extern "system" fn handler(info: *mut ExceptionPointers) -> i32 {
+        unsafe {
+            if info.is_null() || (*info).record.is_null() || (*(*info).record).code != STACK_OVERFLOW {
+                // EXCEPTION_CONTINUE_SEARCH: someone else's to handle.
+                return 0;
+            }
+            say(
+                "error: stack overflow: too many function calls inside each other\n = help: a function that \
+                 calls itself needs a case where it stops calling itself, like `if n == 0 { return 1 }`\n",
+            );
+            // (The REPL goes on; see `on_error`.)
+            if let Some(hook) = crate::ON_ERROR.get() {
+                hook();
+            }
+            ExitProcess(101);
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 mod imp {
     pub fn install() {}
     pub fn thread_init() {}
