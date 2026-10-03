@@ -69,9 +69,10 @@ use winit::window::{Window, WindowId};
 
 use super::edit::{self, Clipboard, Edit, Editing, Unit};
 use super::layout::{read_string, Layouter, Rect};
+use super::menu::{self, Command, Entry, Std};
 use super::render::{self, code_origin, field_origin, Interaction, Painter, TextEngine};
 use super::theme::{self, theme};
-use super::{build, Callback, Kind, Node, Rgba};
+use super::{build_all, Built, Callback, Kind, Node, Rgba};
 use crate::{Header, Str};
 
 // ===== timers =====
@@ -410,6 +411,7 @@ pub unsafe extern "C" fn tsl_ui_hot(
         NEW_ROOT.with(|r| *r.borrow_mut() = Some(Callback::new(f, env)));
         return;
     }
+    HOT.with(|h| h.set(true));
     unsafe { tsl_ui_run(title, width, height, appearance, f, env) }
 }
 
@@ -537,6 +539,27 @@ impl Hit {
 struct App {
     root: Callback,
     title: String,
+    /// The window whose surface is in the fields below (0: the main window;
+    /// a `Window`'s key otherwise). The others are parked in `others`.
+    current: u64,
+    others: Vec<Surface>,
+    /// The menu bar (with the standard menus), as the tree last described it.
+    bar: Vec<Entry>,
+    /// Whether the app has a `.menuBar` (otherwise `bar` has only the
+    /// standard menus, which show only on macOS).
+    has_menu_bar: bool,
+    /// Whether the menu bar is the system's (macOS) or drawn in the window.
+    native_bar: bool,
+    /// Files the system asked the app to open, until a view with
+    /// `.onOpenFile` takes them.
+    open_files: Vec<String>,
+    /// The app is to end (`quit()`, or its main window was closed).
+    quit: bool,
+    /// Standard menu commands only the window can carry out (Minimize, …).
+    window_commands: Vec<Std>,
+    /// How many times the trees were built (the menu bar may have changed).
+    builds: u64,
+    // ----- the current window's surface (see `Surface`) -----
     width: f64,
     height: f64,
     /// What the app asked for: 0 follows the system, 1 light, 2 dark.
@@ -558,7 +581,88 @@ struct App {
     tip: Option<Tip>,
     /// The sizes views with `.onResize` were last told.
     sizes: HashMap<u64, (f64, f64)>,
+    /// The menu that's open (a context menu, or one of the drawn menu bar's).
+    menu: Option<OpenMenu>,
 }
+
+/// What a window shows and what's going on in it: the App's fields from
+/// `width` on, for a window that isn't the current one.
+struct Surface {
+    key: u64,
+    tree: Option<Node>,
+    width: f64,
+    height: f64,
+    ui: Interaction,
+    followed: Option<(u64, usize, usize, usize)>,
+    completing: Completing,
+    pointer_over: Option<u64>,
+    tip: Option<Tip>,
+    sizes: HashMap<u64, (f64, f64)>,
+    menu: Option<OpenMenu>,
+}
+
+/// An open menu.
+struct OpenMenu {
+    source: MenuSource,
+    /// Where its top left corner is.
+    at: (f64, f64),
+    /// For each menu shown (the menu, then its open submenus): the item
+    /// that's selected. Only the last one's selection may be `None`.
+    sel: Vec<Option<usize>>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MenuSource {
+    /// The `.contextMenu` of a view.
+    Context(u64),
+    /// A menu of the drawn menu bar.
+    Bar(usize),
+}
+
+thread_local! {
+    /// The window events are handled for (`closeWindow()` closes it).
+    static CURRENT_WINDOW: Cell<u64> = const { Cell::new(0) };
+    /// Windows `closeWindow()` closed, and whether `quit()` was called.
+    static CLOSING: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+    static QUITTING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// `closeWindow()`: closes the window whose event is handled (for the main
+/// window, the app ends), without asking `.onCloseRequest`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_close_window() {
+    let key = CURRENT_WINDOW.with(Cell::get);
+    CLOSING.with(|c| c.borrow_mut().push(key));
+}
+
+/// `quit()`: ends the app, without asking `.onCloseRequest`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_quit() {
+    QUITTING.with(|q| q.set(true));
+}
+
+/// What the system tells the app outside its windows: a menu item of the
+/// macOS menu bar chosen (its path), a file to open, or Quit.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(super) enum Shell {
+    Menu(Vec<usize>),
+    OpenFile(String),
+    Quit,
+}
+
+pub(super) static SHELL: Mutex<Vec<Shell>> = Mutex::new(Vec::new());
+
+/// Hands the app something from the system (on any thread) and wakes it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(super) fn shell_post(event: Shell) {
+    SHELL.lock().unwrap().push(event);
+    if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
+        let _ = proxy.send_event(());
+    }
+}
+
+/// Whether the app has a view with `.onCloseRequest` (so quitting asks it).
+pub(super) static ASKS_TO_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A tooltip waiting to show, or showing.
 struct Tip {
@@ -665,16 +769,19 @@ struct Mods {
     shift: bool,
     alt: bool,
     primary: bool,
+    /// Ctrl on macOS (a Ctrl-click is a right click there).
+    control: bool,
 }
 
 impl App {
-    /// Rebuilds the tree if state may have changed, then lays it out.
+    /// Rebuilds the trees if state may have changed, then lays them out.
     fn update(&mut self) {
         // `.onAppear` blocks can change state, which rebuilds again (a few times at most).
         if let Some(root) = NEW_ROOT.with(|r| r.borrow_mut().take()) {
             self.root = root;
             self.dirty = true;
         }
+        self.take_requests();
         // `.onResize` blocks run after layout, and can change state too:
         // then the tree is built and laid out again (a few times at most).
         for _ in 0..4 {
@@ -683,25 +790,656 @@ impl App {
                     break;
                 }
                 self.dirty = false;
-                self.tree = Some(build(&self.root));
+                let built = build_all(&self.root);
+                self.distribute(built);
                 self.run_on_appear();
-                self.sync_editor_lines();
+                self.each_surface(|a| a.sync_editor_lines());
+                self.take_requests();
             }
-            if self.ui.editing.is_none() {
-                self.ui.composing = None;
-            }
-            let composing =
-                self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
-            let tree = self.tree.as_mut().unwrap();
-            Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run(tree, self.width, self.height);
-            if !self.run_on_resize() {
+            let mut resized = false;
+            self.each_surface(|a| {
+                a.lay_out();
+                resized |= a.run_on_resize();
+            });
+            if !resized {
                 break;
             }
         }
-        self.follow_caret();
-        self.layout_popup();
-        let tree = self.tree.as_ref().unwrap();
-        self.ui.anim.step(tree, now(), (self.width, self.height), &self.ui.scroll);
+        self.each_surface(|a| {
+            a.follow_caret();
+            a.layout_popup();
+            a.layout_menus();
+            if let Some(tree) = a.tree.as_ref() {
+                a.ui.anim.step(tree, now(), (a.width, a.height), &a.ui.scroll);
+            }
+        });
+        if self.deliver_open_files() {
+            self.update();
+        }
+    }
+
+    /// Lays out the current window's tree.
+    fn lay_out(&mut self) {
+        if self.ui.editing.is_none() {
+            self.ui.composing = None;
+        }
+        let composing =
+            self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
+        let top = if self.bar_drawn() { menu::BAR_H } else { 0.0 };
+        let Some(tree) = self.tree.as_mut() else { return };
+        Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run_below(tree, self.width, self.height, top);
+    }
+
+    /// Whether the current window shows a menu bar drawn in it.
+    fn bar_drawn(&self) -> bool {
+        self.current == 0 && self.has_menu_bar && !self.native_bar
+    }
+
+    // ===== windows =====
+
+    /// Swaps the current window's surface with `s`.
+    fn swap_surface(&mut self, s: &mut Surface) {
+        std::mem::swap(&mut self.current, &mut s.key);
+        std::mem::swap(&mut self.tree, &mut s.tree);
+        std::mem::swap(&mut self.width, &mut s.width);
+        std::mem::swap(&mut self.height, &mut s.height);
+        std::mem::swap(&mut self.ui, &mut s.ui);
+        std::mem::swap(&mut self.followed, &mut s.followed);
+        std::mem::swap(&mut self.completing, &mut s.completing);
+        std::mem::swap(&mut self.pointer_over, &mut s.pointer_over);
+        std::mem::swap(&mut self.tip, &mut s.tip);
+        std::mem::swap(&mut self.sizes, &mut s.sizes);
+        std::mem::swap(&mut self.menu, &mut s.menu);
+    }
+
+    /// Makes window `key` the current one. Returns whether it's open.
+    fn enter(&mut self, key: u64) -> bool {
+        if self.current != key {
+            let Some(i) = self.others.iter().position(|s| s.key == key) else { return false };
+            let mut s = self.others.remove(i);
+            self.swap_surface(&mut s);
+            self.others.push(s);
+        }
+        CURRENT_WINDOW.with(|c| c.set(key));
+        true
+    }
+
+    /// Runs `f` with each window current in turn.
+    fn each_surface(&mut self, mut f: impl FnMut(&mut App)) {
+        let back = self.current;
+        let keys: Vec<u64> = std::iter::once(back).chain(self.others.iter().map(|s| s.key)).collect();
+        for key in keys {
+            if self.enter(key) {
+                f(self);
+            }
+        }
+        if !self.enter(back) {
+            self.enter(0);
+        }
+    }
+
+    /// The open windows other than the main one: key, title and size.
+    fn windows(&self) -> Vec<(u64, String, f64, f64)> {
+        let mut out = Vec::new();
+        let all = std::iter::once((self.current, &self.tree, self.width, self.height))
+            .chain(self.others.iter().map(|s| (s.key, &s.tree, s.width, s.height)));
+        for (key, tree, w, h) in all {
+            if let (true, Some(Node { kind: Kind::Window { title, .. }, .. })) = (key != 0, tree) {
+                out.push((key, title.clone(), w, h));
+            }
+        }
+        out.sort_by_key(|w| w.0);
+        out
+    }
+
+    /// The tree of the main window.
+    fn main_tree(&self) -> Option<&Node> {
+        if self.current == 0 {
+            self.tree.as_ref()
+        } else {
+            self.others.iter().find(|s| s.key == 0)?.tree.as_ref()
+        }
+    }
+
+    /// Gives each window its new tree: windows that just opened get a
+    /// surface, and those that closed lose theirs.
+    fn distribute(&mut self, built: Built) {
+        let Built { root, windows } = built;
+        self.builds += 1;
+        let back = self.current;
+        let open: Vec<u64> = windows.iter().map(|w| w.key).collect();
+        if self.enter(0) {
+            self.tree = Some(root);
+        }
+        for w in windows {
+            if !self.enter(w.key) {
+                let Kind::Window { width, height, .. } = w.kind else { continue };
+                let mut ui = Interaction::default();
+                ui.anim.enabled = self.ui.anim.enabled;
+                self.others.push(Surface {
+                    key: w.key,
+                    tree: None,
+                    width,
+                    height,
+                    ui,
+                    followed: None,
+                    completing: Completing::default(),
+                    pointer_over: None,
+                    tip: None,
+                    sizes: HashMap::new(),
+                    menu: None,
+                });
+                self.enter(w.key);
+            }
+            self.tree = Some(w);
+        }
+        if back == 0 || !open.contains(&back) || !self.enter(back) {
+            self.enter(0);
+        }
+        self.others.retain(|s| s.key == 0 || open.contains(&s.key));
+        // The menu bar is the main window's.
+        fn find(n: &Node) -> Option<&Node> {
+            if n.mods.hidden {
+                return None;
+            }
+            if let Some(b) = &n.mods.menu_bar {
+                return Some(b);
+            }
+            n.children.iter().find_map(find)
+        }
+        fn shortcuts(n: &Node, out: &mut Vec<String>) {
+            if n.mods.hidden || n.mods.disabled {
+                return;
+            }
+            if let Some((key, _)) = &n.mods.shortcut {
+                out.push(key.clone());
+            }
+            n.visible_children().iter().for_each(|c| shortcuts(c, out));
+        }
+        let mut keys = Vec::new();
+        if let Some(t) = self.main_tree() {
+            shortcuts(t, &mut keys);
+        }
+        let user = self.main_tree().and_then(find);
+        let has_menu_bar = user.is_some();
+        let bar = menu::bar(user, &self.title, self.native_bar, &keys);
+        self.has_menu_bar = has_menu_bar;
+        self.bar = bar;
+        let asks = self.find_in_main(|n| n.mods.on_close_request.is_some()).is_some();
+        ASKS_TO_CLOSE.store(asks, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The first visible, enabled view in the main window's tree for which
+    /// `pick` is true.
+    fn find_in_main(&self, pick: impl Fn(&Node) -> bool) -> Option<&Node> {
+        fn find<'n>(n: &'n Node, pick: &dyn Fn(&Node) -> bool) -> Option<&'n Node> {
+            if n.mods.hidden || n.mods.disabled {
+                return None;
+            }
+            if pick(n) {
+                return Some(n);
+            }
+            n.children.iter().find_map(|c| find(c, pick))
+        }
+        find(self.main_tree()?, &pick)
+    }
+
+    /// Carries out `closeWindow()` and `quit()`.
+    fn take_requests(&mut self) {
+        if QUITTING.with(|q| q.replace(false)) {
+            self.quit = true;
+        }
+        for key in CLOSING.with(|c| std::mem::take(&mut *c.borrow_mut())) {
+            self.close_window(key);
+        }
+    }
+
+    /// Closes a window (the main one: the app ends).
+    fn close_window(&mut self, key: u64) {
+        if key == 0 {
+            self.quit = true;
+            return;
+        }
+        let back = self.current;
+        if self.enter(key) {
+            if let Some(Node { kind: Kind::Window { is_open, .. }, .. }) = &self.tree {
+                unsafe { *is_open.locate() = 0 };
+                self.dirty = true;
+            }
+            self.enter(back);
+        }
+    }
+
+    /// The user asks to close the current window: its `.onCloseRequest`
+    /// decides, if it has one; otherwise it closes.
+    fn request_close(&mut self) {
+        fn find(n: &Node) -> Option<Callback> {
+            if n.mods.hidden || n.mods.disabled {
+                return None;
+            }
+            if let Some(cb) = &n.mods.on_close_request {
+                return Some(cb.clone());
+            }
+            n.children.iter().find_map(find)
+        }
+        match self.tree.as_ref().and_then(find) {
+            Some(cb) => {
+                cb.call();
+                self.dirty = true;
+            }
+            None => self.close_window(self.current),
+        }
+        self.take_requests();
+    }
+
+    /// The user asks to quit: the main window's `.onCloseRequest` decides.
+    fn request_quit(&mut self) {
+        let back = self.current;
+        self.enter(0);
+        self.request_close();
+        if !self.enter(back) {
+            self.enter(0);
+        }
+    }
+
+    /// Gives files waiting to be opened to the first view with
+    /// `.onOpenFile`, if there's one. Returns whether it got any.
+    fn deliver_open_files(&mut self) -> bool {
+        if self.open_files.is_empty() {
+            return false;
+        }
+        let Some(cb) = self.find_in_main(|n| n.mods.on_open_file.is_some()).and_then(|n| n.mods.on_open_file.clone()) else {
+            return false;
+        };
+        for path in std::mem::take(&mut self.open_files) {
+            cb.call_with(crate::str_new(&path) as *mut u8);
+        }
+        self.dirty = true;
+        self.take_requests();
+        true
+    }
+
+    // ===== menus =====
+
+    /// The items of the open menu (its first level).
+    fn menu_items(&self) -> Option<Vec<Entry>> {
+        match self.menu.as_ref()?.source {
+            MenuSource::Context(key) => self.node(key)?.mods.context_menu.as_deref().map(menu::entries),
+            MenuSource::Bar(i) => match self.bar.get(i)? {
+                Entry::Sub { items, .. } => Some(items.clone()),
+                _ => None,
+            },
+        }
+    }
+
+    /// Lays out the open menu and its submenus, and the drawn menu bar.
+    fn layout_menus(&mut self) {
+        self.ui.menus.clear();
+        self.ui.menu_bar = self.bar_drawn().then(|| menu::Bar::layout(&mut self.text, &self.bar, self.width));
+        let Some(items) = self.menu_items() else {
+            self.menu = None;
+            return;
+        };
+        let Some(m) = self.menu.as_ref() else { return };
+        if let (Some(bar), MenuSource::Bar(i)) = (self.ui.menu_bar.as_mut(), m.source) {
+            bar.open = Some(i);
+        }
+        let (mut at, mut beside) = (m.at, None);
+        let mut path = Vec::new();
+        for (level, sel) in m.sel.iter().enumerate() {
+            let Some(shown) = menu::items_at(&items, &path) else { break };
+            let mut panel = menu::Panel::layout(&mut self.text, shown, at, (self.width, self.height), beside);
+            panel.selected = sel.filter(|i| *i < panel.rows.len());
+            let deeper = level + 1 < m.sel.len();
+            if let (Some(i), true) = (panel.selected, deeper) {
+                let row = panel.rows[i].rect;
+                at = (panel.rect.x + panel.rect.w - 4.0, row.y - menu::PAD);
+                beside = Some(panel.rect.x);
+                path.push(i);
+            }
+            self.ui.menus.push(panel);
+            if path.len() <= level {
+                break;
+            }
+        }
+    }
+
+    fn open_menu(&mut self, source: MenuSource, at: (f64, f64)) {
+        self.menu = Some(OpenMenu { source, at, sel: vec![None] });
+        self.ui.editing = None;
+        self.tip_hide();
+        self.layout_menus();
+    }
+
+    fn open_bar_menu(&mut self, i: usize) {
+        let x = self.ui.menu_bar.as_ref().and_then(|b| b.titles.get(i)).map_or(0.0, |(_, r)| r.x);
+        self.open_menu(MenuSource::Bar(i), (x, menu::BAR_H));
+    }
+
+    /// Selects row `row` of the menu shown at `level`; a submenu there opens.
+    fn menu_select(&mut self, level: usize, row: usize) {
+        let Some(items) = self.menu_items() else { return };
+        let Some(m) = self.menu.as_mut() else { return };
+        if m.sel.len() <= level {
+            return;
+        }
+        m.sel.truncate(level + 1);
+        m.sel[level] = Some(row);
+        let path: Vec<usize> = m.sel.iter().map_while(|s| *s).collect();
+        if let Some(Entry::Sub { enabled: true, .. }) = menu::at(&items, &path) {
+            m.sel.push(None);
+        }
+        self.layout_menus();
+    }
+
+    /// The menu row at a point: the level of its menu, and the row.
+    fn menu_row_at(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+        self.ui.menus.iter().enumerate().rev().find_map(|(level, p)| p.row_at(x, y).map(|row| (level, row)))
+    }
+
+    /// The mouse is over a point: the menu item there is selected (and, on
+    /// the drawn menu bar, another menu opens in place of the open one).
+    fn menu_hover(&mut self, x: f64, y: f64) {
+        if self.menu.is_none() {
+            return;
+        }
+        if let (Some(i), Some(MenuSource::Bar(open))) =
+            (self.ui.menu_bar.as_ref().and_then(|b| b.title_at(x, y)), self.menu.as_ref().map(|m| m.source))
+        {
+            if i != open {
+                self.open_bar_menu(i);
+            }
+            return;
+        }
+        let Some((level, row)) = self.menu_row_at(x, y) else { return };
+        if self.ui.menus[level].rows[row].label.is_some() {
+            self.menu_select(level, row);
+        }
+    }
+
+    /// A press while a menu is open, or on the drawn menu bar. Returns
+    /// whether it was taken (a press outside an open menu closes it).
+    fn menu_press(&mut self, x: f64, y: f64) -> bool {
+        if let Some(i) = self.ui.menu_bar.as_ref().and_then(|b| b.title_at(x, y)) {
+            if self.menu.as_ref().is_some_and(|m| m.source == MenuSource::Bar(i)) {
+                self.menu = None;
+                self.layout_menus();
+            } else {
+                self.open_bar_menu(i);
+            }
+            return true;
+        }
+        if self.menu.is_none() {
+            return false;
+        }
+        match self.menu_row_at(x, y) {
+            Some((level, row)) => {
+                let mut path: Vec<usize> = self.menu.as_ref().map_or(Vec::new(), |m| m.sel.iter().take(level).map_while(|s| *s).collect());
+                path.push(row);
+                self.menu_choose(&path);
+            }
+            None => {
+                self.menu = None;
+                self.layout_menus();
+            }
+        }
+        true
+    }
+
+    /// Chooses the item at `path` of the open menu: a submenu opens; an item
+    /// closes the menu and runs.
+    fn menu_choose(&mut self, path: &[usize]) {
+        let Some(items) = self.menu_items() else { return };
+        let Some(entry) = menu::at(&items, path).cloned() else { return };
+        match entry {
+            Entry::Sub { enabled: true, .. } => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.sel = path.iter().map(|i| Some(*i)).collect();
+                    m.sel.push(None);
+                }
+                self.layout_menus();
+            }
+            Entry::Item { enabled: true, .. } => {
+                self.menu = None;
+                self.layout_menus();
+                self.run_entry(&entry);
+            }
+            _ => {}
+        }
+    }
+
+    /// Runs a menu item.
+    fn run_entry(&mut self, entry: &Entry) {
+        let Entry::Item { command, shortcut, .. } = entry else { return };
+        match command {
+            // An item with Cmd+C (or another editing key) edits the text
+            // that's being edited instead.
+            Command::User(_) if self.ui.editing.is_some() && shortcut.as_ref().is_some_and(|s| s.is_editing()) => {
+                let s = shortcut.as_ref().unwrap();
+                let mods = Mods { shift: s.shift, alt: s.alt, primary: true, control: false };
+                self.key_plain(&s.key, mods);
+            }
+            Command::User(action) => {
+                action.call();
+                self.dirty = true;
+            }
+            Command::Std(std) => self.run_std(*std),
+        }
+        self.take_requests();
+    }
+
+    /// Carries out a command of the standard menus.
+    fn run_std(&mut self, std: Std) {
+        let primary = Mods { primary: true, ..Mods::default() };
+        match std {
+            Std::Quit => self.request_quit(),
+            Std::Undo => self.key_plain("z", primary),
+            Std::Redo => self.key_plain("z", Mods { shift: true, ..primary }),
+            Std::Cut => self.key_plain("x", primary),
+            Std::Copy => self.key_plain("c", primary),
+            Std::Paste => self.key_plain("v", primary),
+            Std::SelectAll => self.key_plain("a", primary),
+            Std::CloseWindow => self.request_close(),
+            other => self.window_commands.push(other),
+        }
+    }
+
+    /// Chooses an item of the menu bar by its titles (`menu` script command).
+    fn choose_bar_item(&mut self, labels: &[String]) -> Result<(), String> {
+        let mut items: &[Entry] = &self.bar;
+        let mut found = None;
+        for (i, label) in labels.iter().enumerate() {
+            let Some(e) = items.iter().find(|e| e.label() == label) else {
+                return Err(format!("no menu item {:?}", labels[..=i].join(" > ")));
+            };
+            match e {
+                Entry::Sub { items: inner, .. } if i + 1 < labels.len() => items = inner,
+                _ if i + 1 == labels.len() => found = Some(e.clone()),
+                _ => return Err(format!("{label:?} has no items")),
+            }
+        }
+        match found {
+            Some(e @ Entry::Item { enabled: true, .. }) => {
+                self.run_entry(&e);
+                Ok(())
+            }
+            Some(Entry::Item { .. }) => Ok(()),
+            _ => Err("name a menu, then an item in it".into()),
+        }
+    }
+
+    /// Keys while a menu is open: arrows move, Enter chooses, Escape closes.
+    /// Returns whether the key was taken (all are, but shortcuts).
+    fn menu_key(&mut self, name: &str, mods: Mods) -> bool {
+        if mods.primary {
+            return false;
+        }
+        let Some(items) = self.menu_items() else { return false };
+        let bar_len = self.bar.len().max(1);
+        let Some(m) = self.menu.as_mut() else { return false };
+        let level = m.sel.len() - 1;
+        let path: Vec<usize> = m.sel.iter().take(level).map_while(|s| *s).collect();
+        let shown = menu::items_at(&items, &path).unwrap_or(&[]);
+        let step = |from: Option<usize>, down: bool| -> Option<usize> {
+            let n = shown.len();
+            let mut i = from;
+            for _ in 0..n {
+                let next = match (i, down) {
+                    (None, true) => 0,
+                    (None, false) => n - 1,
+                    (Some(i), true) => (i + 1) % n,
+                    (Some(i), false) => (i + n - 1) % n,
+                };
+                if shown[next].enabled() {
+                    return Some(next);
+                }
+                i = Some(next);
+            }
+            from
+        };
+        match name {
+            "down" | "up" => m.sel[level] = step(m.sel[level], name == "down"),
+            "right" => match m.sel[level].and_then(|i| shown.get(i)) {
+                Some(Entry::Sub { enabled: true, items: sub, .. }) => {
+                    let first = sub.iter().position(Entry::enabled);
+                    m.sel.push(first);
+                }
+                _ => {
+                    // On the menu bar: the next menu.
+                    if let MenuSource::Bar(i) = m.source {
+                        self.open_bar_menu((i + 1) % bar_len);
+                        return true;
+                    }
+                }
+            },
+            "left" => {
+                if level > 0 {
+                    m.sel.pop();
+                } else if let MenuSource::Bar(i) = m.source {
+                    self.open_bar_menu((i + bar_len - 1) % bar_len);
+                    return true;
+                }
+            }
+            "escape" => {
+                if level > 0 {
+                    m.sel.pop();
+                } else {
+                    self.menu = None;
+                }
+            }
+            "enter" | "space" => {
+                if let Some(i) = m.sel[level] {
+                    let mut path = path.clone();
+                    path.push(i);
+                    self.menu_choose(&path);
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        self.layout_menus();
+        true
+    }
+
+    /// The innermost view at a point with a `.contextMenu` or `.onPointer`:
+    /// its key, and whether it's a context menu.
+    fn context_target(&self, x: f64, y: f64) -> Option<(u64, bool)> {
+        fn visit(n: &Node, x: f64, y: f64) -> Option<(u64, bool)> {
+            if n.mods.hidden || n.layout.style.disabled || ((n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y)) {
+                return None;
+            }
+            if let Some(found) = n.visible_children().iter().rev().find_map(|c| visit(c, x, y)) {
+                return Some(found);
+            }
+            if !n.layout.rect.contains(x, y) {
+                return None;
+            }
+            if n.mods.context_menu.is_some() {
+                return Some((n.key, true));
+            }
+            n.mods.on_pointer.is_some().then_some((n.key, false))
+        }
+        visit(self.tree.as_ref()?, x, y)
+    }
+
+    /// The popovers that are open, the topmost last.
+    fn popovers(&self) -> Vec<&Node> {
+        let Some(tree) = &self.tree else { return Vec::new() };
+        tree.children.iter().filter(|c| matches!(c.kind, Kind::Popover { .. })).collect()
+    }
+
+    /// Closes popovers (from the topmost) down to the one containing the
+    /// point (all of them, for a point outside). Returns whether any closed.
+    fn close_popovers_outside(&mut self, x: f64, y: f64) -> bool {
+        let mut closed = false;
+        for p in self.popovers().into_iter().rev() {
+            if p.layout.rect.contains(x, y) {
+                break;
+            }
+            if let Kind::Popover { presented, .. } = &p.kind {
+                unsafe { *presented.locate() = 0 };
+                closed = true;
+            }
+        }
+        if closed {
+            self.ui.editing = None;
+            self.dirty = true;
+        }
+        closed
+    }
+
+    /// Escape: closes the topmost popover. Returns whether there was one.
+    fn close_top_popover(&mut self) -> bool {
+        let Some(Kind::Popover { presented, .. }) = self.popovers().last().map(|p| &p.kind) else { return false };
+        unsafe { *presented.locate() = 0 };
+        self.dirty = true;
+        true
+    }
+
+    /// A mouse press, before views get it: open menus, the drawn menu bar
+    /// and popovers take it first, and a right press (`right`) opens a
+    /// view's context menu. Returns whether it was taken.
+    fn press(&mut self, x: f64, y: f64, right: bool) -> bool {
+        if self.menu_press(x, y) {
+            return true;
+        }
+        if self.close_popovers_outside(x, y) {
+            return true;
+        }
+        if let (true, Some((key, true))) = (right, self.context_target(x, y)) {
+            self.open_menu(MenuSource::Context(key), (x, y));
+            return true;
+        }
+        false
+    }
+
+    /// What `tree` prints after the view tree: the open menu, with its
+    /// selected item marked and its open submenu under that item.
+    fn describe_menu(&self) -> String {
+        fn level(items: &[Entry], sel: &[Option<usize>], depth: usize, out: &mut String) {
+            let Some((here, deeper)) = sel.split_first() else { return };
+            for (i, e) in items.iter().enumerate() {
+                let flat = match e {
+                    Entry::Sub { title, enabled, .. } => Entry::Sub { title: title.clone(), enabled: *enabled, items: Vec::new() },
+                    e => e.clone(),
+                };
+                let mut line = String::new();
+                menu::describe(std::slice::from_ref(&flat), 0, &mut line);
+                let mark = if *here == Some(i) { " [selected]" } else { "" };
+                out.push_str(&format!("{}{}{mark}\n", "  ".repeat(depth), line.trim_end()));
+                if let (true, false, Entry::Sub { items: sub, .. }) = (*here == Some(i), deeper.is_empty(), e) {
+                    level(sub, deeper, depth + 1, out);
+                }
+            }
+        }
+        let mut out = String::new();
+        let (Some(m), Some(items)) = (self.menu.as_ref(), self.menu_items()) else { return out };
+        match m.source {
+            MenuSource::Context(_) => out.push_str("ContextMenu\n"),
+            MenuSource::Bar(i) => out.push_str(&format!("Menu {:?}\n", self.bar.get(i).map_or("", |e| e.label()))),
+        }
+        level(&items, &m.sel, 1, &mut out);
+        out
     }
 
     /// Text an input method is composing (empty when it's done or given up).
@@ -735,7 +1473,8 @@ impl App {
             }
         }
         let mut found = Vec::new();
-        if let Some(t) = &self.tree {
+        // In a popover, Tab stays in it.
+        if let Some(t) = self.popovers().last().copied().or(self.tree.as_ref()) {
             fields(t, &mut found);
         }
         let count = found.len();
@@ -1036,15 +1775,25 @@ impl App {
         }
         let mut keys = std::collections::HashSet::new();
         let mut appeared = Vec::new();
-        let mut focus = None;
-        if let Some(t) = &self.tree {
-            visit(t, &mut keys, &self.keys, &mut appeared, &mut focus);
+        // In every window: the view to focus in each.
+        let mut focus = Vec::new();
+        let trees = std::iter::once((self.current, &self.tree)).chain(self.others.iter().map(|s| (s.key, &s.tree)));
+        for (window, tree) in trees {
+            let mut found = None;
+            if let Some(t) = tree {
+                visit(t, &mut keys, &self.keys, &mut appeared, &mut found);
+            }
+            focus.extend(found.map(|f| (window, f)));
         }
         self.keys = keys;
         super::canvas::keep_only(&self.keys);
-        if let Some((key, text)) = focus {
-            self.ui.editing = Some(Editing::new(key, &text));
+        let back = self.current;
+        for (window, (key, text)) in focus {
+            if self.enter(window) {
+                self.ui.editing = Some(Editing::new(key, &text));
+            }
         }
+        self.enter(back);
         for cb in appeared {
             cb.call();
             self.dirty = true;
@@ -1138,6 +1887,13 @@ impl App {
     /// `{`) and `}` at the start of a line removes one level.
     fn type_text(&mut self, text: &str) {
         self.ui.composing = None;
+        // An open menu takes the keys.
+        if self.menu.is_some() {
+            if text == " " {
+                self.menu_key("space", Mods::default());
+            }
+            return;
+        }
         // With no text being edited, a typed character is a key for `.onKey`.
         if self.ui.editing.is_none() {
             self.run_on_key(text);
@@ -1172,6 +1928,8 @@ impl App {
         let mut painter = Painter { scene: &mut scene, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
         painter.paint(tree);
         painter.paint_popup();
+        painter.paint_menu_bar();
+        painter.paint_menus();
         painter.paint_tooltip();
         scene
     }
@@ -1235,6 +1993,7 @@ impl App {
     /// Moves the pointer to a point (as the window does on mouse moves).
     pub fn hover(&mut self, x: f64, y: f64) {
         self.ui.pointer = Some((x, y));
+        self.menu_hover(x, y);
         self.tip_move(x, y);
         self.ui.hovered = self.hit(x, y).map(|h| h.key());
         self.ui.hover_background = self.hover_background_at(x, y);
@@ -1303,6 +2062,8 @@ impl App {
             shift: mods.shift as u8,
             alt: mods.alt as u8,
             command: mods.primary as u8,
+            window_x: at.0,
+            window_y: at.1,
         };
         on_pointer.call_with(&mut event as *mut super::PointerC as *mut u8);
         self.dirty = true;
@@ -1628,8 +2389,42 @@ impl App {
         true
     }
 
-    /// A key press, by name (see the script commands).
+    /// A key press, by name (see the script commands): an open menu takes
+    /// it first, then the menu bar's shortcuts, then the views.
     fn key(&mut self, name: &str, mods: Mods) {
+        if self.menu.is_some() {
+            if !self.menu_key(name, mods) && mods.primary {
+                self.menu = None;
+                self.layout_menus();
+                self.key(name, mods);
+            }
+            return;
+        }
+        // The editing keys edit text while it's edited.
+        let editing = self.ui.editing.is_some() && mods.primary && !mods.alt && matches!(name, "a" | "c" | "x" | "v" | "z");
+        let item = menu::find_shortcut(&self.bar, name, mods.primary, mods.shift, mods.alt).cloned();
+        match item {
+            Some(e @ Entry::Item { command: Command::User(_), .. }) if !editing => {
+                self.run_entry(&e);
+                return;
+            }
+            Some(Entry::Item {
+                command: Command::Std(std @ (Std::Quit | Std::Hide | Std::HideOthers | Std::Minimize | Std::CloseWindow)),
+                ..
+            }) => {
+                self.run_std(std);
+                return;
+            }
+            _ => {}
+        }
+        if name == "escape" && self.ui.editing.is_none() && !mods.primary && self.close_top_popover() {
+            return;
+        }
+        self.key_plain(name, mods);
+    }
+
+    /// A key press for the views (and the text being edited).
+    fn key_plain(&mut self, name: &str, mods: Mods) {
         if !mods.primary && !mods.shift && self.completion_key(name) {
             return;
         }
@@ -1832,7 +2627,40 @@ impl App {
             }
             n.visible_children().iter().find_map(|c| visit(c, label))
         }
-        visit(self.tree.as_ref()?, label)
+        // An open menu's items (the deepest menu first), then the drawn
+        // menu bar's titles, then the views (the topmost popover's first).
+        if let Some(items) = self.menu_items() {
+            let menu = self.menu.as_ref()?;
+            let mut path = Vec::new();
+            let mut levels = Vec::new();
+            for (level, sel) in menu.sel.iter().enumerate() {
+                levels.push((level, menu::items_at(&items, &path).map(<[Entry]>::to_vec).unwrap_or_default()));
+                match sel {
+                    Some(i) => path.push(*i),
+                    None => break,
+                }
+            }
+            for (level, shown) in levels.into_iter().rev() {
+                let panel = self.ui.menus.get(level)?;
+                if let Some(i) = shown.iter().position(|e| e.label() == label && !matches!(e, Entry::Divider)) {
+                    let r = panel.rows.get(i)?.rect;
+                    return Some((r.x + r.w / 2.0, r.y + r.h / 2.0));
+                }
+            }
+        }
+        if let Some(bar) = &self.ui.menu_bar {
+            if let Some(i) = self.bar.iter().position(|e| e.label() == label) {
+                let r = bar.titles.get(i)?.1;
+                return Some((r.x + r.w / 2.0, r.y + r.h / 2.0));
+            }
+        }
+        let tree = self.tree.as_ref()?;
+        for p in self.popovers().into_iter().rev() {
+            if let Some(found) = visit(p, label) {
+                return Some(found);
+            }
+        }
+        visit(tree, label)
     }
 
     /// Center of the close button of the tab titled `title`.
@@ -1913,6 +2741,17 @@ impl App {
                 Kind::CodeEditor { text, error_lines, .. } => {
                     format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
                 }
+                Kind::MenuItem { label, .. } => format!("MenuItem {label:?}"),
+                Kind::MenuDivider => "MenuDivider".to_string(),
+                Kind::Menu { title } => format!("Menu {title:?}"),
+                Kind::MenuList => "MenuList".to_string(),
+                Kind::Popover { .. } => "Popover".to_string(),
+                Kind::Window { title, .. } => format!("Window {title:?}"),
+            };
+            // A view's context menu is shown as one, with its items.
+            let what = match (&n.mods.context_menu, positions) {
+                (Some(m), false) => format!("{what} contextMenu [{}]", menu::describe_inline(&menu::entries(m))),
+                _ => what,
             };
             let flags = [(n.mods.hidden, " hidden"), (n.mods.disabled, " disabled")]
                 .iter()
@@ -1972,6 +2811,12 @@ impl App {
                 Kind::Svg { icon: Some(_), .. } => "Icon",
                 Kind::Svg { .. } => "Svg",
                 Kind::CodeEditor { .. } => "CodeEditor",
+                Kind::MenuItem { .. } => "MenuItem",
+                Kind::MenuDivider => "MenuDivider",
+                Kind::Menu { .. } => "Menu",
+                Kind::MenuList => "MenuList",
+                Kind::Popover { .. } => "Popover",
+                Kind::Window { .. } => "Window",
             };
             // What can be seen of it: the part inside the scroll views around it.
             let (x0, y0) = (x.max(clip.x), y.max(clip.y));
@@ -2030,6 +2875,16 @@ pub unsafe extern "C" fn tsl_ui_run(
     let app = App {
         root: Callback::new(f, env),
         title,
+        current: 0,
+        others: Vec::new(),
+        bar: Vec::new(),
+        has_menu_bar: false,
+        native_bar: cfg!(target_os = "macos"),
+        open_files: Vec::new(),
+        quit: false,
+        window_commands: Vec::new(),
+        builds: 0,
+        menu: None,
         width,
         height,
         appearance,
@@ -2059,6 +2914,11 @@ pub unsafe extern "C" fn tsl_ui_run(
     super::release_all_state();
     let _ = std::io::stdout().flush();
     std::process::exit(code);
+}
+
+/// The quoted words of a script command: `"File" "Open…"`.
+fn quoted(text: &str) -> Vec<String> {
+    text.split('"').skip(1).step_by(2).map(str::to_string).collect()
 }
 
 fn run_script(app: App, script: &str) -> i32 {
@@ -2091,6 +2951,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
     let numbers = |text: &str| -> Vec<f64> { text.split_whitespace().filter_map(|x| x.parse().ok()).collect() };
     for cmd in commands.iter().map(String::as_str) {
         app.update();
+        if app.quit {
+            break;
+        }
         let (word, rest) = cmd.split_once(' ').unwrap_or((cmd, ""));
         let rest = rest.trim();
         match word {
@@ -2113,6 +2976,8 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     (n.len() == 2).then(|| (n[0], n[1]))
                 };
                 match point {
+                    // An open menu, the drawn menu bar or a popover takes it first.
+                    Some((x, y)) if app.press(x, y, false) => mouse = (x, y),
                     Some((x, y)) => match app.pointer_at(x, y) {
                         Some(key) => {
                             app.ui.editing = None;
@@ -2129,7 +2994,17 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
             }
             "rightclick" | "doubleclick" => {
-                let n = numbers(rest);
+                let n = match rest.starts_with('"') {
+                    true => app.find_label(rest.trim_matches('"')).map_or(Vec::new(), |(x, y)| vec![x, y]),
+                    false => numbers(rest),
+                };
+                if let [x, y] = n[..] {
+                    // A context menu opens (or an open menu takes the click).
+                    if app.press(x, y, word == "rightclick") {
+                        mouse = (x, y);
+                        continue;
+                    }
+                }
                 let key = match n[..] {
                     [x, y] => app.pointer_at(x, y),
                     _ => None,
@@ -2240,6 +3115,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
             }
+            // The user closes the window (`.onCloseRequest` may keep it open).
+            "close" if rest == "window" => app.request_close(),
+            "quit" => app.request_quit(),
             "close" => match app.find_tab_close(rest.trim_matches('"')) {
                 Some((x, y)) => app.click(x, y),
                 None => {
@@ -2351,6 +3229,41 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(end));
                 app.tip_due();
             }
+            "menu" => {
+                let labels = quoted(rest);
+                if let Err(e) = app.choose_bar_item(&labels) {
+                    eprintln!("script: {e}");
+                    return 2;
+                }
+            }
+            "menus" => {
+                let mut out = String::new();
+                menu::describe(&app.bar, 0, &mut out);
+                print!("{out}");
+            }
+            "menubar" => {
+                app.native_bar = rest == "native";
+                app.menu = None;
+                app.dirty = true;
+            }
+            "open" => {
+                app.open_files.push(rest.trim_matches('"').to_string());
+                if !app.deliver_open_files() {
+                    eprintln!("script: no view with `.onOpenFile` for `{cmd}`");
+                    return 2;
+                }
+            }
+            "window" => {
+                let title = rest.trim_matches('"');
+                let key = if rest == "main" { Some(0) } else { app.windows().into_iter().find(|w| w.1 == title).map(|w| w.0) };
+                match key {
+                    Some(key) if app.enter(key) => {}
+                    _ => {
+                        eprintln!("script: no open window `{title}`");
+                        return 2;
+                    }
+                }
+            }
             "drop" => {
                 let path = rest.trim_matches('"');
                 if !app.drop_file(path) {
@@ -2390,7 +3303,18 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "dump" | "tree" => {
                 app.update();
+                if app.has_menu_bar && app.current == 0 {
+                    let titles: Vec<String> = app.bar.iter().map(|m| format!("{:?}", m.label())).collect();
+                    let how = if app.native_bar { "native" } else { "drawn" };
+                    println!("MenuBar ({how}) {}", titles.join(" "));
+                }
                 print!("{}", app.dump(word == "dump"));
+                print!("{}", app.describe_menu());
+                if app.current == 0 {
+                    for (_, title, w, h) in app.windows() {
+                        println!("Window {title:?} {w:.0}x{h:.0}");
+                    }
+                }
                 if let Some(tip) = &app.ui.tooltip {
                     println!("Tooltip {:?}", tip.text);
                 }
@@ -2416,14 +3340,28 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
 
 // ===== window =====
 
+/// An open window, and what the mouse and keyboard are doing in it.
 struct WindowApp {
     app: App,
     cx: RenderContext,
-    renderer: Option<Renderer>,
+    /// A renderer for each GPU device the windows draw with (by `dev_id`).
+    renderers: HashMap<usize, Renderer>,
+    mods: Mods,
+    /// The other open windows (`Window`s, or the main one), parked while
+    /// another one's events are handled (see `focus`).
+    parked: Vec<Win>,
+    /// The menu bar the system shows (macOS), as `menu::describe` lists it,
+    /// and the app's build it was last compared with.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    native_menu: (Option<String>, u64),
+    // ----- the window whose events are handled (see `Win`) -----
+    /// Its surface's key in the app (0: the main window).
+    key: u64,
     surface: Option<RenderSurface<'static>>,
     window: Option<Arc<Window>>,
+    /// The title it shows.
+    title: String,
     cursor: (f64, f64),
-    mods: Mods,
     /// Dragging to select text in a field.
     selecting: bool,
     /// The view with `.onDrag` being dragged.
@@ -2441,6 +3379,53 @@ struct WindowApp {
     /// where the caret was last reported to them.
     ime: bool,
     ime_caret: Option<Rect>,
+    /// A press a menu or popover took: its release is ignored too.
+    swallow: bool,
+}
+
+/// The fields of `WindowApp` from `key` on, for a parked window.
+struct Win {
+    key: u64,
+    surface: Option<RenderSurface<'static>>,
+    window: Option<Arc<Window>>,
+    title: String,
+    cursor: (f64, f64),
+    selecting: bool,
+    dragging: Option<u64>,
+    scrolling: Option<(u64, bool, f64)>,
+    pointing: Option<(u64, i32)>,
+    pointer: winit::window::CursorIcon,
+    last_click: Option<(Instant, (f64, f64), u32)>,
+    ime: bool,
+    ime_caret: Option<Rect>,
+    swallow: bool,
+}
+
+impl Win {
+    fn new(key: u64, title: String) -> Win {
+        Win {
+            key,
+            surface: None,
+            window: None,
+            title,
+            cursor: (0.0, 0.0),
+            selecting: false,
+            dragging: None,
+            scrolling: None,
+            pointing: None,
+            pointer: winit::window::CursorIcon::Default,
+            last_click: None,
+            ime: false,
+            ime_caret: None,
+            swallow: false,
+        }
+    }
+}
+
+thread_local! {
+    /// Whether the program runs with `tessel run --hot` (inside `tessel`,
+    /// whose arguments aren't the program's).
+    static HOT: Cell<bool> = const { Cell::new(false) };
 }
 
 fn run_window(app: App) -> i32 {
@@ -2452,14 +3437,20 @@ fn run_window(app: App) -> i32 {
         }
     };
     *WAKE.lock().unwrap() = Some(event_loop.create_proxy());
+    #[cfg(target_os = "macos")]
+    super::native::install();
     let mut w = WindowApp {
         app,
         cx: RenderContext::new(),
-        renderer: None,
+        renderers: HashMap::new(),
+        mods: Mods::default(),
+        parked: Vec::new(),
+        native_menu: (None, u64::MAX),
+        key: 0,
         surface: None,
         window: None,
+        title: String::new(),
         cursor: (0.0, 0.0),
-        mods: Mods::default(),
         selecting: false,
         dragging: None,
         scrolling: None,
@@ -2468,8 +3459,15 @@ fn run_window(app: App) -> i32 {
         last_click: None,
         ime: false,
         ime_caret: None,
+        swallow: false,
     };
     w.app.ui.anim.enabled = true;
+    // Files the app is started with go to `.onOpenFile` (as files opened
+    // with it later do).
+    if !HOT.with(Cell::get) {
+        let files = std::env::args().skip(1).filter(|a| !a.starts_with('-') && std::path::Path::new(a).is_file());
+        w.app.open_files.extend(files);
+    }
     let code = match event_loop.run_app(&mut w) {
         Ok(()) => 0,
         Err(e) => {
@@ -2478,19 +3476,225 @@ fn run_window(app: App) -> i32 {
         }
     };
     w.app.tree = None;
+    for s in &mut w.app.others {
+        s.tree = None;
+    }
     code
 }
 
 impl WindowApp {
+    /// Swaps the handled window's fields with `w`'s.
+    fn swap(&mut self, w: &mut Win) {
+        std::mem::swap(&mut self.key, &mut w.key);
+        std::mem::swap(&mut self.surface, &mut w.surface);
+        std::mem::swap(&mut self.window, &mut w.window);
+        std::mem::swap(&mut self.title, &mut w.title);
+        std::mem::swap(&mut self.cursor, &mut w.cursor);
+        std::mem::swap(&mut self.selecting, &mut w.selecting);
+        std::mem::swap(&mut self.dragging, &mut w.dragging);
+        std::mem::swap(&mut self.scrolling, &mut w.scrolling);
+        std::mem::swap(&mut self.pointing, &mut w.pointing);
+        std::mem::swap(&mut self.pointer, &mut w.pointer);
+        std::mem::swap(&mut self.last_click, &mut w.last_click);
+        std::mem::swap(&mut self.ime, &mut w.ime);
+        std::mem::swap(&mut self.ime_caret, &mut w.ime_caret);
+        std::mem::swap(&mut self.swallow, &mut w.swallow);
+    }
+
+    /// Makes the window with app key `key` the handled one (and its surface
+    /// the app's current one). Returns whether it's open.
+    fn focus(&mut self, key: u64) -> bool {
+        if self.key != key {
+            let Some(i) = self.parked.iter().position(|w| w.key == key) else { return false };
+            let mut w = self.parked.remove(i);
+            self.swap(&mut w);
+            self.parked.push(w);
+        }
+        self.app.enter(key)
+    }
+
+    /// The app key of the window with this id.
+    fn key_of(&self, id: WindowId) -> Option<u64> {
+        if self.window.as_ref().is_some_and(|w| w.id() == id) {
+            return Some(self.key);
+        }
+        self.parked.iter().find(|w| w.window.as_ref().is_some_and(|w| w.id() == id)).map(|w| w.key)
+    }
+
     fn scale(&self) -> f64 {
         self.window.as_ref().map_or(1.0, |w| w.scale_factor())
     }
 
+    /// Opens a window for `key` (its size and title from the app), with a
+    /// surface to draw on. The main window's title bar follows `appearance`.
+    fn open(&mut self, event_loop: &ActiveEventLoop, key: u64, title: &str, size: (f64, f64)) -> Option<(Arc<Window>, RenderSurface<'static>)> {
+        let attrs = Window::default_attributes()
+            .with_title(title.to_string())
+            .with_inner_size(LogicalSize::new(size.0, size.1))
+            // The title bar's appearance; `None` follows the system.
+            .with_theme(match self.app.appearance {
+                1 => Some(winit::window::Theme::Light),
+                2 => Some(winit::window::Theme::Dark),
+                _ => None,
+            });
+        // The app's icon is icon group 1 in its .exe (`tessel build` puts it
+        // there): show it in the title bar and the taskbar.
+        #[cfg(windows)]
+        let attrs = {
+            use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+            match winit::window::Icon::from_resource(1, None) {
+                Ok(icon) => attrs.with_window_icon(Some(icon.clone())).with_taskbar_icon(Some(icon)),
+                Err(_) => attrs,
+            }
+        };
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                eprintln!("error: can't open a window: {e}");
+                return None;
+            }
+        };
+        if key == 0 && self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
+            self.app.dirty = true;
+        }
+        let inner = window.inner_size();
+        let surface =
+            pollster::block_on(self.cx.create_surface(window.clone(), inner.width.max(1), inner.height.max(1), wgpu::PresentMode::AutoVsync));
+        match surface {
+            Ok(s) => Some((window, s)),
+            Err(e) => {
+                eprintln!("error: can't draw to the window: {e}");
+                None
+            }
+        }
+    }
+
+    /// Opens a window for each `Window` the app has open, and closes those
+    /// it closed. Titles follow the app's.
+    fn sync_windows(&mut self, event_loop: &ActiveEventLoop) {
+        let wanted = self.app.windows();
+        // Closed: the main window takes over.
+        let open = |key: u64| key == 0 || wanted.iter().any(|w| w.0 == key);
+        if !open(self.key) {
+            self.focus(0);
+        }
+        self.parked.retain(|w| open(w.key));
+        for (key, title, w, h) in wanted {
+            let known = self.key == key || self.parked.iter().any(|p| p.key == key);
+            if !known {
+                let mut win = Win::new(key, title.clone());
+                if let Some((window, surface)) = self.open(event_loop, key, &title, (w, h)) {
+                    win.window = Some(window.clone());
+                    win.surface = Some(surface);
+                    window.request_redraw();
+                    self.parked.push(win);
+                }
+                continue;
+            }
+            let win = if self.key == key { None } else { self.parked.iter_mut().find(|p| p.key == key) };
+            let (current_title, window) = match win {
+                Some(p) => (&mut p.title, p.window.as_ref()),
+                None => (&mut self.title, self.window.as_ref()),
+            };
+            if *current_title != title {
+                if let Some(window) = window {
+                    window.set_title(&title);
+                }
+                *current_title = title;
+            }
+        }
+    }
+
+    /// Redraws every window (state changed: any of them may show it).
+    fn request_all(&self) {
+        self.request_redraw();
+        for w in &self.parked {
+            if let Some(w) = &w.window {
+                w.request_redraw();
+            }
+        }
+    }
+
+    /// Carries out what the app asked of its windows, and of the event loop.
+    fn after_app(&mut self, event_loop: &ActiveEventLoop) {
+        for command in std::mem::take(&mut self.app.window_commands) {
+            let Some(w) = &self.window else { continue };
+            match command {
+                Std::Minimize => w.set_minimized(true),
+                Std::Zoom => w.set_maximized(!w.is_maximized()),
+                _ => {}
+            }
+        }
+        self.app.take_requests();
+        if self.app.quit {
+            event_loop.exit();
+            return;
+        }
+        // State changed: every window may show it, and windows may have
+        // opened or closed.
+        if self.app.dirty {
+            self.app.update();
+            self.request_all();
+            if self.app.quit {
+                event_loop.exit();
+                return;
+            }
+        }
+        self.sync_windows(event_loop);
+        self.sync_native_menu();
+    }
+
+    /// Gives the system the app's menu bar (macOS) when it changed.
+    fn sync_native_menu(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            if self.native_menu.1 == self.app.builds {
+                return;
+            }
+            self.native_menu.1 = self.app.builds;
+            let mut listed = String::new();
+            menu::describe(&self.app.bar, 0, &mut listed);
+            if self.native_menu.0.as_deref() != Some(listed.as_str()) && !self.app.bar.is_empty() {
+                super::native::set_menu_bar(&self.app.bar);
+                self.native_menu.0 = Some(listed);
+            }
+        }
+    }
+
+    /// What the system sent the app: menu items chosen, files, Quit.
+    fn take_shell_events(&mut self) -> bool {
+        let events: Vec<Shell> = std::mem::take(&mut *SHELL.lock().unwrap());
+        let any = !events.is_empty();
+        // They're for the window that had the last event (the menu bar's
+        // Close Window closes it).
+        if any && !self.focus(self.key) {
+            self.focus(0);
+        }
+        for event in events {
+            match event {
+                Shell::Menu(path) => {
+                    let item = menu::at(&self.app.bar, &path).cloned();
+                    if let Some(e @ Entry::Item { enabled: true, .. }) = item {
+                        self.app.run_entry(&e);
+                    }
+                }
+                Shell::OpenFile(path) => {
+                    self.app.open_files.push(path);
+                    self.app.dirty = true;
+                }
+                Shell::Quit => self.app.request_quit(),
+            }
+        }
+        any
+    }
+
     fn redraw(&mut self) {
         let (Some(surface), Some(window)) = (self.surface.as_ref(), self.window.as_ref()) else { return };
-        if let Some(title) = NEW_TITLE.with(|t| t.borrow_mut().take()) {
-            window.set_title(&title);
-            self.app.title = title;
+        if self.key == 0 {
+            if let Some(title) = NEW_TITLE.with(|t| t.borrow_mut().take()) {
+                window.set_title(&title);
+                self.app.title = title;
+            }
         }
         let scale = window.scale_factor();
         let size = window.inner_size();
@@ -2498,7 +3702,7 @@ impl WindowApp {
         self.app.height = size.height as f64 / scale;
         let scene = self.app.scene(scale);
         let dev = &self.cx.devices[surface.dev_id];
-        let renderer = self.renderer.get_or_insert_with(|| render::renderer(&dev.device));
+        let renderer = self.renderers.entry(surface.dev_id).or_insert_with(|| render::renderer(&dev.device));
         let (w, h) = (surface.config.width, surface.config.height);
         if renderer.render_to_texture(&dev.device, &dev.queue, &scene, &surface.target_view, &render::params(w, h)).is_err() {
             return;
@@ -2551,61 +3755,31 @@ impl WindowApp {
 
 impl ApplicationHandler for WindowApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if self.window.is_some() || self.key != 0 {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title(self.app.title.clone())
-            .with_inner_size(LogicalSize::new(self.app.width, self.app.height))
-            // The title bar's appearance; `None` follows the system.
-            .with_theme(match self.app.appearance {
-                1 => Some(winit::window::Theme::Light),
-                2 => Some(winit::window::Theme::Dark),
-                _ => None,
-            });
-        // The app's icon is icon group 1 in its .exe (`tessel build` puts it
-        // there): show it in the title bar and the taskbar.
-        #[cfg(windows)]
-        let attrs = {
-            use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
-            match winit::window::Icon::from_resource(1, None) {
-                Ok(icon) => attrs.with_window_icon(Some(icon.clone())).with_taskbar_icon(Some(icon)),
-                Err(_) => attrs,
-            }
+        let (title, size) = (self.app.title.clone(), (self.app.width, self.app.height));
+        let Some((window, surface)) = self.open(event_loop, 0, &title, size) else {
+            event_loop.exit();
+            return;
         };
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                eprintln!("error: can't open a window: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
-        if self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
-            self.app.dirty = true;
-        }
-        let size = window.inner_size();
-        let surface = pollster::block_on(self.cx.create_surface(
-            window.clone(),
-            size.width.max(1),
-            size.height.max(1),
-            wgpu::PresentMode::AutoVsync,
-        ));
-        match surface {
-            Ok(s) => self.surface = Some(s),
-            Err(e) => {
-                eprintln!("error: can't draw to the window: {e}");
-                event_loop.exit();
-                return;
-            }
-        }
+        self.surface = Some(surface);
         self.window = Some(window);
+        self.title = title;
         self.request_redraw();
+        // (Replaces winit's menu bar, which is made at launch.)
+        self.app.update();
+        self.after_app(event_loop);
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if std::env::var_os("TESSEL_DEBUG_EVENTS").is_some() && !matches!(event, WindowEvent::RedrawRequested) {
             eprintln!("event: {event:?}");
+        }
+        // The event's window, with its surface in the app.
+        let Some(key) = self.key_of(id) else { return };
+        if !self.focus(key) {
+            return;
         }
         // A click, a key or the wheel puts the tooltip away.
         if matches!(event, WindowEvent::MouseInput { .. } | WindowEvent::KeyboardInput { .. } | WindowEvent::MouseWheel { .. }) {
@@ -2614,8 +3788,30 @@ impl ApplicationHandler for WindowApp {
             }
             self.app.tip_hide();
         }
+        // Open menus, the drawn menu bar and popovers take presses first; a
+        // right press (or a Ctrl-click, on macOS) opens a context menu.
+        if let WindowEvent::MouseInput { state, button, .. } = &event {
+            let (x, y) = self.cursor;
+            match state {
+                ElementState::Pressed if matches!(button, MouseButton::Left | MouseButton::Right) => {
+                    let right = *button == MouseButton::Right || self.mods.control;
+                    if self.app.press(x, y, right) {
+                        self.swallow = true;
+                        self.after_app(event_loop);
+                        self.request_all();
+                        return;
+                    }
+                }
+                ElementState::Released if self.swallow => {
+                    self.swallow = false;
+                    return;
+                }
+                _ => {}
+            }
+        }
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => self.app.request_close(),
+            WindowEvent::Focused(true) => {}
             WindowEvent::Resized(size) => {
                 if let Some(s) = self.surface.as_mut() {
                     self.cx.resize_surface(s, size.width.max(1), size.height.max(1));
@@ -2633,12 +3829,20 @@ impl ApplicationHandler for WindowApp {
             WindowEvent::ModifiersChanged(m) => {
                 let m = m.state();
                 let primary = if cfg!(target_os = "macos") { m.super_key() } else { m.control_key() };
-                self.mods = Mods { shift: m.shift_key(), alt: m.alt_key(), primary };
+                let control = cfg!(target_os = "macos") && m.control_key();
+                self.mods = Mods { shift: m.shift_key(), alt: m.alt_key(), primary, control };
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = self.scale();
                 let before = self.cursor;
                 self.cursor = (position.x / scale, position.y / scale);
+                // An open menu: the item under the pointer is selected.
+                if self.app.menu.is_some() {
+                    self.app.ui.pointer = Some(self.cursor);
+                    self.app.menu_hover(self.cursor.0, self.cursor.1);
+                    self.request_redraw();
+                    return;
+                }
                 if let Some((key, vertical, grab)) = self.scrolling {
                     self.app.drag_scroll_bar(key, vertical, grab, self.cursor.0, self.cursor.1);
                     self.request_redraw();
@@ -2670,13 +3874,14 @@ impl ApplicationHandler for WindowApp {
                 }
                 let hovered = self.app.hit(self.cursor.0, self.cursor.1).map(|h| h.key());
                 let hover_bg = self.app.hover_background_at(self.cursor.0, self.cursor.1);
+                let over_bar = self.app.ui.menu_bar.as_ref().is_some_and(|b| self.cursor.1 < menu::BAR_H || b.open.is_some());
                 self.app.ui.pointer = Some(self.cursor);
                 let had_tip = self.app.ui.tooltip.is_some();
                 self.app.tip_move(self.cursor.0, self.cursor.1);
                 if had_tip && self.app.ui.tooltip.is_none() {
                     self.request_redraw();
                 }
-                if hovered != self.app.ui.hovered || hovered.is_some() || hover_bg != self.app.ui.hover_background {
+                if hovered != self.app.ui.hovered || hovered.is_some() || hover_bg != self.app.ui.hover_background || over_bar {
                     self.app.ui.hovered = hovered;
                     self.app.ui.hover_background = hover_bg;
                     self.request_redraw();
@@ -2846,30 +4051,28 @@ impl ApplicationHandler for WindowApp {
             _ => {}
         }
         self.sync_ime();
-        if self.app.dirty {
-            self.request_redraw();
-        }
+        self.after_app(event_loop);
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: ()) {
-        if deliver_background() {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
+        let shell = self.take_shell_events();
+        if deliver_background() || shell {
             self.app.dirty = true;
-            self.request_redraw();
         }
+        self.after_app(event_loop);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if deliver_background() {
+        if self.take_shell_events() | deliver_background() {
             self.app.dirty = true;
-            self.request_redraw();
         }
         if fire_timers() {
             self.app.dirty = true;
-            self.request_redraw();
         }
         if self.app.tip_due() {
             self.request_redraw();
         }
+        self.after_app(event_loop);
         // Wake for the next timer, or for a tooltip that's waiting to show.
         let next = [next_timer(), self.app.tip_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
         match next {

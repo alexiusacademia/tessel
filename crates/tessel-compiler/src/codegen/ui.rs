@@ -698,8 +698,66 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let adapter = self.graphics_adapter();
                 self.call_rt("tsl_ui_canvas", &[adapter.into(), bx.into(), has_redraw, redraw]);
             }
+            "MenuItem" => {
+                let label = string(self, a(0));
+                let shortcut = string(self, a(1));
+                let checked = match a(2) {
+                    Some(x) => {
+                        let b = self.expr(x).unwrap().into_int_value();
+                        self.to_c_bool(b)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                let action = self.expr_as(a(3).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_menu_item", &[label, shortcut, checked], action);
+                self.release(label, &Ty::Str);
+                self.release(shortcut, &Ty::Str);
+            }
+            "MenuDivider" => {
+                self.call_rt("tsl_ui_menu_divider", &[]);
+            }
+            "Menu" => {
+                let title = string(self, a(0));
+                self.call_rt("tsl_ui_begin_menu", &[title]);
+                self.release(title, &Ty::Str);
+                self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "Window" => {
+                let title = string(self, a(0));
+                let loc = self.locator(a(1).unwrap()).into_struct_value();
+                let f = self.b.build_extract_value(loc, 0, "").unwrap();
+                let env = self.b.build_extract_value(loc, 1, "").unwrap();
+                let f64t = self.ctx.f64_type();
+                let w = match a(2) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => f64t.const_float(480.0).into(),
+                };
+                let h = match a(3) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => f64t.const_float(360.0).into(),
+                };
+                let open = self.call_rt("tsl_ui_begin_window", &[title, f, env, w, h]).unwrap();
+                self.release(title, &Ty::Str);
+                // Only an open window's content is built.
+                self.content_if(open, a(4).unwrap(), "tsl_ui_end_window");
+            }
             _ => unreachable!("built-in view {name}"),
         }
+    }
+
+    /// Emits `content` (then calls `end`) if the runtime's answer `flag` (a
+    /// u8) is nonzero.
+    fn content_if(&mut self, flag: Val<'ctx>, content: &Expr, end: &str) {
+        let flag = flag.into_int_value();
+        let shown = self.b.build_int_compare(IntPredicate::NE, flag, self.i8().const_zero(), "").unwrap();
+        let (then_bb, done) = (self.block_named("shown"), self.block_named("not_shown"));
+        self.b.build_conditional_branch(shown, then_bb, done).unwrap();
+        self.b.position_at_end(then_bb);
+        self.content_inline(content);
+        self.call_rt(end, &[]);
+        self.br(done);
+        self.b.position_at_end(done);
     }
 
     fn modifier<'e>(&mut self, name: &str, info: &CallInfo, arg: &dyn Fn(ArgRef) -> &'e Expr, args: &[Arg]) {
@@ -876,6 +934,32 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "onResize" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_resize", &[], action);
+            }
+            "contextMenu" | "menuBar" => {
+                let which = self.ctx.i32_type().const_int((name == "menuBar") as u64, false);
+                self.call_rt("tsl_ui_begin_attached", &[which.into()]);
+                self.content_inline(a(0).unwrap());
+                self.call_rt("tsl_ui_end_attached", &[which.into()]);
+            }
+            "popover" => {
+                let loc = self.locator(a(0).unwrap()).into_struct_value();
+                let f = self.b.build_extract_value(loc, 0, "").unwrap();
+                let env = self.b.build_extract_value(loc, 1, "").unwrap();
+                // The `Edge` case's tag; 1 is `.bottom`.
+                let edge = match a(1) {
+                    Some(x) => int(self, x),
+                    None => self.ctx.i32_type().const_int(1, false).into(),
+                };
+                let shown = self.call_rt("tsl_ui_begin_popover", &[f, env, edge]).unwrap();
+                self.content_if(shown, a(2).unwrap(), "tsl_ui_end_popover");
+            }
+            "onOpenFile" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_open_file", &[], action);
+            }
+            "onCloseRequest" => {
+                let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_on_close_request", &[], action);
             }
             "tooltip" => {
                 let text = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();

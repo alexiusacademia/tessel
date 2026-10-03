@@ -1,0 +1,33 @@
+// Documents from the system and asking before closing: `.onOpenFile` gets
+// each file the app is asked to open (`open "…"` in a script), and
+// `.onCloseRequest` decides what closing the window (`close window`) and
+// quitting (`quit`, or Cmd-Q) do: the app ends when it calls `closeWindow()`
+// or `quit()`.
+
+app Editor(width: 360, height: 240, documentTypes: ["geo", "gpkg"]) {
+    state files: [String] = []
+    state edited = false
+    state asking = false
+
+    VStack(spacing: 6) {
+        for file in files {
+            Text(file.fileName)
+        }
+        Toggle("Edited", isOn: edited)
+        if asking {
+            Text("Save the changes?")
+            HStack {
+                Button("Cancel") { asking = false }
+                Button("Don't Save") { quit() }
+            }
+        }
+    }
+    .onOpenFile { path in files.append(path) }
+    .onCloseRequest {
+        if edited {
+            asking = true
+        } else {
+            closeWindow()
+        }
+    }
+}

@@ -1107,6 +1107,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_clipped" => (vec![i8t], None),
             "tsl_ui_on_drop" | "tsl_ui_on_resize" => (vec![p, p], None),
             "tsl_ui_tooltip" => (vec![p], None),
+            "tsl_ui_menu_item" => (vec![p, p, i8t, p, p], None),
+            "tsl_ui_menu_divider" | "tsl_ui_end_popover" | "tsl_ui_end_window" => (vec![], None),
+            "tsl_ui_begin_menu" => (vec![p], None),
+            "tsl_ui_begin_attached" | "tsl_ui_end_attached" => (vec![i32t], None),
+            "tsl_ui_begin_popover" => (vec![p, p, i32t], Some(i8t)),
+            "tsl_ui_begin_window" => (vec![p, p, p, f64t, f64t], Some(i8t)),
+            "tsl_ui_on_open_file" | "tsl_ui_on_close_request" => (vec![p, p], None),
             "tsl_ui_canvas" => (vec![p, p, i8t, i], None),
             "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" | "tsl_ui_animation" => (vec![f64t], None),
@@ -4524,7 +4531,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let bx = f.get_nth_param(0).unwrap().into_pointer_value();
             let ec = f.get_nth_param(1).unwrap().into_pointer_value();
             let closure = g.load(&ft, g.box_data(bx));
-            // PointerC: { i32 kind, i32 button, i64 clicks, f64 x, y, dx, dy, i8 shift, alt, command }
+            // PointerC: { i32 kind, i32 button, i64 clicks, f64 x, y, dx, dy,
+            // i8 shift, alt, command, f64 window_x, window_y }
             let (i32t, i8t, f64t) = (g.ctx.i32_type(), g.i8(), g.ctx.f64_type());
             let ct = g.ctx.struct_type(
                 &[
@@ -4538,6 +4546,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     i8t.into(),
                     i8t.into(),
                     i8t.into(),
+                    f64t.into(),
+                    f64t.into(),
                 ],
                 false,
             );
@@ -4547,21 +4557,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             };
             let st = g.llty(&builtins::POINTER_EVENT).unwrap().into_struct_type();
             let mut s = st.get_undef();
-            // PointerEvent: kind, x, y, dx, dy, button, clicks, shift, alt, command
-            let plain: [(u32, u32, BasicTypeEnum<'ctx>); 7] = [
+            // PointerEvent: kind, x, y, windowX, windowY, dx, dy, button,
+            // clicks, shift, alt, command
+            let plain: [(u32, u32, BasicTypeEnum<'ctx>); 9] = [
                 (0, 0, i32t.into()),
                 (1, 3, f64t.into()),
                 (2, 4, f64t.into()),
-                (3, 5, f64t.into()),
-                (4, 6, f64t.into()),
-                (5, 1, i32t.into()),
-                (6, 2, g.i64().into()),
+                (3, 10, f64t.into()),
+                (4, 11, f64t.into()),
+                (5, 5, f64t.into()),
+                (6, 6, f64t.into()),
+                (7, 1, i32t.into()),
+                (8, 2, g.i64().into()),
             ];
             for (to, from, t) in plain {
                 let v = field(g, from, t);
                 s = g.b.build_insert_value(s, v, to, "").unwrap().into_struct_value();
             }
-            for (to, from) in [(7u32, 7u32), (8, 8), (9, 9)] {
+            for (to, from) in [(9u32, 7u32), (10, 8), (11, 9)] {
                 let v = field(g, from, i8t.into());
                 let flag = g.truthy(Some(v));
                 s = g.b.build_insert_value(s, flag, to, "").unwrap().into_struct_value();

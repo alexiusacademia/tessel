@@ -1,0 +1,47 @@
+// `.contextMenu`: a right click (or `rightclick` in a script) opens a menu
+// of `MenuItem`s, `MenuDivider`s and submenus (`Menu`) at the pointer.
+// `PointerEvent` has where the pointer is in the window, too.
+
+view LayerRow(name: String, log: bind [String]) {
+    Text(name)
+        .padding(6)
+        .contextMenu {
+            MenuItem("Zoom to Layer", shortcut: "⇧⌘Z") { log.append("zoom to {name}") }
+            ExportItems(name: name, log: log)
+            MenuDivider()
+            MenuItem("Remove") { log.append("remove {name}") }
+        }
+}
+
+// A view of menu items, used in a menu.
+view ExportItems(name: String, log: bind [String]) {
+    Menu("Export") {
+        MenuItem("GeoJSON…") { log.append("export {name} as GeoJSON") }
+        MenuItem("Shapefile…") { }.disabled(true)
+    }
+}
+
+app Layers(width: 360, height: 320) {
+    state log: [String] = []
+    state locked = false
+
+    VStack(spacing: 6) {
+        LayerRow(name: "Roads", log: log)
+        LayerRow(name: "Rivers", log: log)
+        Text("Map")
+            .frame(width: 200, height: 60)
+            .background(.lightGray)
+            .onPointer { e in
+                if e.kind == .down {
+                    log.append("{e.button} at {Int(e.x)},{Int(e.y)} in the window {Int(e.windowX)},{Int(e.windowY)}")
+                }
+            }
+            .contextMenu {
+                MenuItem("Locked", checked: locked) { locked = !locked }
+                MenuItem("Clear") { log = [] }.disabled(locked)
+            }
+        for line in log {
+            Text(line).font(size: 11)
+        }
+    }
+}

@@ -35,12 +35,23 @@ vello = "0.10"
 vello_svg = "0.11"
 winit = "0.30"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The menu bar, and the files and Quit the system sends the app (see ui/native.rs).
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString"] }
+
 [target.'cfg(unix)'.dependencies]
 # The stack overflow handler (sigaltstack, sigaction, the stack's bounds).
 libc = "0.2"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
+
+# Builds the macOS menu bar with AppKit, which needs the main thread (so no
+# test harness). Only with TESSEL_NATIVE_TEST=1: it talks to the window server.
+[[test]]
+name = "native_menu"
+harness = false
 
 [lints]
 workspace = true

@@ -14,6 +14,9 @@ mod highlight;
 mod image;
 mod layout;
 mod markdown;
+mod menu;
+#[cfg(target_os = "macos")]
+mod native;
 mod render;
 mod svg;
 mod theme;
@@ -27,6 +30,9 @@ use crate::{tsl_release, tsl_retain, Header, Str, TslType};
 
 pub use app::{on_reload, run_on_ui, run_until_idle, tsl_ui_hot, tsl_ui_run};
 pub use theme::tsl_is_dark_mode;
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub use native::check_menu_bar;
 
 // ===== callbacks =====
 
@@ -189,6 +195,30 @@ pub enum Kind {
     /// width and height when it's painted. With `redraw`, the drawing is kept
     /// until that number changes.
     Canvas { draw: Callback, redraw: Option<i64> },
+    /// `MenuItem("Copy", shortcut: "cmd+c", checked:) { … }`: an item of a
+    /// menu. Its shortcut is kept as `menu::Shortcut::parse` reads it.
+    MenuItem { label: String, shortcut: String, checked: bool, action: Callback },
+    /// `MenuDivider()`: a line between a menu's items.
+    MenuDivider,
+    /// `Menu("File") { … }`: a menu of the menu bar, or a submenu.
+    Menu { title: String },
+    /// The items of a `.contextMenu` or the menus of a `.menuBar` (kept in
+    /// the view's `Mods`, not in the tree).
+    MenuList,
+    /// `.popover(isPresented:edge:) { … }`: content shown next to the view
+    /// `anchor`, above everything else. Popovers are the last children of
+    /// their window's root.
+    Popover { anchor: u64, edge: u8, presented: Callback },
+    /// `Window("Title", isOpen:width:height:) { … }`: another window. It's
+    /// the root of its own tree (see `build`).
+    Window { title: String, is_open: Callback, width: f64, height: f64 },
+}
+
+impl Kind {
+    /// Menus and their items: they show only in menus, never in a layout.
+    pub fn is_menu(&self) -> bool {
+        matches!(self, Kind::MenuItem { .. } | Kind::MenuDivider | Kind::Menu { .. } | Kind::MenuList)
+    }
 }
 
 #[derive(Default)]
@@ -254,6 +284,17 @@ pub struct Mods {
     /// `.onResize { width, height in … }`: called with the view's size
     /// (inside its padding) when it's first laid out, and when it changes.
     pub on_resize: Option<Callback>,
+    /// `.contextMenu { … }`: the menu a right click (or Ctrl-click) on the
+    /// view opens: a `MenuList`.
+    pub context_menu: Option<Box<Node>>,
+    /// `.menuBar { … }`: the app's menus (a `MenuList` of `Menu`s).
+    pub menu_bar: Option<Box<Node>>,
+    /// `.onOpenFile { path in … }`: called with each file the system asks
+    /// the app to open.
+    pub on_open_file: Option<Callback>,
+    /// `.onCloseRequest { … }`: called instead of closing the window (or
+    /// quitting) when the user asks to.
+    pub on_close_request: Option<Callback>,
     /// Which view expression of the source this is, for `tessel preview`:
     /// its number among the ones the compiler listed.
     pub source: Option<u32>,
@@ -274,6 +315,9 @@ pub struct PointerC {
     pub shift: u8,
     pub alt: u8,
     pub command: u8,
+    /// Where the pointer is from the window's top left corner.
+    pub window_x: f64,
+    pub window_y: f64,
 }
 
 pub struct Node {
@@ -341,6 +385,12 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Svg { .. } => 17,
         Kind::Markdown { .. } => 18,
         Kind::Canvas { .. } => 19,
+        Kind::MenuItem { .. } => 20,
+        Kind::MenuDivider => 21,
+        Kind::Menu { .. } => 22,
+        Kind::MenuList => 23,
+        Kind::Popover { .. } => 24,
+        Kind::Window { .. } => 25,
     }
 }
 
@@ -357,6 +407,16 @@ struct Builder {
     stack: Vec<Node>,
     /// Set by `.id(…)`: the identity of the next view, instead of its position.
     pending_id: Option<u64>,
+    /// Open popovers, for the root of each window being built (innermost
+    /// last): they become its last children.
+    overlays: Vec<Vec<Node>>,
+    /// Where each popover being built goes in its list (so a popover opened
+    /// from another comes after it).
+    overlay_at: Vec<usize>,
+    /// Open windows (`Window`), each the root of its own tree.
+    windows: Vec<Node>,
+    /// How many `Window`s were declared so far (open or not): their identity.
+    window_count: u64,
 }
 
 impl Builder {
@@ -393,6 +453,24 @@ impl Builder {
     fn last(&mut self) -> Option<&mut Node> {
         self.parent().children.last_mut()
     }
+
+    /// Opens a container with its own identity (rather than a position).
+    fn begin_keyed(&mut self, kind: Kind, key: u64) {
+        self.pending_id = None;
+        self.stack.push(Node::new(kind, key));
+    }
+}
+
+fn hash_key(parts: impl Hash) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    parts.hash(&mut h);
+    h.finish()
+}
+
+/// What a build makes: the main window's tree, and the other open windows'.
+pub struct Built {
+    pub root: Node,
+    pub windows: Vec<Node>,
 }
 
 /// Persistent state of one custom view instance (a box of its `state` values).
@@ -420,16 +498,31 @@ fn with_builder(f: impl FnOnce(&mut Builder)) {
 /// Runs the program's build function and returns the new tree. View states
 /// that weren't used in this build (their views disappeared) are released.
 pub fn build(root: &Callback) -> Node {
+    build_all(root).root
+}
+
+/// Like `build`, with the other windows too.
+pub fn build_all(root: &Callback) -> Built {
     let generation = GENERATION.with(|g| {
         *g.borrow_mut() += 1;
         *g.borrow()
     });
-    BUILDER.with(|b| *b.borrow_mut() = Some(Builder { stack: vec![Node::new(Kind::Root, 1)], pending_id: None }));
+    BUILDER.with(|b| {
+        *b.borrow_mut() = Some(Builder {
+            stack: vec![Node::new(Kind::Root, 1)],
+            pending_id: None,
+            overlays: vec![Vec::new()],
+            overlay_at: Vec::new(),
+            windows: Vec::new(),
+            window_count: 0,
+        })
+    });
     root.call();
     let mut builder = BUILDER.with(|b| b.borrow_mut().take()).expect("builder");
     while builder.stack.len() > 1 {
         builder.end();
     }
+    let popovers = builder.overlays.drain(..).next().unwrap_or_default();
     let gone: Vec<*mut Header> = STATES.with(|s| {
         let mut s = s.borrow_mut();
         let dead: Vec<u64> = s.iter().filter(|(_, v)| v.seen != generation).map(|(k, _)| *k).collect();
@@ -438,7 +531,9 @@ pub fn build(root: &Callback) -> Node {
     for record in gone {
         unsafe { tsl_release(record) };
     }
-    builder.stack.pop().unwrap()
+    let mut root = builder.stack.pop().unwrap();
+    root.children.extend(popovers);
+    Built { root, windows: builder.windows }
 }
 
 /// Releases all view state (at exit, so leak checkers see a clean heap).
@@ -574,6 +669,126 @@ pub unsafe extern "C" fn tsl_ui_canvas(f: *const c_void, env: *mut Header, has_r
     let draw = Callback::new(f, env);
     let redraw = (has_redraw != 0).then_some(redraw);
     with_builder(|b| b.leaf(Kind::Canvas { draw, redraw }));
+}
+
+// ===== C ABI: menus, popovers and windows =====
+
+/// `MenuItem(label, shortcut:, checked:) { … }`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_menu_item(label: *const Str, shortcut: *const Str, checked: u8, f: *const c_void, env: *mut Header) {
+    let (label, shortcut) = unsafe { (text_of(label), text_of(shortcut)) };
+    let action = Callback::new(f, env);
+    with_builder(|b| b.leaf(Kind::MenuItem { label, shortcut, checked: checked != 0, action }));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_menu_divider() {
+    with_builder(|b| b.leaf(Kind::MenuDivider));
+}
+
+/// `Menu(title) { … }`: closed with `tsl_ui_end`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_menu(title: *const Str) {
+    let title = unsafe { text_of(title) };
+    with_builder(|b| b.begin(Kind::Menu { title }, 0));
+}
+
+/// Opens the items of a `.contextMenu` (`which` = 0) or the menus of a
+/// `.menuBar` (1) of the last view; `tsl_ui_end_attached` gives them to it.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_begin_attached(which: i32) {
+    with_builder(|b| {
+        let anchor = b.last().map_or(0, |n| n.key);
+        b.begin_keyed(Kind::MenuList, hash_key((anchor, "menu", which)));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_end_attached(which: i32) {
+    with_builder(|b| {
+        let list = b.stack.pop().expect("unbalanced end");
+        if let Some(n) = b.last() {
+            if which == 0 {
+                n.mods.context_menu = Some(Box::new(list));
+            } else {
+                n.mods.menu_bar = Some(Box::new(list));
+            }
+        }
+    });
+}
+
+/// `.popover(isPresented:edge:) { … }` on the last view. Returns whether
+/// it's presented: only then is its content built, and closed with
+/// `tsl_ui_end_popover`. (The locator is taken either way.)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_popover(f: *const c_void, env: *mut Header, edge: i32) -> u8 {
+    let presented = Callback::new(f, env);
+    if unsafe { *presented.locate() } & 1 == 0 {
+        return 0;
+    }
+    let mut shown = 0;
+    with_builder(|b| {
+        let Some(anchor) = b.last().map(|n| n.key) else { return };
+        let at = b.overlays.last().map_or(0, Vec::len);
+        b.overlay_at.push(at);
+        b.begin_keyed(Kind::Popover { anchor, edge: edge.clamp(0, 3) as u8, presented }, hash_key((anchor, "popover")));
+        shown = 1;
+    });
+    shown
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_end_popover() {
+    with_builder(|b| {
+        let node = b.stack.pop().expect("unbalanced end");
+        let at = b.overlay_at.pop().unwrap_or(0);
+        if let Some(list) = b.overlays.last_mut() {
+            list.insert(at.min(list.len()), node);
+        }
+    });
+}
+
+/// `Window(title, isOpen:width:height:) { … }`. Returns whether it's open:
+/// only then is its content built, and closed with `tsl_ui_end_window`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_window(title: *const Str, f: *const c_void, env: *mut Header, width: f64, height: f64) -> u8 {
+    let title = unsafe { text_of(title) };
+    let is_open = Callback::new(f, env);
+    let mut shown = 0;
+    with_builder(|b| {
+        b.window_count += 1;
+        if unsafe { *is_open.locate() } & 1 == 0 {
+            return;
+        }
+        let key = hash_key(("window", b.window_count));
+        b.begin_keyed(Kind::Window { title, is_open, width: width.max(1.0), height: height.max(1.0) }, key);
+        b.overlays.push(Vec::new());
+        shown = 1;
+    });
+    shown
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_end_window() {
+    with_builder(|b| {
+        let mut node = b.stack.pop().expect("unbalanced end");
+        node.children.extend(b.overlays.pop().unwrap_or_default());
+        b.windows.push(node);
+    });
+}
+
+/// `.onOpenFile { path in … }`: `f` is called as `f(env, String)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_open_file(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_open_file = Some(cb));
+}
+
+/// `.onCloseRequest { … }`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_close_request(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_close_request = Some(cb));
 }
 
 /// An `Alignment` tag (the compiler's `ALIGNMENTS` order) as horizontal and
@@ -983,7 +1198,7 @@ mod tests {
         let mut tree = build(&root);
         let mut text = render::TextEngine::new();
         let scroll = HashMap::new();
-        layout::Layouter { text: &mut text, scroll: &scroll, composing: None }.run(&mut tree, 320.0, 260.0);
+        layout::Layouter { text: &mut text, scroll: &scroll, composing: None }.run_below(&mut tree, 320.0, 260.0, 0.0);
         let vstack = &tree.children[0];
         assert!(matches!(vstack.kind, Kind::VStack(..)));
         // Centered horizontally in the window, and the text field stretches.

@@ -1,0 +1,83 @@
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked", MenuItem "Clear"]
+ContextMenu
+  MenuItem "Zoom to Layer" cmd+shift+z
+  Menu "Export"
+  MenuDivider
+  MenuItem "Remove"
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked", MenuItem "Clear"]
+ContextMenu
+  MenuItem "Zoom to Layer" cmd+shift+z
+  Menu "Export" [selected]
+    MenuItem "GeoJSON…"
+    MenuItem "Shapefile…" disabled
+  MenuDivider
+  MenuItem "Remove"
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked", MenuItem "Clear"]
+      Text "export Roads as GeoJSON"
+ContextMenu
+  MenuItem "Zoom to Layer" cmd+shift+z
+  Menu "Export" [selected]
+    MenuItem "GeoJSON…" [selected]
+    MenuItem "Shapefile…" disabled
+  MenuDivider
+  MenuItem "Remove"
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked", MenuItem "Clear"]
+      Text "export Roads as GeoJSON"
+      Text "zoom to Rivers"
+      Text "left at 100,30 in the window 180,175"
+ContextMenu
+  MenuItem "Locked"
+  MenuItem "Clear"
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked" checked, MenuItem "Clear" disabled]
+      Text "export Roads as GeoJSON"
+      Text "zoom to Rivers"
+      Text "left at 100,30 in the window 180,175"
+ContextMenu
+  MenuItem "Locked" checked
+  MenuItem "Clear" disabled
+Root
+  View
+    VStack
+      View
+        Text "Roads" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      View
+        Text "Rivers" contextMenu [MenuItem "Zoom to Layer" cmd+shift+z, Menu "Export" [MenuItem "GeoJSON…", MenuItem "Shapefile…" disabled], MenuDivider, MenuItem "Remove"]
+      Text "Map" contextMenu [MenuItem "Locked" checked, MenuItem "Clear" disabled]
+      Text "export Roads as GeoJSON"
+      Text "zoom to Rivers"
+      Text "left at 100,30 in the window 180,175"

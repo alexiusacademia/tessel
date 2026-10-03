@@ -1,0 +1,42 @@
+// `Window(title, isOpen:width:height:) { … }`: another window, with the
+// app's state. In a script, `window "Title"` sends the commands after it to
+// that window (`window main` back), and `close window` closes the window
+// they go to.
+
+struct Feature {
+    name: String
+    length: Float
+}
+
+app Map(width: 360, height: 240) {
+    state features = [Feature(name: "Main St", length: 1.2), Feature(name: "River Rd", length: 3.4)]
+    state showTable = false
+    state showInfo = false
+    state selected = ""
+
+    VStack {
+        Text("{features.count} features, selected: {selected}")
+        Toggle("Attribute table", isOn: showTable)
+        Button("Info") { showInfo = true }
+    }
+    // Closing the main window ends the app (it has no `.onCloseRequest`).
+
+    Window("Attribute table", isOpen: showTable, width: 300, height: 200) {
+        VStack(alignment: .leading) {
+            for feature in features {
+                Button("{feature.name}: {feature.length} km") { selected = feature.name }
+            }
+            HStack {
+                Button("Add") { features.append(Feature(name: "New", length: 0.5)) }
+                Button("Close") { closeWindow() }
+            }
+        }
+    }
+
+    if showInfo {
+        Window("Info", isOpen: showInfo) {
+            Text("Selected: {selected}")
+                .onAppear { print("info opened") }
+        }
+    }
+}

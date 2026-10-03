@@ -150,6 +150,21 @@ impl Checked {
     }
 }
 
+/// What a block of views is the content of, which decides what may go in it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Content {
+    /// A custom view's body (or content it's given): it may be shown anywhere.
+    View,
+    /// The `app`'s body: it may declare `Window`s.
+    App,
+    /// A container that lays out views (`VStack`, a popover, …).
+    Layout,
+    /// A menu's items (`.contextMenu`, `Menu`).
+    Menu,
+    /// `.menuBar`'s menus.
+    MenuBar,
+}
+
 /// What a call expression resolved to.
 #[derive(Clone, Debug)]
 pub enum Callee {
@@ -235,6 +250,8 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         scopes: Vec::new(),
         returns: Vec::new(),
         tag_ty: None,
+        content: Content::View,
+        next_content: None,
         types: HashMap::new(),
         calls: HashMap::new(),
         frames: Vec::new(),
@@ -406,6 +423,11 @@ struct Checker<'a> {
     returns: Vec<Ty>,
     /// Inside a `Picker`'s content: the type `.tag(…)` expects.
     tag_ty: Option<Ty>,
+    /// What the views being checked are the content of.
+    content: Content,
+    /// What the next content block checked is the content of (set by the
+    /// call it's given to).
+    next_content: Option<Content>,
     types: HashMap<ExprId, Ty>,
     calls: HashMap<ExprId, CallInfo>,
     /// One frame per call being checked, innermost last.
@@ -1115,9 +1137,13 @@ impl Checker<'_> {
                         ParamSig::new("width", Ty::Float).default(),
                         ParamSig::new("height", Ty::Float).default(),
                         ParamSig::new("appearance", self.builtins.appearance.clone()).default(),
+                        ParamSig::new("documentTypes", Ty::list(Ty::Str)).default(),
                     ];
                     self.with_scope(|c| c.args("`app`", &params, &app.args, None, app.args_span));
+                    self.document_types(app);
+                    self.content = Content::App;
                     self.view_body(&[], &[], &app.body, &app.name);
+                    self.content = Content::View;
                 }
                 _ if id.is_none() => {}
                 Item::Interface(_) => {}
@@ -1236,6 +1262,38 @@ impl Checker<'_> {
         self.scopes.push(Vec::new());
         self.expect(e, ty);
         self.scopes = saved;
+    }
+
+    /// `app Name(documentTypes: ["txt"])`: `tessel build --bundle` reads the
+    /// list from the source, so it must be written out there.
+    fn document_types(&mut self, app: &AppDecl) {
+        let Some(arg) = app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "documentTypes")) else { return };
+        let ExprKind::List(items) = &arg.value.kind else {
+            self.error(arg.value.span, "`documentTypes` must be a list written out in the app, like `[\"txt\", \"md\"]`")
+                .help("`tessel build --bundle` reads it from the source, to tell the system which files the app opens");
+            return;
+        };
+        for item in items {
+            let plain = match &item.kind {
+                ExprKind::Str(parts) => match parts.as_slice() {
+                    [StrPart::Text(t)] => Some(t.clone()),
+                    [] => Some(String::new()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match plain {
+                None => {
+                    self.error(item.span, "each document type must be written out as a string, like `\"txt\"`")
+                        .help("`tessel build --bundle` reads the list from the source");
+                }
+                Some(t) if t.is_empty() || t.starts_with('.') || t.contains(['/', ' ']) => {
+                    self.error(item.span, format!("`{t}` isn't a file extension"))
+                        .help("write extensions without the dot, like `\"txt\"`");
+                }
+                Some(_) => {}
+            }
+        }
     }
 
     fn view_body(&mut self, params: &[Param], sig: &[ParamSig], body: &Block, name: &Ident) {
@@ -1679,19 +1737,63 @@ impl Checker<'_> {
                         _ => "only views like `Text(…)` or `Button(…)` can go in a view body",
                     };
                     self.error(e.span, msg).help(help);
+                } else if t == Ty::View {
+                    self.check_placement(e);
                 }
             }
         }
     }
 
+    /// The built-in view `e` shows (under its modifiers): its name, or
+    /// `None` for a custom view or a view value, which may hold anything.
+    fn built_in_view(&self, e: &Expr) -> Option<String> {
+        match (&e.kind, self.calls.get(&e.id).map(|c| &c.callee)) {
+            (_, Some(Callee::BuiltinView(n))) => Some(n.clone()),
+            (ExprKind::Call { callee, .. }, Some(Callee::Modifier(_))) => match &callee.kind {
+                ExprKind::Member { object, .. } => self.built_in_view(object),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Menus' items go only in menus, menus hold only those, and windows
+    /// are declared in the app.
+    fn check_placement(&mut self, e: &Expr) {
+        let Some(name) = self.built_in_view(e) else { return };
+        let item = builtins::MENU_VIEWS.contains(&name.as_str());
+        match self.content {
+            Content::Menu | Content::MenuBar if !item => {
+                self.error(e.span, "only `MenuItem`, `MenuDivider` and `Menu` can go in a menu")
+                    .help("a menu's items are `MenuItem(\"Title\") { … }`, with `MenuDivider()` between groups and `Menu(\"More\") { … }` for a submenu");
+            }
+            Content::MenuBar if name != "Menu" => {
+                self.error(e.span, format!("the menu bar holds menus, so `{name}` can't go there"))
+                    .help("put it in a menu: `Menu(\"File\") { … }`");
+            }
+            Content::Layout | Content::App if item => {
+                self.error(e.span, format!("`{name}` can only be used in a menu"))
+                    .help("put it in `.contextMenu { … }`, `.menuBar { … }` or a `Menu(\"…\") { … }`");
+            }
+            Content::View | Content::Layout if name == "Window" => {
+                self.error(e.span, "a `Window` can only be declared in the `app`")
+                    .help("declare it in the app's body, next to the main window's views");
+            }
+            _ => {}
+        }
+    }
+
     fn content_closure(&mut self, e: &Expr) {
+        let content = self.next_content.take().unwrap_or(Content::Layout);
         match &e.kind {
             ExprKind::Closure { params, body } => {
                 if let Some(p) = params.first() {
                     self.error(p.span, "a view's content block doesn't take parameters")
                         .help("remove the names before `in`");
                 }
+                let outer = std::mem::replace(&mut self.content, content);
                 self.content_block(body, false);
+                self.content = outer;
                 self.types.insert(e.id, Ty::View);
             }
             _ => {
@@ -2748,7 +2850,9 @@ impl Checker<'_> {
             Some(Global::View(i)) => {
                 let params = self.views[i].clone();
                 self.set_callee(Callee::View(n.to_string()));
+                self.next_content = Some(Content::View);
                 self.args(&what, &params, args, trailing, span);
+                self.next_content = None;
                 Ty::View
             }
             Some(Global::Enum(id)) => {
@@ -2770,7 +2874,12 @@ impl Checker<'_> {
                 if let Some(params) = self.builtins.view(n) {
                     self.set_callee(Callee::BuiltinView(n.to_string()));
                     let saved = self.tag_ty.take();
+                    self.next_content = Some(if n == "Menu" { Content::Menu } else { Content::Layout });
                     self.args(&what, &params, args, trailing, span);
+                    self.next_content = None;
+                    if n == "MenuItem" {
+                        self.menu_shortcut(args);
+                    }
                     self.tag_ty = saved;
                     return Ty::View;
                 }
@@ -3369,7 +3478,13 @@ impl Checker<'_> {
         }
         match self.builtins.modifier(n) {
             Some(params) => {
+                self.next_content = Some(match n {
+                    "contextMenu" => Content::Menu,
+                    "menuBar" => Content::MenuBar,
+                    _ => Content::Layout,
+                });
                 self.args(&format!("`.{n}`"), &params, args, trailing, span);
+                self.next_content = None;
                 if n == "shortcut" {
                     self.shortcut_key(args);
                 }
@@ -3380,6 +3495,39 @@ impl Checker<'_> {
                 self.no_member(name, &format!("views have no modifier `.{n}`"), names);
                 Ty::Error
             }
+        }
+    }
+
+    /// `MenuItem(…, shortcut: "cmd+shift+s")`: modifiers and a key, joined
+    /// by `+`, or after the symbols `⌘`, `⇧` and `⌥` (as the runtime reads
+    /// it: `menu::Shortcut::parse`).
+    fn menu_shortcut(&mut self, args: &[Arg]) {
+        let Some(arg) = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "shortcut")) else { return };
+        let ExprKind::Str(parts) = &arg.value.kind else { return };
+        let [StrPart::Text(text)] = parts.as_slice() else { return };
+        const NAMED: &[&str] =
+            &["enter", "escape", "tab", "backspace", "delete", "left", "right", "up", "down", "home", "end", "space"];
+        let rest = text.trim().trim_start_matches(['⌘', '⇧', '⌥']);
+        let mut words: Vec<&str> = rest.split('+').collect();
+        if rest.ends_with("++") {
+            words.truncate(words.len() - 2);
+            words.push("+");
+        }
+        let key = words.pop().unwrap_or("").trim();
+        let bad_modifier = words.iter().find(|m| !matches!(m.trim().to_lowercase().as_str(), "cmd" | "command" | "shift" | "alt" | "option" | "opt"));
+        let mut chars = key.chars();
+        let key_ok = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_whitespace()) || NAMED.contains(&key.to_lowercase().as_str());
+        if let Some(m) = bad_modifier {
+            let help = if m.trim().eq_ignore_ascii_case("ctrl") {
+                "`cmd` is Cmd on macOS and Ctrl on Windows and Linux: write `cmd+…`".to_string()
+            } else {
+                "the modifiers are `cmd`, `shift` and `alt`, like `cmd+shift+s`".to_string()
+            };
+            self.error(arg.value.span, format!("`{text}` isn't a shortcut a menu item can have")).help(help);
+        } else if text.trim().is_empty() || !key_ok {
+            self.error(arg.value.span, format!("`{text}` isn't a shortcut a menu item can have")).help(
+                "write modifiers and a key, like `cmd+s` or `⇧⌘S`; the key is one character or one of: enter, escape, tab, backspace, delete, left, right, up, down, home, end, space",
+            );
         }
     }
 

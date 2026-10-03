@@ -1,0 +1,23 @@
+click "Style"
+dump
+click "Width"
+type 2.5
+key tab
+key tab
+click "Color…"
+dump
+click "Red"
+tree
+click "Done"
+tree
+click "Note"
+dump
+click "Note"
+type sharp bends
+tree
+key escape
+key escape
+tree
+click "Style"
+click 10 290
+tree

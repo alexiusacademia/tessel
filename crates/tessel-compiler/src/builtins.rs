@@ -24,6 +24,9 @@ pub const POINTER_KINDS: &[&str] = &["down", "up", "move", "drag", "scroll", "pi
 /// Mouse buttons (the runtime relies on the order).
 pub const POINTER_BUTTONS: &[&str] = &["left", "right", "middle"];
 
+/// Sides of a view, for `.popover(edge:)` (the runtime relies on the order).
+pub const EDGES: &[&str] = &["top", "bottom", "leading", "trailing"];
+
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
     "arrow", "hand", "crosshair", "grab", "grabbing", "text", "move", "wait", "notAllowed", "resizeHorizontal",
@@ -34,7 +37,7 @@ pub const CURSOR_STYLES: &[&str] = &[
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
-/// IconName, Appearance, PointerKind, PointerButton, CursorStyle.
+/// IconName, Appearance, PointerKind, PointerButton, CursorStyle, Edge.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -60,6 +63,7 @@ pub fn enums() -> Vec<EnumDef> {
         simple("PointerKind", POINTER_KINDS),
         simple("PointerButton", POINTER_BUTTONS),
         simple("CursorStyle", CURSOR_STYLES),
+        simple("Edge", EDGES),
     ]
 }
 
@@ -102,6 +106,8 @@ pub fn structs() -> Vec<StructDef> {
                 field("kind", POINTER_KIND),
                 field("x", Ty::Float),
                 field("y", Ty::Float),
+                field("windowX", Ty::Float),
+                field("windowY", Ty::Float),
                 field("dx", Ty::Float),
                 field("dy", Ty::Float),
                 field("button", POINTER_BUTTON),
@@ -131,6 +137,7 @@ pub const ALIGNMENT: Ty = Ty::Enum(2);
 pub const POINTER_KIND: Ty = Ty::Enum(5);
 pub const POINTER_BUTTON: Ty = Ty::Enum(6);
 pub const CURSOR_STYLE: Ty = Ty::Enum(7);
+pub const EDGE: Ty = Ty::Enum(8);
 
 pub struct Builtins {
     pub color: Ty,
@@ -150,8 +157,12 @@ impl Builtins {
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "MenuItem", "MenuDivider", "Menu",
+        "Window",
     ];
+
+/// Views that only go in menus (`.contextMenu`, `.menuBar`, `Menu`).
+pub const MENU_VIEWS: &[&str] = &["MenuItem", "MenuDivider", "Menu"];
 
 impl Builtins {
     pub fn view(&self, name: &str) -> Option<Vec<P>> {
@@ -200,6 +211,21 @@ impl Builtins {
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
             "Canvas" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void))],
+            "MenuItem" => vec![
+                P::unlabeled("title", Ty::Str),
+                P::new("shortcut", Ty::Str).default(),
+                P::new("checked", Ty::Bool).default(),
+                P::new("action", Ty::func(vec![], Ty::Void)),
+            ],
+            "MenuDivider" => vec![],
+            "Menu" => vec![P::unlabeled("title", Ty::Str), content()],
+            "Window" => vec![
+                P::unlabeled("title", Ty::Str),
+                P::new("isOpen", Ty::Bool).bind(),
+                P::new("width", Ty::Float).default(),
+                P::new("height", Ty::Float).default(),
+                content(),
+            ],
             _ => return None,
         })
     }
@@ -251,6 +277,14 @@ impl Builtins {
             "onDrop" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
             "tooltip" => vec![P::unlabeled("text", Ty::Str)],
             "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
+            "contextMenu" | "menuBar" => vec![P::unlabeled("items", Ty::View)],
+            "popover" => vec![
+                P::new("isPresented", Ty::Bool).bind(),
+                P::new("edge", EDGE).default(),
+                P::unlabeled("content", Ty::View),
+            ],
+            "onOpenFile" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "onCloseRequest" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
             "shortcut" => vec![P::unlabeled("key", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
@@ -442,6 +476,7 @@ impl Builtins {
             // For the prelude's `readImage`.
             "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
+            "quit" | "closeWindow" => FnSig { params: vec![], ret: Ty::Void },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "appendData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
@@ -473,6 +508,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
     "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "setWindowTitle", "renderImage",
+    "quit", "closeWindow",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -722,7 +758,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
-            "tooltip", "onResize",
+            "tooltip", "onResize", "contextMenu", "menuBar", "popover", "onOpenFile", "onCloseRequest",
         ],
         _ => &[],
     }
@@ -836,6 +872,8 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "__imageSize" => rt("tsl_image_size"),
         "__imagePixels" => rt("tsl_image_pixels"),
         "setWindowTitle" => rt("tsl_set_window_title"),
+        "quit" => rt("tsl_quit"),
+        "closeWindow" => rt("tsl_close_window"),
         "writeData" => rt("tsl_write_data"),
         "appendData" => rt("tsl_append_data"),
         _ => return None,

@@ -1,0 +1,36 @@
+Root
+  View
+    VStack
+      Text "roads.gpkg"
+      Text "city.geo"
+      Toggle "Edited" = false
+Root
+  View
+    VStack
+      Text "roads.gpkg"
+      Text "city.geo"
+      Toggle "Edited" = true
+      Text "Save the changes?"
+      HStack
+        Button "Cancel"
+        Button "Don't Save"
+Root
+  View
+    VStack
+      Text "roads.gpkg"
+      Text "city.geo"
+      Toggle "Edited" = true
+      Text "Save the changes?"
+      HStack
+        Button "Cancel"
+        Button "Don't Save"
+Root
+  View
+    VStack
+      Text "roads.gpkg"
+      Text "city.geo"
+      Toggle "Edited" = true
+      Text "Save the changes?"
+      HStack
+        Button "Cancel"
+        Button "Don't Save"

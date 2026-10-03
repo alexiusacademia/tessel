@@ -1,0 +1,41 @@
+// Menus, popovers, windows and the app's documents, used wrongly.
+
+app Main(documentTypes: ["gpkg", ".shp"]) { // error: `.shp` isn't a file extension
+    state open = false
+    state name = ""
+
+    VStack {
+        MenuItem("Copy") { } // error: `MenuItem` can only be used in a menu
+        MenuDivider() // error: `MenuDivider` can only be used in a menu
+        Text("layer")
+            .contextMenu {
+                Text("Copy") // error: only `MenuItem`, `MenuDivider` and `Menu` can go in a menu
+                MenuItem("Copy", shortcut: 3) { } // error: expected `String`
+                MenuItem("Paste") // error: `MenuItem` is missing `action:`
+                MenuItem("Save", shortcut: "ctrl+s") { } // error: `ctrl+s` isn't a shortcut a menu item can have
+                MenuItem("Find", shortcut: "cmd+F5") { } // error: `cmd+F5` isn't a shortcut
+                MenuItem("Next", shortcut: "⌥⌘down") { }
+                Menu("More") {
+                    Button("Go") { } // error: only `MenuItem`, `MenuDivider` and `Menu` can go in a menu
+                    MenuItem("Deeper", checked: "yes") { } // error: expected `Bool`
+                }
+            }
+            .menuBar {
+                MenuItem("Open…") { } // error: the menu bar holds menus, so `MenuItem` can't go there
+                Menu("File") { MenuItem("Open…") { } }
+            }
+        Button("Info") { open = true }
+            .popover(isPresented: true) { Text("info") } // error: needs something it can change
+            .popover(isPresented: open, edge: .left) { Text("info") } // error: `Edge` has no case `.left`
+            .onOpenFile { path in name = path.count } // error: expected `String`
+            .onCloseRequest { reason in } // error: this block should take 0 parameter
+        Window("Table", isOpen: open) { Text("rows") } // error: a `Window` can only be declared in the `app`
+    }
+    Window("Table", isOpen: name) { Text("rows") } // error: expected `Bool`
+    Window("Table") { Text("rows") } // error: `Window` is missing `isOpen:`
+}
+
+fn stop() {
+    quit(1) // error: takes no arguments
+    closeWindow()
+}

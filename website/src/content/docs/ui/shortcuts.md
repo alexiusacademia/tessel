@@ -58,7 +58,10 @@ The key is a string:
   or `"end"`.
 
 Only Cmd (or Ctrl) combinations can be shortcuts. There's no way to require
-Shift or Option as well, or to use a key on its own without Cmd.
+Shift or Option as well, or to use a key on its own without Cmd. Items of the
+[menu bar](/ui/menus-windows/#the-menu-bar) can have those: a
+`MenuItem("Save As…", shortcut: "cmd+shift+s")` runs on Shift+Cmd+S, and
+menu bar shortcuts come before `.shortcut`s.
 
 `tessel check` checks the key, so a shortcut that could never be pressed is
 an error. Cmd is added for you, so don't write it:

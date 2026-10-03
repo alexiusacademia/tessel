@@ -221,6 +221,10 @@ installed.
 On Windows, apps (programs with an `app`) are built without a console
 window.
 
+On macOS, an app whose `app` lists [`documentTypes:`](/ui/menus-windows/#opening-documents)
+(like `app Notes(documentTypes: ["note"])`) gets them in its bundle, so
+Finder opens those files with it.
+
 ### The app's icon
 
 Put a square PNG image called `icon.png` next to your program's `.tsl`

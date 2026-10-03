@@ -257,7 +257,8 @@ The block gets a [`PointerEvent`](/reference/colors/#pointerevent). Its
 | `.pinch` | Two fingers were pinched on a trackpad (macOS). |
 
 `x` and `y` are where the mouse is, measured like a canvas's coordinates:
-from the view's top left corner (inside its padding). `dx` and `dy` are how
+from the view's top left corner (inside its padding); `windowX` and
+`windowY` are the same point from the window's top left corner. `dx` and `dy` are how
 far it moved since the last event, or how far to scroll. `button` is
 `.left`, `.right` or `.middle`; `clicks` is 2 for a double click; and
 `shift`, `alt` and `command` tell which keys were held.
