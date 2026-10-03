@@ -256,6 +256,9 @@ enum Body<'b> {
     /// A function declared in a view or app, used as a value (`action: save`):
     /// calling it calls the function.
     ViewFnRef(String),
+    /// A function declared inside a function: like `Fn`, and its own name
+    /// refers to the closure itself (so it can call itself).
+    LocalFn(&'b FnDecl),
 }
 
 /// How a closure captures a variable.
@@ -1060,6 +1063,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_from_float" => (vec![f64t], Some(p)),
             "tsl_str_from_bool" => (vec![i8t], Some(p)),
             "tsl_data_eq" => (vec![p, p], Some(i8t)),
+            "tsl_data_concat" => (vec![p, p], Some(p)),
+            "tsl_data_append" => (vec![p, p], None),
+            "tsl_data_append_byte" => (vec![p, i], None),
             "tsl_str_eq" | "tsl_str_contains" | "tsl_str_has_prefix" | "tsl_str_has_suffix" => {
                 (vec![p, p], Some(i8t))
             }
@@ -1975,7 +1981,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.declare_value(&d.name.name, &ty, v);
             }
             Stmt::State(d) => self.unsupported(d.span, "`state`"),
-            Stmt::Fn(f) => self.unsupported(f.name.span, "functions inside views"),
+            // A function declared inside a function: a closure, kept in a
+            // variable of its name.
+            Stmt::Fn(f) => {
+                let t = self.checked.locals.get(&f.name.span).cloned().expect("a checked function");
+                let v = self.make_closure(Body::LocalFn(f), &t);
+                self.declare_value(&f.name.name, &t, Some(v));
+            }
             Stmt::Assign { target, op, value, .. } => self.assign(target, *op, value),
             Stmt::Return { value, .. } => {
                 let ret = self.stack.last().unwrap().ret.clone();
@@ -2026,18 +2038,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let p = self.write_ptr(target);
         // `list += more` adds to the list where it is, rather than make a
         // new list of both (which would copy the whole list every time).
-        if let (AssignOp::Add, Ty::List(elem)) = (op, &tt) {
+        if let (AssignOp::Op(BinOp::Add), Ty::List(elem)) = (op, &tt) {
             let l = self.loc(target.span.to(value.span));
             self.list_mutating(p, elem, "appendAll", &[v], l);
             return;
         }
+        // `data += more` too: the bytes go on the end, where there's room.
+        if let (AssignOp::Op(BinOp::Add), Ty::Data) = (op, &tt) {
+            self.call_rt("tsl_data_append", &[p.into(), v]);
+            self.release(v, &tt);
+            return;
+        }
         let old = self.load(&tt, p);
-        let bop = match op {
-            AssignOp::Add => BinOp::Add,
-            AssignOp::Sub => BinOp::Sub,
-            AssignOp::Mul => BinOp::Mul,
-            _ => BinOp::Div,
-        };
+        let AssignOp::Op(bop) = op else { unreachable!() };
         let new = self.arith(bop, old, v, &tt, target.span.to(value.span));
         self.release(v, &tt);
         self.b.build_store(p, new).unwrap();
@@ -2469,6 +2482,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(self.load(&t, slot))
             }
             ExprKind::Unary(UnaryOp::Not, x) => {
+                let v = self.expr(x).unwrap().into_int_value();
+                Some(self.b.build_not(v, "").unwrap().into())
+            }
+            ExprKind::Unary(UnaryOp::BitNot, x) => {
                 let v = self.expr(x).unwrap().into_int_value();
                 Some(self.b.build_not(v, "").unwrap().into())
             }
@@ -2911,9 +2928,29 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.call_rt("tsl_str_concat", &[arr.into(), two.into()]).unwrap()
             }
             Ty::List(_) => self.call_rt("tsl_list_concat", &[l, r]).unwrap(),
+            Ty::Data => self.call_rt("tsl_data_concat", &[l, r]).unwrap(),
             _ => {
                 let (a, b) = (l.into_int_value(), r.into_int_value());
                 match op {
+                    BinOp::BitAnd => self.b.build_and(a, b, "").unwrap().into(),
+                    BinOp::BitOr => self.b.build_or(a, b, "").unwrap().into(),
+                    BinOp::BitXor => self.b.build_xor(a, b, "").unwrap().into(),
+                    // A shift by 64 or more leaves no bits (or only the sign,
+                    // for `>>`); a negative shift stops the program.
+                    BinOp::Shl | BinOp::Shr => {
+                        let zero = self.i64().const_zero();
+                        let negative = self.b.build_int_compare(IntPredicate::SLT, b, zero, "").unwrap();
+                        self.panic_if(negative, "negative shift amount", span);
+                        let max = self.i64().const_int(63, false);
+                        let big = self.b.build_int_compare(IntPredicate::SGT, b, max, "").unwrap();
+                        let amount = self.b.build_select(big, max, b, "").unwrap().into_int_value();
+                        if op == BinOp::Shl {
+                            let shifted = self.b.build_left_shift(a, amount, "").unwrap();
+                            self.b.build_select(big, zero, shifted, "").unwrap()
+                        } else {
+                            self.b.build_right_shift(a, amount, true, "").unwrap().into()
+                        }
+                    }
                     BinOp::Div | BinOp::Rem => {
                         let zero = self.i64().const_zero();
                         let is_zero = self.b.build_int_compare(IntPredicate::EQ, b, zero, "").unwrap();
@@ -3317,25 +3354,30 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         for arm in arms {
             let (body_bb, next_bb) = (self.block_named("arm"), self.block_named("next"));
-            let test = match &arm.pattern {
-                Pattern::Case { name, .. } => {
-                    let Ty::Enum(id) = st else { unreachable!() };
-                    let idx = self.checked.enums[id].cases.iter().position(|c| c.name == name.name).unwrap();
-                    let want = self.ctx.i32_type().const_int(idx as u64, false);
-                    self.b.build_int_compare(IntPredicate::EQ, tag.unwrap(), want, "").unwrap()
-                }
-                Pattern::Wildcard(_) | Pattern::Error(_) => self.ctx.bool_type().const_int(1, false),
-                Pattern::Literal(lit) => {
-                    let lv = self.expr_as(lit, &st).unwrap();
-                    let r = self.eq(sv, lv, &st);
-                    self.release(lv, &st);
-                    r
-                }
-            };
-            self.b.build_conditional_branch(test, body_bb, next_bb).unwrap();
+            // Each pattern in turn: the arm runs at the first that matches.
+            for (i, pattern) in arm.patterns.iter().enumerate() {
+                let test = match pattern {
+                    Pattern::Case { name, .. } => {
+                        let Ty::Enum(id) = st else { unreachable!() };
+                        let idx = self.checked.enums[id].cases.iter().position(|c| c.name == name.name).unwrap();
+                        let want = self.ctx.i32_type().const_int(idx as u64, false);
+                        self.b.build_int_compare(IntPredicate::EQ, tag.unwrap(), want, "").unwrap()
+                    }
+                    Pattern::Wildcard(_) | Pattern::Error(_) => self.ctx.bool_type().const_int(1, false),
+                    Pattern::Literal(lit) => {
+                        let lv = self.expr_as(lit, &st).unwrap();
+                        let r = self.eq(sv, lv, &st);
+                        self.release(lv, &st);
+                        r
+                    }
+                };
+                let otherwise = if i + 1 == arm.patterns.len() { next_bb } else { self.block_named("or") };
+                self.b.build_conditional_branch(test, body_bb, otherwise).unwrap();
+                self.b.position_at_end(otherwise);
+            }
             self.b.position_at_end(body_bb);
             self.push_scope();
-            if let Pattern::Case { name, bindings, .. } = &arm.pattern {
+            if let [Pattern::Case { name, bindings, .. }] = arm.patterns.as_slice() {
                 let Ty::Enum(id) = st else { unreachable!() };
                 let idx = self.checked.enums[id].cases.iter().position(|c| c.name == name.name).unwrap();
                 if !bindings.is_empty() {
@@ -3400,7 +3442,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// `state` through the view's state record (whose box is kept alive).
     fn make_closure(&mut self, body: Body, t: &Ty) -> Val<'ctx> {
         let (fn_ty, ptys, ret) = match (&body, t) {
-            (Body::Fn(..) | Body::ViewFnRef(_), Ty::Fn(ptys, ret)) => {
+            (Body::Fn(..) | Body::ViewFnRef(_) | Body::LocalFn(_), Ty::Fn(ptys, ret)) => {
                 (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone())
             }
             (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
@@ -3420,6 +3462,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Body::ViewFnRef(name) => {
                 free.insert(name.clone());
             }
+            Body::LocalFn(d) => free_fn(d, &mut vec![d.name.name.clone()], &mut free),
         }
         let mut captures: Vec<(Var<'ctx>, Capture)> = Vec::new();
         let mut needs_self = false;
@@ -3584,6 +3627,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let boxed = match &body {
             Body::Fn(_, b) | Body::Content(b) => boxed_vars(b),
+            Body::LocalFn(d) => boxed_vars(&d.body),
             _ => HashSet::new(),
         };
         self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record });
@@ -3594,6 +3638,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.declare_value(&p.name, pt, Some(v));
                 }
                 let v = self.block(b, Some(&ret));
+                self.finish_function(v);
+            }
+            Body::LocalFn(d) => {
+                // Its own name: this closure, with this environment.
+                let st = self.llty(t).unwrap().into_struct_type();
+                let me = self.b.build_insert_value(st.get_undef(), f.as_global_value().as_pointer_value(), 0, "").unwrap();
+                let me = self.b.build_insert_value(me, env_param, 1, "").unwrap();
+                let slot = self.alloca(st.into(), &d.name.name);
+                self.b.build_store(slot, me).unwrap();
+                self.push_var(Var { name: d.name.name.clone(), ty: t.clone(), store: Store::EnvValue(slot) });
+                for (i, (p, pt)) in d.params.iter().zip(&ptys).enumerate() {
+                    let v = f.get_nth_param(1 + i as u32).unwrap();
+                    self.declare_value(&p.name.name, pt, Some(v));
+                }
+                let v = self.block(&d.body, Some(&ret));
                 self.finish_function(v);
             }
             Body::Content(b) => {
@@ -3952,6 +4011,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Callee::View(_) | Callee::BuiltinView(_) | Callee::Modifier(_) => {
                 Some(self.make_closure(Body::ContentExpr(e), &Ty::View))
             }
+            Callee::LocalFn { name, decl } => {
+                let (sig, params) = self.checked.local_fns[decl].clone();
+                let ft = Ty::Fn(sig.params.iter().map(|p| p.ty.clone()).collect(), Box::new(sig.ret.clone()));
+                let vals = self.call_args(&info, &sig, &params, &arg);
+                let fv = self.name(name, &ft, callee.span).unwrap();
+                let r = self.call_fn_value(fv, &ft, &vals);
+                self.release(fv, &ft);
+                r
+            }
             Callee::ViewFn(name) => {
                 let r = self.stack.last().unwrap().record.clone().expect("view function outside its view");
                 let sig = self.checked.view_fns[&(r.view.clone(), name.clone())].clone();
@@ -4091,6 +4159,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         None
                     }
                 }
+            }
+            // `data.append(other)` and `data.append(byte: 255)`, in place.
+            (Ty::Data, "append") => {
+                let slot = slot.unwrap_or_else(|| self.write_ptr(object));
+                let byte = args.first().and_then(|a| a.label.as_ref()).is_some_and(|l| l.name == "byte");
+                if byte {
+                    let b = self.expr(arg(info.args[0].unwrap())).unwrap();
+                    self.call_rt("tsl_data_append_byte", &[slot.into(), b]);
+                } else {
+                    let d = self.expr_as(arg(info.args[0].unwrap()), &Ty::Data).unwrap();
+                    self.call_rt("tsl_data_append", &[slot.into(), d]);
+                    self.release(d, &Ty::Data);
+                }
+                None
             }
             (Ty::Set(elem), "insert" | "remove") => {
                 let elem = (**elem).clone();
@@ -5715,6 +5797,8 @@ fn boxed_vars(body: &Block) -> HashSet<String> {
             let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
             free_block(body, &mut bound, &mut captured);
         }
+        // A function declared inside the function is a closure too.
+        Node::S(Stmt::Fn(d)) => free_fn(d, &mut vec![d.name.name.clone()], &mut captured),
         // A loop over `outer[i].items` finds its list through a locator,
         // which must share the variable rather than copy it.
         Node::S(Stmt::For { iter, .. }) if through_index(iter) => {
@@ -5787,8 +5871,10 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
         ExprKind::Match { subject, arms } => {
             walk_expr(subject, f);
             for arm in arms {
-                if let Pattern::Literal(l) = &arm.pattern {
-                    walk_expr(l, f);
+                for pattern in &arm.patterns {
+                    if let Pattern::Literal(l) = pattern {
+                        walk_expr(l, f);
+                    }
                 }
                 walk_expr(&arm.body, f);
             }
@@ -5801,12 +5887,16 @@ fn walk_expr<'a>(e: &'a Expr, f: &mut dyn FnMut(Node<'a>)) {
 pub(super) fn captures(b: &Block, name: &str) -> bool {
     let mut found = false;
     walk_block(b, &mut |node| {
-        if let Node::E(Expr { kind: ExprKind::Closure { params, body }, .. }) = node {
-            let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            let mut free = BTreeSet::new();
-            free_block(body, &mut bound, &mut free);
-            found |= free.contains(name);
+        let mut free = BTreeSet::new();
+        match node {
+            Node::E(Expr { kind: ExprKind::Closure { params, body }, .. }) => {
+                let mut bound: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                free_block(body, &mut bound, &mut free);
+            }
+            Node::S(Stmt::Fn(d)) => free_fn(d, &mut vec![d.name.name.clone()], &mut free),
+            _ => {}
         }
+        found |= free.contains(name);
     });
     found
 }
@@ -5863,9 +5953,24 @@ pub(crate) fn free_block(b: &Block, bound: &mut Vec<String>, out: &mut BTreeSet<
                 bound.truncate(mark);
             }
             Stmt::Expr(e) => free_expr(e, bound, out),
+            // A function declared here: its name is known from here on (and
+            // in its own body); what else its body uses comes from outside.
+            Stmt::Fn(d) => {
+                bound.push(d.name.name.clone());
+                free_fn(d, bound, out);
+            }
             _ => {}
         }
     }
+    bound.truncate(mark);
+}
+
+/// The names a function declared inside a function uses from outside it
+/// (its own name, already in `bound`, isn't one).
+fn free_fn(d: &FnDecl, bound: &mut Vec<String>, out: &mut BTreeSet<String>) {
+    let mark = bound.len();
+    bound.extend(d.params.iter().map(|p| p.name.name.clone()));
+    free_block(&d.body, bound, out);
     bound.truncate(mark);
 }
 
@@ -5903,8 +6008,10 @@ pub(crate) fn free_expr(e: &Expr, bound: &mut Vec<String>, out: &mut BTreeSet<St
             free_expr(subject, bound, out);
             for arm in arms {
                 let mark = bound.len();
-                if let Pattern::Case { bindings, .. } = &arm.pattern {
-                    bound.extend(bindings.iter().map(|b| b.name.clone()));
+                for pattern in &arm.patterns {
+                    if let Pattern::Case { bindings, .. } = pattern {
+                        bound.extend(bindings.iter().map(|b| b.name.clone()));
+                    }
                 }
                 free_expr(&arm.body, bound, out);
                 bound.truncate(mark);

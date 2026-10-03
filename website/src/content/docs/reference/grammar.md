@@ -78,17 +78,26 @@ refers to the value the method was called on.
 ### Numbers
 
 ```text
-INT   = digit (digit | "_")* ;
-FLOAT = digit (digit | "_")* "." digit (digit | "_")* ;
-digit = "0"…"9" ;
+INT      = digits
+         | "0x" hex_digit (hex_digit | "_")*
+         | "0b" ("0" | "1") ("0" | "1" | "_")*
+         | "0o" "0"…"7" ("0"…"7" | "_")* ;
+FLOAT    = digits "." digits exponent?
+         | digits exponent ;
+exponent = ("e" | "E") ("+" | "-")? digits ;
+digits   = digit (digit | "_")* ;
+digit    = "0"…"9" ;
+hex_digit = digit | "a"…"f" | "A"…"F" ;
 ```
 
-- `_` can separate digits for readability: `1_000_000`. It is ignored.
+- `_` can separate digits for readability: `1_000_000`, `0xFF_FF`. It is
+  ignored.
+- `0x`, `0b` and `0o` start a hexadecimal, binary or octal `INT`; the prefix
+  is lowercase. `0xff` is `255`.
 - An `INT` must fit in a 64-bit signed integer (at most
-  `9_223_372_036_854_775_807`).
+  `9_223_372_036_854_775_807`, or `0x7fff_ffff_ffff_ffff`).
 - A `FLOAT` needs digits on both sides of the point: `0.5`, not `.5` or
-  `5.`.
-- There are no exponents (`1e3`), hexadecimal or binary literals.
+  `5.`. A number with an exponent is a `FLOAT`: `1e6`, `2.5e-3`, `1E+9`.
 - Negative numbers are written with the prefix operator `-`.
 
 ### Strings
@@ -111,12 +120,16 @@ interpolation = "{" expr "}" ;
 
 ```text
 (  )  {  }  [  ]  ,  :  .  ..  ?  ?.  ??  ->
-=  +=  -=  *=  /=
+=  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
 +  -  *  /  %  ==  !=  <  <=  >  >=  &&  ||  !
+&  |  ^  ~  <<  >>
 ```
 
-A `;` is an error: Tessel doesn't use semicolons. A single `&` or `|` is an
-error too (use `&&` and `||`).
+A `;` is an error: Tessel doesn't use semicolons.
+
+`>>` is two `>` tokens with nothing between them (and `>>=` is `>` followed
+by `>=`), so the `>>` that closes `Stack<Stack<Int>>` isn't a shift. A shift
+right must be written without a space inside it.
 
 ### Lines
 
@@ -133,13 +146,15 @@ The parser also lets an expression continue onto the next line in these
 places (shown as `NL*` in the rules below):
 
 - after a binary operator (`||`, `&&`, comparisons, `??`, `+`, `-`, `*`, `/`,
-  `%`), but not after `..`;
-- after `=` in a declaration or assignment, and after `+=`, `-=`, `*=`, `/=`;
+  `%`, `&`, `|`, `^`, `<<`, `>>`), but not after `..`;
+- after `=` in a declaration or assignment, and after the other assignment
+  operators (`+=`, `-=`, …);
 - before `else`, which may start the line after an `if` block's `}`;
 - before a `.` at the start of a line: a line starting with `.name`
   continues the expression above it. This is how modifier chains span lines.
   The exception is a line that is a `match` arm (it contains a `->` outside
-  brackets), such as `.done -> …`.
+  brackets), such as `.done -> …`, or that starts one whose patterns go on
+  over several lines (it ends with a `,`).
 
 ## Declarations
 
@@ -268,7 +283,8 @@ names       = "(" (IDENT | "_") ("," (IDENT | "_"))+ ")" ;
 return_stmt = "return" expr? ;
 for_stmt    = "for" (IDENT | "_" | names) "in" header_expr block ;
 while_stmt  = "while" condition block ;
-assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
+assign_stmt = expr assign_op NL* expr ;
+assign_op   = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" ;
 ```
 
 - Each statement ends at the end of its line (or at the block's `}`). Two
@@ -277,7 +293,10 @@ assign_stmt = expr ("=" | "+=" | "-=" | "*=" | "/=") NL* expr ;
 - `return`'s value, if any, starts on the same line.
 - The loop variable of `for` is a name, or `_` when the body doesn't use it:
   `for _ in 0..3 { … }`.
-- Assignment is a statement, not an expression. There is no `%=`.
+- Assignment is a statement, not an expression. `x op= v` means
+  `x = x op v`.
+- A `fn_decl` in a block declares a function that is known from there to the
+  end of the block (and in its own body).
 - `if` and `match` are expressions, so they can be used as statements too.
 - `break` and `continue` apply to the innermost `for` or `while` loop in the
   same function or block. View bodies can't use `while`, `break` or
@@ -296,14 +315,17 @@ From lowest to highest precedence:
 | 3 | `==` `!=` `<` `<=` `>` `>=` | none: `a < b < c` is an error |
 | 4 | `..` | none |
 | 5 | `??` | right |
-| 6 | `+` `-` | left |
-| 7 | `*` `/` `%` | left |
-| 8 | prefix `-` `!` `try` | prefix |
-| 9 | call `f(…)`, block after a call, `.name`, `?.name`, `[index]` | left |
+| 6 | `+` `-` <code>&#124;</code> `^` | left |
+| 7 | `*` `/` `%` `&` | left |
+| 8 | `<<` `>>` | left |
+| 9 | prefix `-` `!` `~` `try` | prefix |
+| 10 | call `f(…)`, block after a call, `.name`, `?.name`, `[index]` | left |
 
 For example, `a ?? b + 1` means `a ?? (b + 1)`, `0..n + 1` means
 `0..(n + 1)`, and `!done && count > 0` means `(!done) && (count > 0)`.
-`&&` and `||` only evaluate their right side when needed.
+`&&` and `||` only evaluate their right side when needed. The bit operators
+are placed as in Swift: `1 + 2 << 3` means `1 + (2 << 3)`, and
+`flags & mask == 0` means `(flags & mask) == 0`.
 
 ### Grammar
 
@@ -315,9 +337,10 @@ cmp_expr    = range_expr (cmp_op NL* range_expr)? ;
 cmp_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 range_expr  = coalesce_expr (".." coalesce_expr)? ;
 coalesce_expr = add_expr ("??" NL* coalesce_expr)? ;
-add_expr    = mul_expr (("+" | "-") NL* mul_expr)* ;
-mul_expr    = unary_expr (("*" | "/" | "%") NL* unary_expr)* ;
-unary_expr  = ("-" | "!" | "try") unary_expr | postfix_expr ;
+add_expr    = mul_expr (("+" | "-" | "|" | "^") NL* mul_expr)* ;
+mul_expr    = shift_expr (("*" | "/" | "%" | "&") NL* shift_expr)* ;
+shift_expr  = unary_expr (("<<" | ">>") NL* unary_expr)* ;
+unary_expr  = ("-" | "!" | "~" | "try") unary_expr | postfix_expr ;
 
 postfix_expr = primary postfix* ;
 postfix      = "(" args? ")" closure?          call, optionally with a block after it
@@ -405,13 +428,16 @@ Text("Hi")
 ```text
 if_expr     = "if" condition block (NL? "else" (if_expr | block))? ;
 condition   = header_expr
-            | "let" IDENT (":" type)? "=" header_expr ;
+            | "let" IDENT (":" type)? "=" header_expr
+            | "let" names "=" header_expr ;          takes an optional tuple apart
 header_expr = expr ;    (in which a "{" never starts a block after a call)
 ```
 
 `if let name = value { … }` runs the block when `value` (an optional) isn't
 `nil`, with `name` set to the unwrapped value. `if let name: T = value`
 also gives the unwrapped type, which `fromJson` and `fromBinary` need.
+`if let (a, b) = value` unwraps an optional tuple and names its items
+(`_` skips one). `while` takes the same conditions.
 There is no `? :` operator; `if` is an expression, so
 `let size = if big { 24 } else { 14 }` works.
 
@@ -419,7 +445,7 @@ There is no `? :` operator; `if` is an expression, so
 
 ```text
 match_expr = "match" header_expr "{" NL? (arm (NL arm)*)? NL? "}" ;
-arm        = pattern "->" (block | expr) ;
+arm        = pattern ("," NL? pattern)* "->" (block | expr) ;
 
 pattern    = "." IDENT ("(" (binding ("," binding)* ","?)? ")")?    enum case
            | "_"                                                    anything
@@ -432,6 +458,9 @@ binding    = IDENT | "_" ;
   closure).
 - `.circle(r)` matches the case and names its values, in order; `_` skips a
   value.
+- An arm with several patterns (`.north, .south -> …`) runs when any of them
+  matches. Its patterns can't name values (only `_` is allowed in their
+  parentheses).
 - A `match` must cover every case: every enum case, both `true` and `false`,
   or a final `_` arm for other types. Arms after a `_` arm are an error.
 
@@ -449,8 +478,11 @@ most important rules:
   declaration or member can only be used in its own file.
 - `state` can only be declared directly in the body of a `view` or `app`.
 - Functions can be declared at the top level, as methods in a `struct` or
-  `enum`, and directly in the body of a `view` or `app`; not inside other
-  functions or blocks.
+  `enum`, directly in the body of a `view` or `app`, and inside functions,
+  methods and blocks (where they can't be generic). They can't be declared in
+  a nested block of a view body.
+- Bit operators (`&`, `|`, `^`, `~`, `<<`, `>>`) work on `Int`s only; `%`
+  works on `Int` and `Float`; `+` also joins `String`s, lists and `Data`.
 - In a view body (and in the content block of a stack or other container),
   every statement must produce a view, except `let`, `state`, `fn`, and
   `if`, `match` and `for`, whose blocks follow the same rules. `var`,

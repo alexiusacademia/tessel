@@ -28,6 +28,9 @@ pub struct Checked {
     pub views: HashMap<String, Vec<ParamSig>>,
     /// Signatures of functions declared inside views: (view, function).
     pub view_fns: HashMap<(String, String), FnSig>,
+    /// Functions declared inside functions, by the span of their name: the
+    /// signature, and the parameters (for their default values).
+    pub local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
     pub ifaces: Vec<IfaceDef>,
     /// The type each `is` / `as?` checks for.
     pub cast_targets: HashMap<ExprId, Ty>,
@@ -164,6 +167,8 @@ pub enum Callee {
     SelfMethod { owner: Ty, name: String },
     /// A function declared inside a view.
     ViewFn(String),
+    /// A function declared inside a function (`decl` is the span of its name).
+    LocalFn { name: String, decl: Span },
     /// A method of a built-in type (`[T]`, `String`, `[K: V]`).
     Builtin { recv: Ty, name: String },
     /// `print`, `fetch`, `after`, `Int(…)`, `Float(…)`, `String(…)`.
@@ -241,6 +246,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         locals: HashMap::new(),
         loop_places: HashSet::new(),
         view_fns: HashMap::new(),
+        local_fns: HashMap::new(),
         completion: None,
         ifaces: Vec::new(),
         cast_targets: HashMap::new(),
@@ -292,6 +298,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
             })
             .collect(),
         view_fns: c.view_fns,
+        local_fns: c.local_fns,
         conforms: c.conforms.iter().map(|(t, i, _)| (t.clone(), *i)).collect(),
         ifaces: c.ifaces,
         cast_targets: c.cast_targets,
@@ -363,6 +370,8 @@ enum Kind {
 enum FnOrigin {
     Method(Ty),
     View,
+    /// Declared inside a function; the span of its name.
+    Local(Span),
 }
 
 #[derive(Clone, Debug)]
@@ -413,6 +422,7 @@ struct Checker<'a> {
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
     view_fns: HashMap<(String, String), FnSig>,
+    local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
     completion: Option<Vec<Suggestion>>,
     ifaces: Vec<IfaceDef>,
     cast_targets: HashMap<ExprId, Ty>,
@@ -1293,7 +1303,25 @@ impl Checker<'_> {
                 }
             }
         };
+        let ty = self.tuple_to_take_apart(&d.name, ty, d.value.span);
         self.declare(&d.name, ty, kind);
+    }
+
+    /// For `let (a, b) = value` (and `if let (a, b) = …`), the value is kept
+    /// in a hidden name, which must hold a tuple.
+    fn tuple_to_take_apart(&mut self, name: &Ident, t: Ty, span: Span) -> Ty {
+        if !name.name.starts_with("$tuple") || t.has_error() {
+            return t;
+        }
+        if let Ty::Struct(id) = &t
+            && is_tuple_name(&self.structs[*id].name)
+        {
+            return t;
+        }
+        let what = self.a(&t);
+        self.error(span, format!("only a tuple can be taken apart into names, but this is {what}"))
+            .help("name the whole value instead: `let value = …`");
+        Ty::Error
     }
 
     /// Checks a block. With `expected = Some(t)` the last line must produce a
@@ -1344,10 +1372,7 @@ impl Checker<'_> {
                     .help("use `var` for a local variable");
                 self.local_decl(d, Kind::Var);
             }
-            Stmt::Fn(f) => {
-                self.error(f.name.span, "functions can't be declared here")
-                    .help("declare it at the top level of a file, or directly inside a `view`");
-            }
+            Stmt::Fn(f) => self.local_fn(f),
             Stmt::Assign { target, op, value, span } => self.assign(target, *op, value, *span),
             Stmt::Return { value, span } => {
                 let Some(ret) = self.returns.last().cloned() else {
@@ -1402,6 +1427,26 @@ impl Checker<'_> {
                 self.unused_result(e);
             }
         }
+    }
+
+    /// A function declared inside a function (or method, or a view's
+    /// function). It can be used after its declaration, and in its own body
+    /// (so it can call itself). Like a closure, it uses the variables around
+    /// it: `let`s as they were, `var`s as they are when it runs.
+    fn local_fn(&mut self, f: &FnDecl) {
+        if let Some(g) = f.generics.first() {
+            self.error(g.name.span, "a function declared inside another function can't be generic")
+                .help("declare it at the top level of the file");
+            return;
+        }
+        let sig = self.fn_sig(f);
+        self.local_fns.insert(f.name.span, (sig.clone(), f.params.clone()));
+        self.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone(), FnOrigin::Local(f.name.span)));
+        // `break` can't leave a loop around it, and `try` returns from it.
+        let (in_main, outer_loops) = (std::mem::take(&mut self.in_main), std::mem::take(&mut self.outer_loops));
+        self.fn_body(f, &sig);
+        self.in_main = in_main;
+        self.outer_loops = outer_loops;
     }
 
     /// A built-in method or property whose result is thrown away does
@@ -1494,22 +1539,28 @@ impl Checker<'_> {
             AssignOp::Set => {
                 self.expect(value, &tt);
             }
-            AssignOp::Add if matches!(tt, Ty::Int | Ty::Float | Ty::Str | Ty::List(_) | Ty::Error) => {
+            AssignOp::Op(BinOp::Add) if matches!(tt, Ty::Int | Ty::Float | Ty::Str | Ty::List(_) | Ty::Data | Ty::Error) => {
                 self.expect(value, &tt);
             }
-            _ if tt.is_numeric() => {
+            AssignOp::Op(op) if op.is_bitwise() && matches!(tt, Ty::Int | Ty::Error) => {
                 self.expect(value, &tt);
             }
-            _ => {
-                let sym = match op {
-                    AssignOp::Add => "+=",
-                    AssignOp::Sub => "-=",
-                    AssignOp::Mul => "*=",
-                    _ => "/=",
-                };
+            AssignOp::Op(op) if !op.is_bitwise() && tt.is_numeric() => {
+                self.expect(value, &tt);
+            }
+            AssignOp::Op(bop) => {
+                let sym = op.symbol();
                 let what = self.a(&tt);
-                self.error(span, format!("`{sym}` can't be used on {what}"))
-                    .help(if op == AssignOp::Add { "`+=` works on numbers, text and lists" } else { "this works on numbers" });
+                let help = match bop {
+                    BinOp::Add => "`+=` works on numbers, text, lists and `Data`".to_string(),
+                    BinOp::BitAnd | BinOp::BitOr if tt == Ty::Bool => {
+                        let logic = if bop == BinOp::BitAnd { "&&" } else { "||" };
+                        format!("for `Bool`s, write it out: `x = x {logic} y`")
+                    }
+                    _ if bop.is_bitwise() => format!("`{sym}` works on `Int`s"),
+                    _ => "this works on numbers".to_string(),
+                };
+                self.error(span, format!("`{sym}` can't be used on {what}")).help(help);
                 self.expr(value, None);
             }
         }
@@ -1883,6 +1934,21 @@ impl Checker<'_> {
                 self.expect(x, &Ty::Bool);
                 Ty::Bool
             }
+            ExprKind::Unary(UnaryOp::BitNot, x) => {
+                let t = self.expr(x, None);
+                match t {
+                    Ty::Int | Ty::Error => {}
+                    Ty::Bool => {
+                        self.error(e.span, "`~` flips the bits of an `Int`; to negate a `Bool`, use `!`")
+                            .help("write `!value`");
+                    }
+                    t => {
+                        let what = self.a(&t);
+                        self.error(x.span, format!("`~` needs an `Int`, found {what}"));
+                    }
+                }
+                Ty::Int
+            }
             ExprKind::Unary(UnaryOp::Neg, x) => {
                 let t = self.expr(x, expected.filter(|t| strip_opt(t) == &Ty::Float));
                 if !t.is_numeric() {
@@ -2164,7 +2230,7 @@ impl Checker<'_> {
                     return Ty::Error;
                 }
                 let ok = lt == rt
-                    && (lt.is_numeric() || (op == BinOp::Add && matches!(lt, Ty::Str | Ty::List(_))));
+                    && (lt.is_numeric() || (op == BinOp::Add && matches!(lt, Ty::Str | Ty::List(_) | Ty::Data)));
                 if ok {
                     return lt;
                 }
@@ -2178,6 +2244,27 @@ impl Checker<'_> {
                     _ => "arithmetic works on two numbers of the same type",
                 };
                 self.error(l.span.to(r.span), format!("can't use `{}` on {a} and {b}", op.symbol())).help(help);
+                Ty::Error
+            }
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                let (lt, rt) = self.operand_pair(l, r, Some(&Ty::Int));
+                if lt.has_error() || rt.has_error() || (lt == Ty::Int && rt == Ty::Int) {
+                    return Ty::Int;
+                }
+                let sym = op.symbol();
+                if lt == Ty::Bool && rt == Ty::Bool && op != BinOp::Shl && op != BinOp::Shr {
+                    let (logic, help) = match op {
+                        BinOp::BitAnd => ("&&", "write `a && b` for \"and\""),
+                        BinOp::BitOr => ("||", "write `a || b` for \"or\""),
+                        _ => ("!=", "for \"one or the other, but not both\", write `a != b`"),
+                    };
+                    self.error(l.span.to(r.span), format!("`{sym}` works on the bits of `Int`s; for `Bool`s, use `{logic}`"))
+                        .help(help);
+                    return Ty::Bool;
+                }
+                let (a, b) = (self.a(&lt), self.a(&rt));
+                self.error(l.span.to(r.span), format!("can't use `{sym}` on {a} and {b}"))
+                    .help("bit operations work on two `Int`s");
                 Ty::Error
             }
             BinOp::Coalesce => {
@@ -2259,6 +2346,7 @@ impl Checker<'_> {
                         t
                     }
                 };
+                let inner = self.tuple_to_take_apart(name, inner, value.span);
                 self.declare(name, inner, Kind::Let);
             }
         }
@@ -2307,53 +2395,77 @@ impl Checker<'_> {
         let mut result = expected.cloned();
         for arm in arms {
             if let Some(w) = wildcard {
-                self.error(arm.pattern.span(), "this arm can never run")
+                self.error(arm.patterns[0].span(), "this arm can never run")
                     .note_at(w, "`_` above already matches everything")
                     .help("move `_` to the last arm");
             }
+            // Several patterns: the arm can't know which one matched, so it
+            // can't name values.
+            let named = arm.patterns.iter().flat_map(|p| match p {
+                Pattern::Case { bindings, .. } => bindings.as_slice(),
+                _ => &[],
+            });
+            if arm.patterns.len() > 1
+                && let Some(b) = named.into_iter().find(|b| b.name != "_")
+            {
+                self.error(b.span, format!("an arm with several patterns can't name values, like `{}` here", b.name))
+                    .help("give each case its own arm to use its values, or write `_` in place of the name");
+            }
+            let single = arm.patterns.len() == 1;
             self.with_scope(|c| {
-                match &arm.pattern {
-                    Pattern::Case { name, bindings, span } => match &st {
-                        Ty::Enum(id) => {
-                            if let Some(case) = c.enum_case(*id, &name.name, name.span, true) {
-                                if !covered.insert(name.name.clone()) {
-                                    c.error(*span, format!("`.{}` is already handled above", name.name));
+                // (Names given in an arm with several patterns were reported
+                // above; they're declared once, with no type, to say no more.)
+                let declare = |c: &mut Self, b: &Ident, t: Ty| {
+                    if single {
+                        c.declare(b, t, Kind::Let);
+                    } else if b.name != "_" && c.scopes.last().unwrap().iter().all(|l| l.name != b.name) {
+                        c.declare(b, Ty::Error, Kind::Let);
+                    }
+                };
+                for pattern in &arm.patterns {
+                    match pattern {
+                        Pattern::Case { name, bindings, span } => match &st {
+                            Ty::Enum(id) => {
+                                if let Some(case) = c.enum_case(*id, &name.name, name.span, true) {
+                                    if !covered.insert(name.name.clone()) {
+                                        c.error(*span, format!("`.{}` is already handled above", name.name));
+                                    }
+                                    if !bindings.is_empty() && bindings.len() != case.fields.len() {
+                                        c.error(
+                                            *span,
+                                            format!(
+                                                "`.{}` has {} value(s), but {} name(s) are given",
+                                                name.name,
+                                                case.fields.len(),
+                                                bindings.len()
+                                            ),
+                                        );
+                                    }
+                                    for (b, f) in bindings.iter().zip(&case.fields) {
+                                        declare(c, b, f.ty.clone());
+                                    }
                                 }
-                                if !bindings.is_empty() && bindings.len() != case.fields.len() {
-                                    c.error(
-                                        *span,
-                                        format!(
-                                            "`.{}` has {} value(s), but {} name(s) are given",
-                                            name.name,
-                                            case.fields.len(),
-                                            bindings.len()
-                                        ),
-                                    );
-                                }
-                                for (b, f) in bindings.iter().zip(&case.fields) {
-                                    c.declare(b, f.ty.clone(), Kind::Let);
+                                for b in bindings.iter().skip(case_field_count(c, *id, &name.name)) {
+                                    declare(c, b, Ty::Error);
                                 }
                             }
-                            for b in bindings.iter().skip(case_field_count(c, *id, &name.name)) {
-                                c.declare(b, Ty::Error, Kind::Let);
+                            Ty::Error => {
+                                for b in bindings {
+                                    declare(c, b, Ty::Error);
+                                }
                             }
-                        }
-                        Ty::Error => {
-                            for b in bindings {
-                                c.declare(b, Ty::Error, Kind::Let);
+                            t => {
+                                let what = c.a(t);
+                                c.error(*span, format!("`.{}` patterns only work on enums, but this is {what}", name.name));
                             }
-                        }
-                        t => {
-                            let what = c.a(t);
-                            c.error(*span, format!("`.{}` patterns only work on enums, but this is {what}", name.name));
-                        }
-                    },
-                    Pattern::Wildcard(s) => wildcard = Some(*s),
-                    Pattern::Error(_) => had_error = true,
-                    Pattern::Literal(e) => {
-                        c.expect(e, &st);
-                        if let ExprKind::Bool(b) = e.kind {
-                            covered.insert(b.to_string());
+                        },
+                        Pattern::Wildcard(s) => wildcard = Some(*s),
+                        Pattern::Error(_) => had_error = true,
+                        Pattern::Literal(e) => {
+                            c.expect(e, &st);
+                            if let ExprKind::Bool(b) = e.kind {
+                                covered.insert(b.to_string());
+                            }
                         }
                     }
                 }
@@ -2703,6 +2815,7 @@ impl Checker<'_> {
                     self.set_callee(match origin {
                         FnOrigin::Method(owner) => Callee::SelfMethod { owner, name: n.to_string() },
                         FnOrigin::View => Callee::ViewFn(n.to_string()),
+                        FnOrigin::Local(decl) => Callee::LocalFn { name: n.to_string(), decl },
                     });
                     self.args(&what, &sig.params, args, trailing, span);
                     sig.ret
@@ -2850,11 +2963,14 @@ impl Checker<'_> {
                 Kind::State => Some(format!("`{name}` is `state`, which the app keeps changing")),
                 Kind::Bind => Some(format!("`{name}` is a binding to the app's data")),
                 Kind::Field | Kind::SelfValue => Some(format!("`{name}` belongs to `self`")),
+                Kind::Fn(_, FnOrigin::Local(_)) => Some(format!("`{name}` is declared inside a function")),
                 Kind::Fn(..) => Some(format!("`{name}` is a function of the app or view")),
                 _ => None,
             };
             if let Some(problem) = problem {
-                let help = if matches!(local.kind, Kind::Fn(..)) {
+                let help = if matches!(local.kind, Kind::Fn(_, FnOrigin::Local(_))) {
+                    "move the function to the top level of the file, and pass it what it needs".to_string()
+                } else if matches!(local.kind, Kind::Fn(..)) {
                     "move the function out of the `app` or `view` to the top level, and pass it what it needs".to_string()
                 } else {
                     format!("copy what it needs first, like `let input = {name}`, and use that")
@@ -3252,6 +3368,15 @@ impl Checker<'_> {
                 }
                 let pair = self.tuple_ty(vec![Ty::Int, (**elem).clone()], span);
                 Ty::list(pair)
+            }
+            // `data.append(other)`, or one byte: `data.append(byte: 255)`.
+            Ty::Data if n == "append" => {
+                self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                self.mutating_receiver(object, n);
+                let byte = args.first().and_then(|a| a.label.as_ref()).is_some_and(|l| l.name == "byte");
+                let p = if byte { ParamSig::new("byte", Ty::Int) } else { ParamSig::unlabeled("data", Ty::Data) };
+                self.args(&what, &[p], args, trailing, span);
+                Ty::Void
             }
             Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
                 Some(m) => {
@@ -4507,7 +4632,7 @@ fn stmt_mutates(s: &Stmt, roots: &HashSet<String>) -> bool {
         }
         Stmt::Break(_) | Stmt::Continue(_) => false,
         Stmt::Expr(e) => expr_mutates(e, roots),
-        Stmt::Fn(_) => false,
+        Stmt::Fn(f) => block_mutates(&f.body, roots),
     }
 }
 

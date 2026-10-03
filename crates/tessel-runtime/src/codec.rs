@@ -72,6 +72,95 @@ pub unsafe extern "C" fn tsl_data_from_ints(list: *const List) -> *mut Str {
     data_new(&bytes)
 }
 
+/// The room a growable `Data` of `len` bytes has: a power of two, at least
+/// 16 bytes. (So appending to one copies its bytes O(log n) times.)
+fn grow_capacity(len: usize) -> usize {
+    len.next_power_of_two().max(16)
+}
+
+unsafe extern "C" fn grow_drop(h: *mut crate::Header) {
+    unsafe { crate::free(h as *mut u8) };
+}
+
+/// Is `d` a growable `Data` (one with room after its bytes, see
+/// `grow_capacity`)? They're the ones whose drop function is `grow_drop`.
+unsafe fn is_growable(d: *const Str) -> bool {
+    let drop: unsafe extern "C" fn(*mut crate::Header) = grow_drop;
+    unsafe { std::ptr::fn_addr_eq((*d).h.drop, drop) }
+}
+
+/// A new growable `Data` holding `bytes`.
+fn growable_new(bytes: &[u8]) -> *mut Str {
+    unsafe {
+        let s = new_object(size_of::<Str>() + grow_capacity(bytes.len()), grow_drop) as *mut Str;
+        (*s).len = bytes.len() as i64;
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), (s as *mut u8).add(size_of::<Str>()), bytes.len());
+        s
+    }
+}
+
+/// `a + b` for `Data`: a new value with the bytes of both. It's growable,
+/// since a sum is often added to again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_concat(a: *const Str, b: *const Str) -> *mut Str {
+    let (a, b) = unsafe { (data_bytes(a), data_bytes(b)) };
+    let s = growable_new(&[]);
+    let mut slot = s;
+    unsafe { append_bytes(&mut slot, a) };
+    unsafe { append_bytes(&mut slot, b) };
+    slot
+}
+
+/// Adds `bytes` to the end of the `Data` in `*slot`: in place if it's
+/// growable, has room, and nothing else holds it; otherwise into a new
+/// growable copy (released old value), which later appends then fill in place.
+unsafe fn append_bytes(slot: *mut *mut Str, bytes: &[u8]) {
+    unsafe {
+        let d = *slot;
+        let len = (*d).len as usize;
+        let new_len = len + bytes.len();
+        if is_growable(d) && (*d).h.rc == 1 {
+            let cap = grow_capacity(len);
+            let d = if new_len > cap {
+                let grown = crate::realloc(d as *mut u8, size_of::<Str>() + grow_capacity(new_len)) as *mut Str;
+                if grown.is_null() {
+                    crate::fatal("out of memory");
+                }
+                *slot = grown;
+                grown
+            } else {
+                d
+            };
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), (d as *mut u8).add(size_of::<Str>() + len), bytes.len());
+            (*d).len = new_len as i64;
+            return;
+        }
+        let mut all = Vec::with_capacity(new_len);
+        all.extend_from_slice(data_bytes(d));
+        all.extend_from_slice(bytes);
+        *slot = growable_new(&all);
+        crate::tsl_release(d as *mut crate::Header);
+    }
+}
+
+/// `data += other` and `data.append(other)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_append(slot: *mut *mut Str, other: *const Str) {
+    // (`data += data` copies the bytes first: they may move.)
+    if std::ptr::eq(unsafe { *slot }, other) {
+        let bytes = unsafe { data_bytes(other) }.to_vec();
+        unsafe { append_bytes(slot, &bytes) };
+    } else {
+        unsafe { append_bytes(slot, data_bytes(other)) };
+    }
+}
+
+/// `data.append(byte: n)`: one byte, `n` modulo 256 (like `Data(bytes:)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_append_byte(slot: *mut *mut Str, byte: i64) {
+    unsafe { append_bytes(slot, &[byte as u8]) };
+}
+
 /// `Data()`: no bytes.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_data_empty() -> *mut Str {

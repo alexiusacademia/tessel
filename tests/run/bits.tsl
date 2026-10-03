@@ -1,0 +1,66 @@
+// Bit operations on Int, number literals, and `%` on Float.
+
+fn main() {
+    // Literals.
+    print(0xff)
+    print(0xFF_FF)
+    print(0b1010)
+    print(0o17)
+    print(1_000_000)
+    print(1e6)
+    print(2.5e-3)
+    print(1E+9)
+
+    // Bit operations.
+    print(0b1100 & 0b1010)
+    print(0b1100 | 0b1010)
+    print(0b1100 ^ 0b1010)
+    print(~0)
+    print(~5)
+    print(1 << 10)
+    print(1024 >> 3)
+    print(-16 >> 2)
+    print(1 << 63)
+    print(1 << 64)
+    print(5 >> 64)
+    print(-5 >> 100)
+
+    // Precedence: shifts before `*`, `&` like `*`, `|` and `^` like `+`.
+    print(1 + 2 << 3)
+    print(2 * 3 & 1)
+    print(1 | 2 + 4)
+    print(6 & 3 == 2)
+
+    // A color packed into an Int, and taken apart again.
+    let (r, g, b) = (0x12, 0x34, 0x56)
+    let rgb = r << 16 | g << 8 | b
+    print(rgb)
+    print((rgb >> 16 & 0xff, rgb >> 8 & 0xff, rgb & 0xff))
+
+    // Flags in a bit set.
+    let bold = 1 << 0
+    let italic = 1 << 1
+    var style = 0
+    style |= bold
+    style |= italic
+    style &= ~bold
+    print(style & italic != 0)
+    print(style & bold != 0)
+    style ^= 0b11
+    print(style)
+
+    var x = 3
+    x <<= 4
+    x >>= 2
+    x %= 5
+    print(x)
+
+    // `%` on Float: the remainder after a whole number of divisions, with
+    // the sign of the left side.
+    print(7.5 % 2.0)
+    print(-7.5 % 2.0)
+    print(7.5 % -2.0)
+    var angle = 370.0
+    angle %= 360.0
+    print(angle)
+}

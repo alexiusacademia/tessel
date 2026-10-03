@@ -1,0 +1,50 @@
+// Taking an optional tuple apart in `if let` and `while let`.
+
+fn split(_ line: String) -> (String, Int)? {
+    let parts = line.split("=")
+    if parts.count != 2 {
+        return nil
+    }
+    if let n = Int(parts[1]) {
+        return (parts[0], n)
+    }
+    return nil
+}
+
+struct Queue {
+    items: [(Int, String)]
+
+    fn next() -> (Int, String)? {
+        if items.isEmpty {
+            return nil
+        }
+        return items.removeFirst()
+    }
+}
+
+fn main() {
+    if let (name, value) = split("width=40") {
+        print("{name} is {value}")
+    }
+    if let (name, _) = split("height=x") {
+        print("not printed: {name}")
+    } else {
+        print("height isn't a number")
+    }
+
+    var queue = Queue(items: [(1, "one"), (2, "two"), (3, "three")])
+    while let (n, word) = queue.next() {
+        print("{n}: {word}")
+    }
+
+    // The first item of a list of pairs, if there is one.
+    let pairs = [("a", 1), ("b", 2)]
+    if let (key, n) = pairs.first {
+        print("{key}{n}")
+    }
+
+    // With three items, and as a value.
+    let found: (Int, Int, Int)? = (1, 2, 3)
+    let sum = if let (a, b, c) = found { a + b + c } else { 0 }
+    print(sum)
+}

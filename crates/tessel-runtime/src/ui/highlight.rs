@@ -68,8 +68,25 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             }
             out.push((seg..i.min(b.len()), colors.string));
         } else if c.is_ascii_digit() {
+            // `0xff`, `0b1010`, `0o17`: letters and digits after the prefix.
+            if c == b'0' && matches!(b.get(i + 1), Some(b'x' | b'b' | b'o')) {
+                i += 2;
+                while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                    i += 1;
+                }
+            }
             while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_' || (b[i] == b'.' && b.get(i + 1).is_some_and(u8::is_ascii_digit))) {
                 i += 1;
+            }
+            // An exponent: `1e6`, `2.5e-3`.
+            if i < b.len() && matches!(b[i], b'e' | b'E') {
+                let sign = usize::from(matches!(b.get(i + 1), Some(b'+' | b'-')));
+                if b.get(i + 1 + sign).is_some_and(u8::is_ascii_digit) {
+                    i += 1 + sign;
+                    while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+                        i += 1;
+                    }
+                }
             }
             out.push((start..i, colors.number));
         } else if ident(c) {
@@ -119,5 +136,12 @@ mod tests {
         assert_eq!(colored(src, colors.string), ["\"Count: {", "}\""]);
         assert_eq!(colored(src, colors.case), ["bold"]);
         assert_eq!(colored(src, colors.call), ["font"]);
+    }
+
+    #[test]
+    fn colors_every_kind_of_number() {
+        let colors = &theme().code;
+        let src = "let a = 0xff + 0b1010 + 0o17 + 1_000 + 2.5e-3 + 1E9";
+        assert_eq!(colored(src, colors.number), ["0xff", "0b1010", "0o17", "1_000", "2.5e-3", "1E9"]);
     }
 }

@@ -1,0 +1,57 @@
+// Building `Data`: `+`, `+=`, `append`, and `append(byte:)`.
+
+/// A little-endian 32-bit number, as 4 bytes.
+fn uint32(_ n: Int) -> Data {
+    var d = Data()
+    for i in 0..4 {
+        d.append(byte: n >> (8 * i) & 0xff)
+    }
+    return d
+}
+
+struct Writer {
+    out: Data = Data()
+
+    fn write(_ text: String) {
+        out += uint32(text.count)
+        out.append(Data(text: text))
+    }
+}
+
+fn main() {
+    let a = Data(bytes: [1, 2])
+    let b = Data(bytes: [3])
+    let c = a + b
+    print(c.bytes)
+    print(a.bytes)
+
+    var d = a
+    d += b
+    d += d
+    print(d.bytes)
+    print(a.bytes)
+
+    d.append(byte: 255)
+    d.append(byte: 256 + 7)
+    print(d.bytes)
+
+    var w = Writer()
+    w.write("hi")
+    w.write("there")
+    print(w.out.count)
+    print(w.out.slice(from: 0, to: 6).bytes)
+    print(w.out.slice(from: 10, to: 15).text ?? "")
+
+    // Many small appends.
+    var big = Data()
+    for i in 0..100000 {
+        big.append(byte: i)
+    }
+    print(big.count)
+    print((big[0], big[255], big[256], big[99999]))
+
+    // An optional Data, changed in place.
+    var maybe: Data? = Data(text: "a")
+    maybe?.append(Data(text: "bc"))
+    print(maybe?.text ?? "")
+}

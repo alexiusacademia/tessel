@@ -105,8 +105,8 @@ usual style is `lowerCamelCase` for variables and functions, and
 
 | Kind | Examples | Type |
 |---|---|---|
-| Whole numbers | `0`, `42`, `-7`, `1_000_000` | `Int` |
-| Decimal numbers | `3.14`, `0.5`, `2.0`, `1_000.25` | `Float` |
+| Whole numbers | `0`, `42`, `-7`, `1_000_000`, `0xff`, `0b1010`, `0o17` | `Int` |
+| Decimal numbers | `3.14`, `0.5`, `2.0`, `1_000.25`, `1e6`, `2.5e-3` | `Float` |
 | Truth values | `true`, `false` | `Bool` |
 | Text | `"hello"`, `"Total: {n}"` | `String` |
 | No value | `nil` | an optional, see [Optionals](/language/optionals/) |
@@ -119,11 +119,22 @@ You can put `_` anywhere in a number to make it easier to read:
 A decimal number needs digits on both sides of the point: write `0.5`, not
 `.5`, and `2.0`, not `2.`.
 
-:::note
-Scientific notation such as `1.5e3` is not supported in number literals yet.
-Write the number out (`1500.0`), or parse it from text with
-`Float("1.5e3")`, which returns an optional.
-:::
+A number with an exponent is a `Float`: `1e6` is `1000000.0`, `2.5e-3` is
+`0.0025` and `1E+9` is `1000000000.0` (`e` or `E`, then an optional sign).
+
+Whole numbers can also be written in hexadecimal (`0x`), binary (`0b`) or
+octal (`0o`), which is handy for bytes, colors and
+[bit operations](#bit-operations). The prefix is lowercase; the digits can be
+either case:
+
+```tessel
+print(0xff)          // 255
+print(0xFF_FF)       // 65535
+print(0b1010)        // 10
+print(0o17)          // 15
+print(1e6)           // 1000000.0
+print(2.5e-3)        // 0.0025
+```
 
 A whole-number literal takes its type from where it is used. Where a `Float`
 is expected, `3` means `3.0`, so you rarely have to write `.0`:
@@ -209,7 +220,15 @@ Any other character after a backslash is an error.
 Both sides must have the same type. Dividing two `Int`s gives an `Int` and
 drops the fraction (it rounds toward zero, so `-7 / 2` is `-3`). For a
 decimal result, convert first: `Float(7) / 2` is `3.5`. `%` works on
-`Float`s too.
+`Float`s too: it's what is left after taking away as many whole multiples
+of the right side as fit, with the sign of the left side (like Swift's
+`truncatingRemainder` and `%` in Rust or C):
+
+```tessel
+print(7.5 % 2.0)      // 1.5
+print(-7.5 % 2.0)     // -1.5
+print(370.0 % 360.0)  // 10.0
+```
 
 `+` also joins two strings or two lists:
 
@@ -253,15 +272,53 @@ print(age >= 18 && !member)
 
 The operands must be `Bool`s. Tessel doesn't treat `0` or `""` as false.
 
+### Bit operations
+
+These work on the bits of `Int`s (in two's complement, as in most
+languages):
+
+| Operator | Meaning | Example | Result |
+|---|---|---|---|
+| `&` | and: bits set in both | `0b1100 & 0b1010` | `8` (`0b1000`) |
+| <code>&#124;</code> | or: bits set in either | <code>0b1100 &#124; 0b1010</code> | `14` (`0b1110`) |
+| `^` | exclusive or: bits set in one but not both | `0b1100 ^ 0b1010` | `6` (`0b0110`) |
+| `~x` | not: every bit flipped | `~5` | `-6` |
+| `<<` | shift left | `1 << 10` | `1024` |
+| `>>` | shift right, keeping the sign | `-16 >> 2` | `-4` |
+
+```tessel
+let (r, g, b) = (0x12, 0x34, 0x56)
+let color = r << 16 | g << 8 | b
+print(color)                        // 1193046
+print(color >> 8 & 0xff)            // 52
+
+let bold = 1 << 0
+let italic = 1 << 1
+var style = bold | italic
+style &= ~bold
+print(style & italic != 0)          // true
+print(style & bold != 0)            // false
+```
+
+- Shifting by 64 or more gives `0` (or, for `>>` of a negative number,
+  `-1`). Shifting by a negative amount stops the program with an error.
+- `<<` doesn't check for overflow: bits shifted past the top are lost, so
+  `1 << 63` is the smallest `Int`.
+- On `Bool`s, use `&&`, `||` and `!=` instead: `a & b` on two `Bool`s is an
+  error that suggests `&&`.
+
 ### Assignment
 
 | Operator | Same as |
 |---|---|
 | `x = v` | set `x` to `v` |
-| `x += v` | `x = x + v` (numbers, strings and lists) |
+| `x += v` | `x = x + v` (numbers, strings, lists and `Data`) |
 | `x -= v` | `x = x - v` |
 | `x *= v` | `x = x * v` |
 | `x /= v` | `x = x / v` |
+| `x %= v` | `x = x % v` (`Int` and `Float`) |
+| `x &= v`, <code>x &#124;= v</code>, `x ^= v` | `x = x & v`, … (`Int`) |
+| `x <<= v`, `x >>= v` | `x = x << v`, … (`Int`) |
 
 Assignment is a statement, not an expression: you can't write
 `a = b = 0` or use `x += 1` as a value. The left side can be a variable, a
@@ -318,10 +375,17 @@ except `??`, which groups to the right.
 | `==` `!=` `<` `<=` `>` `>=` |
 | `..` |
 | `??` |
-| `+` `-` |
-| `*` `/` `%` |
-| `!` `-` (prefix) |
+| `+` `-` <code>&#124;</code> `^` |
+| `*` `/` `%` `&` |
+| `<<` `>>` |
+| `!` `-` `~` (prefix) |
 | `.` `?.` `()` `[]` |
+
+The bit operators sit where Swift puts them: shifts bind tighter than `*`,
+`&` is like `*`, and `|` and `^` are like `+`. So `1 + 2 << 3` is
+`1 + (2 << 3)`, and `flags & mask == 0` is `(flags & mask) == 0`. Use
+parentheses when you mix `|` or `^` with `+` or `-`, which group left to
+right with them: `1 | 2 + 4` is `(1 | 2) + 4`.
 
 Because `??` is lower than `+`, `count ?? 0 + 1` would mean
 `count ?? (0 + 1)`, which is rarely what's meant. So Tessel asks for

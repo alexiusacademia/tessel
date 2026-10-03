@@ -74,6 +74,21 @@ if let tags: [String] = fromJson("[\"red\", \"green\"]") {
 }
 ```
 
+An optional tuple can be unwrapped and taken apart in one go, and
+`while let` repeats while there is a value (see
+[Control flow](/language/control-flow/#taking-a-tuple-apart)):
+
+```tessel
+let best: (String, Int)? = ("Ada", 98)
+if let (name, score) = best {
+    print("{name}: {score}")
+}
+```
+
+```text
+Ada: 98
+```
+
 ## ?? for a default
 
 `a ?? b` is the value inside `a` if there is one, and `b` otherwise:
@@ -292,6 +307,7 @@ These are the runtime errors:
 | `index 5 is out of range for a list of 3 items` | Reading, writing, inserting or removing a list item at an index that doesn't exist (including negative indexes) |
 | `integer overflow` | An `Int` result too large or too small to fit, from `+`, `-`, `*`, `/` or `%` |
 | `division by zero` | Dividing an `Int` by zero with `/` or `%` |
+| `negative shift amount` | Shifting an `Int` by a negative number of bits with `<<` or `>>` |
 | `stack overflow` | Too many function calls inside each other, usually a function that calls itself without a case that stops it |
 
 `Float` arithmetic never stops the program: dividing a `Float` by zero gives

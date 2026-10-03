@@ -1,0 +1,2 @@
+error: negative shift amount
+ --> tests/run/err_shift.tsl:2:5

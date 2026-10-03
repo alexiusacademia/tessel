@@ -1,0 +1,122 @@
+// Functions declared inside functions and methods.
+
+struct Counter {
+    count: Int = 0
+
+    fn add(times: Int) {
+        // Changes a field, so `add` changes the counter.
+        fn once() {
+            count += 1
+        }
+        for _ in 0..times {
+            once()
+        }
+    }
+
+    fn describe() -> String {
+        fn label(_ n: Int) -> String {
+            return "{n} (twice: {count * 2})"
+        }
+        return label(count)
+    }
+}
+
+struct Box<T> {
+    item: T
+}
+
+fn twice<T>(_ x: T) -> [T] {
+    fn wrap(_ v: T) -> [T] {
+        return [v, v]
+    }
+    return wrap(x)
+}
+
+fn parse(_ s: String) -> Result<Int> {
+    fn number(_ t: String) -> Result<Int> {
+        let n = try parseInt(t)
+        return .ok(value: n * 10)
+    }
+    return number(s)
+}
+
+fn main() {
+    // Labels and default values, as for any function.
+    fn greet(_ name: String, punctuation: String = "!") -> String {
+        return "Hello, {name}{punctuation}"
+    }
+    print(greet("Ada"))
+    print(greet("Grace", punctuation: "?"))
+
+    // Recursion.
+    fn fib(_ n: Int) -> Int {
+        if n < 2 { return n }
+        return fib(n - 1) + fib(n - 2)
+    }
+    print([1, 2, 3, 10].map(fib))
+
+    // It sees the `var`s around it as they are when it runs, and can change them.
+    var total = 1
+    fn add(_ n: Int) {
+        total += n
+    }
+    fn show() {
+        print("total is {total}")
+    }
+    add(5)
+    total *= 2
+    show()
+
+    // `let`s and parameters are copied in.
+    let factor = 3
+    fn times(_ v: Int) -> Int {
+        return v * factor
+    }
+    print([1, 2].map(times))
+
+    // Methods, generic functions, and `try`.
+    var c = Counter()
+    c.add(times: 3)
+    print(c.describe())
+    print(twice("a"))
+    print(twice(Box(item: 1)).count)
+    match parse("4") {
+        .ok(v) -> print(v)
+        .failure(e) -> print(e.message)
+    }
+    match parse("x") {
+        .ok(v) -> print(v)
+        .failure(e) -> print("failed: {e.message}")
+    }
+
+    // In a loop: each round has its own function, with that round's `name`.
+    var greeters: [fn() -> String] = []
+    for name in ["a", "b"] {
+        fn hello() -> String {
+            return "hi {name}"
+        }
+        greeters.append(hello)
+    }
+    for g in greeters {
+        print(g())
+    }
+
+    // Inside each other, and in a block.
+    fn outer(_ n: Int) -> Int {
+        fn inner(_ m: Int) -> Int {
+            return m + n
+        }
+        return inner(1) * 2
+    }
+    fn twiceOuter(_ n: Int) -> Int {
+        return outer(n) + outer(n)
+    }
+    print(twiceOuter(5))
+    let byLength: fn([String]) -> [String] = { words in
+        fn shorter(_ a: String, _ b: String) -> Bool {
+            return a.count < b.count
+        }
+        words.sorted(by: shorter)
+    }
+    print(byLength(["ccc", "a", "bb"]))
+}

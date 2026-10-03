@@ -11,11 +11,6 @@ fn b(x: Bool, y: Bool) {
     }
 }
 
-fn c() {
-    var x = 7
-    x %= 5 // error: Tessel has no `%=`
-}
-
 fn d() {
     for i in 1..=5 { // error: ranges in Tessel are written `a..b`
     }

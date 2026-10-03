@@ -264,6 +264,7 @@ way to write it:
 | `x -= 5` | `x = x - 5` |
 | `x *= 5` | `x = x * 5` |
 | `x /= 5` | `x = x / 5` |
+| `x %= 5` | `x = x % 5` |
 
 ```tessel
 fn main() {
@@ -276,6 +277,8 @@ fn main() {
     print(coins)
     coins /= 4
     print(coins)
+    coins %= 4
+    print(coins)
 }
 ```
 
@@ -284,29 +287,7 @@ fn main() {
 12
 24
 6
-```
-
-There's no `%=` in Tessel. If you try it, Tessel tells you what to write
-instead:
-
-```tessel
-fn main() {
-    var x = 17
-    x %= 5
-    print(x)
-}
-```
-
-```text
-error: Tessel has no `%=`
- --> math.tsl:3:7
-  |
-3 |     x %= 5
-  |       ^^
-  |
-  = help: write it out: `x = x % 5`
-
-1 error found
+2
 ```
 
 ## Math functions

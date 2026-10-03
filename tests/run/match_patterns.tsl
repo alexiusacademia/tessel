@@ -1,0 +1,55 @@
+// Several patterns in one `match` arm.
+
+enum Direction { north, south, east, west }
+enum Shape { circle(radius: Float), square(side: Float), dot }
+
+fn vertical(d: Direction) -> Bool {
+    match d {
+        .north, .south -> true
+        .east, .west -> false
+    }
+}
+
+fn kind(s: Shape) -> String {
+    match s {
+        .circle(_), .square(_) -> "has an area"
+        .dot -> "a point"
+    }
+}
+
+fn isVowel(_ c: String) -> Bool {
+    match c {
+        "a", "e", "i",
+        "o", "u" -> true
+        _ -> false
+    }
+}
+
+fn size(_ n: Int) -> String {
+    match n {
+        0 -> "none"
+        1, 2, 3 -> "a few"
+        -1, -2 -> "a debt"
+        _ -> "many"
+    }
+}
+
+fn main() {
+    for d in [Direction.north, .east, .south, .west] {
+        print("{d}: {vertical(d)}")
+    }
+    print(kind(.circle(radius: 1.0)))
+    print(kind(.square(side: 2.0)))
+    print(kind(.dot))
+    print("banana".characters.filter(isVowel).count)
+    for n in [0, 2, -2, 9] {
+        print(size(n))
+    }
+    // In a match that's a statement, with blocks.
+    let b = true
+    match b {
+        true, false -> {
+            print("either")
+        }
+    }
+}

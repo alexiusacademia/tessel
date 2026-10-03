@@ -655,13 +655,17 @@ impl Resolver<'_> {
             ExprKind::Match { subject, arms } => {
                 self.expr(subject);
                 for arm in arms {
-                    let names = match &arm.pattern {
-                        Pattern::Case { bindings, .. } => bindings.iter().map(|b| b.name.clone()).collect(),
-                        _ => Vec::new(),
-                    };
+                    let mut names = Vec::new();
+                    for pattern in &arm.patterns {
+                        if let Pattern::Case { bindings, .. } = pattern {
+                            names.extend(bindings.iter().map(|b| b.name.clone()));
+                        }
+                    }
                     self.scoped(names, |r| {
-                        if let Pattern::Literal(l) = &mut arm.pattern {
-                            r.expr(l);
+                        for pattern in &mut arm.patterns {
+                            if let Pattern::Literal(l) = pattern {
+                                r.expr(l);
+                            }
                         }
                         r.expr(&mut arm.body);
                     });
