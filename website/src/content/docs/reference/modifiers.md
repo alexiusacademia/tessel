@@ -371,6 +371,54 @@ VStack {
   [`shortcut`](#shortcut).
 - If several views have `onKey`, the first one (from the top of the view
   tree) that is shown and enabled gets the key.
+- When some view has [`onKeyEvent`](#onkeyevent), keys go there instead.
+
+## onKeyEvent
+
+```text
+.onKeyEvent(_ action: fn(KeyEvent))
+```
+
+Like [`onKey`](#onkey), with the modifier keys held: runs `action` with a
+[`KeyEvent`](/reference/colors/#keyevent) for each key pressed while no text
+is being edited.
+
+```tessel
+Canvas { g in drawMap(g) }
+    .onKeyEvent { e in
+        let step = if e.shift { 100.0 } else { 10.0 }
+        match e.key {
+            "left" -> { panX -= step }
+            "right" -> { panX += step }
+            "z" -> {
+                if e.command && e.shift {
+                    redo()
+                } else if e.command {
+                    undo()
+                }
+            }
+            _ -> {}
+        }
+    }
+```
+
+- `e.key` is the key without the modifiers (`"a"` for Shift+A, `"1"` for
+  Shift+1) or a key's name: `"enter"`, `"escape"`, `"tab"`, `"space"`,
+  `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`,
+  `"home"`, `"end"`, `"pageup"`, `"pagedown"`, `"insert"`, `"f1"` … `"f12"`.
+- `e.text` is what the key types (`"A"` for Shift+A), or `""` for keys that
+  type nothing, like the arrows.
+- `e.shift`, `e.alt`, `e.command` and `e.control` say which modifier keys
+  were held. `command` is Cmd on macOS and Ctrl on Windows and Linux (the
+  key shortcuts use); `control` is the Ctrl key itself, on every system.
+- `e.repeated` is true for the presses a key held down sends after the first.
+- [`shortcut`](#shortcut)s come first: a key with Cmd that a shortcut takes
+  doesn't come here. Keys with Cmd that no shortcut takes do.
+- While a text field or code editor is being edited, keys go to it, not to
+  `onKeyEvent`.
+- If several views have `onKeyEvent`, the first one (from the top of the
+  view tree) that is shown and enabled gets the key. When a view has
+  `onKeyEvent`, no view's [`onKey`](#onkey) gets keys.
 
 ## cursor
 
@@ -446,12 +494,16 @@ Button("Save") { save() }
 ```
 
 - `key` is one character that isn't an uppercase letter or whitespace, like
-  `"s"`, `"1"` or `","`. Shift isn't taken into account: `.shortcut("s")`
-  also runs on Shift+Cmd+S. The key names `"enter"`, `"escape"`, `"tab"`,
+  `"s"`, `"1"` or `","`. The key names `"enter"`, `"escape"`, `"tab"`,
   `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`,
   `"home"` and `"end"` work too.
+- Put `shift+` or `alt+` (or both) before the key to need Shift or Alt
+  (Option) as well: `"shift+z"`, `"alt+shift+s"`. A shortcut without them
+  also runs with them held, unless another shortcut asks for exactly those
+  keys: with both `"z"` and `"shift+z"`, Shift+Cmd+Z runs the second.
 - Any other key, such as `"F5"`, `"S"` or `"cmd+s"`, is an error. Don't
   write Cmd or Ctrl: it's added for you.
+- A view can have several shortcuts; each `.shortcut` adds one.
 - The shortcut works only while its view is shown and enabled. In a
   `TabView`, only the shortcuts on the selected page work.
 - The shortcut belongs to the view it's on, not to a button: attaching it to
@@ -642,6 +694,57 @@ VStack {
 The window is one place to drop on: the first view (from the top of the
 view tree) with `onDrop` that is shown and enabled gets the files, wherever
 in the window they land. Several files dropped together arrive one by one.
+To drag views inside the app, see [`draggable`](#draggable).
+
+## draggable
+
+```text
+.draggable(_ payload: String)
+```
+
+The view can be dragged with the mouse onto a view with
+[`dropTarget`](#droptarget), which gets `payload`. See
+[Reordering by dragging](/ui/lists/#reordering-by-dragging).
+
+```tessel
+Text(layer.name).draggable(layer.id)
+```
+
+- The drag starts once the mouse has moved a few points with the button
+  held; a press that doesn't move is still a click (for an
+  [`onTap`](#ontap) or a button in the view).
+- While it's dragged, a see-through copy of the view follows the mouse.
+  Escape cancels the drag.
+- The payload is a `String`: usually an id, or a few values joined together,
+  that tells the drop target what's coming.
+- A view with [`onPointer`](#onpointer) gets the mouse first, so it can't
+  also be dragged this way. Doesn't work while the view is disabled or hidden.
+
+## dropTarget
+
+```text
+.dropTarget(isTargeted: bind Bool = …, _ action: fn(String, Float, Float))
+```
+
+Runs `action` when a view with [`draggable`](#draggable) is dropped on this
+one, with its payload and where it was dropped (`x`, `y`, from this view's
+top left corner inside its padding). The action is usually a block after the
+call.
+
+```tessel
+HStack { Text(name) }
+    .background(if targeted { .highlight } else { .clear })
+    .dropTarget(isTargeted: targeted) { payload, x, y in
+        moveLayer(payload, before: index)
+    }
+```
+
+- `isTargeted:` is bound to a `Bool` that is true while something is dragged
+  over the view, so it can show where the drop will go. Bind it to a `state`
+  of a [custom view](/ui/apps-views/) to give each row of a list its own.
+- When drop targets are inside each other, the innermost one under the mouse
+  gets the drop.
+- Doesn't work while the view is disabled or hidden.
 
 ## tooltip
 

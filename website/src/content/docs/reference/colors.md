@@ -214,3 +214,25 @@ struct with these fields:
     }
 }
 ```
+
+## KeyEvent
+
+What [`.onKeyEvent`](/reference/modifiers/#onkeyevent) tells its block. A
+struct with these fields:
+
+| Field | Type | |
+|---|---|---|
+| `key` | `String` | The key, without the modifiers: `"a"` for Shift+A, `"1"` for Shift+1, or a key's name: `"enter"`, `"escape"`, `"tab"`, `"space"`, `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`, `"home"`, `"end"`, `"pageup"`, `"pagedown"`, `"insert"`, `"f1"` … `"f12"`. |
+| `text` | `String` | What the key types (`"A"` for Shift+A), or `""` for a key that types nothing. |
+| `shift`, `alt`, `command`, `control` | `Bool` | Whether the key was held. `command` is Cmd on macOS and Ctrl on Windows and Linux; `control` is the Ctrl key on every system; `alt` is Option on macOS. |
+| `repeated` | `Bool` | True for the presses a key held down sends after the first one. |
+
+```tessel
+.onKeyEvent { e in
+    if e.key == "delete" && !e.repeated {
+        deleteSelected()
+    } else if e.key == "a" && e.command {
+        selectAll()
+    }
+}
+```

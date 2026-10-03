@@ -42,6 +42,9 @@ fn main() {
     }) { n in
         print("never either")
     }
-    spin.cancel()
+    let kept: BackgroundJob? = spin
+    kept?.cancel()
     print("cancelled: {spin.isCancelled()}")
+    let none: BackgroundJob? = nil
+    none?.cancel()
 }

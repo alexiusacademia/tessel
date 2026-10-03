@@ -38,7 +38,7 @@ the space they are offered.
 
 | Flexible… | Views |
 |---|---|
-| horizontally only | `TextField` |
+| horizontally only | `TextField`, `Slider`, `DisclosureGroup`, `LazyVStack` |
 | in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas` |
 | along its stack's direction | `Spacer` |
 | across its stack | `Divider` |
@@ -203,6 +203,76 @@ Picker(selection: mode) {
   something nested inside them.
 - The options sit side by side, each with 12 points of space on either side.
 
+## Slider
+
+```text
+Slider(value: bind Float, from: Float = 0, to: Float = 1, step: Float = 0, onChange: fn() = …)
+```
+
+A knob on a track, for a number between `from` and `to`. Dragging the knob,
+or clicking the track, sets `value`.
+
+```tessel
+Slider(value: opacity, from: 0, to: 1, step: 0.05) { redraw() }
+```
+
+- With a `step` other than 0, the value moves in steps from `from`
+  (`from`, `from + step`, …); with 0, it can be anything in between.
+- `onChange` runs after the slider changes `value` (not when your program
+  does). It's usually the block after the call.
+- With the keyboard on it (click it, or [Tab](/ui/controls/#the-keyboard-and-controls)),
+  the arrow keys move it by a step, or by a twentieth of its range.
+- A slider is flexible horizontally; when nothing limits it, it is 160
+  points wide. It is 22 points tall.
+
+## Stepper
+
+```text
+Stepper(value: bind Int or Float, step: Float = 1, from: Float = …, to: Float = …,
+        decimals: Int = …, onChange: fn() = …)
+```
+
+A number with − and + buttons, which make it a `step` smaller or larger.
+
+```tessel
+Stepper(value: lineWidth, step: 0.5, from: 0, to: 10)
+Stepper(value: classes, from: 2, to: 12) { classify() }
+```
+
+- `value` is an `Int` or a `Float`. For an `Int`, `step` is rounded to a
+  whole number (at least 1).
+- `from` and `to` are the smallest and largest value; leave them out for no
+  limit. A button that can't go further is grayed out.
+- The value is shown between the buttons with `decimals` decimals: by default
+  as many as `step` has (`0.5` shows one, `1` none).
+- `onChange` runs after the stepper changes `value`.
+- With the keyboard on it, Up and Right step up, Down and Left step down.
+
+## ColorPicker
+
+```text
+ColorPicker(color: bind Color, onChange: fn() = …)
+```
+
+A swatch of `color`. Clicking it opens a palette over the window, with 60
+colors and a field for a hex code; choosing a color sets `color` and closes
+the palette.
+
+```tessel
+ColorPicker(color: layer.fill) { redraw() }
+```
+
+- A color chosen in the palette is stored as `.rgb(red, green, blue)`. The
+  hex field takes `#rrggbb`, `#rgb` or `#rrggbbaa` (stored as
+  `.rgba(…)` when it isn't opaque); Enter uses it.
+- A click outside the palette, or Escape, closes it without changing
+  anything.
+- With the keyboard on the picker, Enter or Space opens the palette with its
+  hex field ready to type in.
+- `onChange` runs after the picker changes `color`.
+- The swatch is 44 × 24 points. The palette goes below it, or above it when
+  there's no room below.
+
 ## VStack
 
 ```text
@@ -329,6 +399,37 @@ Scroll {
 - If you put several views directly inside, they are stacked downwards like
   a leading-aligned `VStack` with spacing 8. Wrap them in your own `VStack`
   to choose a different spacing or alignment.
+
+## LazyVStack
+
+```text
+LazyVStack(count: Int, rowHeight: Float, content: fn(Int) -> View)
+```
+
+`count` rows of `rowHeight` points each, top to bottom, of which only those
+near the part that shows are built. The block after the call builds row
+number `i` (from 0):
+
+```tessel
+Scroll {
+    LazyVStack(count: features.count, rowHeight: 22) { i in
+        Text(features[i].name)
+    }
+}
+```
+
+- It's for long lists inside a [`Scroll`](#scroll): a list of 100 000 rows
+  builds the few dozen that show (and about a screenful more on each side),
+  and builds others as it's scrolled.
+- Every row is `rowHeight` tall and as wide as the list; what's in it is
+  laid out like a leading-aligned `VStack` with no spacing, centered
+  vertically.
+- Each row is known by its number, so a row's `state` (in a custom view)
+  stays with it while it's built, but a row that scrolls far out of view is
+  built afresh when it comes back.
+- The list is as tall as all its rows, and flexible horizontally.
+- In a [headless run](/ui/testing/), `tree` shows only the rows built:
+  `LazyVStack 100000 rows, built 1990..2020`.
 
 ## Image
 
@@ -491,6 +592,31 @@ TabView(selection: current, onClose: { name in close(name) }) {
 
 - The tab bar is 34 points tall. The tab view is flexible in both
   directions; when nothing limits it, it is 480 × 320 points.
+
+## DisclosureGroup
+
+```text
+DisclosureGroup(_ title: String, isExpanded: bind Bool, content: View)
+```
+
+A title with an arrow; clicking it opens or closes the group, showing or
+hiding its content below, indented.
+
+```tessel
+DisclosureGroup("Layers", isExpanded: showLayers) {
+    for layer in layers {
+        Text(layer.name)
+    }
+}
+```
+
+- The content is built only while the group is open.
+- Groups inside groups make a tree; see
+  [Trees](/ui/lists/#trees-with-disclosuregroup).
+- With the keyboard on it, Enter or Space opens or closes it, Right opens it
+  and Left closes it.
+- The content is indented 18 points, 4 points below the title, with 4 points
+  between its views. The group is flexible horizontally.
 
 ## Canvas
 

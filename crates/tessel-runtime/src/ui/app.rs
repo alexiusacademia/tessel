@@ -431,7 +431,15 @@ fn deliver_background() -> bool {
             Event::Computed(id, tree) => {
                 // The last progress first, then the result (unless it was cancelled).
                 let latest = take_progress(id);
-                let cancelled = JOBS.lock().unwrap().remove(&id).is_none_or(|j| j.cancelled);
+                // (A cancelled job is remembered, so `isCancelled()` stays true.)
+                let cancelled = {
+                    let mut jobs = JOBS.lock().unwrap();
+                    let cancelled = jobs.get(&id).is_none_or(|j| j.cancelled);
+                    if !cancelled {
+                        jobs.remove(&id);
+                    }
+                    cancelled
+                };
                 match COMPUTING.with(|c| c.borrow_mut().remove(&id)) {
                     Some((done, progress)) if !cancelled => {
                         if let (Some(cb), Some((fraction, note))) = (progress, latest) {
@@ -877,6 +885,7 @@ impl App {
         self.completing.asked = None;
         if focusable(node) {
             self.ui.focused = Some(node.key);
+            self.ui.focus_ring = true;
             self.ui.editing = None;
             return;
         }
@@ -1859,6 +1868,7 @@ impl App {
             _ if on_palette => self.ui.focused,
             _ => None,
         };
+        self.ui.focus_ring = false;
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
         match (&hit, &node.kind) {
@@ -2041,6 +2051,17 @@ impl App {
             self.ui.focused = None;
             return false;
         };
+        // Using the keyboard on it shows which control it's on.
+        let took = matches!(
+                (&n.kind, name),
+                (Kind::Slider { .. } | Kind::Stepper { .. }, "right" | "up" | "left" | "down")
+                    | (Kind::ColorPicker { .. }, "enter" | "space")
+                    | (Kind::Disclosure { .. }, "enter" | "space" | "left" | "right")
+            );
+        if took {
+            self.ui.focus_ring = true;
+        }
+        let Some(n) = self.node(key) else { return false };
         match (&n.kind, name) {
             (Kind::Slider { .. } | Kind::Stepper { .. }, "right" | "up") => self.step(key, 1.0),
             (Kind::Slider { .. } | Kind::Stepper { .. }, "left" | "down") => self.step(key, -1.0),

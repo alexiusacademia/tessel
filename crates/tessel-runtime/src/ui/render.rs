@@ -180,6 +180,9 @@ pub struct Interaction {
     /// The control the keyboard is on (a slider, stepper, color picker or
     /// disclosure group), when no text is edited.
     pub focused: Option<u64>,
+    /// Whether the focused control shows its ring: once the keyboard is used
+    /// on it (not when it was just clicked).
+    pub focus_ring: bool,
     /// A view being dragged with `.draggable`.
     pub dragging: Option<Dragging>,
 }
@@ -410,7 +413,7 @@ impl Painter<'_> {
         let Some(key) = super::controls::OPEN_PICKER.get() else { return };
         let Some(palette) = tree.find(key).and_then(|n| n.children.first()) else { return };
         let r = palette.layout.rect;
-        self.fill(Rect { x: r.x, y: r.y + 4.0, w: r.w, h: r.h }.inset(-3.0), 11.0, Rgba([0, 0, 0, 30]));
+        self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.5), 9.5, Rgba([0, 0, 0, 24]));
         self.paint(palette);
     }
 
@@ -845,7 +848,7 @@ impl Painter<'_> {
             }
         }
         // The control the keyboard is on.
-        if self.ui.focused == Some(n.key) {
+        if self.ui.focused == Some(n.key) && self.ui.focus_ring {
             let (ring, radius) = match &n.kind {
                 Kind::Disclosure { .. } => (n.layout.segments.first().copied().unwrap_or(content), 5.0),
                 Kind::Slider { .. } => (content.inset(2.0), 11.0),

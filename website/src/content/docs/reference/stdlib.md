@@ -1867,7 +1867,7 @@ nothing.
 ### background
 
 ```text
-background(work: fn() -> T, done: fn(T))
+background(work: fn(BackgroundJob) -> T, progress: fn(Float, String) = …, done: fn(T)) -> BackgroundJob
 ```
 
 Runs `work` on another thread, so a long computation doesn't freeze the app,
@@ -1900,6 +1900,51 @@ for a complete app.
 
 A runtime error in `work` (like an index out of range) stops the program,
 as it would anywhere else.
+
+`work` may take the job as its one value, `work: { job in … }`: then it can
+report how far it is with `job.progress(…)` and stop early when
+`job.isCancelled()`. The `progress:` block gets the reports on the UI thread.
+`background` returns the job, for cancelling it:
+
+```tessel
+let path = file
+job = background(work: { job in
+    var rows: [String] = []
+    let lines = readFile(path)?.lines() ?? []
+    for (i, line) in lines.enumerated() {
+        if job.isCancelled() {
+            return rows
+        }
+        rows.append(line.trim())
+        job.progress(Float(i + 1) / Float(lines.count), note: "line {i + 1}")
+    }
+    rows
+}, progress: { fraction, note in
+    loaded = fraction
+}) { rows in
+    table = rows
+}
+```
+
+- The `progress:` block runs at most once each time the app handles its
+  events, with the latest report: reports made in between are skipped. The
+  last report always arrives before `done`.
+- After `job.cancel()`, neither `progress:` nor `done` runs any more, and
+  `job.isCancelled()` turns true inside `work`, which should then stop
+  (whatever it returns is dropped). Cancelling work that has finished does
+  nothing.
+
+### BackgroundJob
+
+A struct for work started with [`background`](#background), with one field,
+`id: Int`, and these methods. Being a plain value, it can be kept in `state`
+(`state job: BackgroundJob? = nil`).
+
+| Method | Returns | |
+|---|---|---|
+| `progress(_ fraction: Float, note: String = "")` | | Inside `work`: reports how far it is (usually 0 to 1) to the `progress:` block. |
+| `isCancelled()` | `Bool` | Whether `cancel()` was called. |
+| `cancel()` | | Cancels the work: its blocks don't run any more. |
 
 ## Int
 

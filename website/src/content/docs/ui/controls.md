@@ -1,6 +1,6 @@
 ---
 title: Controls
-description: Buttons, text fields, toggles and pickers, making any view clickable, and the text editing keys Tessel supports.
+description: Buttons, text fields, toggles, pickers, sliders, steppers and color pickers, making any view clickable, and the keys Tessel supports for editing text and working controls.
 ---
 
 Controls are the views people interact with. Each one either runs an action
@@ -145,6 +145,75 @@ long as every `.tag` has the same type as the selection. Options are usually
 
 `.tag` only means something on the options of a `Picker` and the pages of a
 [`TabView`](/ui/tabs/); anywhere else it's a compile error.
+
+## Slider, Stepper and ColorPicker
+
+These three edit a number or a color:
+
+```tessel
+app Symbol(width: 340, height: 220) {
+    state opacity = 0.8
+    state width = 1.5
+    state classes = 5
+    state fill: Color = .rgb(52, 120, 246)
+    state edits = 0
+
+    VStack(spacing: 12, alignment: .leading) {
+        HStack {
+            Text("Opacity")
+            Slider(value: opacity, from: 0, to: 1, step: 0.05) { edits += 1 }
+        }
+        HStack {
+            Text("Line width")
+            Stepper(value: width, step: 0.5, from: 0, to: 10)
+        }
+        HStack {
+            Text("Classes")
+            Stepper(value: classes, from: 2, to: 12)
+        }
+        HStack {
+            Text("Fill")
+            ColorPicker(color: fill) { edits += 1 }
+        }
+        Text("{edits} edits").color(.secondary)
+    }
+    .padding(16)
+}
+```
+
+![A slider for the opacity, two steppers showing 1.5 and 5, and a blue color swatch](../../../assets/screens/ui-value-controls.png)
+
+- [`Slider`](/reference/views/#slider) sets a `Float` between `from` and
+  `to` (0 and 1 if you leave them out), in steps of `step` if it isn't 0.
+- [`Stepper`](/reference/views/#stepper) makes an `Int` or a `Float` a
+  `step` larger or smaller, between `from` and `to`, and shows it.
+- [`ColorPicker`](/reference/views/#colorpicker) shows a `Color`. Clicking
+  it opens a palette over the window, with a field for a hex code like
+  `#3478f6`; picking a color closes it.
+
+Each takes an optional `onChange` block (the block after the call), which
+runs after the user changes the value: the place to redraw a map or
+recompute something.
+
+![The color picker's palette open: rows of colors from light to dark, and a hex field](../../../assets/screens/ui-color-picker.png)
+
+## The keyboard and controls
+
+Besides text fields, Tab and Shift+Tab also go to sliders, steppers, color
+pickers and [disclosure groups](/ui/lists/#trees-with-disclosuregroup);
+clicking one also puts the keyboard on it. Once the keyboard is used, a blue
+ring shows which one it's on. Then:
+
+| Keys | What they do |
+|------|-------------|
+| Left, Right, Up, Down | Move a slider or a stepper. |
+| Right, Left | Open or close a disclosure group. |
+| Enter, Space | Open a color picker's palette (ready to type a hex code), or open or close a disclosure group. |
+| Escape | Take the keyboard away from the control, or close the palette. |
+
+Shortcuts still work meanwhile. Keys a control doesn't use go to
+[`.onKeyEvent`](/reference/modifiers/#onkeyevent) or
+[`.onKey`](/reference/modifiers/#onkey).
 
 ## Making any view clickable
 

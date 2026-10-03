@@ -3933,6 +3933,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         });
                     }
                     let ov = self.expr(object).unwrap();
+                    // `job?.cancel()`: a method that gives nothing runs only when there's a value.
+                    if t == Ty::Void {
+                        let Ty::Opt(inner) = &ot else { unreachable!() };
+                        let flag = self.b.build_extract_value(ov.into_struct_value(), 0, "").unwrap().into_int_value();
+                        let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+                        self.b.build_conditional_branch(flag, some_bb, done).unwrap();
+                        self.b.position_at_end(some_bb);
+                        let iv = self.b.build_extract_value(ov.into_struct_value(), 1, "").unwrap();
+                        self.builtin_on_value(&recv, &name, iv, &info, &arg, e.span);
+                        self.release(iv, inner);
+                        self.br(done);
+                        self.b.position_at_end(done);
+                        return None;
+                    }
                     let info2 = info.clone();
                     let r = self.optional_chain(ov, &ot, &t, |g, v| {
                         g.builtin_on_value(&recv, &name, v, &info2, &arg, e.span).unwrap()
