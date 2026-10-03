@@ -195,8 +195,13 @@ fn generate<R>(
     } else {
         "x86-64"
     };
+    // Code loaded into `tessel` (the REPL, hot reload, previews) may land
+    // far from `tessel` itself: on Windows its references to the runtime
+    // would then not fit in 32 bits, so every address is a full one there.
+    let jit = !matches!(mode, Mode::Program);
+    let model = if jit && name.contains("windows") { CodeModel::Large } else { CodeModel::Default };
     let tm = target
-        .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, CodeModel::Default)
+        .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, model)
         .ok_or_else(|| vec![internal(format!("can't create a target machine for `{name}`"))])?;
 
     let ctx = Context::create();

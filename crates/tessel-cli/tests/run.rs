@@ -124,7 +124,13 @@ fn repl_sessions() {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessel"));
         cmd.arg("repl").current_dir(repo());
         let out = run_with_input(&mut cmd, &std::fs::read(&input).unwrap());
-        assert!(out.status.success(), "{name}: the REPL failed ({})", out.status);
+        assert!(
+            out.status.success(),
+            "{name}: the REPL failed ({})\n--- stdout\n{}--- stderr\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
         for (kind, got) in [("out", &out.stdout), ("err", &out.stderr)] {
             let expected = std::fs::read_to_string(dir.join(format!("{name}.{kind}"))).unwrap_or_default();
             let got = String::from_utf8_lossy(got);
