@@ -287,6 +287,11 @@ jobs:
           # The REPL runs code inside `tessel` (the signed one, on macOS).
           [[ "$(echo '20 + 22' | run "$t" repl | tr -d '\r')" == "42" ]]
           run "$t" build examples/todos -o dist/smoke/todos
+          # How big the smallest app is (only the runtime it uses is linked in).
+          mkdir -p dist/smoke/hello
+          printf 'app Hello {\n    Text("hello")\n}\n' > dist/smoke/hello/main.tsl
+          run "$t" build dist/smoke/hello -o dist/smoke/hello-app
+          echo "A one-Text app is $(wc -c < dist/smoke/hello-app${{ runner.os == 'Windows' && '.exe' || '' }}) bytes"
           TESSEL_SCRIPT='click field 1; type "hello"; click "Add"; tree' dist/smoke/todos${{ runner.os == 'Windows' && '.exe' || '' }}
 
       - name: Archive

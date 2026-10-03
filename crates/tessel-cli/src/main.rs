@@ -483,8 +483,9 @@ mod bundled {
         let file = |name: &str| path(&sdk.join(name));
         let mut args: Vec<String> = vec!["ld.lld".into(), "-m".into(), "i386pep".into()];
         args.extend(["--subsystem".into(), if gui { "windows" } else { "console" }.into()]);
-        // No debug information: much smaller apps.
-        args.push("--strip-all".into());
+        // No debug information, and none of the runtime the app doesn't
+        // use (as -dead_strip on macOS): much smaller apps.
+        args.extend(["--strip-all".into(), "--gc-sections".into()]);
         args.extend(["-o".into(), path(out), file("crt2.o"), file("crtbegin.o")]);
         args.push(format!("-L{}", path(sdk)));
         args.extend([path(obj), path(runtime)]);
