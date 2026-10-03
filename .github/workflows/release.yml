@@ -282,6 +282,8 @@ jobs:
           run "$t" --version
           run "$t" check examples/todos
           run "$t" run tests/run/hello.tsl
+          # Math the C library does, including calls LLVM rewrites (pow(10, x) is __exp10 on macOS).
+          [[ "$(run "$t" run tests/run/math_calls.tsl | tr -d '\r')" == "$(tr -d '\r' < tests/run/math_calls.out)" ]]
           # The REPL runs code inside `tessel` (the signed one, on macOS).
           [[ "$(echo '20 + 22' | run "$t" repl | tr -d '\r')" == "42" ]]
           run "$t" build examples/todos -o dist/smoke/todos

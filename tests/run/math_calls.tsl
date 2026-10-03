@@ -1,0 +1,28 @@
+// Math on values only known when the program runs, so that the C library
+// is really called. (LLVM turns some calls into others: pow(10, x) into
+// exp10, and sin and cos of the same value into one sincos call. The
+// release's macOS link stubs must have those too; its smoke test builds
+// this program.)
+fn main() {
+    let x = Float(arguments().count) + 1.5
+    show(pow(10, x))
+    show(pow(2, x))
+    show(pow(x, 3))
+    show(sin(x) + cos(x))
+    show(exp(x))
+    show(log(x))
+    show(log10(x))
+    show(sqrt(x))
+    show(atan2(x, 2))
+    show(asin(x / 4))
+    show(acos(x / 4))
+    show(atan(x))
+    show(tan(x))
+    show(floor(x * 3.7) + ceil(x * 3.7) + round(x * 3.7))
+    show(x * 7.3 % 2.0)
+}
+
+// To 6 decimals, which every computer's math library agrees on.
+fn show(_ v: Float) {
+    print(round(v * 1000000) / 1000000)
+}

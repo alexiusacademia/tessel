@@ -29,10 +29,13 @@ LIBS = ["objc", "iconv"]
 MIN_MACOS = "11.0"
 
 # C library functions LLVM may call from compiled Tessel code (floating-point
-# remainder, memory copies, ...), whether or not the runtime uses them.
+# remainder, memory copies, ...), whether or not the runtime uses them. LLVM
+# also turns some calls into others: pow(10, x) into __exp10(x), and sin and
+# cos of one value into __sincos_stret (tests/run/math_calls.tsl has them).
 LIBSYSTEM_EXTRA = """
 _abort _bcmp _bzero _calloc _ceil _cos _exp _exp2 _floor _fmod _fmodf _free _log _log10 _log2
 _malloc _memcmp _memcpy _memmove _memset _pow _realloc _round _sin _sqrt _tan _trunc
+_acos _asin _atan _atan2 ___exp10 ___exp10f ___sincos_stret ___sincosf_stret
 ___bzero ___stack_chk_fail ___stack_chk_guard __tlv_bootstrap _dyld_stub_binder
 """.split()
 
