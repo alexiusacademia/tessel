@@ -3147,8 +3147,12 @@ impl Checker<'_> {
             }
             // `Graphics`: a built-in struct whose methods are the runtime's.
             t if *t == builtins::GRAPHICS => match builtins::method_of(&recv, n) {
-                Some(m) => {
-                    self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                Some(_) => {
+                    // (`g.image(pixels: …)` is another method than `g.image(path, …)`.)
+                    let first = args.first().and_then(|a| a.label.as_ref()).map(|l| l.name.as_str());
+                    let variant = builtins::graphics_variant(n, first);
+                    let m = builtins::method_of(&recv, variant).expect("a variant of a Graphics method");
+                    self.set_callee(Callee::Builtin { recv: recv.clone(), name: variant.to_string() });
                     self.args(&what, &m.sig.params, args, trailing, span);
                     m.sig.ret
                 }

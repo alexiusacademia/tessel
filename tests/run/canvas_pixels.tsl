@@ -1,0 +1,82 @@
+// g.image(pixels:…): a picture from pixels in memory; and pictures turn
+// with the transform, as paths do.
+
+fn pixel(_ picture: (Int, Int, [Int]), _ x: Int, _ y: Int) -> String {
+    let p = picture.2[y * picture.0 + x]
+    if p % 256 == 0 { "clear" } else { "{p / 16777216},{p / 65536 % 256},{p / 256 % 256}" }
+}
+
+fn rgb(_ r: Int, _ g: Int, _ b: Int) -> Int { r * 16777216 + g * 65536 + b * 256 + 255 }
+
+// A 4 × 4 picture: red top left, green top right, blue bottom left, white bottom right.
+fn quarters() -> [Int] {
+    var pixels: [Int] = []
+    for y in 0..4 {
+        for x in 0..4 {
+            let top = if x < 2 { rgb(255, 0, 0) } else { rgb(0, 255, 0) }
+            let bottom = if x < 2 { rgb(0, 0, 255) } else { rgb(255, 255, 255) }
+            pixels.append(if y < 2 { top } else { bottom })
+        }
+    }
+    pixels
+}
+
+fn corners(_ name: String, _ path: String) {
+    if let picture = readImage(path) {
+        print("{name}: {pixel(picture, 25, 25)} | {pixel(picture, 75, 25)} | {pixel(picture, 25, 75)} | {pixel(picture, 75, 75)}")
+    }
+}
+
+fn main() {
+    let pixels = quarters()
+    let path = joinPath(tempFolder(), "tessel-canvas-pixels.png")
+    var drawn: [Bool] = []
+    print(renderImage(path: path, width: 100, height: 100) { g in
+        drawn.append(g.image(pixels: pixels, pixelWidth: 4, pixelHeight: 4, x: 0, y: 0, width: 100, height: 100))
+        // Too few pixels, and no size: nothing is drawn.
+        drawn.append(g.image(pixels: pixels, pixelWidth: 4, pixelHeight: 5, x: 0, y: 0, width: 10, height: 10))
+        drawn.append(g.image(pixels: [], pixelWidth: 0, pixelHeight: 0, x: 0, y: 0, width: 10, height: 10))
+    })
+    print(drawn)
+    corners("as it is", path)
+
+    // Turned a quarter clockwise around the middle: red goes to the top right.
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.translate(50, 50)
+        g.rotate(pi / 2)
+        g.image(pixels: pixels, pixelWidth: 4, pixelHeight: 4, x: -50, y: -50, width: 100, height: 100)
+    }
+    corners("turned", path)
+
+    // A file turns the same way; and is flipped by a scale.
+    let file = joinPath(tempFolder(), "tessel-canvas-quarters.png")
+    writeImage(path: file, width: 4, height: 4, pixels: pixels)
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.translate(50, 50)
+        g.rotate(pi / 2)
+        g.image(file, x: -50, y: -50, width: 100, height: 100)
+    }
+    corners("file turned", path)
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.translate(100, 0)
+        g.scale(-1, 1)
+        g.image(file, x: 0, y: 0, width: 100, height: 100)
+    }
+    corners("file flipped", path)
+
+    // The same pixels, changed, draw the change (not the picture kept).
+    var changed = pixels
+    for i in [0, 1, 4, 5] {
+        changed[i] = rgb(255, 255, 0)
+    }
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.image(pixels: changed, pixelWidth: 4, pixelHeight: 4, x: 0, y: 0, width: 100, height: 100)
+    }
+    corners("changed", path)
+    // Half see-through, on black.
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.fillRect(x: 0, y: 0, width: 100, height: 100, color: .rgb(0, 0, 0))
+        g.image(pixels: pixels, pixelWidth: 4, pixelHeight: 4, x: 0, y: 0, width: 100, height: 100, opacity: 0.5)
+    }
+    corners("half", path)
+}

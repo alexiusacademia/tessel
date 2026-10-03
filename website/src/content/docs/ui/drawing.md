@@ -166,7 +166,114 @@ be, for placing things next to it.
 `g.image(path, x:, y:, width:, height:)` draws a PNG or JPEG file into a
 rectangle, and `opacity:` makes it see-through. It returns `false` if the
 file isn't there (or isn't a picture), so you can draw something else
-instead.
+instead. Pictures follow the transform like everything else: after
+`g.rotate(…)` a picture is drawn turned.
+
+`g.svg(path, x:, y:, width:, height:)` draws an SVG file the same way,
+scaled to fit the rectangle and centered in it. `g.svg(text: …)` draws SVG
+source from the program instead. `color:` is the color of `currentColor` in
+the SVG, as with the [`Svg`](/reference/views/#svg) view.
+
+### Pictures from pixels
+
+A picture you compute (a heat map, a fractal, a frame of a simulation)
+doesn't need a file. `g.image(pixels:pixelWidth:pixelHeight:…)` draws a list
+of pixels, row by row from the top left, each one a number like
+[`writeImage`](/reference/stdlib/#writeimage) takes: red × 16777216 + green
+× 65536 + blue × 256 + opacity, each from 0 to 255.
+
+```tessel
+// A 256 × 256 picture: red grows to the right, green downwards.
+fn gradientPixels() -> [Int] {
+    var pixels: [Int] = []
+    for y in 0..256 {
+        for x in 0..256 {
+            pixels.append(x * 16777216 + y * 65536 + 128 * 256 + 255)
+        }
+    }
+    pixels
+}
+
+app Pixels(title: "Pixels", width: 300, height: 300) {
+    state pixels = gradientPixels()
+
+    Canvas { g in
+        g.image(pixels: pixels, pixelWidth: 256, pixelHeight: 256, x: 0, y: 0, width: g.width, height: g.height)
+    }
+}
+```
+
+The picture is kept between frames: drawing the same pixels again costs
+only a quick look through them to see they haven't changed (about 1.5 ms for
+a 2048 × 2048 picture). When they do change, the new picture is made at
+once. Pictures can be up to 8192 pixels wide and tall; it returns `false`
+(and draws nothing) when the size is wrong or the list is too short.
+
+## Gradients
+
+`g.fillLinear` and `g.fillRadial` fill the current path with colors that
+change across it, and `g.strokeLinear` and `g.strokeRadial` draw its line
+that way:
+
+- **Linear:** the colors change along the line from (`x1`, `y1`) to (`x2`,
+  `y2`). Before its start the first color shows, after its end the last.
+- **Radial:** the colors change from the point (`x`, `y`) out to `radius`
+  from it, in rings.
+
+`colors:` is two or more colors, spread evenly. To place them yourself, give
+`stops:` with a place for each color, from 0 (the start) to 1 (the end):
+`colors: [.red, .yellow, .green], stops: [0, 0.2, 1]` keeps the red-yellow
+part short. The points are in the current coordinates, so a gradient turns
+and scales with the transform, like the path it fills.
+
+## Layers and blending
+
+`g.beginLayer()` starts a layer: what's drawn until `g.endLayer()` is drawn
+on its own first, then put onto the drawing under it as a whole.
+
+- `opacity:` makes the whole layer see-through at once. Two shapes that
+  overlap in a layer at half opacity don't show through each other, as two
+  half see-through shapes would.
+- `blend:` says how the layer's colors mix with the colors under it, as in
+  a photo editor: `.multiply` darkens (white changes nothing), `.screen`
+  lightens (black changes nothing), `.difference`, `.color`, `.luminosity`
+  and the rest of [BlendMode](/reference/colors/#blendmode).
+
+Layers nest, and a clip begun in a layer ends with it. `g.restore()` also
+ends the layers begun since the matching `g.save()`.
+
+```tessel
+app Effects(title: "Effects", width: 420, height: 240) {
+    Canvas { g in
+        // A sky: a linear gradient from top to bottom.
+        g.beginPath()
+        g.rect(x: 0, y: 0, width: g.width, height: g.height, radius: 12)
+        g.fillLinear(x1: 0, y1: 0, x2: 0, y2: g.height, colors: [.rgb(40, 60, 160), .rgb(250, 160, 120)])
+
+        // A sun: a radial gradient, fading out at its edge.
+        g.beginPath()
+        g.circle(x: 110, y: 110, radius: 70)
+        g.fillRadial(x: 110, y: 110, radius: 70, colors: [.rgb(255, 250, 200), .rgb(255, 200, 80), .rgba(255, 160, 60, 0)], stops: [0, 0.4, 1])
+
+        // Three circles, each multiplied onto what's under it: where they
+        // overlap, the colors darken each other.
+        let circles = [(270.0, 70.0, Color.rgb(255, 120, 120)), (330.0, 70.0, Color.rgb(120, 255, 120)), (300.0, 120.0, Color.rgb(120, 120, 255))]
+        for (x, y, color) in circles {
+            g.beginLayer(blend: .multiply)
+            g.fillCircle(x: x, y: y, radius: 45, color: color)
+            g.endLayer()
+        }
+
+        // An outline whose color changes along it.
+        g.beginPath()
+        g.rect(x: 20, y: g.height - 26, width: g.width - 40, height: 14, radius: 7)
+        g.strokeLinear(x1: 20, y1: 0, x2: g.width - 20, y2: 0, colors: [.yellow, .red, .purple], width: 3)
+    }
+    .padding(12)
+}
+```
+
+![A sky fading from deep blue to peach, a glowing sun on the left, three overlapping colored circles multiplied onto it and onto each other on the right, and a thin bar outlined in yellow, red and purple](../../../assets/screens/ui-canvas-effects.png)
 
 ## Drawings that take time
 

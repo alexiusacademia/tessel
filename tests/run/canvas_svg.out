@@ -1,0 +1,4 @@
+[true, false, false]
+file: clear | 255,0,0 | 0,0,255 | clear
+text, turned: 255,0,0 | 0,255,0 | clear
+opacity: 128

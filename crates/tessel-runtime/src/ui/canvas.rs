@@ -11,6 +11,9 @@
 //! coordinates of millions of units and still be exact on screen. Line
 //! widths and text sizes are always in points, whatever the transform.
 //!
+//! Layers (`g.beginLayer`, and each clip) are layers of the vello scene,
+//! ended by `g.endLayer()`, `g.restore()` or the end of the drawing.
+//!
 //! `Canvas(redraw: n)` keeps its drawing between paints, until `n` changes
 //! (or the canvas's size, or the appearance).
 
@@ -20,7 +23,7 @@ use std::rc::Rc;
 
 use parley::PositionedLayoutItem;
 use vello::kurbo::{Affine, Arc, BezPath, Cap, Circle, Ellipse, Join, PathEl, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
-use vello::peniko::{Color, Fill, ImageBrush};
+use vello::peniko::{Blob, BlendMode, Brush, Color, ColorStop, Fill, Gradient, ImageAlphaType, ImageBrush, ImageData, ImageFormat, Mix};
 use vello::Scene;
 
 use super::render::TextEngine;
@@ -73,10 +76,11 @@ struct Current {
     /// `g.zoom(…)`: how many times larger everything is drawn, line widths
     /// and text sizes included.
     zoom: f64,
-    /// `g.save()`: the transform and zoom then, and how many clips were open.
+    /// `g.save()`: the transform and zoom then, and how many layers were open.
     saved: Vec<(Affine, f64, usize)>,
-    /// Clips open now (each is a layer of the scene).
-    clips: usize,
+    /// The layers of the scene open now, innermost last: clips (`false`),
+    /// and layers from `g.beginLayer` (`true`).
+    layers: Vec<bool>,
     stats: Stats,
     /// Points of the line being added, reused between calls.
     scratch: Vec<Point>,
@@ -117,7 +121,7 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
         transform: Affine::IDENTITY,
         zoom: 1.0,
         saved: Vec::new(),
-        clips: 0,
+        layers: Vec::new(),
         stats: Stats::default(),
         scratch: Vec::new(),
         clipped: Vec::new(),
@@ -126,7 +130,7 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
     let outer = CURRENT.with(|c| c.borrow_mut().replace(current));
     block.call_with_floats(w, h);
     let mut done = CURRENT.with(|c| std::mem::replace(&mut *c.borrow_mut(), outer)).expect("the canvas being drawn");
-    for _ in 0..done.clips {
+    for _ in done.layers.drain(..) {
         done.scene.pop_layer();
     }
     Drawing { scene: done.scene, stats: done.stats }
@@ -246,6 +250,40 @@ unsafe fn floats<'a>(l: *const List) -> &'a [f64] {
         }
         std::slice::from_raw_parts((*l).data as *const f64, (*l).len as usize)
     }
+}
+
+/// The items of a `[Color]` (each is its case's place and the box of its
+/// values, as an enum is passed on its own).
+unsafe fn colors(l: *const List) -> Vec<Color> {
+    unsafe {
+        if l.is_null() || (*l).len <= 0 || (*(*l).elem).size < 16 {
+            return Vec::new();
+        }
+        let size = (*(*l).elem).size as usize;
+        (0..(*l).len as usize)
+            .map(|i| {
+                let at = (*l).data.add(i * size);
+                let tag = *(at as *const i32);
+                let payload = *(at.add(8) as *const *const Header);
+                color(theme::color(tag, payload))
+            })
+            .collect()
+    }
+}
+
+/// The items of an `[Int]`.
+unsafe fn ints<'a>(l: *const List) -> &'a [i64] {
+    unsafe {
+        if l.is_null() || (*l).len <= 0 {
+            return &[];
+        }
+        std::slice::from_raw_parts((*l).data as *const i64, (*l).len as usize)
+    }
+}
+
+/// Whether a canvas is being drawn now.
+fn drawing_now() -> bool {
+    CURRENT.with(|c| c.borrow().is_some())
 }
 
 // How far outside the canvas a line may still matter (its width reaches in).
@@ -565,6 +603,122 @@ pub unsafe extern "C" fn tsl_canvas_stroke(tag: i32, payload: *const Header, wid
     });
 }
 
+// ===== C ABI: gradients =====
+
+/// The brush for a gradient through `colors` (at `stops`, from 0 to 1, or
+/// spread evenly when there isn't one stop for each color), and the
+/// transform it's drawn with: `make` makes it with its first point at the
+/// origin, which is `at` in the current coordinates. `None` for no colors.
+fn gradient(c: &Current, colors: &[Color], stops: &[f64], at: (f64, f64), make: impl FnOnce() -> Gradient) -> Option<(Brush, Affine)> {
+    let place = c.transform * Affine::translate(at);
+    let (&first, _) = colors.split_first()?;
+    if colors.len() == 1 {
+        return Some((Brush::Solid(first), place));
+    }
+    let last = (colors.len() - 1) as f64;
+    let given = stops.len() == colors.len() && stops.iter().all(|s| s.is_finite());
+    let mut offset = 0.0f64;
+    let points: Vec<ColorStop> = colors
+        .iter()
+        .enumerate()
+        .map(|(i, &col)| {
+            // (Stops can't go back: one before the stop it follows is moved up to it.)
+            offset = if given { stops[i].clamp(offset, 1.0) } else { i as f64 / last };
+            (offset as f32, col).into()
+        })
+        .collect();
+    Some((Brush::Gradient(make().with_stops(points.as_slice())), place))
+}
+
+/// `g.fillLinear(…)`: fills the current path with colors that change along
+/// the line from (x1, y1) to (x2, y2): the first color before it, the last
+/// after it.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_fill_linear(x1: f64, y1: f64, x2: f64, y2: f64, cols: *const List, stops: *const List, even_odd: u8) {
+    let (cols, stops) = unsafe { (colors(cols), floats(stops)) };
+    with(|c| {
+        if c.path.elements().is_empty() {
+            return;
+        }
+        let make = || Gradient::new_linear((0.0, 0.0), (x2 - x1, y2 - y1));
+        let Some((brush, t)) = gradient(c, &cols, stops, (x1, y1), make) else { return };
+        let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
+        c.scene.fill(rule, Affine::IDENTITY, &brush, Some(t), &c.path);
+        c.stats.fills += 1;
+    });
+}
+
+/// `g.fillRadial(…)`: fills the current path with colors that change from
+/// the point (x, y) out to `radius` from it (the last color beyond).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_canvas_fill_radial(x: f64, y: f64, radius: f64, cols: *const List, stops: *const List, even_odd: u8) {
+    let (cols, stops) = unsafe { (colors(cols), floats(stops)) };
+    with(|c| {
+        if c.path.elements().is_empty() {
+            return;
+        }
+        let make = || Gradient::new_radial((0.0, 0.0), radius.max(0.0) as f32);
+        let Some((brush, t)) = gradient(c, &cols, stops, (x, y), make) else { return };
+        let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
+        c.scene.fill(rule, Affine::IDENTITY, &brush, Some(t), &c.path);
+        c.stats.fills += 1;
+    });
+}
+
+/// `g.strokeLinear(…)`: draws the current path's lines in colors that
+/// change along the line from (x1, y1) to (x2, y2).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_stroke_linear(
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    cols: *const List,
+    stops: *const List,
+    width: f64,
+    dash: *const List,
+) {
+    let (cols, stops, dash) = unsafe { (colors(cols), floats(stops), floats(dash)) };
+    with(|c| {
+        if c.path.elements().is_empty() || width <= 0.0 {
+            return;
+        }
+        let make = || Gradient::new_linear((0.0, 0.0), (x2 - x1, y2 - y1));
+        let Some((brush, t)) = gradient(c, &cols, stops, (x1, y1), make) else { return };
+        let dash: Vec<f64> = dash.iter().map(|d| d * c.zoom).collect();
+        c.scene.stroke(&stroke_style(width * c.zoom, &dash), Affine::IDENTITY, &brush, Some(t), &c.path);
+        c.stats.strokes += 1;
+    });
+}
+
+/// `g.strokeRadial(…)`: draws the current path's lines in colors that
+/// change from the point (x, y) out to `radius` from it.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_stroke_radial(
+    x: f64,
+    y: f64,
+    radius: f64,
+    cols: *const List,
+    stops: *const List,
+    width: f64,
+    dash: *const List,
+) {
+    let (cols, stops, dash) = unsafe { (colors(cols), floats(stops), floats(dash)) };
+    with(|c| {
+        if c.path.elements().is_empty() || width <= 0.0 {
+            return;
+        }
+        let make = || Gradient::new_radial((0.0, 0.0), radius.max(0.0) as f32);
+        let Some((brush, t)) = gradient(c, &cols, stops, (x, y), make) else { return };
+        let dash: Vec<f64> = dash.iter().map(|d| d * c.zoom).collect();
+        c.scene.stroke(&stroke_style(width * c.zoom, &dash), Affine::IDENTITY, &brush, Some(t), &c.path);
+        c.stats.strokes += 1;
+    });
+}
+
 // ===== C ABI: shapes drawn at once (the path stays as it is) =====
 
 #[unsafe(no_mangle)]
@@ -732,13 +886,184 @@ pub unsafe extern "C" fn tsl_canvas_image(path: *const Str, x: f64, y: f64, w: f
     let Some(picture) = super::image::load(path) else { return 0 };
     let mut drawn = 0;
     with(|c| {
-        let t = c.transform * Affine::translate((x, y)) * Affine::scale_non_uniform(w / picture.width.max(1.0), h / picture.height.max(1.0));
-        let brush = ImageBrush::new(picture.image.clone()).with_alpha(opacity.clamp(0.0, 1.0) as f32);
-        c.scene.draw_image(&brush, t);
-        c.stats.images += 1;
+        draw_picture(c, &picture, x, y, w, h, opacity);
         drawn = 1;
     });
     drawn
+}
+
+/// Draws `picture` stretched over the rectangle given, in the current
+/// coordinates: it turns and scales with them, as paths do.
+fn draw_picture(c: &mut Current, picture: &super::image::Picture, x: f64, y: f64, w: f64, h: f64, opacity: f64) {
+    let t = c.transform * Affine::translate((x, y)) * Affine::scale_non_uniform(w / picture.width.max(1.0), h / picture.height.max(1.0));
+    let brush = ImageBrush::new(picture.image.clone()).with_alpha(opacity.clamp(0.0, 1.0) as f32);
+    c.scene.draw_image(&brush, t);
+    c.stats.images += 1;
+}
+
+/// The widest and tallest picture `g.image(pixels:…)` draws, in pixels.
+const MOST_PIXELS: i64 = 8192;
+
+thread_local! {
+    /// For `g.image(pixels:…)`: the key of the picture last made from each
+    /// list (by where its items are). When a list's pixels change, the
+    /// picture made from them before is dropped at once.
+    static MADE_FROM: RefCell<HashMap<usize, String>> = RefCell::new(HashMap::new());
+}
+
+/// A hash of the pixels, to know whether they're the ones a picture was
+/// made from: in four lanes, to read them as fast as memory goes.
+fn hash_pixels(pixels: &[i64]) -> u64 {
+    const K: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mix = |h: u64, x: u64| (h ^ x).wrapping_mul(K).rotate_left(29);
+    let mut lanes = [1u64, 2, 3, 4];
+    let (chunks, rest) = pixels.as_chunks::<4>();
+    for c in chunks {
+        for i in 0..4 {
+            lanes[i] = mix(lanes[i], c[i] as u64);
+        }
+    }
+    for (i, &x) in rest.iter().enumerate() {
+        lanes[i] = mix(lanes[i], x as u64);
+    }
+    let mut h = pixels.len() as u64;
+    for l in lanes {
+        h = mix(h, l);
+    }
+    // (Spreads every bit over all of it.)
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    h ^ (h >> 33)
+}
+
+/// `g.image(pixels:pixelWidth:pixelHeight:…)`: a picture made from pixels
+/// in memory, row by row from the top left, each as `writeImage` takes
+/// them (red × 16777216 + green × 65536 + blue × 256 + opacity), drawn as
+/// `g.image(path, …)` draws a file. Returns false (and draws nothing) when
+/// the size isn't from 1 to `MOST_PIXELS` or there are too few pixels.
+///
+/// The picture is kept with the pictures read from files: drawing the same
+/// pixels again (in the next frame) only reads them through, to see that
+/// they're the same.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_image_pixels(
+    pixels: *const List,
+    pixel_width: i64,
+    pixel_height: i64,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    opacity: f64,
+) -> u8 {
+    let all = unsafe { ints(pixels) };
+    let size_ok = (1..=MOST_PIXELS).contains(&pixel_width) && (1..=MOST_PIXELS).contains(&pixel_height);
+    if !size_ok || (all.len() as i64) < pixel_width * pixel_height || !drawing_now() {
+        return 0;
+    }
+    let pixels = &all[..(pixel_width * pixel_height) as usize];
+    let key = format!("\0pixels {:016x} {pixel_width}x{pixel_height}", hash_pixels(pixels));
+    MADE_FROM.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() > 1024 {
+            m.clear();
+        }
+        if let Some(old) = m.insert(all.as_ptr() as usize, key.clone())
+            && old != key
+        {
+            super::image::forget(&old);
+        }
+    });
+    let make = || {
+        let mut bytes = vec![0u8; pixels.len() * 4];
+        for (b, &p) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(pixels) {
+            *b = (p as u32).to_be_bytes();
+        }
+        Some(super::image::Picture {
+            image: ImageData {
+                data: Blob::new(std::sync::Arc::new(bytes)),
+                format: ImageFormat::Rgba8,
+                alpha_type: ImageAlphaType::Alpha,
+                width: pixel_width as u32,
+                height: pixel_height as u32,
+            },
+            width: pixel_width as f64,
+            height: pixel_height as f64,
+        })
+    };
+    let Some(picture) = super::image::from_memory(&key, make) else { return 0 };
+    with(|c| draw_picture(c, &picture, x, y, w, h, opacity));
+    1
+}
+
+/// Draws an SVG scaled to fit the rectangle given and centered in it, in
+/// the current coordinates.
+fn draw_svg(c: &mut Current, svg: &super::svg::Svg, x: f64, y: f64, w: f64, h: f64, opacity: f64) {
+    let s = (w / svg.width.max(1e-9)).min(h / svg.height.max(1e-9));
+    if !(s.is_finite() && s > 0.0) {
+        return;
+    }
+    let (sx, sy) = (x + (w - svg.width * s) / 2.0, y + (h - svg.height * s) / 2.0);
+    let t = c.transform * Affine::translate((sx, sy)) * Affine::scale(s);
+    let opacity = if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) };
+    if opacity < 1.0 {
+        let area = Rect::new(-CUT, -CUT, c.w + CUT, c.h + CUT);
+        c.scene.push_layer(Fill::NonZero, Mix::Normal, opacity as f32, Affine::IDENTITY, &area);
+        c.scene.append(&svg.scene, Some(t));
+        c.scene.pop_layer();
+    } else {
+        c.scene.append(&svg.scene, Some(t));
+    }
+    c.stats.images += 1;
+}
+
+/// `g.svg(path, …)`: an SVG file, scaled to fit the rectangle given and
+/// centered in it; `currentColor` in it is `color`. Returns whether there
+/// was an SVG to draw.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_svg(
+    path: *const Str,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    tag: i32,
+    payload: *const Header,
+    opacity: f64,
+) -> u8 {
+    let path = unsafe { crate::str_text(path) };
+    let ink = unsafe { theme::color(tag, payload) };
+    if !drawing_now() {
+        return 0;
+    }
+    let Some(svg) = super::svg::load_file(path, ink) else { return 0 };
+    with(|c| draw_svg(c, &svg, x, y, w, h, opacity));
+    1
+}
+
+/// `g.svg(text: …)`: the same, for SVG source in the program.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_svg_text(
+    text: *const Str,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    tag: i32,
+    payload: *const Header,
+    opacity: f64,
+) -> u8 {
+    let text = unsafe { crate::str_text(text) };
+    let ink = unsafe { theme::color(tag, payload) };
+    if !drawing_now() {
+        return 0;
+    }
+    let Some(svg) = super::svg::load(text, ink) else { return 0 };
+    with(|c| draw_svg(c, &svg, x, y, w, h, opacity));
+    1
 }
 
 // ===== C ABI: the transform, and clipping =====
@@ -780,18 +1105,18 @@ pub extern "C" fn tsl_canvas_reset_transform() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_canvas_save() {
-    with(|c| c.saved.push((c.transform, c.zoom, c.clips)));
+    with(|c| c.saved.push((c.transform, c.zoom, c.layers.len())));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_canvas_restore() {
     with(|c| {
-        let Some((transform, zoom, clips)) = c.saved.pop() else { return };
+        let Some((transform, zoom, layers)) = c.saved.pop() else { return };
         c.transform = transform;
         c.zoom = zoom;
-        while c.clips > clips {
+        while c.layers.len() > layers {
             c.scene.pop_layer();
-            c.clips -= 1;
+            c.layers.pop();
         }
     });
 }
@@ -803,7 +1128,7 @@ pub extern "C" fn tsl_canvas_clip(x: f64, y: f64, w: f64, h: f64) {
     with(|c| {
         let p = shape_path(c, &Rect::new(x, y, x + w, y + h));
         c.scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, &p);
-        c.clips += 1;
+        c.layers.push(false);
     });
 }
 
@@ -814,7 +1139,56 @@ pub extern "C" fn tsl_canvas_clip_path(even_odd: u8) {
     with(|c| {
         let rule = if even_odd != 0 { Fill::EvenOdd } else { Fill::NonZero };
         c.scene.push_clip_layer(rule, Affine::IDENTITY, &c.path);
-        c.clips += 1;
+        c.layers.push(false);
+    });
+}
+
+// ===== C ABI: layers =====
+
+/// `BlendMode`'s cases, in order.
+const BLENDS: [Mix; 16] = [
+    Mix::Normal,
+    Mix::Multiply,
+    Mix::Screen,
+    Mix::Overlay,
+    Mix::Darken,
+    Mix::Lighten,
+    Mix::ColorDodge,
+    Mix::ColorBurn,
+    Mix::HardLight,
+    Mix::SoftLight,
+    Mix::Difference,
+    Mix::Exclusion,
+    Mix::Hue,
+    Mix::Saturation,
+    Mix::Color,
+    Mix::Luminosity,
+];
+
+/// `g.beginLayer(blend:opacity:)`: what's drawn until the matching
+/// `g.endLayer()` is drawn on its own first, and then onto what was there
+/// before, blended as `blend` says and at `opacity`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_begin_layer(blend: i32, opacity: f64) {
+    let mix = BLENDS[(blend.max(0) as usize).min(BLENDS.len() - 1)];
+    with(|c| {
+        let area = Rect::new(-CUT, -CUT, c.w + CUT, c.h + CUT);
+        let opacity = if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) };
+        c.scene.push_layer(Fill::NonZero, BlendMode::from(mix), opacity as f32, Affine::IDENTITY, &area);
+        c.layers.push(true);
+    });
+}
+
+/// `g.endLayer()`: ends the layer the last `g.beginLayer` began (and the
+/// clips begun since). Without one, does nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_end_layer() {
+    with(|c| {
+        let Some(i) = c.layers.iter().rposition(|&layer| layer) else { return };
+        while c.layers.len() > i {
+            c.scene.pop_layer();
+            c.layers.pop();
+        }
     });
 }
 
@@ -849,6 +1223,23 @@ mod tests {
         // A triangle poking in keeps its tip.
         clip_ring(&[p(5.0, 5.0), p(25.0, 0.0), p(25.0, 10.0)], r, &mut out);
         assert!(out.contains(&p(5.0, 5.0)) && out.iter().all(|q| q.x <= 10.0), "{out:?}");
+    }
+
+    #[test]
+    fn tells_pixels_apart() {
+        let a: Vec<i64> = (0..1001).map(|i| i * 7919 % 4096).collect();
+        assert_eq!(hash_pixels(&a), hash_pixels(&a.clone()));
+        // Any one pixel changed, in any lane or in the rest after them.
+        for at in [0, 1, 2, 3, 500, 999, 1000] {
+            let mut b = a.clone();
+            b[at] ^= 1 << 24;
+            assert_ne!(hash_pixels(&a), hash_pixels(&b), "{at}");
+        }
+        // Two pixels swapped, and one fewer.
+        let mut b = a.clone();
+        b.swap(10, 11);
+        assert_ne!(hash_pixels(&a), hash_pixels(&b));
+        assert_ne!(hash_pixels(&a), hash_pixels(&a[..1000]));
     }
 
     #[test]

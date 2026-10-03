@@ -1,0 +1,37 @@
+// g.svg: SVG drawings on a canvas, from a file or from text.
+
+fn pixel(_ picture: (Int, Int, [Int]), _ x: Int, _ y: Int) -> String {
+    let p = picture.2[y * picture.0 + x]
+    if p % 256 == 0 { "clear" } else { "{p / 16777216},{p / 65536 % 256},{p / 256 % 256}" }
+}
+
+// A 20 × 10 drawing: its left half red, its right half in `currentColor`.
+fn halves() -> String { "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='10'><rect width='10' height='10' fill='#ff0000'/><rect x='10' width='10' height='10' fill='currentColor'/></svg>" }
+
+fn main() {
+    let file = joinPath(tempFolder(), "tessel-canvas-halves.svg")
+    writeFile(path: file, text: halves())
+    let path = joinPath(tempFolder(), "tessel-canvas-svg.png")
+    var drawn: [Bool] = []
+    renderImage(path: path, width: 100, height: 100) { g in
+        // Fit into a 100 × 100 square, it's 100 × 50 in its middle.
+        drawn.append(g.svg(file, x: 0, y: 0, width: 100, height: 100, color: .rgb(0, 0, 255)))
+        drawn.append(g.svg(joinPath(tempFolder(), "tessel-no-such.svg"), x: 0, y: 0, width: 10, height: 10))
+        drawn.append(g.svg(text: "not an svg", x: 0, y: 0, width: 10, height: 10))
+    }
+    print(drawn)
+    if let picture = readImage(path) {
+        print("file: {pixel(picture, 50, 10)} | {pixel(picture, 25, 50)} | {pixel(picture, 75, 50)} | {pixel(picture, 50, 90)}")
+    }
+
+    // From text, turned a quarter clockwise around the middle: red on top.
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.translate(50, 50)
+        g.rotate(pi / 2)
+        g.svg(text: halves(), x: -50, y: -50, width: 100, height: 100, color: .rgb(0, 255, 0), opacity: 0.5)
+    }
+    if let picture = readImage(path) {
+        print("text, turned: {pixel(picture, 50, 25)} | {pixel(picture, 50, 75)} | {pixel(picture, 10, 50)}")
+        print("opacity: {picture.2[25 * 100 + 50] % 256}")
+    }
+}

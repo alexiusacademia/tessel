@@ -1,0 +1,65 @@
+// g.beginLayer(blend:opacity:) and g.endLayer(): layers blended onto what's under them.
+
+fn pixel(_ picture: (Int, Int, [Int]), _ x: Int, _ y: Int) -> String {
+    let p = picture.2[y * picture.0 + x]
+    if p % 256 == 0 { "clear" } else { "{p / 16777216},{p / 65536 % 256},{p / 256 % 256}" }
+}
+
+// What `blend` makes of `top` drawn over `under`, in the middle of a canvas.
+fn blended(_ blend: BlendMode, _ under: Color, _ top: Color) -> String {
+    let path = joinPath(tempFolder(), "tessel-canvas-blend.png")
+    renderImage(path: path, width: 20, height: 20) { g in
+        g.fillRect(x: 0, y: 0, width: 20, height: 20, color: under)
+        g.beginLayer(blend: blend)
+        g.fillRect(x: 0, y: 0, width: 20, height: 20, color: top)
+        g.endLayer()
+    }
+    if let picture = readImage(path) { pixel(picture, 10, 10) } else { "?" }
+}
+
+fn main() {
+    let under = Color.rgb(200, 100, 50)
+    let top = Color.rgb(128, 255, 0)
+    print("normal: {blended(.normal, under, top)}")
+    // 200 × 128 / 255, 100 × 255 / 255, 50 × 0 / 255
+    print("multiply: {blended(.multiply, under, top)}")
+    print("screen: {blended(.screen, under, top)}")
+    print("darken: {blended(.darken, under, top)}")
+    print("lighten: {blended(.lighten, under, top)}")
+    print("difference: {blended(.difference, under, top)}")
+
+    let path = joinPath(tempFolder(), "tessel-canvas-layers.png")
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.fillRect(x: 0, y: 0, width: 100, height: 100, color: .rgb(255, 255, 255))
+        // A layer at half opacity: two squares in it that overlap don't
+        // show through each other.
+        g.beginLayer(opacity: 0.5)
+        g.fillRect(x: 0, y: 0, width: 60, height: 20, color: .rgb(0, 0, 0))
+        g.fillRect(x: 40, y: 0, width: 60, height: 20, color: .rgb(0, 0, 0))
+        g.endLayer()
+        // A clip begun in a layer ends with it.
+        g.beginLayer(blend: .multiply)
+        g.clip(x: 0, y: 30, width: 50, height: 20)
+        g.fillRect(x: 0, y: 30, width: 100, height: 20, color: .rgb(255, 0, 0))
+        g.endLayer()
+        g.fillRect(x: 0, y: 55, width: 100, height: 10, color: .rgb(0, 0, 255))
+        // A layer begun after save ends at restore; layers nest.
+        g.save()
+        g.beginLayer(blend: .multiply)
+        g.fillRect(x: 0, y: 70, width: 100, height: 30, color: .rgb(255, 255, 0))
+        g.beginLayer(blend: .multiply)
+        g.fillRect(x: 50, y: 70, width: 50, height: 30, color: .rgb(0, 255, 255))
+        g.restore()
+        // Nothing to end: does nothing.
+        g.endLayer()
+    }
+    if let picture = readImage(path) {
+        print("one square: {pixel(picture, 20, 10)}")
+        print("where they overlap: {pixel(picture, 50, 10)}")
+        print("multiplied in the clip: {pixel(picture, 20, 40)}")
+        print("outside the clip: {pixel(picture, 80, 40)}")
+        print("after the layer: {pixel(picture, 80, 60)}")
+        print("yellow: {pixel(picture, 20, 85)}")
+        print("yellow times cyan: {pixel(picture, 80, 85)}")
+    }
+}
