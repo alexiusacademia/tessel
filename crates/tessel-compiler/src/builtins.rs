@@ -112,6 +112,28 @@ pub fn structs() -> Vec<StructDef> {
             ],
             methods: Vec::new(),
         },
+        // What `.onKeyEvent` tells its block (the runtime's `KeyC`).
+        StructDef {
+            name: "KeyEvent".into(),
+            span: Span::default(),
+            fields: vec![
+                field("key", Ty::Str),
+                field("text", Ty::Str),
+                field("shift", Ty::Bool),
+                field("alt", Ty::Bool),
+                field("command", Ty::Bool),
+                field("control", Ty::Bool),
+                field("repeated", Ty::Bool),
+            ],
+            methods: Vec::new(),
+        },
+        // Work started with `background`: its methods are in `method_of`.
+        StructDef {
+            name: "BackgroundJob".into(),
+            span: Span::default(),
+            fields: vec![field("id", Ty::Int)],
+            methods: Vec::new(),
+        },
     ]
 }
 
@@ -123,6 +145,10 @@ pub const COMPLETION: Ty = Ty::Struct(1);
 pub const GRAPHICS: Ty = Ty::Struct(2);
 /// The `PointerEvent` struct (see `structs`).
 pub const POINTER_EVENT: Ty = Ty::Struct(3);
+/// The `KeyEvent` struct (see `structs`).
+pub const KEY_EVENT: Ty = Ty::Struct(4);
+/// The `BackgroundJob` struct (see `structs`).
+pub const JOB: Ty = Ty::Struct(5);
 
 /// The built-in enums, by their place in `enums`.
 pub const COLOR: Ty = Ty::Enum(0);
@@ -245,6 +271,7 @@ impl Builtins {
             "onDrag" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "onPointer" => vec![P::unlabeled("action", Ty::func(vec![POINTER_EVENT], Ty::Void))],
             "onKey" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "onKeyEvent" => vec![P::unlabeled("action", Ty::func(vec![KEY_EVENT], Ty::Void))],
             "cursor" => vec![P::unlabeled("style", CURSOR_STYLE)],
             "offset" => vec![P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
             "clipped" => vec![P::unlabeled("isClipped", Ty::Bool).default()],
@@ -608,6 +635,12 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             _ => return None,
         },
         t if *t == GRAPHICS => return graphics_method(name),
+        t if *t == JOB => match name {
+            "progress" => method(vec![P::unlabeled("fraction", Ty::Float), P::new("note", Ty::Str).default()], Ty::Void),
+            "isCancelled" => method(vec![], Ty::Bool),
+            "cancel" => method(vec![], Ty::Void),
+            _ => return None,
+        },
         Ty::Set(t) => {
             let (t, set) = ((**t).clone(), recv.clone());
             match name {
@@ -718,11 +751,12 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
             "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
         ],
+        t if *t == JOB => &["id", "progress", "isCancelled", "cancel"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
-            "tooltip", "onResize",
+            "tooltip", "onResize", "onKeyEvent",
         ],
         _ => &[],
     }
@@ -879,6 +913,10 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Data, "float32") => rt_number("tsl_data_float32"),
         (Ty::Data, "float64") => rt_number("tsl_data_float64"),
         (t, _) if *t == GRAPHICS => return graphics_call(name),
+        // (The receiver goes as its `id`.)
+        (t, "progress") if *t == JOB => rt_d("tsl_job_progress", &[Dflt::Req, Dflt::Str("")]),
+        (t, "isCancelled") if *t == JOB => rt("tsl_job_is_cancelled"),
+        (t, "cancel") if *t == JOB => rt("tsl_job_cancel"),
         _ => return None,
     })
 }

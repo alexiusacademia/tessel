@@ -1,0 +1,47 @@
+// `background` in a program without an app: progress, the job it returns,
+// and cancelling.
+
+struct Report {
+    lines: Int
+    words: Int
+}
+
+fn main() {
+    let text = "one two\nthree four five\nsix"
+    var last = "none"
+    let job = background(work: { job in
+        var words = 0
+        let lines = text.lines()
+        for (i, line) in lines.enumerated() {
+            words += line.words().count
+            job.progress(Float(i + 1) / Float(lines.count), note: "line {i + 1}")
+        }
+        Report(lines: lines.count, words: words)
+    }, progress: { fraction, note in
+        last = "{fraction.formatted(decimals: 2)} ({note})"
+    }) { report in
+        // The latest progress always arrives before the result.
+        print("last progress: {last}")
+        print("{report.lines} lines, {report.words} words")
+        // The old form still works.
+        background(work: { 6 * 7 }) { answer in
+            print("answer {answer}")
+        }
+    }
+    print("job {job.id} started")
+
+    // Cancelled work stops early, and its blocks don't run.
+    let spin = background(work: { job in
+        var n = 0
+        while !job.isCancelled() {
+            n += 1
+        }
+        n
+    }, progress: { fraction, note in
+        print("never")
+    }) { n in
+        print("never either")
+    }
+    spin.cancel()
+    print("cancelled: {spin.isCancelled()}")
+}

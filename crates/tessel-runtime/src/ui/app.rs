@@ -173,6 +173,8 @@ enum Event {
     Closed(u64, String),
     /// `background` work finished: its result (a codec tree, as an address).
     Computed(u64, usize),
+    /// `background` work reported progress (see `JobShared::latest`).
+    JobProgress(u64),
     /// A function to call on the UI thread (its address): see `run_on_ui`.
     Call(usize),
 }
@@ -188,8 +190,9 @@ thread_local! {
     static WAITING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
     /// `onOutput` and `onExit` blocks of running commands, by id.
     static COMMANDS: RefCell<HashMap<u64, (Callback, Callback)>> = RefCell::new(HashMap::new());
-    /// `background` work still running: the blocks that get its results.
-    static COMPUTING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
+    /// `background` work still running: the blocks that get its result and
+    /// its progress.
+    static COMPUTING: RefCell<HashMap<u64, (Callback, Option<Callback>)>> = RefCell::new(HashMap::new());
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -307,25 +310,88 @@ pub extern "C" fn tsl_stop_command(id: i64) {
     }
 }
 
-/// `background(work:) { result in … }`: runs `worker(input)` on another
-/// thread, then `done(result)` on the UI thread. `input` and the result are
-/// codec trees, so the two threads share no values: the worker owns (and
-/// frees) `input`, and `done` owns the result.
+/// `background(work:progress:) { result in … }`: runs `worker(input, id)`
+/// on another thread, then `done(result)` on the UI thread. `input` and the
+/// result are codec trees, so the two threads share no values: the worker
+/// owns (and frees) `input`, and `done` owns the result. Returns the job's
+/// id, for `BackgroundJob`'s methods.
+///
+/// The work reports progress with `tsl_job_progress`; the `progress` block
+/// (`void fn(env, Float, String)`, or null) gets the latest on the UI thread,
+/// at most once per pass of the event loop, and always before `done`. After
+/// `tsl_job_cancel`, neither block runs again.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_background(
-    worker: extern "C" fn(*mut u8) -> *mut u8,
+    worker: extern "C" fn(*mut u8, i64) -> *mut u8,
     input: *mut u8,
     done_f: *const std::ffi::c_void,
     done_env: *mut crate::Header,
-) {
+    progress_f: *const std::ffi::c_void,
+    progress_env: *mut crate::Header,
+) -> i64 {
     let id = next_id();
-    COMPUTING.with(|c| c.borrow_mut().insert(id, Callback::new(done_f, done_env)));
+    let progress = (!progress_f.is_null()).then(|| Callback::new(progress_f, progress_env));
+    COMPUTING.with(|c| c.borrow_mut().insert(id, (Callback::new(done_f, done_env), progress)));
+    JOBS.lock().unwrap().insert(id, JobShared::default());
     let input = input as usize;
     std::thread::spawn(move || {
         crate::stack_guard::thread_init();
-        let result = worker(input as *mut u8);
+        let result = worker(input as *mut u8, id as i64);
         post(Event::Computed(id, result as usize));
     });
+    id as i64
+}
+
+/// What the UI thread and a `background` job's thread share about it.
+#[derive(Default)]
+struct JobShared {
+    cancelled: bool,
+    /// The latest progress the work reported, not yet given to its block.
+    latest: Option<(f64, String)>,
+}
+
+/// Running `background` jobs, by id.
+static JOBS: std::sync::LazyLock<Mutex<HashMap<u64, JobShared>>> = std::sync::LazyLock::new(Default::default);
+
+/// `job.progress(fraction, note:)`: called by the work, on its thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_job_progress(id: i64, fraction: f64, note: *const Str) {
+    let note = unsafe { crate::str_text(note) }.to_string();
+    let mut jobs = JOBS.lock().unwrap();
+    let Some(job) = jobs.get_mut(&(id as u64)) else { return };
+    // One event at a time: until the UI thread takes it, newer progress
+    // just replaces what waits.
+    let first = job.latest.is_none();
+    job.latest = Some((if fraction.is_finite() { fraction } else { 0.0 }, note));
+    drop(jobs);
+    if first {
+        post(Event::JobProgress(id as u64));
+    }
+}
+
+/// `job.isCancelled()`: whether `job.cancel()` was called.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_job_is_cancelled(id: i64) -> u8 {
+    JOBS.lock().unwrap().get(&(id as u64)).is_some_and(|j| j.cancelled) as u8
+}
+
+/// `job.cancel()`: the work sees it with `isCancelled()`, and its blocks
+/// (progress and done) don't run any more. Nothing happens if it's finished.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_job_cancel(id: i64) {
+    if let Some(job) = JOBS.lock().unwrap().get_mut(&(id as u64)) {
+        job.cancelled = true;
+        job.latest = None;
+    }
+}
+
+/// The progress a job reported and its block hasn't had yet (none once
+/// it's cancelled).
+fn take_progress(id: u64) -> Option<(f64, String)> {
+    let mut jobs = JOBS.lock().unwrap();
+    let job = jobs.get_mut(&id)?;
+    let latest = job.latest.take();
+    latest.filter(|_| !job.cancelled)
 }
 
 /// Runs the blocks for finished background work. Returns whether any ran.
@@ -350,9 +416,24 @@ fn deliver_background() -> bool {
                     on_exit.call_with_int(code as i64);
                 }
             }
+            Event::JobProgress(id) => {
+                let cb = COMPUTING.with(|c| c.borrow().get(&id).and_then(|(_, p)| p.clone()));
+                if let (Some(cb), Some((fraction, note))) = (cb, take_progress(id)) {
+                    cb.call_with_float_ptr(fraction, crate::str_new(&note) as *mut u8);
+                }
+            }
             Event::Computed(id, tree) => {
-                if let Some(cb) = COMPUTING.with(|c| c.borrow_mut().remove(&id)) {
-                    cb.call_with(tree as *mut u8);
+                // The last progress first, then the result (unless it was cancelled).
+                let latest = take_progress(id);
+                let cancelled = JOBS.lock().unwrap().remove(&id).is_none_or(|j| j.cancelled);
+                match COMPUTING.with(|c| c.borrow_mut().remove(&id)) {
+                    Some((done, progress)) if !cancelled => {
+                        if let (Some(cb), Some((fraction, note))) = (progress, latest) {
+                            cb.call_with_float_ptr(fraction, crate::str_new(&note) as *mut u8);
+                        }
+                        done.call_with(tree as *mut u8);
+                    }
+                    _ => unsafe { crate::codec::tsl_tree_free(tree as *mut _) },
                 }
             }
             Event::Call(address) => {
@@ -665,7 +746,13 @@ struct Mods {
     shift: bool,
     alt: bool,
     primary: bool,
+    /// The Ctrl key itself (on Windows and Linux it's also `primary`).
+    control: bool,
 }
+
+/// Keys that edit text or move in it, which `App::key` handles.
+const EDIT_KEYS: &[&str] =
+    &["backspace", "delete", "left", "right", "up", "down", "home", "end", "enter", "escape", "tab"];
 
 impl App {
     /// Rebuilds the tree if state may have changed, then lays it out.
@@ -1458,6 +1545,61 @@ impl App {
         true
     }
 
+    /// Runs `.onKeyEvent` with a key pressed while no text is edited: the
+    /// first visible, enabled view with one gets it. Returns whether one did.
+    fn run_on_key_event(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) -> bool {
+        fn find(n: &Node) -> Option<Callback> {
+            if n.mods.hidden || n.layout.style.disabled {
+                return None;
+            }
+            if let Some(cb) = &n.mods.on_key_event {
+                return Some(cb.clone());
+            }
+            n.visible_children().iter().find_map(find)
+        }
+        if name.is_empty() {
+            return false;
+        }
+        let Some(cb) = self.tree.as_ref().and_then(find) else { return false };
+        let mut event = super::KeyC {
+            key: crate::str_new(name),
+            text: crate::str_new(text),
+            shift: mods.shift as u8,
+            alt: mods.alt as u8,
+            command: mods.primary as u8,
+            control: mods.control as u8,
+            repeated: repeated as u8,
+        };
+        cb.call_with(&mut event as *mut super::KeyC as *mut u8);
+        self.dirty = true;
+        true
+    }
+
+    /// A key pressed, by its name (`"a"` for the A key whatever the
+    /// modifiers, `"left"`, `"f5"`, `"space"`…) and the text it types
+    /// (`"A"` with Shift; empty for keys that type nothing).
+    fn press(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) {
+        // Shortcuts first, then `.onKeyEvent` (while no text is edited).
+        if self.ui.editing.is_none() {
+            if mods.primary && self.run_shortcut(name, mods) {
+                return;
+            }
+            if self.run_on_key_event(name, text, mods, repeated) {
+                return;
+            }
+        }
+        if EDIT_KEYS.contains(&name) {
+            self.key(name, mods);
+        } else if mods.primary {
+            self.key(name, mods);
+        } else if !text.is_empty() && !text.chars().any(char::is_control) {
+            self.type_text(text);
+        } else if self.ui.editing.is_none() {
+            // Keys that type nothing (F5, Page Down…) go to `.onKey` by name.
+            self.run_on_key(name);
+        }
+    }
+
     /// The pointer for a view with `.onDrag` under it: by the view's shape,
     /// since a tall thin one is dragged sideways and a wide flat one up and
     /// down.
@@ -1609,20 +1751,33 @@ impl App {
         self.dirty = true;
     }
 
-    /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view has one.
-    fn run_shortcut(&mut self, key: &str) -> bool {
-        fn find(n: &Node, key: &str) -> Option<Callback> {
-            if n.mods.hidden || n.layout.style.disabled {
-                return None;
+    /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view
+    /// has one. A shortcut asking for exactly the Shift and Alt keys held
+    /// wins; otherwise the first whose keys are all held (so `"s"` also runs
+    /// with Shift+Cmd+S, unless there's a `"shift+s"`).
+    fn run_shortcut(&mut self, key: &str, mods: Mods) -> bool {
+        fn find(n: &Node, key: &str, mods: Mods, exact: &mut Option<Callback>, loose: &mut Option<Callback>) {
+            if n.mods.hidden || n.layout.style.disabled || exact.is_some() {
+                return;
             }
-            if let Some((k, cb)) = &n.mods.shortcut {
-                if k == key {
-                    return Some(cb.clone());
+            for s in n.mods.shortcuts.iter().filter(|s| s.key == key) {
+                if s.shift == mods.shift && s.alt == mods.alt {
+                    *exact = Some(s.action.clone());
+                    return;
+                }
+                if loose.is_none() && (!s.shift || mods.shift) && (!s.alt || mods.alt) {
+                    *loose = Some(s.action.clone());
                 }
             }
-            n.visible_children().iter().find_map(|c| find(c, key))
+            for c in n.visible_children() {
+                find(c, key, mods, exact, loose);
+            }
         }
-        let Some(cb) = self.tree.as_ref().and_then(|t| find(t, key)) else { return false };
+        let (mut exact, mut loose) = (None, None);
+        if let Some(t) = &self.tree {
+            find(t, key, mods, &mut exact, &mut loose);
+        }
+        let Some(cb) = exact.or(loose) else { return false };
         cb.call();
         self.dirty = true;
         true
@@ -1635,7 +1790,7 @@ impl App {
         }
         // Text editing keeps Cmd+A/C/X/V/Z while a field is being edited.
         let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v" | "z");
-        if mods.primary && !editing_key && self.run_shortcut(name) {
+        if mods.primary && !editing_key && self.run_shortcut(name, mods) {
             return;
         }
         if self.ui.editing.is_none() && !mods.primary && self.run_on_key(name) {
@@ -2211,6 +2366,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                         "shift" => mods.shift = true,
                         "alt" => mods.alt = true,
                         "cmd" | "ctrl" => mods.primary = true,
+                        "control" => mods.control = true,
                         _ => {}
                     }
                 }
@@ -2253,17 +2409,27 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "key" => {
                 let mut mods = Mods::default();
+                let mut repeated = false;
                 let mut name = rest;
-                while let Some((m, tail)) = name.split_once('+') {
+                while let Some((m, tail)) = name.split_once('+').filter(|(_, tail)| !tail.is_empty()) {
                     match m {
                         "shift" => mods.shift = true,
                         "alt" => mods.alt = true,
                         "cmd" | "ctrl" => mods.primary = true,
+                        "control" => mods.control = true,
+                        "repeat" => repeated = true,
                         _ => {}
                     }
                     name = tail;
                 }
-                app.key(name, mods);
+                // What the key types: a character (in capitals with Shift), or a space.
+                let text = match name {
+                    "space" => " ".to_string(),
+                    _ if name.chars().count() == 1 && mods.shift => name.to_uppercase(),
+                    _ if name.chars().count() == 1 => name.to_string(),
+                    _ => String::new(),
+                };
+                app.press(name, &text, mods, repeated);
             }
             "drag" => {
                 let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
@@ -2633,7 +2799,7 @@ impl ApplicationHandler for WindowApp {
             WindowEvent::ModifiersChanged(m) => {
                 let m = m.state();
                 let primary = if cfg!(target_os = "macos") { m.super_key() } else { m.control_key() };
-                self.mods = Mods { shift: m.shift_key(), alt: m.alt_key(), primary };
+                self.mods = Mods { shift: m.shift_key(), alt: m.alt_key(), primary, control: m.control_key() };
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = self.scale();
@@ -2816,31 +2982,10 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                 }
             }
-            WindowEvent::KeyboardInput { event: KeyEvent { state: ElementState::Pressed, logical_key, text, .. }, .. } => {
-                let mods = self.mods;
-                let named = match &logical_key {
-                    Key::Named(NamedKey::Backspace) => Some("backspace"),
-                    Key::Named(NamedKey::Delete) => Some("delete"),
-                    Key::Named(NamedKey::ArrowLeft) => Some("left"),
-                    Key::Named(NamedKey::ArrowRight) => Some("right"),
-                    Key::Named(NamedKey::Home) => Some("home"),
-                    Key::Named(NamedKey::End) => Some("end"),
-                    Key::Named(NamedKey::Enter) => Some("enter"),
-                    Key::Named(NamedKey::Escape) => Some("escape"),
-                    Key::Named(NamedKey::ArrowUp) => Some("up"),
-                    Key::Named(NamedKey::ArrowDown) => Some("down"),
-                    Key::Named(NamedKey::Tab) => Some("tab"),
-                    _ => None,
-                };
-                match (named, &logical_key) {
-                    (Some(name), _) => self.app.key(name, mods),
-                    (None, Key::Character(c)) if mods.primary => self.app.key(&c.to_lowercase(), mods),
-                    _ => {
-                        if let Some(t) = text.filter(|t| !t.chars().any(char::is_control)) {
-                            self.app.type_text(&t);
-                        }
-                    }
-                }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                let Some(name) = key_name(&event) else { return };
+                let text = event.text.as_deref().unwrap_or("").to_string();
+                self.app.press(&name, &text, self.mods, event.repeat);
                 self.request_redraw();
             }
             _ => {}
@@ -2879,6 +3024,59 @@ impl ApplicationHandler for WindowApp {
             }
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
+    }
+}
+
+/// A key's name, as `.onKeyEvent` and the script's `key` command name it:
+/// the key without the modifiers (`"a"` for Shift+A, `"1"` for Shift+1),
+/// or a special key's name. `None` for keys that are only modifiers.
+fn key_name(event: &KeyEvent) -> Option<String> {
+    let named = |k: &NamedKey| -> Option<String> {
+        Some(
+            match k {
+                NamedKey::Backspace => "backspace",
+                NamedKey::Delete => "delete",
+                NamedKey::ArrowLeft => "left",
+                NamedKey::ArrowRight => "right",
+                NamedKey::ArrowUp => "up",
+                NamedKey::ArrowDown => "down",
+                NamedKey::Home => "home",
+                NamedKey::End => "end",
+                NamedKey::PageUp => "pageup",
+                NamedKey::PageDown => "pagedown",
+                NamedKey::Enter => "enter",
+                NamedKey::Escape => "escape",
+                NamedKey::Tab => "tab",
+                NamedKey::Space => "space",
+                NamedKey::Insert => "insert",
+                NamedKey::F1 => "f1",
+                NamedKey::F2 => "f2",
+                NamedKey::F3 => "f3",
+                NamedKey::F4 => "f4",
+                NamedKey::F5 => "f5",
+                NamedKey::F6 => "f6",
+                NamedKey::F7 => "f7",
+                NamedKey::F8 => "f8",
+                NamedKey::F9 => "f9",
+                NamedKey::F10 => "f10",
+                NamedKey::F11 => "f11",
+                NamedKey::F12 => "f12",
+                _ => return None,
+            }
+            .to_string(),
+        )
+    };
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    let plain = {
+        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+        event.key_without_modifiers()
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    let plain = event.logical_key.clone();
+    match (&event.logical_key, &plain) {
+        (Key::Named(k), _) => named(k),
+        (_, Key::Character(c)) | (Key::Character(c), _) => Some(c.to_lowercase()),
+        _ => None,
     }
 }
 

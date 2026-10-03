@@ -856,6 +856,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_key", &[], action);
             }
+            "onKeyEvent" => {
+                // The runtime calls `adapter(box, event)`; the box holds the block.
+                let ft = Ty::func(vec![builtins::KEY_EVENT], Ty::Void);
+                let action = self.expr_as(a(0).unwrap(), &ft).unwrap();
+                let bx = self.box_closure(&ft, action);
+                let adapter = self.key_event_adapter();
+                self.call_rt("tsl_ui_on_key_event", &[adapter.into(), bx.into()]);
+            }
             "cursor" => {
                 let style = int(self, a(0).unwrap());
                 self.call_rt("tsl_ui_cursor", &[style]);

@@ -18,8 +18,20 @@ view Calc {
             background(work: { helper() }) { r in total = r } // error: `helper` is a function
             background(work: { print("hi") }) { r in } // error: must end with the value
             background(work: { slow(n: 1) }) { r in total = r.count } // error: `Int` has no
-            background(work: { n in slow(n: n) }) { r in } // error: takes no values
+            background(work: { n in slow(n: n) }) { r in } // error: expected `Int`, found `BackgroundJob`
+            background(work: { a, b in slow(n: 1) }) { r in } // error: takes at most one value
             background(work: { slow(n: 1) }) // error: write it as
+            let job = background(work: { job in
+                job.progress(0.5, note: 1) // error: expected `String`
+                job.report(0.5) // error: `BackgroundJob` has no method `report`
+                if job.isCancelled { // error: `isCancelled` is a method; call it with `isCancelled()`
+                    return 0
+                }
+                1
+            }, progress: { f in total = 1 }) { r in total = r } // error: should take 2 parameter
+            job.cancel()
+            background(work: { 1 }, onProgress: { f, n in }) { r in } // error: `background` has no `onProgress:`
+            let t: Int = background(work: { 1 }) { r in } // error: expected `Int`, found `BackgroundJob`
         }
     }
 }

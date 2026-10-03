@@ -72,6 +72,18 @@ impl Callback {
         f(self.env, a, b);
     }
 
+    /// Runs a closure taking a `Float` and a pointer: `void fn(env, f64, ptr)`.
+    pub fn call_with_float_ptr(&self, a: f64, b: *mut u8) {
+        let f: extern "C" fn(*mut Header, f64, *mut u8) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, b);
+    }
+
+    /// Runs a closure taking a pointer and two `Float`s: `void fn(env, ptr, f64, f64)`.
+    pub fn call_with_ptr_floats(&self, a: *mut u8, x: f64, y: f64) {
+        let f: extern "C" fn(*mut Header, *mut u8, f64, f64) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, x, y);
+    }
+
     /// Runs a locator: `ptr fn(env)`, giving a pointer to a value's storage.
     pub fn locate(&self) -> *mut u8 {
         let f: extern "C" fn(*mut Header) -> *mut u8 = unsafe { std::mem::transmute(self.f) };
@@ -220,8 +232,9 @@ pub struct Mods {
     /// held down on the view, with how far it moved since the last call.
     pub on_drag: Option<Callback>,
     pub tag: Option<Value>,
-    /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows).
-    pub shortcut: Option<(String, Callback)>,
+    /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows). A view
+    /// can have several; each adds one.
+    pub shortcuts: Vec<Shortcut>,
     /// `.onAppear { … }`: runs when the view first appears.
     pub on_appear: Option<Callback>,
     /// `.onSubmit { … }`: runs when Enter is pressed in a text field.
@@ -240,6 +253,9 @@ pub struct Mods {
     pub on_pointer: Option<Callback>,
     /// `.onKey { key in … }`: called with keys pressed while no text is edited.
     pub on_key: Option<Callback>,
+    /// `.onKeyEvent { event in … }`: like `on_key`, with the modifier keys
+    /// held (see `KeyC`).
+    pub on_key_event: Option<Callback>,
     /// `.cursor(…)`: the pointer shown over the view (a `CursorStyle` tag).
     pub cursor: Option<u8>,
     /// `.offset(x:y:)`: the view (and what's in it) is shown this far from
@@ -259,6 +275,35 @@ pub struct Mods {
     pub source: Option<u32>,
 }
 
+/// A `.shortcut(…)`: the key (lowercase), and whether Shift or Alt must be
+/// held as well (`"shift+s"`). Cmd (Ctrl on Windows) always is.
+pub struct Shortcut {
+    pub key: String,
+    pub shift: bool,
+    pub alt: bool,
+    pub action: Callback,
+}
+
+impl Shortcut {
+    /// Reads a shortcut's key: `"s"`, `"shift+s"`, `"alt+shift+left"`.
+    pub fn parse(text: &str, action: Callback) -> Shortcut {
+        let mut key = text.to_lowercase();
+        let (mut shift, mut alt) = (false, false);
+        loop {
+            if let Some(rest) = key.strip_prefix("shift+").filter(|r| !r.is_empty()) {
+                shift = true;
+                key = rest.to_string();
+            } else if let Some(rest) = key.strip_prefix("alt+").filter(|r| !r.is_empty()) {
+                alt = true;
+                key = rest.to_string();
+            } else {
+                break;
+            }
+        }
+        Shortcut { key, shift, alt, action }
+    }
+}
+
 /// A `PointerEvent`, as the adapter the compiler generates reads it.
 #[repr(C)]
 pub struct PointerC {
@@ -274,6 +319,19 @@ pub struct PointerC {
     pub shift: u8,
     pub alt: u8,
     pub command: u8,
+}
+
+/// A `KeyEvent`, as the adapter the compiler generates reads it. The
+/// strings are the callee's.
+#[repr(C)]
+pub struct KeyC {
+    pub key: *mut Str,
+    pub text: *mut Str,
+    pub shift: u8,
+    pub alt: u8,
+    pub command: u8,
+    pub control: u8,
+    pub repeated: u8,
 }
 
 pub struct Node {
@@ -856,6 +914,13 @@ pub unsafe extern "C" fn tsl_ui_on_key(f: *const c_void, env: *mut Header) {
     modify(|m| m.on_key = Some(cb));
 }
 
+/// `.onKeyEvent { event in … }`: `f` is called as `f(env, &KeyC)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_key_event(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_key_event = Some(cb));
+}
+
 /// `.offset(x:y:)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_offset(x: f64, y: f64) {
@@ -897,9 +962,9 @@ pub extern "C" fn tsl_ui_cursor(style: i32) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env: *mut Header) {
-    let key = unsafe { text_of(key) }.to_lowercase();
-    let cb = Callback::new(f, env);
-    modify(|m| m.shortcut = Some((key, cb)));
+    let key = unsafe { text_of(key) };
+    let shortcut = Shortcut::parse(&key, Callback::new(f, env));
+    modify(|m| m.shortcuts.push(shortcut));
 }
 
 #[unsafe(no_mangle)]

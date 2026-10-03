@@ -59,5 +59,8 @@ app Shortcuts {
         Button("C") {}.shortcut("F5") {} // error: `F5` isn't a key a shortcut can use
         Button("D") {}.shortcut("cmd+k") {} // error: `cmd+k` isn't a key a shortcut can use
         Button("E") {}.shortcut("S") {} // error: `S` isn't a key a shortcut can use
+        Button("F") {}.shortcut("shift+s") {}.shortcut("alt+shift+left") {}
+        Button("G") {}.shortcut("shift+S") {} // error: `shift+S` isn't a key a shortcut can use
+        Button("H") {}.shortcut("shift+cmd+z") {} // error: `shift+cmd+z` isn't a key a shortcut can use
     }
 }

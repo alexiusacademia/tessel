@@ -1,0 +1,9 @@
+click "Count"
+tree
+wait 0
+tree
+click "Spin"
+tree
+click "Cancel"
+wait 0
+tree
