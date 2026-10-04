@@ -1,0 +1,10 @@
+// What scripted keys type (issue #6): Shift shifts digits and symbols as a
+// US keyboard does, and `type` with no field edited presses each key.
+
+app Probe(width: 300, height: 200) {
+    state log = ""
+    VStack {
+        Text("log: {log}")
+    }
+    .onKeyEvent { e in log += "[{e.key} {e.text} {e.shift}] " }
+}

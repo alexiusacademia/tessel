@@ -7,3 +7,9 @@ tree
 answer cancel
 click "Open"
 tree
+answer "report.ods"
+click "Export"
+tree
+answer "report"
+click "Export"
+tree

@@ -1,0 +1,16 @@
+// Menu bar shortcuts come before `.onKeyEvent` (issue #2); keys no menu
+// item takes still reach it.
+
+app Probe(width: 300, height: 200) {
+    state log = ""
+    VStack {
+        Text("log: {log}")
+    }
+    .menuBar {
+        Menu("Format") {
+            MenuItem("Bold", shortcut: "cmd+b") { log += "bold " }
+            MenuItem("Wrap", shortcut: "cmd+shift+w") { log += "wrap " }
+        }
+    }
+    .onKeyEvent { e in log += "key:{e.key} " }
+}

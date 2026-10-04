@@ -3,16 +3,33 @@ Root
     VStack
       Text "saved 0.7854"
       Button "Save"
+      Button "Export"
       Button "Open"
 Root
   View
     VStack
       Text "opened: area=0.7854"
       Button "Save"
+      Button "Export"
       Button "Open"
 Root
   View
     VStack
       Text "open cancelled"
       Button "Save"
+      Button "Export"
+      Button "Open"
+Root
+  View
+    VStack
+      Text "report.ods"
+      Button "Save"
+      Button "Export"
+      Button "Open"
+Root
+  View
+    VStack
+      Text "report.xlsx"
+      Button "Save"
+      Button "Export"
       Button "Open"

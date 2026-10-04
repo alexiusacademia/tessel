@@ -557,13 +557,15 @@ pub unsafe extern "C" fn tsl_file_dialog(
         };
         path.map(|p| p.to_string_lossy().into_owned())
     };
-    // Saving: add the first file type's extension if it's missing (for
-    // scripted answers too, so tests behave like the real dialog).
+    // Saving: a name that doesn't end in one of the types gets the first
+    // type's extension (for scripted answers too, so tests behave like the
+    // real dialog). One that ends in any of them is kept: that's the type
+    // the user chose.
     let chosen = chosen.map(|mut p| {
-        if let (true, Some(ext)) = (save != 0, types.first()) {
-            if !p.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase())) {
-                p = format!("{p}.{ext}");
-            }
+        let lower = p.to_lowercase();
+        let typed = types.iter().any(|t| lower.ends_with(&format!(".{}", t.to_lowercase())));
+        if let (true, false, Some(ext)) = (save != 0, typed, types.first()) {
+            p = format!("{p}.{ext}");
         }
         p
     });
@@ -2682,6 +2684,11 @@ impl App {
             }
             return;
         }
+        // An open menu, and the menu bar's shortcuts, come before the views.
+        if self.menu.is_some() || self.bar_takes(name, mods) {
+            self.key(name, mods);
+            return;
+        }
         // Shortcuts first, then the control the keyboard is on, then
         // `.onKeyEvent` (while no text is edited).
         if self.ui.editing.is_none() {
@@ -3076,6 +3083,18 @@ impl App {
         cb.call();
         self.dirty = true;
         true
+    }
+
+    /// Whether a menu bar item runs on this key (`key` runs it): the app's
+    /// own items, and the standard ones that aren't about text (Copy and
+    /// the like reach the views, which do them).
+    fn bar_takes(&self, name: &str, mods: Mods) -> bool {
+        let editing = self.ui.editing.is_some() && mods.primary && !mods.alt && matches!(name, "a" | "c" | "x" | "v" | "z");
+        match menu::find_shortcut(&self.bar, name, mods.primary, mods.shift, mods.alt) {
+            Some(Entry::Item { command: Command::User(_), .. }) => !editing,
+            Some(Entry::Item { command: Command::Std(Std::Quit | Std::Hide | Std::HideOthers | Std::Minimize | Std::CloseWindow), .. }) => true,
+            _ => false,
+        }
     }
 
     /// A key press, by name (see the script commands): an open menu takes
@@ -3916,7 +3935,18 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             },
             "type" => {
                 let text = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')).unwrap_or(rest);
-                app.type_text(text);
+                if app.ui.editing.is_some() {
+                    app.type_text(text);
+                } else {
+                    // Nothing is edited: each character is a key press, as
+                    // typing it would be (for `.onKeyEvent` and `.onKey`).
+                    for c in text.chars() {
+                        let (name, shift) = unshifted(c);
+                        let mods = Mods { shift, ..Mods::default() };
+                        app.press(&name, &c.to_string(), mods, false);
+                        app.update();
+                    }
+                }
             }
             "key" => {
                 let mut mods = Mods::default();
@@ -3933,10 +3963,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                     name = tail;
                 }
-                // What the key types: a character (in capitals with Shift), or a space.
+                // What the key types: a character (shifted with Shift, as on
+                // a US keyboard), or a space.
                 let text = match name {
                     "space" => " ".to_string(),
-                    _ if name.chars().count() == 1 && mods.shift => name.to_uppercase(),
+                    _ if name.chars().count() == 1 && mods.shift => shifted(name).to_string(),
                     _ if name.chars().count() == 1 => name.to_string(),
                     _ => String::new(),
                 };
@@ -4953,6 +4984,37 @@ fn key_name(event: &KeyEvent) -> Option<String> {
         (_, Key::Character(c)) | (Key::Character(c), _) => Some(c.to_lowercase()),
         _ => None,
     }
+}
+
+/// The keys of a US keyboard and what they type with Shift (for the `key`
+/// and `type` script commands).
+const SHIFTED: &[(char, char)] = &[
+    ('1', '!'), ('2', '@'), ('3', '#'), ('4', '$'), ('5', '%'), ('6', '^'), ('7', '&'), ('8', '*'), ('9', '('),
+    ('0', ')'), ('-', '_'), ('=', '+'), ('[', '{'), (']', '}'), ('\\', '|'), (';', ':'), ('\'', '"'), (',', '<'),
+    ('.', '>'), ('/', '?'), ('`', '~'),
+];
+
+/// What a key (one character) types with Shift held.
+fn shifted(key: &str) -> String {
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => SHIFTED.iter().find(|(k, _)| *k == c).map_or(c.to_uppercase().to_string(), |(_, s)| s.to_string()),
+        _ => key.to_string(),
+    }
+}
+
+/// The key that types `c`, and whether it takes Shift.
+fn unshifted(c: char) -> (String, bool) {
+    if c == ' ' {
+        return ("space".into(), false);
+    }
+    if let Some((k, _)) = SHIFTED.iter().find(|(_, s)| *s == c) {
+        return (k.to_string(), true);
+    }
+    if c.is_uppercase() {
+        return (c.to_lowercase().to_string(), true);
+    }
+    (c.to_string(), false)
 }
 
 /// The locator of an editable view's text.

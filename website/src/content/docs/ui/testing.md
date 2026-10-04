@@ -144,7 +144,10 @@ its middle without clicking, so a `snapshot` afterwards shows its
 `type` inserts text at the cursor of the field being edited. Everything after
 `type ` is typed; put it in quotes to keep leading or trailing spaces. Because
 `;` separates commands, typed text can't contain one. Typing into a code editor
-gets the same automatic indentation as real typing does.
+gets the same automatic indentation as real typing does. While no field is
+being edited, each character is a key press instead, as it would be on a
+keyboard (with Shift for capitals and for symbols like `%`), so it reaches
+`.onKeyEvent` and `.onKey`.
 
 `key` presses one key: `backspace`, `delete`, `left`, `right`, `up`, `down`,
 `home`, `end`, `pageup`, `pagedown`, `enter`, `tab`, `escape`, `space`, `f1`
@@ -158,6 +161,7 @@ key cmd+a            select all
 key cmd+shift+z      redo
 key cmd+s            run a .shortcut("s")
 key shift+a          type "A" (or an .onKeyEvent gets "a" with shift)
+key shift+5          type "%", as on a US keyboard (an .onKeyEvent gets "5")
 key repeat+down      a key held down (repeated is true)
 ```
 
@@ -254,8 +258,8 @@ that's showing is printed after the tree: `Tooltip "Delete the selected rows"`
 On a view with `.onPointer`, `click`, `drag` and `hover` send it the events a
 real mouse would: a press and a release, a press, a move and a release, or a
 move. `key x` (or `type x`) while no field is being edited goes to
-[`.onKey`](/reference/modifiers/#onkey); `key` also goes to
-[`.onKeyEvent`](/reference/modifiers/#onkeyevent).
+[`.onKeyEvent`](/reference/modifiers/#onkeyevent) and
+[`.onKey`](/reference/modifiers/#onkey).
 
 `press` on a view with `.draggable`, then `move`, holds it over what's
 there (a `tree` or `snapshot` shows the drag on its way), and `release`

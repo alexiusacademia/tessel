@@ -1,0 +1,5 @@
+MenuBar (native) "Probe" "Format" "Edit" "Window"
+Root
+  View
+    VStack
+      Text "log: bold wrap key:k key:x "

@@ -15,6 +15,11 @@ app Dialogs {
                 status = "save cancelled"
             }
         }
+        // Several types: a name ending in any of them keeps it (issue #3);
+        // one ending in none gets the first.
+        Button("Export") {
+            status = saveFile(title: "Export", name: "Untitled.xlsx", types: ["xlsx", "ods", "csv"]) ?? "export cancelled"
+        }
         Button("Open") {
             if let path = openFile(title: "Open a shape", types: ["och"]) {
                 status = "opened: {readFile(path) ?? "?"}"
