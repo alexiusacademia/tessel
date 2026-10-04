@@ -1,0 +1,33 @@
+// Changing a Data in place (issue #1): appended bytes stay right as it
+// grows. (Also run against the released package, whose optimized runtime
+// is where this broke: see the release workflow's smoke test.)
+
+fn main() {
+    var d = Data()
+    for i in 0..20 {
+        d.append(byte: i)
+    }
+    print(d.bytes)
+
+    var h = Data()
+    h += Data(bytes: [20, 0])
+    h += Data(bytes: [0, 8])
+    h += Data(bytes: [8, 0])
+    h += Data(bytes: [0, 0])
+    print(h.bytes)
+    h += Data(bytes: [33, 0])
+    print(h.bytes)
+
+    var a = Data()
+    a.append(Data(bytes: [1, 2, 3, 4, 5]))
+    a.append(Data(bytes: [6, 7, 8, 9, 10]))
+    a.append(byte: 11)
+    print(a.bytes)
+
+    // A Data made from text, then added to.
+    var t = Data(text: "PK")
+    t.append(byte: 3)
+    t.append(byte: 4)
+    t += Data(bytes: [20, 0, 0, 8, 8, 0])
+    print(t.bytes)
+}

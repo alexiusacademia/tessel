@@ -284,6 +284,9 @@ jobs:
           run "$t" run tests/run/hello.tsl
           # Math the C library does, including calls LLVM rewrites (pow(10, x) is __exp10 on macOS).
           [[ "$(run "$t" run tests/run/math_calls.tsl | tr -d '\r')" == "$(tr -d '\r' < tests/run/math_calls.out)" ]]
+          # Data changed in place, with the optimized runtime (issue #1: it
+          # broke only there, so the tests, which use a debug build, missed it).
+          [[ "$(run "$t" run tests/run/data_append.tsl | tr -d '\r')" == "$(tr -d '\r' < tests/run/data_append.out)" ]]
           # The REPL runs code inside `tessel` (the signed one, on macOS).
           [[ "$(echo '20 + 22' | run "$t" repl | tr -d '\r')" == "42" ]]
           run "$t" build examples/todos -o dist/smoke/todos
