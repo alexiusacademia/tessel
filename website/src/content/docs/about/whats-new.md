@@ -7,6 +7,22 @@ What each release of Tessel brought, newest first. To get the latest, run
 `tessel update` (or take the update the IDE offers). See
 [Installation](/start/installation/) if you don't have Tessel yet.
 
+## 0.1.33
+
+*October 4, 2026*
+
+- **Much smaller apps on Windows.** Apps draw, lay out text and read
+  pictures with what comes with Windows (Direct2D, DirectWrite and WIC), as
+  they do on macOS: a one-`Text` app is about 1 MB instead of 7.5 MB. See
+  [How big an app is](/start/cli/#how-big-an-app-is).
+- **Blend modes on Windows:** layers drawn with
+  `g.beginLayer(blend:)` blend as they do on macOS.
+- **A project chooses its version of Tessel.** `tessel pin` writes the
+  version into the project's `tessel.toml`, and from then on Tessel's
+  commands, editors and the IDE use that version for the project,
+  installing it the first time. See [`tessel pin`](/start/cli/#tessel-pin).
+- **Fixed on Windows:** appending many bytes to a `Data` could damage it.
+
 ## 0.1.32
 
 *October 4, 2026*
