@@ -40,6 +40,9 @@ pub(crate) mod win;
 pub(crate) use win as backend;
 #[cfg(all(feature = "native", any(target_os = "macos", windows)))]
 mod svg_list;
+// Writing PDFs where the system has nothing to write them with (Windows).
+#[cfg(any(all(feature = "native", windows), test))]
+mod pdf;
 mod theme;
 
 use std::cell::RefCell;

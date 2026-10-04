@@ -31,7 +31,7 @@ use super::Rgba;
 pub use super::svg_list::svg_scene;
 
 /// A decoded picture, ready to draw: WIC's, in premultiplied BGRA.
-pub struct ImageData(IWICBitmapSource);
+pub struct ImageData(pub(crate) IWICBitmapSource);
 
 /// A parsed SVG, ready to draw.
 pub type SvgScene = DrawList;
@@ -550,7 +550,7 @@ pub fn image_size(path: &str) -> Option<(u32, u32)> {
 }
 
 /// Premultiplied BGRA rows to plain RGBA.
-fn to_rgba(bgra: &mut [u8]) {
+pub(crate) fn to_rgba(bgra: &mut [u8]) {
     for p in bgra.chunks_exact_mut(4) {
         let (b, g, r, a) = (p[0] as u32, p[1] as u32, p[2] as u32, p[3] as u32);
         let un = |c: u32| if a > 0 && a < 255 { ((c * 255 + a / 2) / a).min(255) } else { c };
@@ -723,4 +723,10 @@ impl Offscreen {
         };
         render().unwrap_or_default()
     }
+}
+
+/// Writes pages as a PDF (Windows has no PDF writer of its own: see
+/// `ui::pdf`). Whether it was written.
+pub fn write_pdf(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList]) -> bool {
+    super::pdf::write(path, title, width, height, pages, &text::PdfSource::default())
 }

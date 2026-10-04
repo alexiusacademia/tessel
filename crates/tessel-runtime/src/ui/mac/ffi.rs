@@ -152,6 +152,13 @@ unsafe extern "C" {
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
+    // PDF documents (`writePDF`).
+    pub static kCGPDFContextTitle: CFStringRef;
+    pub static kCGPDFContextCreator: CFStringRef;
+    pub fn CGPDFContextCreateWithURL(url: CFURLRef, media_box: *const CGRect, info: CFDictionaryRef) -> CGContextRef;
+    pub fn CGContextBeginPage(c: CGContextRef, media_box: *const CGRect);
+    pub fn CGContextEndPage(c: CGContextRef);
+    pub fn CGPDFContextClose(c: CGContextRef);
     pub fn CGColorSpaceCreateDeviceRGB() -> CGColorSpaceRef;
     pub fn CGColorSpaceRelease(space: CGColorSpaceRef);
     pub fn CGBitmapContextCreate(

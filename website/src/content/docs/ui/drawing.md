@@ -442,6 +442,47 @@ fn main() {
 `scale: 2` makes the picture 400 × 160 pixels: two for each point, as sharp
 as a Retina screen shows it.
 
+## Making a PDF
+
+[`writePDF`](/reference/stdlib/#writepdf) runs a drawing block the same way
+and saves what it draws as a PDF document, for printing or sending. Each
+`g.newPage()` starts another page, so a document can have as many pages as
+its content needs:
+
+```tessel
+struct Item {
+    name: String
+    price: Float
+}
+
+fn main() {
+    let items = [Item(name: "Survey, 3 days", price: 1200), Item(name: "Report", price: 450)]
+    let saved = writePDF(path: "invoice.pdf", title: "Invoice 42") { g in
+        g.text("Invoice 42", x: 50, y: 50, size: 24, weight: .bold)
+        var y = 100.0
+        for item in items {
+            // Room for one more line? If not, the next page.
+            if y > g.height - 50 {
+                g.newPage()
+                y = 50
+            }
+            g.text(item.name, x: 50, y: y)
+            g.text(item.price.formatted(decimals: 2), x: g.width - 50, y: y, align: .topTrailing)
+            y += 20
+        }
+        g.line(50, y + 4, g.width - 50, y + 4, color: .gray)
+    }
+    print(saved)
+}
+```
+
+Everything a `Canvas` can draw goes into a PDF: shapes and lines stay sharp
+at any zoom, text stays text (it can be selected and searched, and its fonts
+are in the file), and pictures keep their pixels. Pages are A4 (595 × 842
+points; a point is 1/72 inch) unless `width:` and `height:` say otherwise;
+US Letter is 612 × 792. `g.textWidth` tells how wide a text will be, for
+lining up columns or wrapping long text yourself.
+
 ## Testing
 
 In a [headless run](/ui/testing/), `tree` and `dump` say what each canvas

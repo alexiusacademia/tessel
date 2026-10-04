@@ -5792,6 +5792,35 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(path, &Ty::Str);
                 Some(self.truthy(saved).into())
             }
+            "writePDF" => {
+                let path = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+                let title = match info.args[1] {
+                    Some(r) => self.expr_as(arg(r), &Ty::Str).unwrap(),
+                    None => self.str_lit("").into(),
+                };
+                // A4 when no size is given: 210 × 297 mm, in points.
+                let mut size = |i: usize, default: f64| match info.args[i] {
+                    Some(r) => self.expr_as(arg(r), &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_float(default).into(),
+                };
+                let width = size(2, 595.28);
+                let height = size(3, 841.89);
+                let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+                let draw = self.expr_as(arg(info.args[4].unwrap()), &ft).unwrap();
+                let bx = self.box_closure(&ft, draw);
+                let adapter = self.graphics_adapter();
+                let (p, f64t) = (self.ptr_ty(), self.ctx.f64_type());
+                let f = self.declare_rt(
+                    "tsl_write_pdf",
+                    &[p.into(), p.into(), f64t.into(), f64t.into(), p.into(), p.into()],
+                    Some(self.i8().into()),
+                );
+                let args = [path.into(), title.into(), width.into(), height.into(), adapter.into(), bx.into()];
+                let saved = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
+                self.release(path, &Ty::Str);
+                self.release(title, &Ty::Str);
+                Some(self.truthy(saved).into())
+            }
             "after" => {
                 let secs = self.expr_as(arg(info.args[0].unwrap()), &Ty::Float).unwrap();
                 let action = self.expr_as(arg(info.args[1].unwrap()), &Ty::func(vec![], Ty::Void)).unwrap();

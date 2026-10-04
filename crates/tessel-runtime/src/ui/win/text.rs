@@ -2,15 +2,19 @@
 //! a monospaced font, shaped and broken into lines by Windows, and drawn by
 //! Direct2D (see `win::play`).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::rc::Rc;
 
-use windows::core::{Interface, PCWSTR};
+use windows::core::{implement, Interface, PCWSTR};
 use windows::Win32::Graphics::Direct2D::*;
 use windows::Win32::Graphics::DirectWrite::*;
 use windows_numerics::Vector2;
 
 use super::factories;
+use crate::ui::image::Picture;
+use crate::ui::pdf;
 use crate::ui::text::{Line, TextLayout, CODE_LINE};
 use crate::ui::theme::{self, theme};
 use crate::ui::Rgba;
@@ -361,5 +365,213 @@ pub fn draw(
             }
         }
         paint(tint, Vector2 { X: 0.0, Y: 0.0 }, brush);
+    }
+}
+
+// ===== PDFs =====
+
+/// What `ui::pdf` asks of DirectWrite and WIC: the glyphs a layout is drawn
+/// with, the font files they're in, and pictures' pixels.
+#[derive(Default)]
+pub struct PdfSource {
+    /// Font files read so far, by path and index in the file.
+    fonts: Rc<RefCell<HashMap<String, Rc<pdf::FontFile>>>>,
+}
+
+impl pdf::Source for PdfSource {
+    fn glyphs(&self, layout: &TextLayout) -> Vec<pdf::PlacedGlyph> {
+        let Some(l) = &layout.shaped.layout else { return Vec::new() };
+        let out = Rc::new(RefCell::new(Vec::new()));
+        let collector = GlyphCollector {
+            out: out.clone(),
+            fonts: self.fonts.clone(),
+            color: layout.shaped.color,
+            colors: layout.shaped.colors.clone(),
+        };
+        let renderer: IDWriteTextRenderer = collector.into();
+        unsafe {
+            let _ = l.Draw(None, &renderer, 0.0, 0.0);
+        }
+        out.take()
+    }
+
+    fn pixels(&self, picture: &Picture) -> Option<(u32, u32, Vec<u8>)> {
+        let source = &picture.image.0;
+        let (mut w, mut h) = (0, 0);
+        unsafe {
+            source.GetSize(&mut w, &mut h).ok()?;
+            let mut pixels = vec![0u8; (w * h * 4) as usize];
+            source.CopyPixels(std::ptr::null(), w * 4, &mut pixels).ok()?;
+            super::to_rgba(&mut pixels);
+            Some((w, h, pixels))
+        }
+    }
+}
+
+/// Collects the glyph runs a layout draws (DirectWrite calls it as it
+/// "draws" the layout), placed where they'd be drawn.
+#[implement(IDWriteTextRenderer)]
+struct GlyphCollector {
+    out: Rc<RefCell<Vec<pdf::PlacedGlyph>>>,
+    fonts: Rc<RefCell<HashMap<String, Rc<pdf::FontFile>>>>,
+    color: Rgba,
+    colors: Vec<(DWRITE_TEXT_RANGE, Rgba)>,
+}
+
+impl GlyphCollector {
+    /// The file a font face is in (read once).
+    fn font_file(&self, face: &IDWriteFontFace) -> Option<Rc<pdf::FontFile>> {
+        unsafe {
+            let mut count = 0u32;
+            face.GetFiles(&mut count, None).ok()?;
+            if count == 0 {
+                return None;
+            }
+            let mut files: Vec<Option<IDWriteFontFile>> = vec![None; count as usize];
+            face.GetFiles(&mut count, Some(files.as_mut_ptr())).ok()?;
+            let file = files.first()?.as_ref()?;
+            let mut key = std::ptr::null_mut();
+            let mut size = 0u32;
+            file.GetReferenceKey(&mut key, &mut size).ok()?;
+            let local: IDWriteLocalFontFileLoader = file.GetLoader().ok()?.cast().ok()?;
+            let len = local.GetFilePathLengthFromKey(key, size).ok()?;
+            let mut path = vec![0u16; len as usize + 1];
+            local.GetFilePathFromKey(key, size, &mut path).ok()?;
+            let path = String::from_utf16_lossy(&path[..len as usize]);
+            let index = face.GetIndex();
+            let name = format!("{path}#{index}");
+            if let Some(f) = self.fonts.borrow().get(&name) {
+                return Some(f.clone());
+            }
+            // (The fonts of one collection share its bytes.)
+            let same_file = self.fonts.borrow().values().find(|f| f.key.starts_with(&format!("{path}#"))).map(|f| f.data.clone());
+            let data = match same_file {
+                Some(d) => d,
+                None => Rc::new(std::fs::read(&path).ok()?),
+            };
+            let f = Rc::new(pdf::FontFile { key: name.clone(), data, index });
+            self.fonts.borrow_mut().insert(name, f.clone());
+            Some(f)
+        }
+    }
+
+    /// The color of the text at `at` (in UTF-16 units).
+    fn color_at(&self, at: u32) -> Rgba {
+        let inside = |r: &DWRITE_TEXT_RANGE| at >= r.startPosition && at - r.startPosition < r.length;
+        self.colors.iter().rev().find(|(r, _)| inside(r)).map_or(self.color, |(_, c)| *c)
+    }
+}
+
+/// `n` items at `p`, or none for a null pointer.
+unsafe fn items<'a, T>(p: *const T, n: usize) -> &'a [T] {
+    if p.is_null() || n == 0 { &[] } else { unsafe { std::slice::from_raw_parts(p, n) } }
+}
+
+impl IDWritePixelSnapping_Impl for GlyphCollector_Impl {
+    fn IsPixelSnappingDisabled(&self, _: *const std::ffi::c_void) -> windows::core::Result<windows::core::BOOL> {
+        Ok(true.into())
+    }
+
+    fn GetCurrentTransform(&self, _: *const std::ffi::c_void, transform: *mut DWRITE_MATRIX) -> windows::core::Result<()> {
+        unsafe { *transform = DWRITE_MATRIX { m11: 1.0, m12: 0.0, m21: 0.0, m22: 1.0, dx: 0.0, dy: 0.0 } };
+        Ok(())
+    }
+
+    fn GetPixelsPerDip(&self, _: *const std::ffi::c_void) -> windows::core::Result<f32> {
+        Ok(1.0)
+    }
+}
+
+impl IDWriteTextRenderer_Impl for GlyphCollector_Impl {
+    fn DrawGlyphRun(
+        &self,
+        _: *const std::ffi::c_void,
+        x: f32,
+        y: f32,
+        _: DWRITE_MEASURING_MODE,
+        run: *const DWRITE_GLYPH_RUN,
+        description: *const DWRITE_GLYPH_RUN_DESCRIPTION,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        let Some(run) = (unsafe { run.as_ref() }) else { return Ok(()) };
+        let Some(face) = run.fontFace.as_ref() else { return Ok(()) };
+        let Some(file) = self.font_file(face) else { return Ok(()) };
+        let n = run.glyphCount as usize;
+        let (ids, advances, offsets) = unsafe { (items(run.glyphIndices, n), items(run.glyphAdvances, n), items(run.glyphOffsets, n)) };
+        // The characters each glyph shows (the first glyph of a cluster
+        // gets its characters), and where they start in the layout's text.
+        let mut chars: Vec<Vec<u16>> = vec![Vec::new(); n];
+        let mut first: Vec<Option<u32>> = vec![None; n];
+        if let Some(d) = unsafe { description.as_ref() } {
+            let len = d.stringLength as usize;
+            let (text, map) = unsafe { (items(d.string.0, len), items(d.clusterMap, len)) };
+            for (i, (c, g)) in text.iter().zip(map).enumerate() {
+                let g = *g as usize;
+                if g < n {
+                    chars[g].push(*c);
+                    first[g].get_or_insert(d.textPosition + i as u32);
+                }
+            }
+        }
+        let rtl = run.bidiLevel & 1 == 1;
+        let mut pen = x;
+        let mut out = self.out.borrow_mut();
+        for i in 0..n {
+            let advance = advances.get(i).copied().unwrap_or(0.0);
+            let (dx, dy) = offsets.get(i).map_or((0.0, 0.0), |o| (o.advanceOffset, o.ascenderOffset));
+            if rtl {
+                pen -= advance;
+            }
+            let at = if rtl { pen - dx } else { pen + dx };
+            out.push(pdf::PlacedGlyph {
+                font: file.clone(),
+                id: ids[i],
+                size: run.fontEmSize,
+                x: at,
+                y: y - dy,
+                advance,
+                text: String::from_utf16_lossy(&chars[i]),
+                color: first[i].map_or(self.color, |p| self.color_at(p)),
+            });
+            if !rtl {
+                pen += advance;
+            }
+        }
+        Ok(())
+    }
+
+    fn DrawUnderline(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: *const DWRITE_UNDERLINE,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn DrawStrikethrough(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: *const DWRITE_STRIKETHROUGH,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn DrawInlineObject(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: windows::core::Ref<IDWriteInlineObject>,
+        _: windows::core::BOOL,
+        _: windows::core::BOOL,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
     }
 }

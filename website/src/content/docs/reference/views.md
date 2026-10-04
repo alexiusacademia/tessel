@@ -710,6 +710,12 @@ points are in the current coordinates, and turn and scale with the transform.
 | `svg(_ path, x:, y:, width:, height:, color: = .primary, opacity: = 1) -> Bool` | An SVG file, scaled to fit the rectangle and centered in it; `currentColor` in it is `color`. `false` if it can't be read. |
 | `svg(text:, x:, y:, width:, height:, color: = .primary, opacity: = 1) -> Bool` | The same, for SVG source. |
 
+**Pages:**
+
+| Method | |
+|---|---|
+| `newPage()` | In [`writePDF`](/reference/stdlib/#writepdf), ends the page and goes on to a new one, with nothing transformed or clipped. Elsewhere it does nothing. |
+
 **The transform**, which says where coordinates land, **and clipping:**
 
 | Method | |

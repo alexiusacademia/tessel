@@ -12,7 +12,7 @@ gpu = ["dep:vello", "dep:vello_svg", "dep:wgpu", "dep:parley", "dep:image", "dep
 # The system's renderer: on macOS Core Graphics, Core Text and ImageIO (see
 # ui/mac); on Windows Direct2D, DirectWrite and WIC (see ui/win). They come
 # with the system, so apps carry none of them.
-native = ["dep:windows", "dep:windows-numerics"]
+native = ["dep:windows", "dep:windows-numerics", "dep:windows-core"]
 
 [dependencies]
 # The clipboard, for text only (its picture support would bring image decoders).
@@ -48,6 +48,8 @@ vello_svg = { version = "0.11", optional = true }
 usvg = "0.48"
 kurbo = "0.13"
 winit = "0.30"
+pdf-writer = "0.15.0"
+subsetter = { version = "0.2.6", default-features = false }
 
 # The GPU backend each platform draws with, and no others: every backend
 # brings its own code and shader translator into every app.
@@ -70,6 +72,8 @@ windows = { version = "0.62", optional = true, features = [
     "Win32_System_Variant",
 ] }
 windows-numerics = { version = "0.3", optional = true }
+# (For `#[implement]`: a DirectWrite text renderer that collects glyphs for PDFs.)
+windows-core = { version = "0.62", optional = true }
 wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "dx12"] }
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "vulkan", "gles"] }
@@ -89,3 +93,6 @@ harness = false
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ttf-parser = "0.25"

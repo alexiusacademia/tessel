@@ -341,3 +341,8 @@ fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene:
     }
     pixels
 }
+
+/// PDFs aren't written with the GPU renderer yet: `writePDF` returns false.
+pub fn write_pdf(_path: &str, _title: &str, _width: f64, _height: f64, _pages: &[super::draw::DrawList]) -> bool {
+    false
+}

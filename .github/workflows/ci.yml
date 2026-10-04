@@ -86,6 +86,8 @@ jobs:
           BIN="${TESSEL_BIN:-target/debug}"
           "./$BIN/tessel" build examples/counter -o "apps/counter$EXE"
           "./$BIN/tessel" build examples/todos -o "apps/todos$EXE"
+          # A PDF made with this system's writer (see examples/invoice).
+          "./$BIN/tessel" run examples/invoice && mv invoice.pdf apps/invoice.pdf
         env:
           EXE: ${{ runner.os == 'Windows' && '.exe' || '' }}
 

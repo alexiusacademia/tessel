@@ -658,6 +658,38 @@ fn main() {
 - Where nothing is drawn, a PNG is see-through and a JPEG white.
 - It's drawn the way a window is.
 
+### writePDF
+
+```text
+writePDF(path: String, title: String = "", width: Float = 595.28,
+         height: Float = 841.89, draw: fn(Graphics)) -> Bool
+```
+
+Runs a drawing block, as [`renderImage`](#renderimage) does, and saves what
+it draws as a PDF document of pages `width` × `height` points (A4 unless
+they're given; a point is 1/72 inch). In the block, `g.newPage()` ends a
+page and starts the next. Returns whether it worked.
+
+```tessel
+fn main() {
+    let ok = writePDF(path: "hello.pdf", title: "Hello") { g in
+        g.text("Hello", x: 72, y: 72, size: 36, weight: .bold)
+        g.newPage()
+        g.text("A second page", x: 72, y: 72)
+    }
+    print(ok)       // true
+}
+```
+
+- Text stays text, with its fonts in the file; shapes stay shapes; pictures
+  keep their pixels. `title` is the document's title, which PDF readers
+  show.
+- `g.width` and `g.height` are the page's size; every page has the same.
+- A new page starts with nothing transformed, clipped or in a layer.
+- It's drawn in the light appearance, even in an app that's dark: on paper,
+  `.primary` is black.
+- See [Making a PDF](/ui/drawing/#making-a-pdf).
+
 ### writeImage
 
 ```text

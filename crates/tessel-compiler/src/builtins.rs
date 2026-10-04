@@ -536,6 +536,16 @@ impl Builtins {
                 ],
                 ret: Ty::Bool,
             },
+            "writePDF" => FnSig {
+                params: vec![
+                    P::new("path", Ty::Str),
+                    P::new("title", Ty::Str).default(),
+                    P::new("width", Ty::Float).default(),
+                    P::new("height", Ty::Float).default(),
+                    P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void)),
+                ],
+                ret: Ty::Bool,
+            },
             // For the prelude's `imageSize`.
             "__imageSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             // For the prelude's `readImage`.
@@ -573,7 +583,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
-    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "setWindowTitle", "renderImage",
+    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow",
 ];
@@ -748,7 +758,7 @@ fn graphics_method(name: &str) -> Option<Method> {
     let color = || P::unlabeled("color", COLOR);
     let labeled_color = || P::new("color", COLOR);
     Some(match name {
-        "beginPath" | "closePath" | "save" | "restore" | "resetTransform" => method(vec![], Ty::Void),
+        "beginPath" | "closePath" | "save" | "restore" | "resetTransform" | "newPage" => method(vec![], Ty::Void),
         "moveTo" | "lineTo" | "translate" => method(vec![u("x"), u("y")], Ty::Void),
         "quadTo" => method(vec![u("cx"), u("cy"), u("x"), u("y")], Ty::Void),
         "curveTo" => method(vec![u("c1x"), u("c1y"), u("c2x"), u("c2y"), u("x"), u("y")], Ty::Void),
@@ -877,7 +887,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
             "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
-            "fillLinear", "fillRadial", "strokeLinear", "strokeRadial", "beginLayer", "endLayer", "svg",
+            "fillLinear", "fillRadial", "strokeLinear", "strokeRadial", "beginLayer", "endLayer", "svg", "newPage",
         ],
         t if *t == JOB => &["id", "progress", "isCancelled", "cancel"],
         Ty::View => &[
@@ -1103,6 +1113,7 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "strokeRadial" => rt_g("tsl_canvas_stroke_radial", &[Req, Req, Req, Req, EmptyList, Float(1.0), EmptyList]),
         "beginLayer" => rt_g("tsl_canvas_begin_layer", &[Case(0), Float(1.0)]),
         "endLayer" => rt_g("tsl_canvas_end_layer", &[]),
+        "newPage" => rt_g("tsl_canvas_new_page", &[]),
         "clip" => rt_g("tsl_canvas_clip", &[]),
         "clipPath" => rt_g("tsl_canvas_clip_path", &[Bool(false)]),
         _ => return None,

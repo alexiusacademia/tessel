@@ -83,6 +83,9 @@ struct Current {
     /// Points of the line being added, reused between calls.
     scratch: Vec<Point>,
     clipped: Vec<Point>,
+    /// For `writePDF`: the pages finished by `g.newPage()`, before the one
+    /// being drawn. `None` for a canvas or a picture, which have one page.
+    pages: Option<Vec<DrawList>>,
 }
 
 /// A drawing kept for a `Canvas(redraw:)`.
@@ -106,6 +109,12 @@ thread_local! {
 
 /// Runs a canvas's block, and returns what it drew.
 fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
+    draw_pages(block, w, h, false).0
+}
+
+/// Runs a block, and returns what it drew: its last page, and with `pages`
+/// the pages `g.newPage()` finished before it.
+fn draw_pages(block: &Callback, w: f64, h: f64, pages: bool) -> (Drawing, Vec<DrawList>) {
     let current = Current {
         scene: DrawList::new(),
         w,
@@ -118,6 +127,7 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
         stats: Stats::default(),
         scratch: Vec::new(),
         clipped: Vec::new(),
+        pages: pages.then(Vec::new),
     };
     // (A canvas's block can't draw another canvas, but be safe if one is open.)
     let outer = CURRENT.with(|c| c.borrow_mut().replace(current));
@@ -126,7 +136,7 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
     for _ in done.layers.drain(..) {
         done.scene.pop();
     }
-    Drawing { list: Rc::new(done.scene), stats: done.stats }
+    (Drawing { list: Rc::new(done.scene), stats: done.stats }, done.pages.unwrap_or_default())
 }
 
 /// The drawing of the canvas with key `key`: its block's, or the one kept
@@ -184,6 +194,39 @@ pub unsafe extern "C" fn tsl_render_image(
         o.get_or_insert_with(|| std::mem::ManuallyDrop::new(super::backend::Offscreen::default())).rgba(&list, w, h, base)
     });
     super::backend::save_rgba(&path, w, h, pixels) as u8
+}
+
+/// `writePDF(path:title:width:height:) { g in … }`: runs the block, with
+/// `g.newPage()` starting each page after the first, and saves the pages
+/// as a PDF of `width` × `height` points each. Returns whether it was
+/// saved. `f` is called as `f(env, width, height)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_write_pdf(
+    path: *const Str,
+    title: *const Str,
+    width: f64,
+    height: f64,
+    f: *const std::ffi::c_void,
+    env: *mut Header,
+) -> u8 {
+    let (path, title) = unsafe { (crate::str_text(path).to_string(), crate::str_text(title).to_string()) };
+    let block = Callback::new(f, env);
+    // (14 400 points is the largest page PDF readers take: 5 meters.)
+    if !(width >= 1.0 && height >= 1.0 && width <= 14400.0 && height <= 14400.0) {
+        return 0;
+    }
+    // On paper, in the light appearance: `.primary` text is black even
+    // while the app is dark.
+    let dark = theme::is_dark();
+    theme::set_dark(false);
+    let (last, mut pages) = draw_pages(&block, width, height, true);
+    theme::set_dark(dark);
+    pages.push(Rc::try_unwrap(last.list).unwrap_or_else(|l| {
+        let mut list = DrawList::new();
+        list.append(l, Affine::IDENTITY);
+        list
+    }));
+    super::backend::write_pdf(&path, &title, width, height, &pages) as u8
 }
 
 /// Drops the drawings kept for canvases that aren't in the tree any more.
@@ -1105,6 +1148,24 @@ pub extern "C" fn tsl_canvas_begin_layer(blend: i32, opacity: f64) {
 
 /// `g.endLayer()`: ends the layer the last `g.beginLayer` began (and the
 /// clips begun since). Without one, does nothing.
+/// `g.newPage()`: in `writePDF`, the page so far is done, and drawing goes
+/// on a new one, with nothing transformed or clipped. Elsewhere it does
+/// nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_new_page() {
+    with(|c| {
+        let Some(pages) = c.pages.as_mut() else { return };
+        for _ in c.layers.drain(..) {
+            c.scene.pop();
+        }
+        pages.push(std::mem::replace(&mut c.scene, DrawList::new()));
+        c.path = BezPath::new();
+        c.transform = Affine::IDENTITY;
+        c.zoom = 1.0;
+        c.saved.clear();
+    });
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_canvas_end_layer() {
     with(|c| {

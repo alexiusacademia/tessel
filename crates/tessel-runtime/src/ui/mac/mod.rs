@@ -483,6 +483,38 @@ pub fn save_rgba(path: &str, width: u32, height: u32, rgba: Vec<u8>) -> bool {
     }
 }
 
+/// Writes pages (each drawn in points, from its top left corner) as a PDF
+/// of `width` × `height` points each. Text stays text, with its fonts in
+/// the file; shapes stay shapes. Whether it was written.
+pub fn write_pdf(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList]) -> bool {
+    let Some(url) = file_url(path) else { return false };
+    let creator = cfstring("Tessel");
+    let title_text = cfstring(title);
+    let mut info: Vec<(CFTypeRef, CFTypeRef)> = vec![(unsafe { kCGPDFContextCreator } as CFTypeRef, creator.get())];
+    if !title.is_empty() {
+        info.push((unsafe { kCGPDFContextTitle } as CFTypeRef, title_text.get()));
+    }
+    let info = cfdict(&info);
+    let media = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width, height } };
+    unsafe {
+        let ctx = CGPDFContextCreateWithURL(url.get(), &media, info.get());
+        if ctx.is_null() {
+            return false;
+        }
+        for page in pages {
+            CGContextBeginPage(ctx, &media);
+            // PDF pages go up from their bottom left corner.
+            CGContextTranslateCTM(ctx, 0.0, height);
+            CGContextScaleCTM(ctx, 1.0, -1.0);
+            play(page, ctx, Affine::IDENTITY);
+            CGContextEndPage(ctx);
+        }
+        CGPDFContextClose(ctx);
+        CGContextRelease(ctx);
+    }
+    std::path::Path::new(path).is_file()
+}
+
 // ===== the screen =====
 
 /// Where a window's drawings are shown: drawn into a bitmap, which becomes

@@ -1,0 +1,57 @@
+// Writes invoice.pdf: an invoice of many lines, over as many pages as they
+// need, with a heading on each page and the total at the end.
+
+struct Line {
+    item: String
+    hours: Int
+    rate: Float
+}
+
+fn money(_ x: Float) -> String {
+    x.formatted(decimals: 2)
+}
+
+fn main() {
+    var lines: [Line] = []
+    for i in 1..61 {
+        lines.append(Line(item: "Field survey, parcel {i} — größe ✓", hours: i % 7 + 1, rate: 45.5))
+    }
+    let ok = writePDF(path: "invoice.pdf", title: "Invoice 2026-042") { g in
+        var page = 1
+        fn heading(_ g: Graphics, _ page: Int) {
+            g.fillLinear(x1: 0, y1: 0, x2: g.width, y2: 0, colors: [.blue, .rgb(0, 150, 160)])
+            g.text("Invoice 2026-042", x: 50, y: 40, size: 22, color: .white, weight: .bold)
+            g.text("Page {page}", x: g.width - 50, y: 46, size: 12, color: .white, align: .topTrailing)
+        }
+        g.rect(x: 0, y: 0, width: g.width, height: 90)
+        heading(g, page)
+        var y = 120.0
+        var total = 0.0
+        for line in lines {
+            if y > g.height - 80 {
+                g.newPage()
+                page += 1
+                g.rect(x: 0, y: 0, width: g.width, height: 90)
+                heading(g, page)
+                y = 120
+            }
+            let amount = Float(line.hours) * line.rate
+            total += amount
+            g.text(line.item, x: 50, y: y, size: 11)
+            g.text("{line.hours} h", x: 380, y: y, size: 11, color: .secondary, align: .topTrailing)
+            g.text(money(amount), x: g.width - 50, y: y, size: 11, align: .topTrailing)
+            y += 18
+        }
+        g.line(50, y + 6, g.width - 50, y + 6, color: .gray)
+        g.text("Total", x: 50, y: y + 16, size: 14, weight: .bold)
+        g.text(money(total), x: g.width - 50, y: y + 16, size: 14, weight: .bold, align: .topTrailing)
+        // A stamp, multiplied onto the page.
+        g.beginLayer(blend: .multiply, opacity: 0.8)
+        g.beginPath()
+        g.circle(x: g.width - 120, y: y + 110, radius: 44)
+        g.fill(.rgb(255, 210, 0))
+        g.text("PAID", x: g.width - 120, y: y + 110, size: 20, color: .red, weight: .bold, align: .center, angle: -0.3)
+        g.endLayer()
+    }
+    print(if ok { "wrote invoice.pdf" } else { "couldn't write invoice.pdf" })
+}
