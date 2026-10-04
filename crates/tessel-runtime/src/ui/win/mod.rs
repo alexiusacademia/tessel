@@ -24,7 +24,7 @@ use windows::Win32::System::Com::*;
 use windows_numerics::{Matrix3x2, Vector2};
 use winit::window::Window;
 
-use super::draw::{DrawList, FillRule, Op};
+use super::draw::{DrawList, FillRule, Gradient, Op};
 use super::image::Picture;
 use super::Rgba;
 
@@ -176,6 +176,34 @@ impl Resources {
     }
 }
 
+/// A Direct2D brush for a gradient, its points placed by `t` (in the render
+/// target's coordinates as they'll be when it's drawn with).
+fn gradient_brush(rt: &ID2D1RenderTarget, gradient: &Gradient, t: Affine) -> Option<ID2D1Brush> {
+    let stops = match gradient {
+        Gradient::Linear { stops, .. } | Gradient::Radial { stops, .. } => stops,
+    };
+    let stops: Vec<D2D1_GRADIENT_STOP> = stops.iter().map(|(at, c)| D2D1_GRADIENT_STOP { position: *at, color: color_f(*c) }).collect();
+    let props = D2D1_BRUSH_PROPERTIES { opacity: 1.0, transform: matrix(t) };
+    unsafe {
+        let collection = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP).ok()?;
+        match gradient {
+            Gradient::Linear { start, end, .. } => {
+                let p = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES { startPoint: point(*start), endPoint: point(*end) };
+                rt.CreateLinearGradientBrush(&p, Some(&props), &collection).ok()?.cast().ok()
+            }
+            Gradient::Radial { center, radius, .. } => {
+                let p = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+                    center: point(*center),
+                    gradientOriginOffset: Vector2 { X: 0.0, Y: 0.0 },
+                    radiusX: *radius as f32,
+                    radiusY: *radius as f32,
+                };
+                rt.CreateRadialGradientBrush(&p, Some(&props), &collection).ok()?.cast().ok()
+            }
+        }
+    }
+}
+
 /// Plays a drawing into a render target, with everything placed by `base`.
 fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resources, open: &mut usize) {
     for op in &list.ops {
@@ -196,7 +224,23 @@ fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resourc
                         rt.SetTransform(&Matrix3x2::identity());
                     }
                 }
-                Op::Push { clip, rule, alpha, transform: t } => {
+                Op::FillGradient { path, rule, gradient, place, transform: t } => {
+                    let mut p = path.clone();
+                    p.apply_affine(base * *t);
+                    if let (Some(g), Some(b)) = (geometry(&p, *rule), gradient_brush(rt, gradient, base * *t * *place)) {
+                        rt.SetTransform(&Matrix3x2::identity());
+                        rt.FillGeometry(&g, &b, None);
+                    }
+                }
+                Op::StrokeGradient { path, style, gradient, place, transform: t } => {
+                    if let (Some(g), Some(b)) = (geometry(path, FillRule::NonZero), gradient_brush(rt, gradient, *place)) {
+                        rt.SetTransform(&matrix(base * *t));
+                        rt.DrawGeometry(&g, &b, style.width as f32, stroke_style(style).as_ref());
+                        rt.SetTransform(&Matrix3x2::identity());
+                    }
+                }
+                // (Blend modes need Direct2D's effects; layers go on normally.)
+                Op::Push { clip, rule, alpha, blend: _, transform: t } => {
                     let mut p = clip.clone();
                     p.apply_affine(base * *t);
                     let g = geometry(&p, *rule).map(|g| g.cast::<ID2D1Geometry>().ok()).flatten();
@@ -326,6 +370,21 @@ pub fn decode_picture(path: &str) -> Option<Picture> {
     let bitmap = unsafe { factories().wic.CreateBitmapFromSource(&source, WICBitmapCacheOnLoad).ok()? };
     let (w, h) = size(&source);
     Some(Picture { image: ImageData(bitmap.cast().ok()?), width: w as f64, height: h as f64 })
+}
+
+/// A picture made from pixels (red, green, blue, opacity, row by row).
+pub fn picture_from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Picture> {
+    if width == 0 || height == 0 || rgba.len() < width as usize * height as usize * 4 {
+        return None;
+    }
+    unsafe {
+        let wic = &factories().wic;
+        let raw = wic.CreateBitmapFromMemory(width, height, &GUID_WICPixelFormat32bppRGBA, width * 4, &rgba).ok()?;
+        let converter = wic.CreateFormatConverter().ok()?;
+        converter.Initialize(&raw, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).ok()?;
+        let bitmap = wic.CreateBitmapFromSource(&converter, WICBitmapCacheOnLoad).ok()?;
+        Some(Picture { image: ImageData(bitmap.cast().ok()?), width: width as f64, height: height as f64 })
+    }
 }
 
 /// A file's size in pixels.

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use kurbo::{Affine, BezPath, Cap, Join, PathEl, Stroke};
 use winit::window::Window;
 
-use super::draw::{DrawList, FillRule, Op};
+use super::draw::{DrawList, FillRule, Gradient, Op};
 use super::image::Picture;
 use super::Rgba;
 use ffi::*;
@@ -52,6 +52,46 @@ fn add_path(ctx: CGContextRef, path: &BezPath) {
 fn components(c: Rgba) -> (f64, f64, f64, f64) {
     let [r, g, b, a] = c.0.map(|v| v as f64 / 255.0);
     (r, g, b, a)
+}
+
+/// `Blend`s as Core Graphics numbers them (it has soft light before hard).
+fn blend_mode(blend: u8) -> i32 {
+    match blend {
+        8 => 9,
+        9 => 8,
+        b => b.min(15) as i32,
+    }
+}
+
+/// Draws a gradient over what's clipped now, its points placed by `t`;
+/// before its first point and past its last, its end colors go on.
+fn draw_gradient(ctx: CGContextRef, gradient: &Gradient, t: Affine) {
+    let stops = match gradient {
+        Gradient::Linear { stops, .. } | Gradient::Radial { stops, .. } => stops,
+    };
+    if stops.is_empty() {
+        return;
+    }
+    let components: Vec<f64> = stops.iter().flat_map(|(_, c)| c.0.map(|v| v as f64 / 255.0)).collect();
+    let locations: Vec<f64> = stops.iter().map(|(at, _)| *at as f64).collect();
+    unsafe {
+        let space = CGColorSpaceCreateDeviceRGB();
+        let g = CGGradientCreateWithColorComponents(space, components.as_ptr(), locations.as_ptr(), stops.len());
+        CGColorSpaceRelease(space);
+        let Some(g) = Owned::new(g) else { return };
+        CGContextConcatCTM(ctx, transform(t));
+        // Before the start and after the end.
+        let extend = 1 | 2;
+        match gradient {
+            Gradient::Linear { start, end, .. } => {
+                CGContextDrawLinearGradient(ctx, g.get(), CGPoint { x: start.x, y: start.y }, CGPoint { x: end.x, y: end.y }, extend);
+            }
+            Gradient::Radial { center, radius, .. } => {
+                let c = CGPoint { x: center.x, y: center.y };
+                CGContextDrawRadialGradient(ctx, g.get(), c, 0.0, c, *radius, extend);
+            }
+        }
+    }
 }
 
 fn stroke_style(ctx: CGContextRef, s: &Stroke) {
@@ -123,7 +163,30 @@ fn play_into(list: &DrawList, ctx: CGContextRef, base: Affine, open: &mut Vec<bo
                     CGContextStrokePath(ctx);
                     CGContextRestoreGState(ctx);
                 }
-                Op::Push { clip, rule, alpha, transform: t } => {
+                Op::FillGradient { path, rule, gradient, place, transform: t } => {
+                    CGContextSaveGState(ctx);
+                    let mut p = path.clone();
+                    p.apply_affine(base * *t);
+                    add_path(ctx, &p);
+                    match rule {
+                        FillRule::NonZero => CGContextClip(ctx),
+                        FillRule::EvenOdd => CGContextEOClip(ctx),
+                    }
+                    draw_gradient(ctx, gradient, base * *t * *place);
+                    CGContextRestoreGState(ctx);
+                }
+                Op::StrokeGradient { path, style, gradient, place, transform: t } => {
+                    CGContextSaveGState(ctx);
+                    CGContextConcatCTM(ctx, transform(base * *t));
+                    add_path(ctx, path);
+                    stroke_style(ctx, style);
+                    // The stroke's outline, as the clip for the gradient.
+                    CGContextReplacePathWithStrokedPath(ctx);
+                    CGContextClip(ctx);
+                    draw_gradient(ctx, gradient, *place);
+                    CGContextRestoreGState(ctx);
+                }
+                Op::Push { clip, rule, alpha, blend, transform: t } => {
                     CGContextSaveGState(ctx);
                     let mut p = clip.clone();
                     p.apply_affine(base * *t);
@@ -132,10 +195,14 @@ fn play_into(list: &DrawList, ctx: CGContextRef, base: Affine, open: &mut Vec<bo
                         FillRule::NonZero => CGContextClip(ctx),
                         FillRule::EvenOdd => CGContextEOClip(ctx),
                     }
-                    let layer = *alpha < 1.0;
+                    let layer = *alpha < 1.0 || *blend != 0;
                     if layer {
                         CGContextSetAlpha(ctx, *alpha as f64);
+                        CGContextSetBlendMode(ctx, blend_mode(*blend));
                         CGContextBeginTransparencyLayer(ctx, std::ptr::null());
+                        // (What's drawn inside goes on normally.)
+                        CGContextSetAlpha(ctx, 1.0);
+                        CGContextSetBlendMode(ctx, 0);
                     }
                     open.push(layer);
                 }
@@ -208,6 +275,36 @@ pub fn decode_picture(path: &str) -> Option<Picture> {
     let image = decode(path)?;
     let (w, h) = unsafe { (CGImageGetWidth(image.get() as CGImageRef), CGImageGetHeight(image.get() as CGImageRef)) };
     Some(Picture { image: ImageData(image), width: w as f64, height: h as f64 })
+}
+
+/// A picture made from pixels (red, green, blue, opacity, row by row).
+pub fn picture_from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Picture> {
+    if width == 0 || height == 0 || rgba.len() < width as usize * height as usize * 4 {
+        return None;
+    }
+    unsafe {
+        let data = Owned::new(CFDataCreate(std::ptr::null(), rgba.as_ptr(), rgba.len() as CFIndex))?;
+        let provider = CGDataProviderCreateWithCFData(data.get());
+        let space = CGColorSpaceCreateDeviceRGB();
+        // (Colors not multiplied by their opacity, which comes last.)
+        let image = CGImageCreate(
+            width as usize,
+            height as usize,
+            8,
+            32,
+            width as usize * 4,
+            space,
+            3 | (4 << 12),
+            provider,
+            std::ptr::null(),
+            false,
+            kCGRenderingIntentDefault,
+        );
+        CGColorSpaceRelease(space);
+        CGDataProviderRelease(provider);
+        let image = Owned::new(image as CFTypeRef)?;
+        Some(Picture { image: ImageData(image), width: width as f64, height: height as f64 })
+    }
 }
 
 /// A file's size in pixels.

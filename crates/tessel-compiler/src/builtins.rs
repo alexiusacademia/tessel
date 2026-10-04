@@ -30,11 +30,18 @@ pub const CURSOR_STYLES: &[&str] = &[
     "resizeVertical", "zoomIn", "zoomOut",
 ];
 
+/// How `g.beginLayer` blends a layer onto what's under it (the runtime
+/// relies on the order).
+pub const BLEND_MODES: &[&str] = &[
+    "normal", "multiply", "screen", "overlay", "darken", "lighten", "colorDodge", "colorBurn", "hardLight", "softLight",
+    "difference", "exclusion", "hue", "saturation", "color", "luminosity",
+];
+
 /// Names of the built-in icons, in order (shared with the runtime).
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
-/// IconName, Appearance, PointerKind, PointerButton, CursorStyle.
+/// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -60,6 +67,7 @@ pub fn enums() -> Vec<EnumDef> {
         simple("PointerKind", POINTER_KINDS),
         simple("PointerButton", POINTER_BUTTONS),
         simple("CursorStyle", CURSOR_STYLES),
+        simple("BlendMode", BLEND_MODES),
     ]
 }
 
@@ -157,6 +165,7 @@ pub const ALIGNMENT: Ty = Ty::Enum(2);
 pub const POINTER_KIND: Ty = Ty::Enum(5);
 pub const POINTER_BUTTON: Ty = Ty::Enum(6);
 pub const CURSOR_STYLE: Ty = Ty::Enum(7);
+pub const BLEND_MODE: Ty = Ty::Enum(8);
 
 pub struct Builtins {
     pub color: Ty,
@@ -745,6 +754,44 @@ fn graphics_method(name: &str) -> Option<Method> {
             vec![P::unlabeled("path", Ty::Str), f("x"), f("y"), f("width"), f("height"), f("opacity").default()],
             Ty::Bool,
         ),
+        "image(pixels:)" => method(
+            vec![
+                P::new("pixels", Ty::list(Ty::Int)),
+                P::new("pixelWidth", Ty::Int),
+                P::new("pixelHeight", Ty::Int),
+                f("x"),
+                f("y"),
+                f("width"),
+                f("height"),
+                f("opacity").default(),
+            ],
+            Ty::Bool,
+        ),
+        "svg" | "svg(text:)" => {
+            let source = if name == "svg" { P::unlabeled("path", Ty::Str) } else { P::new("text", Ty::Str) };
+            method(
+                vec![source, f("x"), f("y"), f("width"), f("height"), labeled_color().default(), f("opacity").default()],
+                Ty::Bool,
+            )
+        }
+        "fillLinear" | "strokeLinear" | "fillRadial" | "strokeRadial" => {
+            let mut params = if name.ends_with("Linear") {
+                vec![f("x1"), f("y1"), f("x2"), f("y2")]
+            } else {
+                vec![f("x"), f("y"), f("radius")]
+            };
+            params.push(P::new("colors", Ty::list(COLOR)));
+            params.push(P::new("stops", Ty::list(Ty::Float)).default());
+            if name.starts_with("fill") {
+                params.push(P::new("evenOdd", Ty::Bool).default());
+            } else {
+                params.push(f("width").default());
+                params.push(P::new("dash", Ty::list(Ty::Float)).default());
+            }
+            method(params, Ty::Void)
+        }
+        "beginLayer" => method(vec![P::new("blend", BLEND_MODE).default(), f("opacity").default()], Ty::Void),
+        "endLayer" => method(vec![], Ty::Void),
         "scale" => method(vec![u("x"), u("y")], Ty::Void),
         "rotate" => method(vec![u("angle")], Ty::Void),
         "zoom" => method(vec![u("factor")], Ty::Void),
@@ -752,6 +799,17 @@ fn graphics_method(name: &str) -> Option<Method> {
         "clipPath" => method(vec![P::new("evenOdd", Ty::Bool).default()], Ty::Void),
         _ => return None,
     })
+}
+
+/// The method of `Graphics` a call of `name` means: a few draw from
+/// something else when their first argument has another label
+/// (`g.image(pixels: …)`, `g.svg(text: …)`), and are told apart by it.
+pub fn graphics_variant<'a>(name: &'a str, first_label: Option<&str>) -> &'a str {
+    match (name, first_label) {
+        ("image", Some("pixels")) => "image(pixels:)",
+        ("svg", Some("text")) => "svg(text:)",
+        _ => name,
+    }
 }
 
 /// Names shown in "did you mean" suggestions for members of built-in types.
@@ -784,6 +842,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
             "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
+            "fillLinear", "fillRadial", "strokeLinear", "strokeRadial", "beginLayer", "endLayer", "svg",
         ],
         t if *t == JOB => &["id", "progress", "isCancelled", "cancel"],
         Ty::View => &[
@@ -997,6 +1056,15 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         ),
         "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR]),
         "image" => rt_g("tsl_canvas_image", &[Req, Req, Req, Req, Req, Float(1.0)]),
+        "image(pixels:)" => rt_g("tsl_canvas_image_pixels", &[Req, Req, Req, Req, Req, Req, Req, Float(1.0)]),
+        "svg" => rt_g("tsl_canvas_svg", &[Req, Req, Req, Req, Req, PRIMARY, Float(1.0)]),
+        "svg(text:)" => rt_g("tsl_canvas_svg_text", &[Req, Req, Req, Req, Req, PRIMARY, Float(1.0)]),
+        "fillLinear" => rt_g("tsl_canvas_fill_linear", &[Req, Req, Req, Req, Req, EmptyList, Bool(false)]),
+        "fillRadial" => rt_g("tsl_canvas_fill_radial", &[Req, Req, Req, Req, EmptyList, Bool(false)]),
+        "strokeLinear" => rt_g("tsl_canvas_stroke_linear", &[Req, Req, Req, Req, Req, EmptyList, Float(1.0), EmptyList]),
+        "strokeRadial" => rt_g("tsl_canvas_stroke_radial", &[Req, Req, Req, Req, EmptyList, Float(1.0), EmptyList]),
+        "beginLayer" => rt_g("tsl_canvas_begin_layer", &[Case(0), Float(1.0)]),
+        "endLayer" => rt_g("tsl_canvas_end_layer", &[]),
         "clip" => rt_g("tsl_canvas_clip", &[]),
         "clipPath" => rt_g("tsl_canvas_clip_path", &[Bool(false)]),
         _ => return None,

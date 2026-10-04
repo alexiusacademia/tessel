@@ -197,6 +197,24 @@ unsafe extern "C" {
     pub fn CGContextEndTransparencyLayer(c: CGContextRef);
     pub fn CGContextDrawImage(c: CGContextRef, r: CGRect, image: CGImageRef);
     pub fn CGContextSetInterpolationQuality(c: CGContextRef, q: i32);
+    pub fn CGContextSetBlendMode(c: CGContextRef, mode: i32);
+    pub fn CGContextReplacePathWithStrokedPath(c: CGContextRef);
+    pub fn CGGradientCreateWithColorComponents(
+        space: CGColorSpaceRef,
+        components: *const f64,
+        locations: *const f64,
+        count: usize,
+    ) -> CFTypeRef;
+    pub fn CGContextDrawLinearGradient(c: CGContextRef, g: CFTypeRef, start: CGPoint, end: CGPoint, options: u32);
+    pub fn CGContextDrawRadialGradient(
+        c: CGContextRef,
+        g: CFTypeRef,
+        start: CGPoint,
+        start_radius: f64,
+        end: CGPoint,
+        end_radius: f64,
+        options: u32,
+    );
     pub fn CGContextSetTextMatrix(c: CGContextRef, t: CGAffineTransform);
     pub fn CGContextSetTextPosition(c: CGContextRef, x: f64, y: f64);
     pub fn CGContextSetTextDrawingMode(c: CGContextRef, mode: i32);

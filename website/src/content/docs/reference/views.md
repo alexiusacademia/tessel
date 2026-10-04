@@ -676,6 +676,17 @@ time, they do nothing. Angles are in radians.
 
 `fill` and `stroke` keep the path, so it can be filled and then outlined.
 
+**Gradients** (they keep the path too). `colors` are spread evenly, or put at
+`stops` (one for each color, from 0 at the start to 1 at the end). The
+points are in the current coordinates, and turn and scale with the transform.
+
+| Method | |
+|---|---|
+| `fillLinear(x1:, y1:, x2:, y2:, colors: [Color], stops: [Float] = [], evenOdd: = false)` | Fills the path with colors that change along the line from (x1, y1) to (x2, y2): the first color before it, the last after it. |
+| `fillRadial(x:, y:, radius:, colors: [Color], stops: [Float] = [], evenOdd: = false)` | Fills the path with colors that change from (x, y) out to `radius` from it. |
+| `strokeLinear(x1:, y1:, x2:, y2:, colors: [Color], stops: [Float] = [], width: = 1, dash: = [])` | Draws the path's line in colors that change along a line. |
+| `strokeRadial(x:, y:, radius:, colors: [Color], stops: [Float] = [], width: = 1, dash: = [])` | Draws the path's line in colors that change out from a point. |
+
 **Shapes drawn at once** (they leave the path alone):
 
 | Method | |
@@ -693,6 +704,9 @@ time, they do nothing. Angles are in radians.
 | `text(_ text, x:, y:, size: = 14, color: = .primary, weight: = .regular, align: = .topLeading, angle: = 0, halo: = .clear, haloWidth: = 0)` | Text at a point. `align` (an [`Alignment`](/reference/colors/#alignment)) says which part of the text sits on the point; `angle` turns it around the point; a halo is an outline of `haloWidth` points in another color, under the text. |
 | `textWidth(_ text, size: = 14, weight: = .regular) -> Float` | How wide `text` would be drawn. |
 | `image(_ path, x:, y:, width:, height:, opacity: = 1) -> Bool` | A PNG or JPEG file, stretched to the rectangle. `false` if there's no such picture. |
+| `image(pixels: [Int], pixelWidth: Int, pixelHeight: Int, x:, y:, width:, height:, opacity: = 1) -> Bool` | A picture from pixels in memory, row by row from the top left, each as [`writeImage`](/reference/stdlib/#writeimage) takes them, stretched to the rectangle. Kept between frames while the pixels stay the same. `false` if the size isn't from 1 to 8192 or there are fewer pixels than it needs. |
+| `svg(_ path, x:, y:, width:, height:, color: = .primary, opacity: = 1) -> Bool` | An SVG file, scaled to fit the rectangle and centered in it; `currentColor` in it is `color`. `false` if it can't be read. |
+| `svg(text:, x:, y:, width:, height:, color: = .primary, opacity: = 1) -> Bool` | The same, for SVG source. |
 
 **The transform**, which says where coordinates land, **and clipping:**
 
@@ -708,8 +722,15 @@ time, they do nothing. Angles are in radians.
 | `clip(x:, y:, width:, height:)` | Until the matching `restore()`, only what's inside the rectangle shows. |
 | `clipPath(evenOdd: = false)` | The same, for the current path: only what's inside it shows (for hatching a shape, or a picture in a circle). |
 
+**Layers:**
+
+| Method | |
+|---|---|
+| `beginLayer(blend: BlendMode = .normal, opacity: = 1)` | What's drawn until the matching `endLayer()` is drawn on its own, then put onto the drawing under it as a whole: blended as `blend` says (a [`BlendMode`](/reference/colors/#blendmode)), at `opacity`. Layers nest. |
+| `endLayer()` | Ends the layer the last `beginLayer` began, and the clips begun in it. `restore()` also ends the layers begun since its `save()`. |
+
 The transform applies to the points of paths and shapes, to the corners of
-pictures, and to the point a text sits on. Line widths, dashes and text
+pictures and SVGs, to the points of gradients, and to the point a text sits on. Line widths, dashes and text
 sizes are always in points: scaling doesn't make lines thicker or text
 larger. `zoom` is the exception: it enlarges those too.
 

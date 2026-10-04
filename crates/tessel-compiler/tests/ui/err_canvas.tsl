@@ -9,6 +9,16 @@ app Main {
         g.line(0, 0, 10, 10) // error: `line` is missing `color:`
         g.text("hi", x: 1) // error: `text` is missing `y:`
         let w: Int = g.textWidth("hi") // error: expected `Int`
+        g.image(pixels: [0.5], pixelWidth: 1, pixelHeight: 1, x: 0, y: 0, width: 1, height: 1) // error: expected `Int`, found `Float`
+        g.image(pixels: [1], pixelWidth: 1, x: 0, y: 0, width: 1, height: 1) // error: `image` is missing `pixelHeight:`
+        g.image("a.png", pixelWidth: 1, x: 0, y: 0, width: 1, height: 1) // error: has no parameter `pixelWidth:`
+        g.beginLayer(blend: .burn) // error: `BlendMode` has no case `.burn`
+        g.beginLayer(.multiply) // error: needs its label `blend:`
+        g.fillLinear(x1: 0, y1: 0, x2: 1, y2: 1, colors: [1]) // error: expected `Color`, found `Int`
+        g.fillRadial(x: 0, y: 0, colors: [.red]) // error: `fillRadial` is missing `radius:`
+        g.strokeLinear(x1: 0, y1: 0, x2: 1, y2: 1, colors: [.red], evenOdd: true) // error: has no parameter `evenOdd:`
+        g.svg(text: 3, x: 0, y: 0, width: 1, height: 1) // error: expected `String`
+        let drawn: String = g.svg("a.svg", x: 0, y: 0, width: 1, height: 1) // error: expected `String`
     }
     Canvas(redraw: "often") { g in } // error: expected `Int`
     Canvas { a, b in } // error: should take 1 parameter

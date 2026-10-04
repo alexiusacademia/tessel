@@ -12,12 +12,12 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use kurbo::{Affine, Stroke};
-use vello::peniko::{Blob, Color, Fill, ImageAlphaType, ImageBrush, ImageFormat, Mix};
+use vello::peniko::{Blob, BlendMode, Brush, Color, ColorStop, Fill, ImageAlphaType, ImageBrush, ImageFormat, Mix};
 use vello::util::{RenderContext, RenderSurface};
 use vello::{wgpu, AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 use winit::window::Window;
 
-use super::draw::{DrawList, FillRule, Op};
+use super::draw::{DrawList, FillRule, Gradient, Op};
 use super::image::Picture;
 use super::text::TextLayout;
 use super::Rgba;
@@ -39,14 +39,52 @@ fn fill_rule(rule: FillRule) -> Fill {
     }
 }
 
+/// `Blend`s, in order.
+const MIXES: [Mix; 16] = [
+    Mix::Normal,
+    Mix::Multiply,
+    Mix::Screen,
+    Mix::Overlay,
+    Mix::Darken,
+    Mix::Lighten,
+    Mix::ColorDodge,
+    Mix::ColorBurn,
+    Mix::HardLight,
+    Mix::SoftLight,
+    Mix::Difference,
+    Mix::Exclusion,
+    Mix::Hue,
+    Mix::Saturation,
+    Mix::Color,
+    Mix::Luminosity,
+];
+
+fn brush(g: &Gradient) -> Brush {
+    let stops = |s: &[(f32, Rgba)]| -> Vec<ColorStop> { s.iter().map(|(at, c)| (*at, color(*c)).into()).collect() };
+    let gradient = match g {
+        Gradient::Linear { start, end, stops: s } => vello::peniko::Gradient::new_linear(*start, *end).with_stops(stops(s).as_slice()),
+        Gradient::Radial { center, radius, stops: s } => {
+            vello::peniko::Gradient::new_radial(*center, *radius as f32).with_stops(stops(s).as_slice())
+        }
+    };
+    Brush::Gradient(gradient)
+}
+
 /// Plays a drawing into a vello scene, with everything placed by `base`.
 pub fn play(list: &DrawList, scene: &mut Scene, base: Affine) {
     for op in &list.ops {
         match op {
             Op::Fill { path, rule, color: c, transform } => scene.fill(fill_rule(*rule), base * *transform, color(*c), None, path),
             Op::Stroke { path, style, color: c, transform } => scene.stroke(style, base * *transform, color(*c), None, path),
-            Op::Push { clip, rule, alpha, transform } => {
-                scene.push_layer(fill_rule(*rule), Mix::Normal, *alpha, base * *transform, clip);
+            Op::FillGradient { path, rule, gradient, place, transform } => {
+                scene.fill(fill_rule(*rule), base * *transform, &brush(gradient), Some(*place), path)
+            }
+            Op::StrokeGradient { path, style, gradient, place, transform } => {
+                scene.stroke(style, base * *transform, &brush(gradient), Some(*place), path)
+            }
+            Op::Push { clip, rule, alpha, blend, transform } => {
+                let mix = MIXES[(*blend as usize).min(MIXES.len() - 1)];
+                scene.push_layer(fill_rule(*rule), BlendMode::from(mix), *alpha, base * *transform, clip);
             }
             Op::Pop => scene.pop_layer(),
             Op::Text { layout, transform, tint, halo } => {
@@ -109,6 +147,18 @@ pub fn decode_picture(path: &str) -> Option<Picture> {
             width,
             height,
         },
+        width: width as f64,
+        height: height as f64,
+    })
+}
+
+/// A picture made from pixels (red, green, blue, opacity, row by row).
+pub fn picture_from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Picture> {
+    if width == 0 || height == 0 || rgba.len() < width as usize * height as usize * 4 {
+        return None;
+    }
+    Some(Picture {
+        image: ImageData { data: Blob::new(Arc::new(rgba)), format: ImageFormat::Rgba8, alpha_type: ImageAlphaType::Alpha, width, height },
         width: width as f64,
         height: height as f64,
     })

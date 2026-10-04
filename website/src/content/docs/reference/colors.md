@@ -177,6 +177,25 @@ view.
 | `resizeHorizontal`, `resizeVertical` | Arrows sideways, and up and down. |
 | `zoomIn`, `zoomOut` | A magnifying glass with a plus or a minus. |
 
+## BlendMode
+
+Used by [`g.beginLayer`](/reference/views/#canvas): how a layer's colors mix
+with the colors under it. The names and the arithmetic are the ones photo
+editors and CSS use.
+
+| Case | The result |
+|---|---|
+| `normal` | The layer's colors, over what's under it (the default). |
+| `multiply` | The two multiplied: darker. White changes nothing. |
+| `screen` | The opposite of multiply: lighter. Black changes nothing. |
+| `overlay` | Multiply where what's under is dark, screen where it's light. |
+| `darken`, `lighten` | The darker, or the lighter, of the two. |
+| `colorDodge`, `colorBurn` | What's under brightened, or darkened, by the layer. |
+| `hardLight`, `softLight` | Multiply or screen depending on the layer's colors: a harsh light, and a soft one. |
+| `difference` | The lighter minus the darker. White inverts; black changes nothing. |
+| `exclusion` | Like difference, with less contrast. |
+| `hue`, `saturation`, `color`, `luminosity` | One part of the layer's color (its hue; its saturation; its hue and saturation; its lightness), with the rest from what's under it. |
+
 ## PointerEvent
 
 What [`.onPointer`](/reference/modifiers/#onpointer) tells its block. A

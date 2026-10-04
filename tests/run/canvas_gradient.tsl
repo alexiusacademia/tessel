@@ -1,0 +1,64 @@
+// g.fillLinear, g.fillRadial, g.strokeLinear, g.strokeRadial: colors that change across a shape.
+
+fn pixel(_ picture: (Int, Int, [Int]), _ x: Int, _ y: Int) -> String {
+    let p = picture.2[y * picture.0 + x]
+    if p % 256 == 0 { "clear" } else { "{p / 16777216},{p / 65536 % 256},{p / 256 % 256}" }
+}
+
+fn row(_ picture: (Int, Int, [Int]), _ y: Int, _ xs: [Int]) -> String {
+    xs.map { x in pixel(picture, x, y) }.joined(" | ")
+}
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-canvas-gradient.png")
+    renderImage(path: path, width: 100, height: 100) { g in
+        // Red to blue, left to right, over the top band (and beyond its ends).
+        g.beginPath()
+        g.rect(x: 0, y: 0, width: 100, height: 20)
+        g.fillLinear(x1: 10, y1: 0, x2: 90, y2: 0, colors: [.rgb(255, 0, 0), .rgb(0, 0, 255)])
+        // Three colors, at stops given.
+        g.beginPath()
+        g.rect(x: 0, y: 20, width: 100, height: 20)
+        g.fillLinear(x1: 0, y1: 0, x2: 100, y2: 0, colors: [.rgb(255, 0, 0), .rgb(0, 255, 0), .rgb(0, 0, 255)], stops: [0, 0.2, 1])
+        // The points follow the transform: turned a quarter, the band goes top to bottom.
+        g.save()
+        g.translate(0, 40)
+        g.rotate(pi / 2)
+        g.beginPath()
+        g.rect(x: 0, y: -100, width: 20, height: 100)
+        g.fillLinear(x1: 0, y1: 0, x2: 20, y2: 0, colors: [.rgb(0, 0, 0), .rgb(255, 255, 255)])
+        g.restore()
+        // Radial: white in the middle, black at the radius and beyond.
+        g.beginPath()
+        g.rect(x: 0, y: 60, width: 100, height: 40)
+        g.fillRadial(x: 50, y: 80, radius: 40, colors: [.rgb(255, 255, 255), .rgb(0, 0, 0)])
+    }
+    if let picture = readImage(path) {
+        print("linear: {row(picture, 10, [2, 10, 50, 90, 98])}")
+        print("stops: {row(picture, 30, [0, 20, 60, 99])}")
+        print("turned: {pixel(picture, 50, 41)} | {pixel(picture, 50, 50)} | {pixel(picture, 50, 59)}")
+        print("radial: {row(picture, 80, [50, 70, 90, 99])}")
+    }
+
+    renderImage(path: path, width: 100, height: 100) { g in
+        g.beginPath()
+        g.moveTo(0, 20)
+        g.lineTo(100, 20)
+        g.strokeLinear(x1: 0, y1: 0, x2: 100, y2: 0, colors: [.rgb(255, 0, 0), .rgb(0, 0, 255)], width: 10)
+        g.beginPath()
+        g.circle(x: 50, y: 65, radius: 30)
+        g.strokeRadial(x: 50, y: 35, radius: 60, colors: [.rgb(0, 255, 0), .rgb(0, 0, 0)], width: 6, dash: [1000])
+        // One color is that color; no colors draw nothing.
+        g.beginPath()
+        g.rect(x: 90, y: 90, width: 10, height: 10)
+        g.fillLinear(x1: 0, y1: 0, x2: 1, y2: 0, colors: [.rgb(255, 0, 255)])
+        g.beginPath()
+        g.rect(x: 0, y: 90, width: 10, height: 10)
+        g.fillRadial(x: 0, y: 0, radius: 10, colors: [])
+    }
+    if let picture = readImage(path) {
+        print("stroked: {row(picture, 20, [1, 50, 98])} (and off it: {pixel(picture, 50, 30)})")
+        print("stroked ring: {pixel(picture, 50, 35)} | {pixel(picture, 50, 95)}")
+        print("one color: {pixel(picture, 95, 95)}; none: {pixel(picture, 5, 95)}")
+    }
+}

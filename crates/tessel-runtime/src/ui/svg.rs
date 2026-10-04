@@ -28,8 +28,17 @@ pub struct Svg {
 /// Parsed SVGs by (source hash, color).
 type Cache = HashMap<(u64, [u8; 4]), Option<Rc<Svg>>>;
 
+/// SVG files read for `g.svg(path, …)`: by path, with the file's
+/// modification time then.
+type Files = HashMap<String, (Option<std::time::SystemTime>, Option<Rc<str>>)>;
+
+/// Parsed SVGs are kept up to this many (a canvas could draw SVG text that
+/// changes every frame); past it, they're all dropped and parsed again.
+const LIMIT: usize = 512;
+
 thread_local! {
     static CACHE: RefCell<Cache> = RefCell::new(HashMap::new());
+    static FILES: RefCell<Files> = RefCell::new(HashMap::new());
 }
 
 static PARSE: OnceLock<fn(&str, Rgba) -> Option<Rc<Svg>>> = OnceLock::new();
@@ -57,8 +66,11 @@ fn parse(source: &str, color: Rgba) -> Option<Rc<Svg>> {
     source.hash(&mut h);
     let key = (h.finish(), color.0);
     CACHE.with(|c| {
-        c.borrow_mut()
-            .entry(key)
+        let mut c = c.borrow_mut();
+        if c.len() >= LIMIT && !c.contains_key(&key) {
+            c.clear();
+        }
+        c.entry(key)
             .or_insert_with(|| {
                 let [r, g, b, _] = color.0;
                 let text = source.replace("currentColor", &format!("#{r:02x}{g:02x}{b:02x}"));
@@ -72,6 +84,27 @@ fn parse(source: &str, color: Rgba) -> Option<Rc<Svg>> {
             })
             .clone()
     })
+}
+
+/// The SVG file at `path`, parsed (and read again when the file changes);
+/// `None` if it can't be read or isn't valid SVG.
+pub fn load_file(path: &str, color: Rgba) -> Option<Rc<Svg>> {
+    let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    let source = FILES.with(|f| {
+        let mut f = f.borrow_mut();
+        if let Some((m, source)) = f.get(path)
+            && *m == modified
+        {
+            return source.clone();
+        }
+        if f.len() >= LIMIT {
+            f.clear();
+        }
+        let source: Option<Rc<str>> = std::fs::read_to_string(path).ok().map(Into::into);
+        f.insert(path.to_string(), (modified, source.clone()));
+        source
+    })?;
+    load(&source, color)
 }
 
 /// A built-in icon by name, for the runtime's own controls.
