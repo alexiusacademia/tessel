@@ -5,16 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-# The renderers: the GPU one (vello, wgpu and parley), and the system's on
-# macOS (`native`) and on Windows (`native-windows`, not on by default
-# yet). Where the system's is on, apps use it; elsewhere the GPU's.
+# The renderers: the GPU one (vello, wgpu and parley), and the system's
+# (`native`). Where the system's is on, apps use it; elsewhere the GPU's.
 default = ["gpu", "native"]
 gpu = ["dep:vello", "dep:vello_svg", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
-# The macOS renderer: Core Graphics, Core Text and ImageIO, which come with
-# the system (see ui/mac).
-native = []
-# The Windows renderer: Direct2D, DirectWrite and WIC (see ui/win).
-native-windows = ["dep:windows", "dep:windows-numerics"]
+# The system's renderer: on macOS Core Graphics, Core Text and ImageIO (see
+# ui/mac); on Windows Direct2D, DirectWrite and WIC (see ui/win). They come
+# with the system, so apps carry none of them.
+native = ["dep:windows", "dep:windows-numerics"]
 
 [dependencies]
 # The clipboard, for text only (its picture support would bring image decoders).

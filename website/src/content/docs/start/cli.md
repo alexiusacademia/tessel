@@ -235,9 +235,9 @@ each add their code only to programs that use them.
 - **macOS:** an app with a window is about 1 MB. It draws, lays out text
   and reads pictures with what comes with macOS (Core Graphics, Core Text
   and ImageIO), so none of that is in the app.
-- **Windows:** an app carries its own renderer, which draws with the
-  graphics card (DirectX 12), and its own text layout: it's several MB.
-  A renderer that uses what comes with Windows is on its way.
+- **Windows:** an app with a window is about 1 MB too. It draws, lays out
+  text and reads pictures with what comes with Windows (Direct2D,
+  DirectWrite and WIC).
 
 A program without a window is smaller still.
 

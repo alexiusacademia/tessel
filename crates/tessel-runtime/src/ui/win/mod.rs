@@ -24,7 +24,7 @@ use windows::Win32::System::Com::*;
 use windows_numerics::{Matrix3x2, Vector2};
 use winit::window::Window;
 
-use super::draw::{DrawList, FillRule, Gradient, Op};
+use super::draw::{Blend, DrawList, FillRule, Gradient, Op};
 use super::image::Picture;
 use super::Rgba;
 
@@ -204,8 +204,128 @@ fn gradient_brush(rt: &ID2D1RenderTarget, gradient: &Gradient, t: Affine) -> Opt
     }
 }
 
+// ===== blending =====
+
+/// Direct2D's blend mode for a layer's `BlendMode` (`None`: normal).
+fn blend_mode(blend: Blend) -> Option<D2D1_BLEND_MODE> {
+    Some(match blend {
+        1 => D2D1_BLEND_MODE_MULTIPLY,
+        2 => D2D1_BLEND_MODE_SCREEN,
+        3 => D2D1_BLEND_MODE_OVERLAY,
+        4 => D2D1_BLEND_MODE_DARKEN,
+        5 => D2D1_BLEND_MODE_LIGHTEN,
+        6 => D2D1_BLEND_MODE_COLOR_DODGE,
+        7 => D2D1_BLEND_MODE_COLOR_BURN,
+        8 => D2D1_BLEND_MODE_HARD_LIGHT,
+        9 => D2D1_BLEND_MODE_SOFT_LIGHT,
+        10 => D2D1_BLEND_MODE_DIFFERENCE,
+        11 => D2D1_BLEND_MODE_EXCLUSION,
+        12 => D2D1_BLEND_MODE_HUE,
+        13 => D2D1_BLEND_MODE_SATURATION,
+        14 => D2D1_BLEND_MODE_COLOR,
+        15 => D2D1_BLEND_MODE_LUMINOSITY,
+        _ => return None,
+    })
+}
+
+/// Whether a drawing has a layer that blends (other than normally).
+fn blends(list: &DrawList) -> bool {
+    list.ops.iter().any(|op| match op {
+        Op::Push { blend, .. } => blend_mode(*blend).is_some(),
+        Op::Svg { svg, .. } => blends(&svg.scene),
+        Op::List { list, .. } => blends(list),
+        _ => false,
+    })
+}
+
+/// What a `Push` opened, for its `Pop` to close.
+enum Opened {
+    Layer,
+    /// A layer that blends: it's drawn into a bitmap of its own (`layer`),
+    /// which is blended onto `under` when it ends.
+    Blend { under: ID2D1Image, layer: ID2D1Bitmap1, clip: Option<ID2D1Geometry>, alpha: f32, mode: D2D1_BLEND_MODE },
+}
+
+fn bitmap_props(dc: &ID2D1DeviceContext, options: D2D1_BITMAP_OPTIONS) -> D2D1_BITMAP_PROPERTIES1 {
+    D2D1_BITMAP_PROPERTIES1 {
+        pixelFormat: unsafe { dc.GetPixelFormat() },
+        dpiX: 96.0,
+        dpiY: 96.0,
+        bitmapOptions: options,
+        colorContext: std::mem::ManuallyDrop::new(None),
+    }
+}
+
+/// A clear bitmap the size of the target, to draw into.
+fn target_bitmap(dc: &ID2D1DeviceContext) -> Option<ID2D1Bitmap1> {
+    unsafe { dc.CreateBitmap(dc.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_TARGET)).ok() }
+}
+
+/// Starts a blended layer: what's drawn next goes into a bitmap of its own.
+fn begin_blend(dc: &ID2D1DeviceContext, clip: Option<ID2D1Geometry>, alpha: f32, mode: D2D1_BLEND_MODE) -> Option<Opened> {
+    unsafe {
+        let under = dc.GetTarget().ok()?;
+        let layer = target_bitmap(dc)?;
+        dc.SetTarget(&layer);
+        dc.Clear(Some(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }));
+        Some(Opened::Blend { under, layer, clip, alpha, mode })
+    }
+}
+
+/// Pushes a layer with a clip (in pixels) and an opacity.
+fn push_layer(rt: &ID2D1RenderTarget, clip: Option<ID2D1Geometry>, alpha: f32) {
+    let params = D2D1_LAYER_PARAMETERS {
+        contentBounds: D2D_RECT_F { left: -1.0e9, top: -1.0e9, right: 1.0e9, bottom: 1.0e9 },
+        geometricMask: std::mem::ManuallyDrop::new(clip),
+        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+        maskTransform: Matrix3x2::identity(),
+        opacity: alpha,
+        opacityBrush: std::mem::ManuallyDrop::new(None),
+        layerOptions: D2D1_LAYER_OPTIONS_NONE,
+    };
+    unsafe {
+        rt.SetTransform(&Matrix3x2::identity());
+        rt.PushLayer(&params, None);
+    }
+    // (The mask was only lent.)
+    let _ = std::mem::ManuallyDrop::into_inner(params.geometricMask);
+}
+
+/// Closes what a `Push` opened. A blended layer is blended onto what's
+/// under it, inside its clip and at its opacity.
+fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened) {
+    let Opened::Blend { under, layer, clip, alpha, mode } = opened else {
+        unsafe { rt.PopLayer() };
+        return;
+    };
+    let Some(dc) = dc else { return };
+    unsafe {
+        dc.SetTarget(&under);
+        // The effect reads what's under the layer while drawing onto it, so
+        // it reads a copy. (`under` is a bitmap: see `play_all`.)
+        let blended = || -> Option<ID2D1Image> {
+            let under: ID2D1Bitmap1 = under.cast().ok()?;
+            let copy = dc.CreateBitmap(under.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_NONE)).ok()?;
+            copy.CopyFromBitmap(None, &under, None).ok()?;
+            let effect = dc.CreateEffect(&CLSID_D2D1Blend).ok()?;
+            effect.SetInput(0, &copy, true);
+            effect.SetInput(1, &layer, true);
+            effect.SetValue(D2D1_BLEND_PROP_MODE.0 as u32, D2D1_PROPERTY_TYPE_ENUM, &(mode.0 as u32).to_le_bytes()).ok()?;
+            effect.GetOutput().ok()
+        };
+        push_layer(rt, clip, alpha);
+        match blended() {
+            // (It has what was under it, blended: it replaces that.)
+            Some(image) => dc.DrawImage(&image, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_COPY),
+            None => dc.DrawImage(&layer, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER),
+        }
+        rt.PopLayer();
+    }
+}
+
 /// Plays a drawing into a render target, with everything placed by `base`.
-fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resources, open: &mut usize) {
+/// `dc`: the target as a device context, when it blends layers.
+fn play(list: &DrawList, rt: &ID2D1RenderTarget, dc: Option<&ID2D1DeviceContext>, base: Affine, res: &mut Resources, open: &mut Vec<Opened>) {
     for op in &list.ops {
         unsafe {
             match op {
@@ -239,30 +359,25 @@ fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resourc
                         rt.SetTransform(&Matrix3x2::identity());
                     }
                 }
-                // (Blend modes need Direct2D's effects; layers go on normally.)
-                Op::Push { clip, rule, alpha, blend: _, transform: t } => {
+                Op::Push { clip, rule, alpha, blend, transform: t } => {
                     let mut p = clip.clone();
                     p.apply_affine(base * *t);
-                    let g = geometry(&p, *rule).map(|g| g.cast::<ID2D1Geometry>().ok()).flatten();
-                    let params = D2D1_LAYER_PARAMETERS {
-                        contentBounds: D2D_RECT_F { left: -1.0e9, top: -1.0e9, right: 1.0e9, bottom: 1.0e9 },
-                        geometricMask: std::mem::ManuallyDrop::new(g),
-                        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                        maskTransform: Matrix3x2::identity(),
-                        opacity: *alpha,
-                        opacityBrush: std::mem::ManuallyDrop::new(None),
-                        layerOptions: D2D1_LAYER_OPTIONS_NONE,
+                    let g = geometry(&p, *rule).and_then(|g| g.cast::<ID2D1Geometry>().ok());
+                    let blended = match (dc, blend_mode(*blend)) {
+                        (Some(dc), Some(mode)) => begin_blend(dc, g.clone(), *alpha, mode),
+                        _ => None,
                     };
-                    rt.SetTransform(&Matrix3x2::identity());
-                    rt.PushLayer(&params, None);
-                    // (The mask was only lent.)
-                    let _ = std::mem::ManuallyDrop::into_inner(params.geometricMask);
-                    *open += 1;
+                    match blended {
+                        Some(b) => open.push(b),
+                        None => {
+                            push_layer(rt, g, *alpha);
+                            open.push(Opened::Layer);
+                        }
+                    }
                 }
                 Op::Pop => {
-                    if *open > 0 {
-                        rt.PopLayer();
-                        *open -= 1;
+                    if let Some(opened) = open.pop() {
+                        close(dc, rt, opened);
                     }
                 }
                 Op::Text { layout, transform: t, tint, halo } => {
@@ -278,8 +393,8 @@ fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resourc
                         rt.SetTransform(&Matrix3x2::identity());
                     }
                 }
-                Op::Svg { svg, transform: t } => play(&svg.scene, rt, base * *t, res, open),
-                Op::List { list, transform: t } => play(list, rt, base * *t, res, open),
+                Op::Svg { svg, transform: t } => play(&svg.scene, rt, dc, base * *t, res, open),
+                Op::List { list, transform: t } => play(list, rt, dc, base * *t, res, open),
             }
         }
     }
@@ -287,10 +402,28 @@ fn play(list: &DrawList, rt: &ID2D1RenderTarget, base: Affine, res: &mut Resourc
 
 /// Plays a whole drawing, closing what it left open.
 fn play_all(list: &DrawList, rt: &ID2D1RenderTarget, res: &mut Resources) {
-    let mut open = 0;
-    play(list, rt, Affine::IDENTITY, res, &mut open);
-    for _ in 0..open {
-        unsafe { rt.PopLayer() };
+    // Blending needs the target as a device context (Windows 8 and later),
+    // drawing into a bitmap: what's under a layer is read back from it.
+    let dc: Option<ID2D1DeviceContext> = if blends(list) { rt.cast().ok() } else { None };
+    let canvas = dc.as_ref().and_then(|dc| unsafe {
+        let screen = dc.GetTarget().ok()?;
+        let canvas = target_bitmap(dc)?;
+        dc.SetTarget(&canvas);
+        dc.Clear(Some(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }));
+        Some((screen, canvas))
+    });
+    let dc = dc.filter(|_| canvas.is_some());
+    let mut open = Vec::new();
+    play(list, rt, dc.as_ref(), Affine::IDENTITY, res, &mut open);
+    while let Some(opened) = open.pop() {
+        close(dc.as_ref(), rt, opened);
+    }
+    if let (Some(dc), Some((screen, canvas))) = (&dc, canvas) {
+        unsafe {
+            dc.SetTarget(&screen);
+            dc.SetTransform(&Matrix3x2::identity());
+            dc.DrawImage(&canvas, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+        }
     }
 }
 

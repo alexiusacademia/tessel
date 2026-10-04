@@ -10,11 +10,10 @@ path = "src/main.rs"
 
 [features]
 # The runtime's renderers (see tessel-runtime's features): the GPU one, and
-# the system's on macOS (and on Windows, with `native-windows`).
+# the system's on macOS and Windows.
 default = ["gpu", "native"]
 gpu = ["tessel-runtime/gpu"]
 native = ["tessel-runtime/native"]
-native-windows = ["tessel-runtime/native-windows"]
 # Build LLVM's linker (lld) into `tessel` (release packages), so building apps
 # doesn't need Apple's Command Line Tools or Visual Studio's linker.
 bundled-linker = []

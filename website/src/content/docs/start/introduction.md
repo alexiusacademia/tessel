@@ -111,9 +111,10 @@ See [Optionals](/language/optionals/) and [Errors](/language/errors/).
 uses LLVM to produce machine code. Memory is managed with reference counting,
 so there is no garbage collector and no pauses.
 
-**Its own renderer.** Tessel draws every button, text field and toggle
-itself on the GPU, rather than using the operating system's widgets. Apps
-look the same on macOS and Windows.
+**Its own controls.** Tessel draws every button, text field and toggle
+itself, with the system's graphics (Core Graphics on macOS, Direct2D on
+Windows), rather than using the operating system's widgets. Apps look the
+same on macOS and Windows.
 
 ## Current status
 

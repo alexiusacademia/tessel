@@ -23,28 +23,22 @@ mod render;
 mod svg;
 mod text;
 
-// The renderer: what draws, lays text out and reads pictures. The system's
-// on macOS (`mac`, with the `native` feature) and on Windows (`win`, with
-// `native-windows`); otherwise the GPU's.
-#[cfg(all(
-    feature = "gpu",
-    not(any(all(feature = "native", target_os = "macos"), all(feature = "native-windows", windows)))
-))]
+// The renderer: what draws, lays text out and reads pictures. With the
+// `native` feature, the system's: `mac` on macOS and `win` on Windows;
+// otherwise (and on other systems) the GPU's.
+#[cfg(all(feature = "gpu", not(all(feature = "native", any(target_os = "macos", windows)))))]
 pub(crate) mod gpu;
-#[cfg(all(
-    feature = "gpu",
-    not(any(all(feature = "native", target_os = "macos"), all(feature = "native-windows", windows)))
-))]
+#[cfg(all(feature = "gpu", not(all(feature = "native", any(target_os = "macos", windows)))))]
 pub(crate) use gpu as backend;
 #[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) mod mac;
 #[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) use mac as backend;
-#[cfg(all(feature = "native-windows", windows))]
+#[cfg(all(feature = "native", windows))]
 pub(crate) mod win;
-#[cfg(all(feature = "native-windows", windows))]
+#[cfg(all(feature = "native", windows))]
 pub(crate) use win as backend;
-#[cfg(any(all(feature = "native", target_os = "macos"), all(feature = "native-windows", windows)))]
+#[cfg(all(feature = "native", any(target_os = "macos", windows)))]
 mod svg_list;
 mod theme;
 

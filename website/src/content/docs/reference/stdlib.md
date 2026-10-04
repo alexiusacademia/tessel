@@ -656,7 +656,7 @@ fn main() {
   gives the sharpness of a Retina screen, and a larger one a picture to
   print. Neither side can be more than 16 384 pixels.
 - Where nothing is drawn, a PNG is see-through and a JPEG white.
-- The drawing is done by the GPU, like a window's.
+- It's drawn the way a window is.
 
 ### writeImage
 

@@ -271,8 +271,7 @@ release
 ```
 
 `snapshot` renders exactly what the window would show, including the text
-cursor and selection. It needs a GPU (the screenshots on this site were made
-with it).
+cursor and selection (the screenshots on this site were made with it).
 
 If a command is unknown, or a `click`, `close` or `hover` finds nothing, the app prints
 an error starting with `script:` and exits with code 2. Otherwise it exits with
