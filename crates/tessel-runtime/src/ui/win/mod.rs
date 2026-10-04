@@ -334,7 +334,6 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
         dc.SetTarget(&under);
         push_layer(rt, clip, alpha);
         let blended = blended.map_err(|e| debug("blending a layer", e)).ok();
-        debug("a blended layer", mode);
         match blended {
             // (It has what was under it, blended: it replaces that.)
             Some(image) => dc.DrawImage(&image, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_COPY),

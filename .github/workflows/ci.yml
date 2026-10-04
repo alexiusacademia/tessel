@@ -78,13 +78,6 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
-      # (Temporary: what the Windows renderer says while blending.)
-      - name: Blend diagnostics
-        if: always() && runner.os == 'Windows'
-        shell: bash
-        env:
-          TESSEL_DEBUG_RENDER: "1"
-        run: '"./${TESSEL_BIN:-target/debug}/tessel" run tests/run/canvas_blend.tsl || true'
 
       - name: Build the examples
         shell: bash
