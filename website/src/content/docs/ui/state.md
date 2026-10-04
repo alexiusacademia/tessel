@@ -121,7 +121,10 @@ error: `TextField`'s `text:` needs something it can change
   = help: pass a `state` or `var`, or a field of one
 ```
 
-`bind` is only allowed on view parameters. Functions always get copies.
+Top-level functions and methods can have `bind` parameters too, so an
+action can hand a binding on to a function that changes it:
+`Button("Done") { complete(todo) }`. See
+[Changing the caller's value](/language/values/#changing-the-callers-value).
 
 ### Binding struct fields and list elements
 

@@ -24,6 +24,9 @@ pub struct Checked {
     /// `for` loop variables (by name span) that are places in the list,
     /// so changing them changes the list.
     pub loop_places: HashSet<Span>,
+    /// Arguments given to `bind` parameters: the caller's variable they
+    /// name is shared with the callee (so it lives in a box).
+    pub bind_args: HashSet<ExprId>,
     /// Parameters of each user view.
     pub views: HashMap<String, Vec<ParamSig>>,
     /// Signatures of functions declared inside views: (view, function).
@@ -262,6 +265,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         frames: Vec::new(),
         locals: HashMap::new(),
         loop_places: HashSet::new(),
+        bind_args: HashSet::new(),
         view_fns: HashMap::new(),
         local_fns: HashMap::new(),
         completion: None,
@@ -305,6 +309,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         fns,
         locals: c.locals,
         loop_places: c.loop_places,
+        bind_args: c.bind_args,
         views: program
             .items
             .iter()
@@ -443,6 +448,7 @@ struct Checker<'a> {
     frames: Vec<CallFrame>,
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
+    bind_args: HashSet<ExprId>,
     view_fns: HashMap<(String, String), FnSig>,
     local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
     completion: Option<Vec<Suggestion>>,
@@ -755,7 +761,7 @@ impl Checker<'_> {
                 };
                 let same_params = m.sig.params.len() == want.params.len()
                     && m.sig.params.iter().zip(&want.params).all(|(a, b)| {
-                        a.label == b.label && a.unlabeled == b.unlabeled && a.ty == b.ty
+                        a.label == b.label && a.unlabeled == b.unlabeled && a.ty == b.ty && a.bind == b.bind
                     });
                 if !same_params || m.sig.ret != want.ret {
                     let have = format!("fn {mname}{}", self.sig_text(&m.sig.params, &m.sig.ret));
@@ -884,8 +890,13 @@ impl Checker<'_> {
                     .note_at(prev, "first declared here");
             }
             if p.bind && !allow_bind {
-                self.error(p.span, "`bind` parameters are only allowed on views")
-                    .help("remove `bind`; functions receive a copy of the value");
+                self.error(p.span, "`bind` parameters are only allowed on views, top-level functions and methods")
+                    .help("remove `bind`; this receives a copy of the value");
+            }
+            if let (true, true, Some(d)) = (p.bind, allow_bind, &p.default) {
+                self.error(d.span, "a `bind` parameter can't have a default value")
+                    .label("there's no variable to change when it's left out")
+                    .help("remove the default, or the `bind`");
             }
             let ty = self.resolve(&p.ty);
             if p.bind && ty == Ty::View {
@@ -905,8 +916,10 @@ impl Checker<'_> {
         out
     }
 
-    fn fn_sig(&mut self, f: &FnDecl) -> FnSig {
-        let params = self.params_sig(&f.params, false);
+    /// `allow_bind`: it's a top-level function or a method, which can
+    /// change the caller's values (see `ParamSig::bind`).
+    fn fn_sig(&mut self, f: &FnDecl, allow_bind: bool) -> FnSig {
+        let params = self.params_sig(&f.params, allow_bind);
         let ret = f.ret.as_ref().map_or(Ty::Void, |t| self.resolve(t));
         FnSig { params, ret }
     }
@@ -918,7 +931,7 @@ impl Checker<'_> {
                 self.error(m.name.span, format!("`{owner}` already has a member named `{}`", m.name.name));
                 continue;
             }
-            let sig = self.fn_sig(m);
+            let sig = self.fn_sig(m, true);
             let mut roots = fields.clone();
             roots.insert("self".into());
             out.push(MethodDef {
@@ -1013,7 +1026,7 @@ impl Checker<'_> {
                     self.ifaces[id].methods = methods;
                     self.ifaces[id].props = props;
                 }
-                Item::Fn(f) => self.fns[id] = self.fn_sig(f),
+                Item::Fn(f) => self.fns[id] = self.fn_sig(f, true),
                 Item::View(v) => self.views[id] = self.params_sig(&v.params, true),
                 Item::App(_) => {}
             }
@@ -1222,7 +1235,8 @@ impl Checker<'_> {
                 if let Some(default) = &p.default {
                     c.default_value(default, &ps.ty);
                 }
-                c.declare(&p.name, ps.ty.clone(), Kind::Param);
+                let kind = if ps.bind { Kind::Bind } else { Kind::Param };
+                c.declare(&p.name, ps.ty.clone(), kind);
             }
             c.returns.push(sig.ret.clone());
             let loops = std::mem::take(&mut c.loops);
@@ -1324,7 +1338,7 @@ impl Checker<'_> {
             let mut fns = Vec::new();
             for s in &body.stmts {
                 if let Stmt::Fn(f) = s {
-                    let sig = c.fn_sig(f);
+                    let sig = c.fn_sig(f, false);
                     c.view_fns.insert((name.name.clone(), f.name.name.clone()), sig.clone());
                     c.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone(), FnOrigin::View));
                     fns.push((f, sig));
@@ -1498,7 +1512,7 @@ impl Checker<'_> {
                 .help("declare it at the top level of the file");
             return;
         }
-        let sig = self.fn_sig(f);
+        let sig = self.fn_sig(f, false);
         self.local_fns.insert(f.name.span, (sig.clone(), f.params.clone()));
         self.declare(&f.name, fn_type(&sig), Kind::Fn(sig.clone(), FnOrigin::Local(f.name.span)));
         // `break` can't leave a loop around it, and `try` returns from it.
@@ -1644,7 +1658,7 @@ impl Checker<'_> {
                     Kind::Param => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a parameter"),
                         decl: l.span,
-                        help: "parameters are copies and can't be changed; copy it into a `var`, or (in a view) declare it as `bind`",
+                        help: "parameters are copies and can't be changed; copy it into a `var`, or declare the parameter `bind` to change the caller's value",
                     }),
                     Kind::LoopLet if l.ty == Ty::Int => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a loop variable"),
@@ -2177,6 +2191,14 @@ impl Checker<'_> {
         }
     }
 
+    /// A function with `bind` parameters used as a value: a function type
+    /// can't say which parameters change the caller's values.
+    fn bind_fn_value(&mut self, n: &str, span: Span) -> Ty {
+        self.error(span, format!("`{n}` changes values it's given (it has `bind` parameters), so it can't be used as a value; call it"))
+            .help(format!("wrap the call in a block, like `{{ {n}(…) }}`"));
+        Ty::Error
+    }
+
     fn name_expr(&mut self, n: &str, span: Span) -> Ty {
         if n == COMPLETION_MARK {
             self.complete_names();
@@ -2187,9 +2209,15 @@ impl Checker<'_> {
             return Ty::Error;
         }
         if let Some(l) = self.lookup(n) {
+            if let Kind::Fn(sig, _) = &l.kind {
+                if sig.params.iter().any(|p| p.bind) {
+                    return self.bind_fn_value(n, span);
+                }
+            }
             return l.ty.clone();
         }
         match self.globals.get(n).copied() {
+            Some(Global::Fn(i)) if self.fns[i].params.iter().any(|p| p.bind) => self.bind_fn_value(n, span),
             Some(Global::Fn(i)) => fn_type(&self.fns[i]),
             Some(Global::GenericFn(_)) => {
                 self.error(span, format!("`{n}` is generic, so it can't be used as a value; call it"))
@@ -3918,7 +3946,9 @@ impl Checker<'_> {
         };
         if p.bind && !t.has_error() {
             match self.place(v) {
-                Ok(()) => {}
+                Ok(()) => {
+                    self.bind_args.insert(v.id);
+                }
                 Err(PlaceErr::NotPlace) => {
                     self.error(v.span, format!("{what}'s `{}:` needs something it can change", p.label))
                         .label("this is a value, not a variable")
@@ -4545,6 +4575,7 @@ impl Checker<'_> {
             .iter()
             .map(|p| {
                 let t = self.show(&p.ty);
+                let t = if p.bind { format!("bind {t}") } else { t };
                 if p.unlabeled { t } else { format!("{}: {t}", p.label) }
             })
             .collect();

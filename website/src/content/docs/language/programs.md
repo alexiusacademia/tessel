@@ -199,8 +199,9 @@ reaching into each other. Data moves the same way it does inside one file:
   `Footer(text: …)`. The function or view gets a copy.
 - **Back up, as results.** Functions return new values, and the caller
   stores them: `notes = sortedNotes(notes: notes)`.
-- **Changed in place, with `bind`.** A view that changes the caller's data
-  takes it as a `bind` parameter, like `NoteRow(note: bind Note)`. In the app,
+- **Changed in place, with `bind`.** A view or function that changes the
+  caller's data takes it as a `bind` parameter, like
+  `NoteRow(note: bind Note)` or `fn archive(_ note: bind Note)`. In the app,
   the list's items are passed straight in: `NoteRow(note: note)` inside
   `for note in notes`.
 - **Through the disk or the network.** `storage.tsl` saves and loads files;

@@ -1,0 +1,118 @@
+// `bind` parameters on functions and methods: the function changes the
+// caller's variable, field or item, not a copy of it.
+
+struct Todo {
+    title: String
+    done: Bool = false
+    tags: [String] = []
+}
+
+struct Game {
+    scores: [Int] = []
+    total: Int = 0
+
+    fn add(points: Int, to: bind Int) {
+        scores.append(points)
+        to += points
+    }
+
+    // A method passing its own field.
+    fn record(points: Int) {
+        add(points: points, to: total)
+    }
+}
+
+fn addBonus(scores: bind [Int]) {
+    scores.append(100)
+}
+
+fn swap<T>(_ a: bind T, _ b: bind T) {
+    let t = a
+    a = b
+    b = t
+}
+
+fn finish(todo: bind Todo) {
+    todo.done = true
+    todo.tags.append("finished")
+}
+
+// A binding passed on to another function.
+fn finishAll(todos: bind [Todo]) {
+    for todo in todos {
+        finish(todo: todo)
+    }
+}
+
+fn countUp(n: bind Int, times: Int) {
+    // A closure using the binding changes the caller's value too.
+    let bump = { n += 1 }
+    for _ in 0..times {
+        bump()
+    }
+}
+
+fn bump(_ n: bind Int) {
+    n += 1
+}
+
+// The list grows while an item of it is bound: the binding finds it again.
+fn grow(list: bind [Int], item: bind Int) {
+    for i in 0..100 {
+        list.append(i)
+    }
+    item = 42
+}
+
+fn main() {
+    var scores = [10, 20]
+    addBonus(scores: scores)
+    print(scores)
+
+    var x = 1
+    var y = 2
+    swap(x, y)
+    print("{x} {y}")
+    var words = ["left", "middle", "right"]
+    swap(words[0], words[2])
+    print(words)
+
+    var todos = [Todo(title: "Write"), Todo(title: "Test")]
+    finish(todo: todos[1])
+    print("{todos[0].done} {todos[1].done} {todos[1].tags}")
+    finishAll(todos: todos)
+    print("{todos[0].done} {todos[0].tags}")
+
+    var count = 0
+    countUp(n: count, times: 3)
+    print(count)
+
+    var game = Game()
+    var total = 0
+    game.add(points: 5, to: total)
+    game.record(points: 7)
+    print("{game.scores} {total} {game.total}")
+
+    var nums = [1, 2, 3]
+    grow(list: nums, item: nums[0])
+    print("{nums[0]} {nums.count}")
+
+    // Items of a list looped over, and of the lists in it.
+    var marks = [0, 0, 0]
+    for m in marks {
+        bump(m)
+    }
+    var grid = [[1, 2], [3, 4]]
+    for row in grid {
+        for cell in row {
+            bump(cell)
+        }
+    }
+    print("{marks} {grid}")
+
+    // A closure in the caller still sees the variable after the call.
+    var shared = 0
+    let show = { print("shared is {shared}") }
+    countUp(n: shared, times: 2)
+    show()
+}

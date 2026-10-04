@@ -527,7 +527,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let fn_names: Vec<String> = self.fn_decls.keys().cloned().collect();
         for name in fn_names {
             let sig = self.checked.fns[&name].clone();
-            let ty = self.fn_type(&sig.params.iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), &sig.ret, false);
+            let ty = self.fn_type(&param_lltys(&sig.params), &sig.ret, false);
             let f = self.module.add_function(&format!("tsl_f_{name}"), ty, Some(Linkage::Internal));
             self.fns.insert(name, f);
         }
@@ -535,7 +535,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for key in method_keys {
             let (_, owner) = self.method_decls[&key].clone();
             let sig = self.method_sig(&owner, &key.1);
-            let ty = self.fn_type(&sig.params.iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), &sig.ret, true);
+            let ty = self.fn_type(&param_lltys(&sig.params), &sig.ret, true);
             let f = self.module.add_function(&format!("tsl_m_{}_{}", key.0, key.1), ty, Some(Linkage::Internal));
             self.methods.insert(key, f);
         }
@@ -545,15 +545,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for (name, decl) in self.fn_decls.clone() {
             let f = self.fns[&name];
             let sig = self.checked.fns[&name].clone();
-            let params: Vec<(Ident, Ty)> =
-                decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone())).collect();
+            let params: Vec<(Ident, Ty, bool)> =
+                decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             self.function_body(f, &params, &decl.body, &sig.ret, None, 1);
         }
         for (key, (decl, owner)) in self.method_decls.clone() {
             let f = self.methods[&key];
             let sig = self.method_sig(&owner, &key.1);
-            let params: Vec<(Ident, Ty)> =
-                decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone())).collect();
+            let params: Vec<(Ident, Ty, bool)> =
+                decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             let self_ptr = f.get_nth_param(1).unwrap().into_pointer_value();
             self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2);
         }
@@ -606,7 +606,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             scope.push(Var { name: v.name.clone(), ty: p.ty.clone(), store: Store::EnvBox(global.as_pointer_value()) });
         }
         let declared = self.checked.repl.clone().unwrap_or_default().vars;
-        let mut boxed = boxed_vars(&decl.body);
+        let mut boxed = self.boxed_vars(&decl.body);
         boxed.extend(declared.iter().map(|(name, ..)| name.clone()));
         self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None });
         self.push_scope();
@@ -698,10 +698,60 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         methods.iter().find(|m| m.name == name).unwrap().sig.clone()
     }
 
+    /// The `var`s in `body` that closures, or the callees of `bind`
+    /// arguments, share with it: they live in boxes.
+    fn boxed_vars(&self, body: &Block) -> HashSet<String> {
+        let mut boxed = boxed_vars(body);
+        let mut shared = self.bind_roots(body);
+        // A loop variable that's shared finds its item again through a
+        // locator for the list, which shares the list's variable.
+        walk_block(body, &mut |node| {
+            if let Node::S(Stmt::For { var, iter, body, .. }) = node {
+                if let (Some(root), true) = (root_name(iter), self.loop_var_shared(body, &var.name)) {
+                    shared.insert(root.to_string());
+                }
+            }
+        });
+        let declared = declared_vars(body);
+        boxed.extend(shared.into_iter().filter(|n| declared.contains(n)));
+        boxed
+    }
+
+    /// Whether the loop variable `name` is used after it's looked up: by a
+    /// closure, a `bind` argument, or (through it) a loop inside.
+    fn loop_var_shared(&self, body: &Block, name: &str) -> bool {
+        if captures(body, name) || self.bind_roots(body).contains(name) {
+            return true;
+        }
+        let mut found = false;
+        walk_block(body, &mut |node| {
+            if let Node::S(Stmt::For { var, iter, body: inner, .. }) = node {
+                found |= root_name(iter) == Some(name) && self.loop_var_shared(inner, &var.name);
+            }
+        });
+        found
+    }
+
+    /// The variables that `bind` arguments in `body` start at (`todos` for
+    /// `todos[0].title`).
+    fn bind_roots(&self, body: &Block) -> HashSet<String> {
+        let mut roots = HashSet::new();
+        walk_block(body, &mut |node| {
+            let Node::E(e) = node else { return };
+            if !self.checked.bind_args.contains(&e.id) {
+                return;
+            }
+            if let Some(n) = root_name(e) {
+                roots.insert(n.to_string());
+            }
+        });
+        roots
+    }
+
     fn function_body(
         &mut self,
         func: FunctionValue<'ctx>,
-        params: &[(Ident, Ty)],
+        params: &[(Ident, Ty, bool)],
         body: &Block,
         ret: &Ty,
         self_info: Option<(PointerValue<'ctx>, Ty)>,
@@ -713,11 +763,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         if let Some((_, owner)) = &self_info {
             scope.extend(self.receiver_vars(owner));
         }
-        let boxed = boxed_vars(body);
+        let boxed = self.boxed_vars(body);
         self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None });
-        for (i, (name, ty)) in params.iter().enumerate() {
+        for (i, (name, ty, bind)) in params.iter().enumerate() {
             let value = func.get_nth_param(first_param + i as u32).unwrap();
-            self.declare_value(&name.name, ty, Some(value));
+            if *bind {
+                // A `bind` parameter: a locator for the caller's storage.
+                let lt = self.llty(&Ty::View).unwrap();
+                let slot = self.alloca(lt, &name.name);
+                self.b.build_store(slot, value).unwrap();
+                self.push_var(Var { name: name.name.clone(), ty: ty.clone(), store: Store::Binding { slot, owned: true } });
+            } else {
+                self.declare_value(&name.name, ty, Some(value));
+            }
         }
         let value = self.block(body, Some(ret));
         self.finish_function(value);
@@ -2162,7 +2220,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn for_loop(&mut self, var: &Ident, iter: &Expr, body: &Block) {
-        let captured = captures(body, &var.name);
+        let captured = self.loop_var_shared(body, &var.name);
         self.for_each_in(var, iter, captured, &mut |g| {
             g.block(body, Some(&Ty::Void));
         });
@@ -3646,8 +3704,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
         }
         let boxed = match &body {
-            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => boxed_vars(b),
-            Body::LocalFn(d) => boxed_vars(&d.body),
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => self.boxed_vars(b),
+            Body::LocalFn(d) => self.boxed_vars(&d.body),
             _ => HashSet::new(),
         };
         self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record });
@@ -4099,6 +4157,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let mut vals = Vec::new();
         for (i, p) in sig.params.iter().enumerate() {
             let v = match info.args.get(i).copied().flatten() {
+                // The callee changes the caller's value through a locator.
+                Some(r) if p.bind => {
+                    let loc = self.make_closure(Body::Locator(arg(r)), &Ty::View);
+                    self.hold(loc, &Ty::View);
+                    vals.push(loc);
+                    continue;
+                }
                 Some(r) => self.expr_as(arg(r), &p.ty),
                 None => {
                     let default = decl_params[i].default.as_ref().expect("default value");
@@ -5905,6 +5970,34 @@ fn hashable(t: &Ty, g: &Gen) -> bool {
 /// `var`s in `body` whose names are used inside closures: they must live in
 /// boxes so the closure and the function share them. (Over-approximating is
 /// safe; boxing a variable never changes what the program does.)
+/// A function's parameter types as passed: a `bind` parameter is a locator.
+fn param_lltys(params: &[crate::types::ParamSig]) -> Vec<Ty> {
+    params.iter().map(|p| if p.bind { Ty::View } else { p.ty.clone() }).collect()
+}
+
+/// The variable a place starts at (`todos` for `todos[0].title`).
+fn root_name(e: &Expr) -> Option<&str> {
+    let mut root = e;
+    while let ExprKind::Member { object: o, .. } | ExprKind::Index(o, _) = &root.kind {
+        root = o;
+    }
+    match &root.kind {
+        ExprKind::Name(n) => Some(n),
+        _ => None,
+    }
+}
+
+/// The names of the `var`s declared in `body` (in nested blocks too).
+fn declared_vars(body: &Block) -> HashSet<String> {
+    let mut vars = HashSet::new();
+    walk_block(body, &mut |node| {
+        if let Node::S(Stmt::Var(d)) = node {
+            vars.insert(d.name.name.clone());
+        }
+    });
+    vars
+}
+
 fn boxed_vars(body: &Block) -> HashSet<String> {
     let mut vars = HashSet::new();
     let mut captured = BTreeSet::new();

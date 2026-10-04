@@ -146,7 +146,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             scopes: vec![Vec::new()],
             ret: Ty::Void,
             self_ptr: None,
-            boxed: super::boxed_vars(src.body),
+            boxed: self.boxed_vars(src.body),
             record: None,
         });
         let mut args = Vec::new();
@@ -240,7 +240,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             scopes: vec![vars],
             ret: sig.ret.clone(),
             self_ptr: None,
-            boxed: super::boxed_vars(&fd.body),
+            boxed: self.boxed_vars(&fd.body),
             record: Some(Record { data, ty: st, view: view.to_string() }),
         });
         // The view's parameters, as kept in the record by its last build.

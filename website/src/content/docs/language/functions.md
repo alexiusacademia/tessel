@@ -208,6 +208,35 @@ fn main() {
 The caller's `original` is unchanged. See
 [Values and copying](/language/values/) for why.
 
+## Changing the caller's value with `bind`
+
+To change the caller's variable instead of a copy, declare the parameter
+`bind`. Inside the function it can be changed, and the change happens to
+what the caller passed:
+
+```tessel
+fn addBonus(scores: bind [Int]) {
+    scores.append(100)
+}
+
+fn main() {
+    var scores = [10, 20]
+    addBonus(scores: scores)
+    print(scores)
+}
+```
+
+```text
+[10, 20, 100]
+```
+
+The argument must be something that can change: a `var`, a `state`, a
+field or item of one, or another `bind` parameter. Methods can have `bind`
+parameters too. Functions declared inside a function or a view can't, and a
+`bind` parameter can't have a default value. See
+[Changing the caller's value](/language/values/#changing-the-callers-value)
+for more.
+
 ## Functions that take functions
 
 A parameter can have a function type, such as `fn()` or `fn(Int) -> Int`.

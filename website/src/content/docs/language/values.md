@@ -191,6 +191,71 @@ fn main() {
 50
 ```
 
+A function can also change the caller's variable directly, when it declares
+the parameter `bind`. See [Changing the caller's value](#changing-the-callers-value).
+
+## Changing the caller's value
+
+A parameter declared `bind` isn't a copy: it is the caller's variable
+itself, so the function reads and changes the caller's value. The argument
+must be something that can change, such as a `var`, a field of one, or an
+item of a list:
+
+```tessel
+struct Account {
+    owner: String
+    balance: Int = 0
+}
+
+fn deposit(_ account: bind Account, amount: Int) {
+    account.balance += amount
+}
+
+fn main() {
+    var accounts = [Account(owner: "Ada"), Account(owner: "Grace")]
+    deposit(accounts[1], amount: 50)
+    for account in accounts {
+        deposit(account, amount: 10)
+    }
+    print("{accounts[0].balance} {accounts[1].balance}")
+}
+```
+
+```text
+10 60
+```
+
+The call looks like any other. The `bind` in the function's declaration
+says it can change what it's given, so passing a constant (a `let`), a plain
+parameter or a value like `3` is an error.
+
+A `bind` parameter works on top-level functions and on methods. A function
+with one can't be used as a value (`let f = deposit`), because a function
+type like `fn(Account, Int)` can't say which parameters it changes. Call it
+inside a block instead: `{ deposit(account, amount: 10) }`.
+
+Prefer returning a new value or using a method when either reads naturally.
+Reach for `bind` when a function changes something that lives in a list or
+in another value, or changes more than one thing, like a `swap`:
+
+```tessel
+fn swap<T>(_ a: bind T, _ b: bind T) {
+    let t = a
+    a = b
+    b = t
+}
+
+fn main() {
+    var words = ["left", "middle", "right"]
+    swap(words[0], words[2])
+    print(words)
+}
+```
+
+```text
+["right", "middle", "left"]
+```
+
 ## The exception: closures
 
 A [closure](/language/closures/#capturing-variables) uses the variables it
@@ -201,5 +266,6 @@ variables. This is what lets a closure update a counter or a view's `state`.
 
 Sometimes two parts of an app really should work on the same data: a
 `TextField` needs to change the text stored in its parent view, for example.
-For that, views have `bind` parameters, which receive a *place* to read and
-write rather than a copy. See [State and bindings](/ui/state/).
+For that, views have `bind` parameters, as functions do, which receive a
+*place* to read and write rather than a copy. See
+[State and bindings](/ui/state/).

@@ -1,0 +1,10 @@
+[10, 20, 100]
+2 1
+["right", "middle", "left"]
+false true ["finished"]
+true ["finished"]
+3
+[5, 7] 5 7
+42 103
+[1, 1, 1] [[2, 3], [4, 5]]
+shared is 2
