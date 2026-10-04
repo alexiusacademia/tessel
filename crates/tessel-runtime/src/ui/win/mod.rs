@@ -315,13 +315,13 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
     };
     let Some(dc) = dc else { return };
     unsafe {
-        dc.SetTarget(&under);
         // The effect reads what's under the layer while drawing onto it, so
-        // it reads a copy. (`under` is a bitmap: see `play_all`.)
-        let blended = || -> windows::core::Result<ID2D1Image> {
+        // it reads a copy, made while `under` isn't the target yet (a
+        // target's own pixels can't be read back as it's drawn into).
+        // (`under` is a bitmap: see `play_all`.)
+        let blended = (|| -> windows::core::Result<ID2D1Image> {
             let under: ID2D1Bitmap1 = under.cast()?;
-            // (What was drawn under the layer may still be queued: copying
-            // reads the bitmap as it is.)
+            // (What was drawn under the layer may still be queued.)
             dc.Flush(None, None)?;
             let copy = dc.CreateBitmap(under.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_NONE))?;
             copy.CopyFromBitmap(None, &under, None)?;
@@ -330,9 +330,10 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
             effect.SetInput(1, &layer, true);
             effect.SetValue(D2D1_BLEND_PROP_MODE.0 as u32, D2D1_PROPERTY_TYPE_ENUM, &(mode.0 as u32).to_le_bytes())?;
             effect.GetOutput()
-        };
+        })();
+        dc.SetTarget(&under);
         push_layer(rt, clip, alpha);
-        let blended = blended().map_err(|e| debug("blending a layer", e)).ok();
+        let blended = blended.map_err(|e| debug("blending a layer", e)).ok();
         debug("a blended layer", mode);
         match blended {
             // (It has what was under it, blended: it replaces that.)
