@@ -69,11 +69,7 @@ pub fn run(args: &[String]) -> ExitCode {
 fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
     let current = format!("v{}", tessel_compiler::VERSION);
     let target = match wanted {
-        Some(v) => {
-            let v = if v.starts_with('v') { v.to_string() } else { format!("v{v}") };
-            parse_version(&v).ok_or_else(|| format!("`{v}` isn't a version, like v0.1.3"))?;
-            v
-        }
+        Some(v) => normalize(v)?,
         None => latest()?,
     };
     let newer = parse_version(&target) > parse_version(&current);
@@ -95,19 +91,6 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
     }
 
     let dir = install_dir()?;
-    let (_, name, ext) = platform().ok_or("updates aren't available for this platform")?;
-    let file = format!("tessel-{target}-{name}.{ext}");
-    let base = base();
-    println!("Updating Tessel {current} → {target} in {}", dir.display());
-
-    // The expected checksum first, so a missing release fails fast.
-    let sums = get_text(&format!("{base}/{target}/SHA256SUMS")).map_err(|_| format!("there's no release {target}"))?;
-    let expected = sums
-        .lines()
-        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
-        .map(|(h, _)| h.to_lowercase())
-        .ok_or_else(|| format!("release {target} has no package for this platform"))?;
-
     let parent = dir.parent().ok_or("the installation folder has no parent")?;
     // Left over from earlier updates (on Windows, the old tessel.exe can
     // only be deleted once it has stopped running).
@@ -117,33 +100,107 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
         }
     }
     let staging = parent.join(format!(".tessel-update-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&staging);
-    std::fs::create_dir_all(&staging).map_err(|e| writable(parent, e))?;
-    let result = (|| {
-        let package = staging.join(&file);
-        download(&format!("{base}/{target}/{file}"), &package, &expected)?;
-        let unpacked = staging.join("new");
-        std::fs::create_dir_all(&unpacked).map_err(|e| e.to_string())?;
-        let status = Command::new("tar")
-            .arg("-xf")
-            .arg(&package)
-            .arg("-C")
-            .arg(&unpacked)
-            .status()
-            .map_err(|e| format!("can't run tar: {e}"))?;
-        if !status.success() {
-            return Err(format!("can't unpack {file}"));
-        }
-        let exe = format!("tessel{}", std::env::consts::EXE_SUFFIX);
-        if !unpacked.join(&exe).is_file() {
-            return Err(format!("{file} has no {exe}"));
-        }
-        swap_in(&unpacked, &dir, &staging)
-    })();
+    let say = || println!("Updating Tessel {current} → {target} in {}", dir.display());
+    let result = fetch(&target, &staging, &say).and_then(|unpacked| swap_in(&unpacked, &dir, &staging));
     let _ = std::fs::remove_dir_all(&staging);
     result?;
     println!("Updated to Tessel {target}.");
     Ok(())
+}
+
+/// Downloads release `target` (like `v0.1.3`) into `staging`, checks it and
+/// unpacks it: the folder it returns holds what goes in an installation.
+/// `found` is called once the release is found.
+fn fetch(target: &str, staging: &Path, found: &dyn Fn()) -> Result<PathBuf, String> {
+    let (_, name, ext) = platform().ok_or("Tessel releases aren't made for this platform")?;
+    let file = format!("tessel-{target}-{name}.{ext}");
+    let base = base();
+    // The expected checksum first, so a missing release fails fast.
+    let sums = get_text(&format!("{base}/{target}/SHA256SUMS")).map_err(|_| format!("there's no release {target}"))?;
+    let expected = sums
+        .lines()
+        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
+        .map(|(h, _)| h.to_lowercase())
+        .ok_or_else(|| format!("release {target} has no package for this platform"))?;
+    found();
+    let _ = std::fs::remove_dir_all(staging);
+    let parent = staging.parent().unwrap_or(staging);
+    std::fs::create_dir_all(staging).map_err(|e| writable(parent, e))?;
+    let package = staging.join(&file);
+    download(&format!("{base}/{target}/{file}"), &package, &expected)?;
+    let unpacked = staging.join("new");
+    std::fs::create_dir_all(&unpacked).map_err(|e| e.to_string())?;
+    let status = Command::new("tar")
+        .arg("-xf")
+        .arg(&package)
+        .arg("-C")
+        .arg(&unpacked)
+        .status()
+        .map_err(|e| format!("can't run tar: {e}"))?;
+    if !status.success() {
+        return Err(format!("can't unpack {file}"));
+    }
+    if !unpacked.join(exe_name()).is_file() {
+        return Err(format!("{file} has no {}", exe_name()));
+    }
+    Ok(unpacked)
+}
+
+fn exe_name() -> String {
+    format!("tessel{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// `v0.1.3` for `0.1.3` or `v0.1.3`; an error for what isn't a version.
+pub fn normalize(v: &str) -> Result<String, String> {
+    let v = v.trim();
+    let v = if v.starts_with('v') { v.to_string() } else { format!("v{v}") };
+    match parse_version(&v) {
+        Some(_) if v.trim_start_matches('v').split('.').count() == 3 => Ok(v),
+        _ => Err(format!("`{}` isn't a version; write all three numbers, like 0.1.32", v.trim_start_matches('v'))),
+    }
+}
+
+/// The folder Tessel lives in: `TESSEL_HOME`, or the one around the `bin`
+/// folder this `tessel` is installed in, or where the install scripts put
+/// it (`~/.tessel`, or `%LOCALAPPDATA%\Tessel` on Windows).
+fn home() -> Result<PathBuf, String> {
+    if let Some(h) = std::env::var_os("TESSEL_HOME") {
+        return Ok(PathBuf::from(h));
+    }
+    if let Ok(dir) = install_dir() {
+        if let (Some(parent), true) = (dir.parent(), dir.file_name().is_some_and(|n| n == "bin")) {
+            return Ok(parent.to_path_buf());
+        }
+    }
+    let var = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    if cfg!(windows) {
+        var("LOCALAPPDATA").map(|d| d.join("Tessel")).ok_or_else(|| "can't find the LOCALAPPDATA folder".into())
+    } else {
+        var("HOME").map(|d| d.join(".tessel")).ok_or_else(|| "can't find the home folder".into())
+    }
+}
+
+/// The `tessel` of version `target` (like `v0.1.3`), installed next to this
+/// one (in `versions/` of Tessel's folder) the first time it's asked for.
+pub fn installed(target: &str) -> Result<PathBuf, String> {
+    let versions = home()?.join("versions");
+    let dir = versions.join(target);
+    let exe = dir.join(exe_name());
+    if exe.is_file() {
+        return Ok(exe);
+    }
+    let staging = versions.join(format!(".installing-{}", std::process::id()));
+    // (On stderr: `tessel lsp`'s output is for its editor.)
+    let say = || eprintln!("Installing Tessel {target} into {}", dir.display());
+    let result = fetch(target, &staging, &say).and_then(|unpacked| {
+        // (Another `tessel` may have installed it meanwhile: that's as good.)
+        if std::fs::rename(&unpacked, &dir).is_err() && !exe.is_file() {
+            return Err(format!("can't install Tessel {target} into {}", dir.display()));
+        }
+        Ok(exe.clone())
+    });
+    let _ = std::fs::remove_dir_all(&staging);
+    result
 }
 
 fn writable(dir: &Path, e: std::io::Error) -> String {

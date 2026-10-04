@@ -288,6 +288,43 @@ Replaces the installation this `tessel` runs from (the folder it's in) with
 another release, after checking the download against the release's
 checksums. See [Updating](/start/installation/#updating).
 
+## `tessel pin`
+
+```sh
+tessel pin               # this project uses the Tessel you're running
+tessel pin 0.1.30        # this project uses Tessel 0.1.30
+```
+
+Makes a project use one version of Tessel, whatever version is installed.
+It writes the version into a `tessel.toml` file in the current folder (or
+updates the one the project already has):
+
+```toml
+tessel = "0.1.30"
+```
+
+From then on, `tessel check`, `build`, `run`, `preview`, `complete`, `repl`
+and `lsp` look for a `tessel.toml` next to the program (or in a folder above
+it). When it names another version than the one installed, they hand the
+command to that version. The first time, it's downloaded, checked, and
+installed next to yours, in the `versions` folder of Tessel's folder
+(`~/.tessel` on macOS, `%LOCALAPPDATA%\Tessel` on Windows). Editors and the
+IDE use the project's version too, since they run these commands.
+
+Commit `tessel.toml` with your code, so everyone working on the project
+builds it with the same Tessel. To move the project to a newer version, run
+`tessel pin` again with that version.
+
+To try another version for one command without changing the file, put it
+first with a `+`, or set `TESSEL_VERSION`:
+
+```sh
+tessel +0.1.32 run main.tsl
+TESSEL_VERSION=0.1.32 tessel run main.tsl
+```
+
+A project without a `tessel.toml` uses the installed Tessel, as before.
+
 ## `tessel complete`
 
 ```sh
@@ -379,7 +416,9 @@ summary and exits with status 1.
 | `TESSEL_SCRIPT` | Built apps | Runs the app without a window, driven by a script of commands: click, type, press keys, wait, print the view tree, or save a screenshot. See [Testing apps](/ui/testing/). |
 | `TESSEL_EXE` | Set by `tessel run` and `tessel ide` | The path of the `tessel` command that started the program. A program can read it with `environment("TESSEL_EXE")`, which is how the IDE finds `tessel`. |
 | `TESSEL_PROJECT` | The IDE | The project folder. `tessel ide` sets it; you don't normally need it. |
-| `TESSEL_RELEASES` | `tessel update` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
+| `TESSEL_RELEASES` | `tessel update`, `tessel pin` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
+| `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
+| `TESSEL_HOME` | `tessel pin` | Tessel's folder, where other versions are installed (in `versions/`). The install scripts use it too. |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |
 | `TESSEL_DEBUG_EVENTS` | Built apps | When set, an app prints every window event it receives (mouse, keyboard, resizing) to standard error. Useful when something doesn't react to input. |
 | `LLVM_SYS_221_PREFIX` | Building Tessel | Where LLVM 22 is installed; see [Installation](/start/installation/). |
