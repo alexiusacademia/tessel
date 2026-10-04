@@ -1,6 +1,7 @@
 mod icon;
 mod hot;
 mod lsp;
+mod pin;
 mod preview;
 mod repl;
 mod update;
@@ -45,9 +46,15 @@ commands:
   update [version] [--check]
                  update Tessel to the latest release (or to <version>, like
                  v0.1.2); with --check, only say whether there's a newer one
+  pin [version]  make this project use this version of Tessel (or <version>),
+                 written in its tessel.toml: then check, build, run, preview,
+                 complete, repl and lsp use that version, installing it once
   lsp            start the language server (used by editors)
   help           show this help
-  version        print the compiler version";
+  version        print the compiler version
+
+Run a command with another version of Tessel with `tessel +0.1.30 <command>`,
+or with the TESSEL_VERSION environment variable set.";
 
 /// The IDE's source, built into `tessel` so it works wherever `tessel` is installed.
 const IDE_SOURCES: &[(&str, &str)] = &[
@@ -79,7 +86,11 @@ fn write_docs(folder: &Path) -> std::io::Result<()> {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // A project's `tessel.toml` (or `+version`) may ask for another version.
+    if let Some(code) = pin::hand_on(&mut args) {
+        return code;
+    }
     match (args.first().map(String::as_str), args.get(1)) {
         (None, _) => ide(Path::new(".")),
         (Some("ide"), folder) => ide(Path::new(folder.map_or(".", String::as_str))),
@@ -155,6 +166,7 @@ fn main() -> ExitCode {
             }
         }
         (Some("update"), _) => update::run(&args[1..]),
+        (Some("pin"), _) => pin::run(&args[1..]),
         (Some("lsp"), _) => match lsp::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
