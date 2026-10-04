@@ -84,6 +84,8 @@ pub struct Box {
     pub gutter: f64,
     /// For tab views: each tab's title, rectangle and close button.
     pub tabs: Vec<Tab>,
+    /// A ribbon group (and its items) shown small, for lack of room.
+    pub compact: bool,
     /// For scroll views: the height of the content.
     pub content_h: f64,
     /// For pickers: the rectangle of each option.
@@ -101,6 +103,60 @@ pub struct Tab {
 }
 
 pub const TAB_BAR: f64 = 34.0;
+/// A ribbon's row of tabs, and the height of its groups (their items, and
+/// their titles under them).
+pub const RIBBON_TABS: f64 = 30.0;
+pub const RIBBON_BODY: f64 = 96.0;
+/// A small item of a ribbon (three to a column), and the space around and
+/// between them.
+pub const RIBBON_ROW: f64 = 22.0;
+pub const RIBBON_PAD: f64 = 4.0;
+const RIBBON_GAP: f64 = 2.0;
+/// The height of a ribbon group's title, under its items.
+pub const RIBBON_TITLE: f64 = 18.0;
+/// The size of a small item's icon, and of a large one's.
+pub const RIBBON_ICON: f64 = 16.0;
+pub const RIBBON_LARGE_ICON: f64 = 32.0;
+
+/// How a ribbon group's items go in columns (by their place among its
+/// children, once they're measured): a large item has a column of its own;
+/// small ones (and other views) stack, three small ones to a column, as
+/// many as fit.
+pub fn ribbon_columns(n: &Node) -> Vec<Vec<usize>> {
+    let compact = n.layout.compact;
+    let mut columns: Vec<Vec<usize>> = Vec::new();
+    let (mut small, mut used): (Vec<usize>, f64) = (Vec::new(), 0.0);
+    for (i, c) in n.children.iter().enumerate() {
+        if c.mods.hidden || c.kind.is_menu() {
+            continue;
+        }
+        if matches!(c.kind, Kind::RibbonItem { large: true, .. }) && !compact {
+            if !small.is_empty() {
+                columns.push(std::mem::take(&mut small));
+            }
+            columns.push(vec![i]);
+            used = 0.0;
+            continue;
+        }
+        let h = c.layout.size.h.max(RIBBON_ROW);
+        if !small.is_empty() && used + RIBBON_ROW_GAP + h > RIBBON_LARGE + 0.5 {
+            columns.push(std::mem::take(&mut small));
+            used = 0.0;
+        }
+        used += if small.is_empty() { h } else { RIBBON_ROW_GAP + h };
+        small.push(i);
+    }
+    if !small.is_empty() {
+        columns.push(small);
+    }
+    columns
+}
+
+/// Between the small items of a column.
+const RIBBON_ROW_GAP: f64 = 1.0;
+
+/// The height a large ribbon item has: all of its group but the title.
+pub const RIBBON_LARGE: f64 = RIBBON_BODY - RIBBON_TITLE - 2.0 * RIBBON_PAD;
 
 /// Styles inherited down the tree (like SwiftUI's environment).
 #[derive(Clone, Copy, Debug)]
@@ -302,6 +358,74 @@ impl Layouter<'_> {
                 let w = if avail.w.is_finite() { avail.w } else { 480.0 };
                 let h = if avail.h.is_finite() { avail.h } else { 320.0 };
                 Size { w: w.max(160.0), h: h.max(80.0) }
+            }
+            Kind::Ribbon { .. } => {
+                let mut tabs = Vec::new();
+                for c in &n.children {
+                    let Kind::RibbonTab { title } = &c.kind else { continue };
+                    let t = self.text_layout(title, style, None);
+                    tabs.push(Tab { title: t, rect: Rect::default(), close: None });
+                }
+                n.layout.tabs = tabs;
+                let selected = n.selected_ribbon_tab();
+                let mut w = 0.0;
+                if let Some(c) = n.children.get_mut(selected) {
+                    w = self.measure(c, Size { w: avail.w, h: RIBBON_BODY }, style).w;
+                }
+                Size { w: if avail.w.is_finite() { avail.w } else { w }, h: RIBBON_TABS + RIBBON_BODY }
+            }
+            Kind::RibbonTab { .. } => {
+                // Groups show their items small, from the last one on,
+                // until they fit.
+                let body = Size { w: f64::INFINITY, h: RIBBON_BODY };
+                let mut widths = Vec::new();
+                for c in &mut n.children {
+                    c.layout.compact = false;
+                    widths.push(self.measure(c, body, style).w + 1.0);
+                }
+                let mut i = n.children.len();
+                while widths.iter().sum::<f64>() > avail.w && i > 0 {
+                    i -= 1;
+                    let c = &mut n.children[i];
+                    c.layout.compact = true;
+                    widths[i] = self.measure(c, body, style).w + 1.0;
+                }
+                Size { w: widths.iter().sum(), h: RIBBON_BODY }
+            }
+            Kind::RibbonGroup { title } => {
+                let title = title.clone();
+                let label = Style { size: 11.0, color: theme().colors[theme::SECONDARY], ..*style };
+                let t = self.text_layout(&title, &label, None);
+                let compact = n.layout.compact;
+                for c in &mut n.children {
+                    c.layout.compact = compact;
+                    let room = if matches!(c.kind, Kind::RibbonItem { large: true, .. }) && !compact { RIBBON_LARGE } else { RIBBON_ROW };
+                    self.measure(c, Size { w: f64::INFINITY, h: room }, style);
+                }
+                let columns = ribbon_columns(n);
+                let mut w = 0.0;
+                for column in &columns {
+                    w += column.iter().map(|i| n.children[*i].layout.size.w).fold(0.0, f64::max);
+                }
+                w += RIBBON_GAP * columns.len().saturating_sub(1) as f64 + 2.0 * RIBBON_PAD;
+                let w = w.max(t.width() + 4.0 * RIBBON_PAD);
+                n.layout.text = Some(t);
+                Size { w, h: RIBBON_BODY }
+            }
+            Kind::RibbonItem { label, large, role, .. } => {
+                let large = *large && !n.layout.compact;
+                let menu = matches!(role, super::RibbonRole::Menu);
+                let label = label.clone();
+                let t = self.text_layout(&label, &Style { size: 12.0, ..*style }, None);
+                let size = if large {
+                    let arrow = if menu { 12.0 } else { 0.0 };
+                    Size { w: (t.width() + arrow + 2.0 * RIBBON_PAD + 4.0).max(44.0), h: RIBBON_LARGE }
+                } else {
+                    let arrow = if menu { 14.0 } else { 0.0 };
+                    Size { w: RIBBON_PAD + RIBBON_ICON + 5.0 + t.width() + arrow + 2.0 * RIBBON_PAD, h: RIBBON_ROW }
+                };
+                n.layout.text = Some(t);
+                size
             }
             Kind::TabView { close, .. } => {
                 let closable = close.is_some();
@@ -595,6 +719,44 @@ impl Layouter<'_> {
                 }
                 n.layout.segments = segments;
             }
+            Kind::Ribbon { .. } => {
+                let mut x = content.x + 6.0;
+                for tab in &mut n.layout.tabs {
+                    let w = tab.title.width() + 24.0;
+                    tab.rect = Rect { x, y: content.y + 4.0, w, h: RIBBON_TABS - 4.0 };
+                    x += w + 2.0;
+                }
+                let selected = n.selected_ribbon_tab();
+                let body = Rect { x: content.x, y: content.y + RIBBON_TABS, w: content.w, h: RIBBON_BODY };
+                if let Some(c) = n.children.get_mut(selected) {
+                    self.place(c, body);
+                }
+            }
+            Kind::RibbonTab { .. } => {
+                let mut x = content.x;
+                for c in &mut n.children {
+                    let w = c.layout.size.w;
+                    self.place(c, Rect { x, y: content.y, w, h: RIBBON_BODY });
+                    x += w + 1.0;
+                }
+            }
+            Kind::RibbonGroup { .. } => {
+                let mut x = content.x + RIBBON_PAD;
+                let top = content.y + RIBBON_PAD;
+                for column in ribbon_columns(n) {
+                    let w = column.iter().map(|i| n.children[*i].layout.size.w).fold(0.0, f64::max);
+                    let mut y = top;
+                    for i in &column {
+                        let c = &mut n.children[*i];
+                        let s = c.layout.size;
+                        // Small items are a row tall; other views take what they need.
+                        let h = s.h.max(RIBBON_ROW);
+                        self.place(c, Rect { x, y: y + (h - s.h) / 2.0, w: s.w.min(w), h: s.h });
+                        y += h + RIBBON_ROW_GAP;
+                    }
+                    x += w + RIBBON_GAP;
+                }
+            }
             Kind::TabView { .. } => {
                 let mut x = content.x;
                 for tab in &mut n.layout.tabs {
@@ -725,7 +887,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     }
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
-        Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } => axis == Axis::X,
+        Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } | Kind::Ribbon { .. } => axis == Axis::X,
         Kind::Disclosure { .. } => axis == Axis::X,
         Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } => true,
         // A divider spans across its stack.

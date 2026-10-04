@@ -26,6 +26,8 @@ pub const POINTER_BUTTONS: &[&str] = &["left", "right", "middle"];
 
 /// Sides of a view, for `.popover(edge:)` (the runtime relies on the order).
 pub const EDGES: &[&str] = &["top", "bottom", "leading", "trailing"];
+/// `RibbonSize`: how big a ribbon's button is.
+pub const RIBBON_SIZES: &[&str] = &["small", "large"];
 
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
@@ -44,7 +46,8 @@ pub const BLEND_MODES: &[&str] = &[
 pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt");
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
-/// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode, Edge.
+/// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode, Edge,
+/// RibbonSize.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -72,6 +75,7 @@ pub fn enums() -> Vec<EnumDef> {
         simple("CursorStyle", CURSOR_STYLES),
         simple("BlendMode", BLEND_MODES),
         simple("Edge", EDGES),
+        simple("RibbonSize", RIBBON_SIZES),
     ]
 }
 
@@ -173,6 +177,7 @@ pub const POINTER_BUTTON: Ty = Ty::Enum(6);
 pub const CURSOR_STYLE: Ty = Ty::Enum(7);
 pub const BLEND_MODE: Ty = Ty::Enum(8);
 pub const EDGE: Ty = Ty::Enum(9);
+pub const RIBBON_SIZE: Ty = Ty::Enum(10);
 
 pub struct Builtins {
     pub color: Ty,
@@ -193,7 +198,8 @@ pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
         "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Slider", "Stepper", "ColorPicker",
-        "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window",
+        "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
+        "RibbonButton", "RibbonToggle", "RibbonMenu",
     ];
 
 /// Views that only go in menus (`.contextMenu`, `.menuBar`, `Menu`).
@@ -278,6 +284,26 @@ impl Builtins {
             ],
             "MenuDivider" => vec![],
             "Menu" => vec![P::unlabeled("title", Ty::Str), content()],
+            "Ribbon" => vec![P::new("selection", Ty::Str).bind(), content()],
+            "RibbonTab" | "RibbonGroup" => vec![P::unlabeled("title", Ty::Str), content()],
+            "RibbonButton" => vec![
+                P::unlabeled("label", Ty::Str),
+                P::new("icon", self.icon.clone()),
+                P::new("size", RIBBON_SIZE).default(),
+                P::new("action", Ty::func(vec![], Ty::Void)),
+            ],
+            "RibbonToggle" => vec![
+                P::unlabeled("label", Ty::Str),
+                P::new("icon", self.icon.clone()),
+                P::new("size", RIBBON_SIZE).default(),
+                P::new("isOn", Ty::Bool).bind(),
+            ],
+            "RibbonMenu" => vec![
+                P::unlabeled("label", Ty::Str),
+                P::new("icon", self.icon.clone()),
+                P::new("size", RIBBON_SIZE).default(),
+                content(),
+            ],
             "Window" => vec![
                 P::unlabeled("title", Ty::Str),
                 P::new("isOpen", Ty::Bool).bind(),

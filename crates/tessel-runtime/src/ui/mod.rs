@@ -265,6 +265,28 @@ pub enum Kind {
     /// `Window("Title", isOpen:width:height:) { … }`: another window. It's
     /// the root of its own tree (see `build`).
     Window { title: String, is_open: Callback, width: f64, height: f64 },
+    /// `Ribbon(selection:) { tabs }`: a row of tabs (its children, which are
+    /// `RibbonTab`s) over the selected tab's groups. `selection` locates the
+    /// title of the tab that's selected.
+    Ribbon { selection: Callback },
+    /// `RibbonTab("Home") { groups }`.
+    RibbonTab { title: String },
+    /// `RibbonGroup("Clipboard") { items }`: its items in columns, and its
+    /// title under them.
+    RibbonGroup { title: String },
+    /// `RibbonButton`, `RibbonToggle` and `RibbonMenu`: a built-in icon and a
+    /// label, large (the icon over the label) or small (side by side). A
+    /// menu's items are its children.
+    RibbonItem { label: String, icon: &'static str, large: bool, role: RibbonRole },
+}
+
+/// What a ribbon's item does when it's clicked.
+pub enum RibbonRole {
+    Button(Callback),
+    /// Flips the `Bool` it locates.
+    Toggle(Callback),
+    /// Opens a menu of its items.
+    Menu,
 }
 
 impl Kind {
@@ -449,6 +471,13 @@ impl Node {
         self.children.iter().position(|c| c.mods.tag.as_ref().is_some_and(|t| t.equals(current))).unwrap_or(0)
     }
 
+    /// For a Ribbon: the index of the tab whose title is the selection.
+    pub fn selected_ribbon_tab(&self) -> usize {
+        let Kind::Ribbon { selection } = &self.kind else { return 0 };
+        let current = layout::read_string(selection);
+        self.children.iter().position(|c| matches!(&c.kind, Kind::RibbonTab { title } if *title == current)).unwrap_or(0)
+    }
+
     fn new(kind: Kind, key: u64) -> Node {
         Node { kind, children: Vec::new(), mods: Mods::default(), key, layout: layout::Box::default() }
     }
@@ -460,6 +489,12 @@ impl Node {
                 let i = self.selected_tab();
                 self.children.get(i..=i).unwrap_or(&[])
             }
+            Kind::Ribbon { .. } => {
+                let i = self.selected_ribbon_tab();
+                self.children.get(i..=i).unwrap_or(&[])
+            }
+            // (A menu's items show only when it's opened.)
+            Kind::RibbonItem { .. } => &[],
             _ => &self.children,
         }
     }
@@ -508,6 +543,10 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::MenuList => 29,
         Kind::Popover { .. } => 30,
         Kind::Window { .. } => 31,
+        Kind::Ribbon { .. } => 32,
+        Kind::RibbonTab { .. } => 33,
+        Kind::RibbonGroup { .. } => 34,
+        Kind::RibbonItem { .. } => 35,
     }
 }
 
@@ -1375,4 +1414,56 @@ mod tests {
         assert!(backend::save_rgba(path.to_str().unwrap(), 640, 520, pixels));
         assert!(std::fs::metadata(&path).unwrap().len() > 1000);
     }
+}
+
+// ===== ribbons =====
+
+/// `Ribbon(selection:) { … }`: `f` locates the selected tab's title.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_ribbon(f: *const c_void, env: *mut Header) {
+    let selection = Callback::new(f, env);
+    with_builder(|b| b.begin(Kind::Ribbon { selection }, 0));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_ribbon_tab(title: *const Str) {
+    let title = unsafe { text_of(title) };
+    with_builder(|b| b.begin(Kind::RibbonTab { title }, 0));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_ribbon_group(title: *const Str) {
+    let title = unsafe { text_of(title) };
+    with_builder(|b| b.begin(Kind::RibbonGroup { title }, 0));
+}
+
+/// A ribbon item's icon (a built-in one, by its `IconName` case).
+fn ribbon_icon(index: i32) -> &'static str {
+    svg::enable_icons();
+    svg::ICONS.get(index as usize).map_or("", |(name, _)| name)
+}
+
+/// `RibbonButton(label, icon:, size:) { … }`; `size` is 0 small, 1 large.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_ribbon_button(label: *const Str, icon: i32, size: i32, f: *const c_void, env: *mut Header) {
+    let label = unsafe { text_of(label) };
+    let role = RibbonRole::Button(Callback::new(f, env));
+    with_builder(|b| b.leaf(Kind::RibbonItem { label, icon: ribbon_icon(icon), large: size == 1, role }));
+}
+
+/// `RibbonToggle(label, icon:, size:, isOn:)`: `f` locates the `Bool`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_ribbon_toggle(label: *const Str, icon: i32, size: i32, f: *const c_void, env: *mut Header) {
+    let label = unsafe { text_of(label) };
+    let role = RibbonRole::Toggle(Callback::new(f, env));
+    with_builder(|b| b.leaf(Kind::RibbonItem { label, icon: ribbon_icon(icon), large: size == 1, role }));
+}
+
+/// `RibbonMenu(label, icon:, size:) { items }`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_ribbon_menu(label: *const Str, icon: i32, size: i32) {
+    let label = unsafe { text_of(label) };
+    let icon = ribbon_icon(icon);
+    // (Its arrow, and its menu's check marks and submenu arrows, are icons too.)
+    with_builder(|b| b.begin(Kind::RibbonItem { label, icon, large: size == 1, role: RibbonRole::Menu }, 0));
 }

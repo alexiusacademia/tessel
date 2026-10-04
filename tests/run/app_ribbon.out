@@ -1,0 +1,60 @@
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard"
+            RibbonButton "Paste" large
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font"
+            Picker
+              Text "Sans"
+              Text "Serif"
+            RibbonToggle "Bold" = true
+            RibbonToggle "Italic" = false
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+          RibbonGroup "Editing"
+            RibbonButton "Sum" large
+            RibbonMenu "Sort" large [MenuItem "A to Z", MenuItem "Z to A"]
+            RibbonButton "Find"
+      Text "Home | bold true italic false | Sans | paste, cut"
+      Spacer
+RibbonMenu "Borders"
+  MenuItem "All borders"
+  MenuItem "No border"
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Insert"
+        RibbonTab "Insert"
+          RibbonGroup "Tables"
+            RibbonButton "Table" large
+          RibbonGroup "Charts"
+            RibbonButton "Column"
+            RibbonButton "Line"
+            RibbonButton "Pie"
+      Text "Insert | bold true italic false | Serif | paste, cut, no border, sort down, pie chart"
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard"
+            RibbonButton "Paste" large
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font"
+            Picker
+              Text "Sans"
+              Text "Serif"
+            RibbonToggle "Bold" = true
+            RibbonToggle "Italic" = false
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+          RibbonGroup "Editing" small
+            RibbonButton "Sum"
+            RibbonMenu "Sort" [MenuItem "A to Z", MenuItem "Z to A"]
+            RibbonButton "Find"
+      Text "Home | bold true italic false | Serif | paste, cut, no border, sort down, pie chart"
+      Spacer

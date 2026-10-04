@@ -631,6 +631,86 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
+            Kind::Ribbon { .. } => {
+                use super::layout::{RIBBON_BODY, RIBBON_TABS};
+                let strip = Rect { x: content.x, y: content.y, w: content.w, h: RIBBON_TABS };
+                let body = Rect { x: content.x, y: content.y + RIBBON_TABS, w: content.w, h: RIBBON_BODY };
+                self.fill(strip, 0.0, theme().colors[theme::SIDEBAR]);
+                self.fill(body, 0.0, theme().colors[theme::BACKGROUND]);
+                self.fill(Rect { x: body.x, y: body.y + body.h - 1.0, w: body.w, h: 1.0 }, 0.0, theme().colors[theme::SEPARATOR]);
+                self.fill(Rect { x: body.x, y: body.y, w: body.w, h: 1.0 }, 0.0, theme().colors[theme::SEPARATOR]);
+                let selected = n.selected_ribbon_tab();
+                for (i, tab) in n.layout.tabs.iter().enumerate() {
+                    let r = tab.rect;
+                    let over = self.ui.pointer.is_some_and(|(x, y)| r.contains(x, y));
+                    if i == selected {
+                        // Joined to the panel under it.
+                        self.fill(Rect { h: r.h + 1.0, ..r }, 0.0, theme().colors[theme::BACKGROUND]);
+                        let tw = tab.title.width();
+                        self.fill(Rect { x: r.x + (r.w - tw) / 2.0, y: r.y + r.h - 3.0, w: tw, h: 2.0 }, 1.0, theme().accent);
+                    } else if over {
+                        self.fill(r.inset(1.0), 4.0, theme().control_hover);
+                    }
+                    let tint = if i == selected { Some(theme().accent) } else { None };
+                    let ty = r.y + (r.h - tab.title.height()) / 2.0 - 1.0;
+                    self.text(&tab.title, r.x + (r.w - tab.title.width()) / 2.0, ty, tint);
+                }
+                if let Some(c) = n.children.get(selected) {
+                    self.paint(c);
+                }
+            }
+            Kind::RibbonGroup { .. } => {
+                use super::layout::{RIBBON_BODY, RIBBON_TITLE};
+                let r = placed;
+                self.fill(Rect { x: r.x + r.w, y: r.y + 6.0, w: 1.0, h: RIBBON_BODY - 12.0 }, 0.0, theme().colors[theme::SEPARATOR]);
+                if let Some(t) = &n.layout.text {
+                    let y = r.y + RIBBON_BODY - RIBBON_TITLE + (RIBBON_TITLE - t.height()) / 2.0 - 3.0;
+                    self.text(t, r.x + (r.w - t.width()) / 2.0, y, None);
+                }
+            }
+            Kind::RibbonItem { icon, large, role, .. } => {
+                use super::layout::{RIBBON_ICON, RIBBON_PAD};
+                let r = placed;
+                let on = match role {
+                    super::RibbonRole::Toggle(is_on) => (unsafe { *is_on.locate() } & 1) != 0,
+                    _ => false,
+                };
+                let open = self.ui.menus.first().is_some() && pressed;
+                if on {
+                    self.fill(r, 4.0, theme().selection);
+                }
+                if pressed || open {
+                    self.fill(r, 4.0, theme().control_pressed);
+                } else if hovered {
+                    self.fill(r, 4.0, theme().control_hover);
+                }
+                let color = theme().colors[theme::PRIMARY];
+                let menu = matches!(role, super::RibbonRole::Menu);
+                let large = *large && !n.layout.compact;
+                if large {
+                    let s = super::layout::RIBBON_LARGE_ICON;
+                    self.svg(icon, Rect { x: r.x + (r.w - s) / 2.0, y: r.y + 6.0, w: s, h: s }, color);
+                    if let Some(t) = &n.layout.text {
+                        let arrow = if menu { 12.0 } else { 0.0 };
+                        let x = r.x + (r.w - t.width() - arrow) / 2.0;
+                        let y = r.y + 6.0 + s + 4.0;
+                        self.text(t, x, y, None);
+                        if menu {
+                            self.svg("chevronDown", Rect { x: x + t.width() + 2.0, y: y + (t.height() - 10.0) / 2.0, w: 10.0, h: 10.0 }, color);
+                        }
+                    }
+                } else {
+                    let y = r.y + (r.h - RIBBON_ICON) / 2.0;
+                    self.svg(icon, Rect { x: r.x + RIBBON_PAD, y, w: RIBBON_ICON, h: RIBBON_ICON }, color);
+                    if let Some(t) = &n.layout.text {
+                        let x = r.x + RIBBON_PAD + RIBBON_ICON + 5.0;
+                        self.text(t, x, r.y + (r.h - t.height()) / 2.0, None);
+                        if menu {
+                            self.svg("chevronDown", Rect { x: x + t.width() + 3.0, y: r.y + (r.h - 10.0) / 2.0, w: 10.0, h: 10.0 }, color);
+                        }
+                    }
+                }
+            }
             Kind::Divider => {
                 self.fill(placed, 0.0, theme().colors[theme::SEPARATOR]);
             }
@@ -765,7 +845,7 @@ impl Painter<'_> {
         }
         self.offset = (0.0, 0.0);
         // (A color picker's palette is drawn last, over everything: `paint_overlay`.)
-        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. } | Kind::ColorPicker { .. }) {
+        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. } | Kind::ColorPicker { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. }) {
             for c in &n.children {
                 self.paint(c);
             }

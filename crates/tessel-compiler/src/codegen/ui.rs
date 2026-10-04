@@ -638,6 +638,45 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let i = self.expr(a(0).unwrap()).unwrap();
                 self.call_rt("tsl_ui_icon", &[i]);
             }
+            "Ribbon" => {
+                let loc = self.locator(a(0).unwrap());
+                self.pass_closure("tsl_ui_begin_ribbon", &[], loc);
+                self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "RibbonTab" | "RibbonGroup" => {
+                let title = string(self, a(0));
+                let f = if name == "RibbonTab" { "tsl_ui_begin_ribbon_tab" } else { "tsl_ui_begin_ribbon_group" };
+                self.call_rt(f, &[title]);
+                self.release(title, &Ty::Str);
+                self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "RibbonButton" | "RibbonToggle" | "RibbonMenu" => {
+                let label = string(self, a(0));
+                let icon = self.expr(a(1).unwrap()).unwrap();
+                // `.small` unless it says otherwise.
+                let size = match a(2) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                match name {
+                    "RibbonButton" => {
+                        let action = self.expr_as(a(3).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
+                        self.pass_closure("tsl_ui_ribbon_button", &[label, icon, size], action);
+                    }
+                    "RibbonToggle" => {
+                        let loc = self.locator(a(3).unwrap());
+                        self.pass_closure("tsl_ui_ribbon_toggle", &[label, icon, size], loc);
+                    }
+                    _ => {
+                        self.call_rt("tsl_ui_begin_ribbon_menu", &[label, icon, size]);
+                        self.content_inline(a(3).unwrap());
+                        self.call_rt("tsl_ui_end", &[]);
+                    }
+                }
+                self.release(label, &Ty::Str);
+            }
             "Svg" => {
                 let s = string(self, a(0));
                 self.call_rt("tsl_ui_svg", &[s]);

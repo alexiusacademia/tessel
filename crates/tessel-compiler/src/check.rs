@@ -169,6 +169,10 @@ enum Content {
     Menu,
     /// `.menuBar`'s menus.
     MenuBar,
+    /// A `Ribbon`'s tabs.
+    Ribbon,
+    /// A `RibbonTab`'s groups.
+    RibbonTab,
 }
 
 /// What a call expression resolved to.
@@ -1841,6 +1845,20 @@ impl Checker<'_> {
                 self.error(e.span, format!("`{name}` can only be used in a menu"))
                     .help("put it in `.contextMenu { … }`, `.menuBar { … }` or a `Menu(\"…\") { … }`");
             }
+            Content::Ribbon if name != "RibbonTab" => {
+                self.error(e.span, format!("a `Ribbon` holds tabs, so `{name}` can't go there"))
+                    .help("put it in a group of a tab: `RibbonTab(\"Home\") { RibbonGroup(\"Edit\") { … } }`");
+            }
+            Content::RibbonTab if name != "RibbonGroup" => {
+                self.error(e.span, format!("a `RibbonTab` holds groups, so `{name}` can't go there"))
+                    .help("put it in a group: `RibbonGroup(\"Edit\") { … }`");
+            }
+            _ if name == "RibbonTab" && !matches!(self.content, Content::Ribbon | Content::View) => {
+                self.error(e.span, "a `RibbonTab` can only go in a `Ribbon`");
+            }
+            _ if name == "RibbonGroup" && !matches!(self.content, Content::RibbonTab | Content::View) => {
+                self.error(e.span, "a `RibbonGroup` can only go in a `RibbonTab`");
+            }
             Content::View | Content::Layout if name == "Window" => {
                 self.error(e.span, "a `Window` can only be declared in the `app`")
                     .help("declare it in the app's body, next to the main window's views");
@@ -3016,7 +3034,12 @@ impl Checker<'_> {
                 if let Some(params) = self.builtins.view(n) {
                     self.set_callee(Callee::BuiltinView(n.to_string()));
                     let saved = self.tag_ty.take();
-                    self.next_content = Some(if n == "Menu" { Content::Menu } else { Content::Layout });
+                    self.next_content = Some(match n {
+                        "Menu" | "RibbonMenu" => Content::Menu,
+                        "Ribbon" => Content::Ribbon,
+                        "RibbonTab" => Content::RibbonTab,
+                        _ => Content::Layout,
+                    });
                     self.args(&what, &params, args, trailing, span);
                     self.next_content = None;
                     if n == "MenuItem" {

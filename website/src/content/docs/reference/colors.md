@@ -201,6 +201,12 @@ editors and CSS use.
 A side of a view, for [`.popover(edge:)`](/reference/modifiers/#popover):
 `top`, `bottom`, `leading` (the left) and `trailing` (the right).
 
+## RibbonSize
+
+How big a ribbon's [button, toggle or menu](/reference/views/#ribbonbutton)
+is: `small` (its icon next to its label; the default) or `large` (its icon
+over its label, as tall as its group).
+
 ## PointerEvent
 
 What [`.onPointer`](/reference/modifiers/#onpointer) tells its block. A

@@ -630,6 +630,8 @@ enum Hit {
     Palette(u64),
     /// A disclosure group's title.
     Disclosure(u64),
+    /// A ribbon's menu item (`RibbonMenu`): it opens its menu.
+    RibbonMenu(u64),
 }
 
 impl Hit {
@@ -637,6 +639,7 @@ impl Hit {
         match *self {
             Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) | Hit::Drag(k) => k,
             Hit::Pointer(k) | Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Swatch(k) | Hit::Palette(k) => k,
+            Hit::RibbonMenu(k) => k,
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
         }
@@ -729,6 +732,8 @@ enum MenuSource {
     Context(u64),
     /// A menu of the drawn menu bar.
     Bar(usize),
+    /// The menu of a ribbon's `RibbonMenu`.
+    Item(u64),
 }
 
 thread_local! {
@@ -1213,6 +1218,7 @@ impl App {
     fn menu_items(&self) -> Option<Vec<Entry>> {
         match self.menu.as_ref()?.source {
             MenuSource::Context(key) => self.node(key)?.mods.context_menu.as_deref().map(menu::entries),
+            MenuSource::Item(key) => self.node(key).map(menu::entries),
             MenuSource::Bar(i) => match self.bar.get(i)? {
                 Entry::Sub { items, .. } => Some(items.clone()),
                 _ => None,
@@ -1584,6 +1590,13 @@ impl App {
         let (Some(m), Some(items)) = (self.menu.as_ref(), self.menu_items()) else { return out };
         match m.source {
             MenuSource::Context(_) => out.push_str("ContextMenu\n"),
+            MenuSource::Item(key) => {
+                let label = match self.node(key).map(|n| &n.kind) {
+                    Some(Kind::RibbonItem { label, .. }) => label.as_str(),
+                    _ => "",
+                };
+                out.push_str(&format!("RibbonMenu {label:?}\n"));
+            }
             MenuSource::Bar(i) => out.push_str(&format!("Menu {:?}\n", self.bar.get(i).map_or("", |e| e.label()))),
         }
         level(&items, &m.sel, 1, &mut out);
@@ -2235,6 +2248,19 @@ impl App {
                 }
                 return n.children.get(n.selected_tab()).and_then(|c| visit(c, x, y));
             }
+            if let Kind::Ribbon { .. } = n.kind {
+                if let Some(i) = n.layout.tabs.iter().position(|t| t.rect.contains(x, y)) {
+                    return Some(Hit::Tab(n.key, i));
+                }
+                return n.children.get(n.selected_ribbon_tab()).and_then(|c| visit(c, x, y));
+            }
+            if let Kind::RibbonItem { role, .. } = &n.kind {
+                return n.layout.rect.contains(x, y).then_some(match role {
+                    super::RibbonRole::Button(_) => Hit::Button(n.key),
+                    super::RibbonRole::Toggle(_) => Hit::Toggle(n.key),
+                    super::RibbonRole::Menu => Hit::RibbonMenu(n.key),
+                });
+            }
             if let Kind::Picker { .. } = n.kind {
                 if let Some(i) = n.layout.segments.iter().position(|s| s.contains(x, y)) {
                     return Some(Hit::Segment(n.key, i));
@@ -2769,9 +2795,29 @@ impl App {
                 let p = expanded.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
             }
-            (Hit::Button(_), Kind::Button { action, .. }) => {
+            (Hit::Button(_), Kind::Button { action, .. } | Kind::RibbonItem { role: super::RibbonRole::Button(action), .. }) => {
                 let action = action.clone();
                 action.call();
+            }
+            (Hit::Toggle(_), Kind::RibbonItem { role: super::RibbonRole::Toggle(is_on), .. }) => {
+                let p = is_on.locate();
+                unsafe { *p = (*p & 1) ^ 1 };
+            }
+            (Hit::RibbonMenu(key), _) => {
+                // Below the item.
+                let (key, r) = (*key, node.layout.rect);
+                self.open_menu(MenuSource::Item(key), (r.x, r.y + r.h + 1.0));
+                return;
+            }
+            (Hit::Tab(_, i), Kind::Ribbon { selection }) => {
+                if let Some(Kind::RibbonTab { title }) = node.children.get(*i).map(|c| &c.kind) {
+                    let slot = selection.locate() as *mut *mut Str;
+                    unsafe {
+                        let old = *slot;
+                        *slot = crate::str_new(title);
+                        crate::tsl_release(old as *mut Header);
+                    }
+                }
             }
             (Hit::Toggle(_), Kind::Toggle { is_on, .. }) => {
                 let p = is_on.locate();
@@ -3335,6 +3381,14 @@ impl App {
                 }
                 return n.children.get(n.selected_tab()).and_then(|c| visit(c, label));
             }
+            // A ribbon's tab by its title.
+            if let (Kind::Ribbon { .. }, false) = (&n.kind, n.mods.hidden) {
+                for (tab, c) in n.layout.tabs.iter().zip(&n.children) {
+                    if matches!(&c.kind, Kind::RibbonTab { title } if title == label) {
+                        return Some((tab.rect.x + tab.rect.w / 2.0, tab.rect.y + tab.rect.h / 2.0));
+                    }
+                }
+            }
             // A link in Markdown, by what it says.
             if let (Kind::Markdown { .. }, Some(laid), false) = (&n.kind, &n.layout.markdown, n.mods.hidden) {
                 let c = n.layout.content;
@@ -3349,7 +3403,7 @@ impl App {
                 }
             }
             let matches = match &n.kind {
-                Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } => s == label,
+                Kind::Text(s) | Kind::Button { label: s, .. } | Kind::Toggle { label: s, .. } | Kind::RibbonItem { label: s, .. } => s == label,
                 Kind::TextField { placeholder, .. } => placeholder == label,
                 Kind::Svg { icon: Some(name), .. } => *name == label,
                 Kind::Swatch(c) => super::controls::hex(*c) == label,
@@ -3501,6 +3555,28 @@ impl App {
                 Kind::MenuList => "MenuList".to_string(),
                 Kind::Popover { .. } => "Popover".to_string(),
                 Kind::Window { title, .. } => format!("Window {title:?}"),
+                Kind::Ribbon { .. } => {
+                    let titles: Vec<&str> = n.children.iter().filter_map(|c| match &c.kind {
+                        Kind::RibbonTab { title } => Some(title.as_str()),
+                        _ => None,
+                    }).collect();
+                    format!("Ribbon {titles:?} selected {:?}", titles.get(n.selected_ribbon_tab()).copied().unwrap_or(""))
+                }
+                Kind::RibbonTab { title } => format!("RibbonTab {title:?}"),
+                Kind::RibbonGroup { title } => {
+                    format!("RibbonGroup {title:?}{}", if n.layout.compact { " small" } else { "" })
+                }
+                Kind::RibbonItem { label, large, role, .. } => {
+                    let size = if *large && !n.layout.compact { " large" } else { "" };
+                    match role {
+                        super::RibbonRole::Button(_) => format!("RibbonButton {label:?}{size}"),
+                        super::RibbonRole::Toggle(is_on) => {
+                            let on = unsafe { *is_on.locate() } & 1 != 0;
+                            format!("RibbonToggle {label:?}{size} = {on}")
+                        }
+                        super::RibbonRole::Menu => format!("RibbonMenu {label:?}{size} [{}]", menu::describe_inline(&menu::entries(n))),
+                    }
+                }
             };
             let what = if ui.focused == Some(n.key) { format!("{what} focused") } else { what };
             let what = match &ui.dragging {
@@ -3520,9 +3596,10 @@ impl App {
                 .collect::<String>();
             let place = if positions { format!(" [{:.0},{:.0} {:.0}x{:.0}]", r.x, r.y, r.w, r.h) } else { String::new() };
             out.push_str(&format!("{}{what}{place}{flags}\n", "  ".repeat(depth)));
-            // A tab view shows only its selected page.
-            if let Kind::TabView { .. } = n.kind {
-                if let Some(c) = n.children.get(n.selected_tab()) {
+            // A tab view shows only its selected page (and a ribbon its
+            // selected tab; a ribbon's menu shows its items above).
+            if let Kind::TabView { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. } = n.kind {
+                for c in n.visible_children() {
                     visit(c, depth + 1, out, positions, ui);
                 }
                 return;
@@ -3583,6 +3660,12 @@ impl App {
                 Kind::MenuList => "MenuList",
                 Kind::Popover { .. } => "Popover",
                 Kind::Window { .. } => "Window",
+                Kind::Ribbon { .. } => "Ribbon",
+                Kind::RibbonTab { .. } => "RibbonTab",
+                Kind::RibbonGroup { .. } => "RibbonGroup",
+                Kind::RibbonItem { role: super::RibbonRole::Button(_), .. } => "RibbonButton",
+                Kind::RibbonItem { role: super::RibbonRole::Toggle(_), .. } => "RibbonToggle",
+                Kind::RibbonItem { role: super::RibbonRole::Menu, .. } => "RibbonMenu",
             };
             // What can be seen of it: the part inside the scroll views around it.
             let (x0, y0) = (x.max(clip.x), y.max(clip.y));
@@ -3598,9 +3681,9 @@ impl App {
             if matches!(n.kind, Kind::Scroll) || n.mods.clipped {
                 clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
             }
-            // A tab view shows only its selected page.
-            if let Kind::TabView { .. } = n.kind {
-                if let Some(c) = n.children.get(n.selected_tab()) {
+            // A tab view shows only its selected page, a ribbon its selected tab.
+            if let Kind::TabView { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. } = n.kind {
+                for c in n.visible_children() {
                     visit(c, depth + 1, shift, clip, out);
                 }
                 return;

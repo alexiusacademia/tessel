@@ -1,0 +1,54 @@
+// A ribbon: tabs of groups of buttons, toggles, menus and other views.
+
+app Sheet(width: 760, height: 320) {
+    state tab = "Home"
+    state log: [String] = []
+    state bold = false
+    state italic = false
+    state font = "Sans"
+
+    VStack(spacing: 0) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Clipboard") {
+                    RibbonButton("Paste", icon: .paste, size: .large) { log.append("paste") }
+                    RibbonButton("Cut", icon: .cut) { log.append("cut") }
+                    RibbonButton("Copy", icon: .copy) { log.append("copy") }
+                }
+                RibbonGroup("Font") {
+                    Picker(selection: font) {
+                        Text("Sans").tag("Sans")
+                        Text("Serif").tag("Serif")
+                    }
+                    RibbonToggle("Bold", icon: .bold, isOn: bold)
+                    RibbonToggle("Italic", icon: .italic, isOn: italic)
+                    RibbonMenu("Borders", icon: .borders) {
+                        MenuItem("All borders") { log.append("all borders") }
+                        MenuItem("No border") { log.append("no border") }
+                    }
+                }
+                RibbonGroup("Editing") {
+                    RibbonButton("Sum", icon: .sum, size: .large) { log.append("sum") }
+                    RibbonMenu("Sort", icon: .sortAscending, size: .large) {
+                        MenuItem("A to Z") { log.append("sort up") }
+                        MenuItem("Z to A") { log.append("sort down") }
+                    }
+                    RibbonButton("Find", icon: .search) { log.append("find") }
+                }
+            }
+            RibbonTab("Insert") {
+                RibbonGroup("Tables") {
+                    RibbonButton("Table", icon: .table, size: .large) { log.append("table") }
+                }
+                RibbonGroup("Charts") {
+                    RibbonButton("Column", icon: .chart) { log.append("column chart") }
+                    RibbonButton("Line", icon: .chartLine) { log.append("line chart") }
+                    RibbonButton("Pie", icon: .chartPie) { log.append("pie chart") }
+                }
+            }
+        }
+        Text("{tab} | bold {bold} italic {italic} | {font} | {log.joined(separator: ", ")}")
+            .padding(10)
+        Spacer()
+    }
+}

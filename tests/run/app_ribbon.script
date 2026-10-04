@@ -1,0 +1,17 @@
+click "Paste"
+click "Cut"
+click "Bold"
+click "Italic"
+click "Italic"
+click "Borders"
+tree
+click "No border"
+click "Sort"
+click "Z to A"
+click "Serif"
+click "Insert"
+click "Pie"
+tree
+click "Home"
+size 470 320
+tree

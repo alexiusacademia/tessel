@@ -1,0 +1,33 @@
+// Where ribbons' views go.
+
+view Bad {
+    Ribbon(selection: "Home") { // error: needs something it can change
+        RibbonTab("Home") {}
+    }
+}
+
+app Probe {
+    state tab = "Home"
+    state bold = false
+
+    VStack {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Edit") {
+                    RibbonButton("Cut", icon: .cut) {}
+                    RibbonToggle("Bold", icon: .bold, isOn: bold)
+                    RibbonMenu("More", icon: .more) {
+                        MenuItem("One") {}
+                        Text("not an item") // error: only `MenuItem`, `MenuDivider` and `Menu` can go in a menu
+                    }
+                    RibbonButton("Big", icon: .table, size: .huge) {} // error: has no case `.huge`
+                }
+                Text("loose") // error: a `RibbonTab` holds groups
+            }
+            RibbonGroup("Loose") {} // error: a `Ribbon` holds tabs
+        }
+        RibbonTab("Outside") {} // error: a `RibbonTab` can only go in a `Ribbon`
+        RibbonGroup("Outside") {} // error: a `RibbonGroup` can only go in a `RibbonTab`
+        RibbonButton("Anywhere", icon: .copy) {}
+    }
+}

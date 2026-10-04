@@ -848,3 +848,77 @@ app Survey {
 - When the user closes it, `isOpen` becomes `false`; setting it to `false`
   closes the window, as `closeWindow()` from a view inside it does.
 - See [More windows](/ui/menus-windows/#more-windows).
+
+## Ribbon
+
+```text
+Ribbon(selection: bind String, content: View)
+```
+
+A band of tabs of commands, as office apps have. Its content is
+[`RibbonTab`](#ribbontab)s; the one whose title is `selection` is shown,
+and clicking a tab sets `selection` to its title. If none matches, the
+first is shown.
+
+```tessel
+Ribbon(selection: tab) {
+    RibbonTab("Home") {
+        RibbonGroup("Clipboard") {
+            RibbonButton("Paste", icon: .paste, size: .large) { paste() }
+            RibbonButton("Copy", icon: .copy) { copy() }
+        }
+    }
+}
+```
+
+- It's as wide as the space it's in and 126 points tall.
+- When its groups don't fit, they show their items small, from the last
+  group on.
+- See [Ribbons](/ui/ribbons/).
+
+## RibbonTab
+
+```text
+RibbonTab(_ title: String, content: View)
+```
+
+A tab of a [`Ribbon`](#ribbon), and only there. Its content is
+[`RibbonGroup`](#ribbongroup)s, side by side.
+
+## RibbonGroup
+
+```text
+RibbonGroup(_ title: String, content: View)
+```
+
+A group of a [`RibbonTab`](#ribbontab)'s items, with `title` under them. A
+large item has a column of its own; small items, and other views (a
+`Picker`, a `TextField`), stack in columns, three small ones to a column.
+
+## RibbonButton
+
+```text
+RibbonButton(_ label: String, icon: IconName, size: RibbonSize = .small, action: fn())
+```
+
+A button of a ribbon: its [icon](/reference/icons/) and label, side by side
+(`.small`) or the icon over the label (`.large`). Clicking it runs `action`.
+
+## RibbonToggle
+
+```text
+RibbonToggle(_ label: String, icon: IconName, size: RibbonSize = .small, isOn: bind Bool)
+```
+
+Like `RibbonButton`, but clicking it switches `isOn`, and it's highlighted
+while `isOn` is `true` (Bold, Italic, …).
+
+## RibbonMenu
+
+```text
+RibbonMenu(_ label: String, icon: IconName, size: RibbonSize = .small, content: View)
+```
+
+Like `RibbonButton`, with an arrow; clicking it opens a menu of its
+content, which is [`MenuItem`](#menuitem)s, [`MenuDivider`](#menudivider)s
+and [`Menu`](#menu)s for submenus.

@@ -20,13 +20,13 @@ language may still change. This page is an honest list of where things stand.
   on every change. There's no Linux support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
-  `CodeEditor` with syntax colors, `Divider`, about 60 built-in icons, SVG,
+  `CodeEditor` with syntax colors, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
   and pressed states, and the layout and styling modifiers. Drawing of your
   own in a `Canvas` (shapes, paths, text and pictures), the mouse in full
   with `.onPointer` (every button, moves, the wheel, pinches), keys with
   `.onKey`, tooltips, pointers, files dropped on the window, and drawings
-  saved as pictures. Context menus, popovers, the menu bar (the system's on
+  saved as pictures. Ribbons of tabs and groups of commands. Context menus, popovers, the menu bar (the system's on
   macOS, drawn in the window elsewhere), more than one window, files opened
   with the app from Finder, and asking before the app closes.
 - **Looks:** light and dark appearance that follows the system, colors of
