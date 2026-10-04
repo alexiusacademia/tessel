@@ -7,6 +7,32 @@ What each release of Tessel brought, newest first. To get the latest, run
 `tessel update` (or take the update the IDE offers). See
 [Installation](/start/installation/) if you don't have Tessel yet.
 
+## 0.1.35
+
+*October 5, 2026*
+
+- **Ribbons.** `Ribbon`, `RibbonTab` and `RibbonGroup` lay out tabs of
+  grouped commands, as office apps have, with large and small buttons,
+  toggles and menus (`RibbonButton`, `RibbonToggle`, `RibbonMenu`). Groups
+  shrink to fit a narrow window. See [Ribbons](/ui/ribbons/).
+- **48 more built-in icons**, for ribbons and toolbars: cut, paste, bold,
+  the alignments, charts, sort, filter, sum and more. See
+  [Icons](/reference/icons/).
+- **The app's manifest.** The `[app]` table of `tessel.toml` gives the app's
+  name, identifier, version, author, copyright, icon, category and the
+  files it opens. App bundles on macOS and `.exe` files on Windows carry
+  them, the About panel shows them, and `appInfo()` gives them to the
+  program. See [The project file](/start/project/).
+- **`text += more` is fast:** it adds to the string where it is, as `+=` on
+  a list does (200 000 appends: 7 ms instead of 6 s).
+- **Fixed:**
+  - `toJson` on a type that contains itself (an enum of lists of itself,
+    a tree) crashed the compiler.
+  - Menu bar shortcuts didn't run in a view with `.onKeyEvent`.
+  - `saveFile` with several types added a second extension.
+  - In test scripts, `key shift+5` types `%`, and `type` with no field
+    edited presses each key.
+
 ## 0.1.34
 
 *October 4, 2026*
