@@ -320,6 +320,9 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
         // it reads a copy. (`under` is a bitmap: see `play_all`.)
         let blended = || -> windows::core::Result<ID2D1Image> {
             let under: ID2D1Bitmap1 = under.cast()?;
+            // (What was drawn under the layer may still be queued: copying
+            // reads the bitmap as it is.)
+            dc.Flush(None, None)?;
             let copy = dc.CreateBitmap(under.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_NONE))?;
             copy.CopyFromBitmap(None, &under, None)?;
             let effect = dc.CreateEffect(&CLSID_D2D1Blend)?;
@@ -329,7 +332,9 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
             effect.GetOutput()
         };
         push_layer(rt, clip, alpha);
-        match blended().map_err(|e| debug("blending a layer", e)).ok() {
+        let blended = blended().map_err(|e| debug("blending a layer", e)).ok();
+        debug("a blended layer", mode);
+        match blended {
             // (It has what was under it, blended: it replaces that.)
             Some(image) => dc.DrawImage(&image, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_COPY),
             None => dc.DrawImage(&layer, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER),
