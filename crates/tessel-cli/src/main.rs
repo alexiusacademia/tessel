@@ -104,7 +104,7 @@ fn main() -> ExitCode {
                 out.set_extension("exe");
             }
             match build(Path::new(path), &out) {
-                Ok(app_name) if bundle => match make_bundle(&out, app_name.as_deref(), Some(Path::new(path))) {
+                Ok(app) if bundle => match make_bundle(&out, app.as_ref(), Some(Path::new(path))) {
                     Ok(bundle) => {
                         println!("built {}", bundle.display());
                         ExitCode::SUCCESS
@@ -307,7 +307,7 @@ fn runtime_lib() -> Result<PathBuf, String> {
 }
 
 /// Compiles and links a program. Returns the `app`'s name, if it has one.
-fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
+fn build(path: &Path, out: &Path) -> Result<Option<AppInfo>, ExitCode> {
     let (mut sources, _) = load(path)?;
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
         if let Err(e) = std::fs::create_dir_all(parent) {
@@ -318,8 +318,41 @@ fn build(path: &Path, out: &Path) -> Result<Option<String>, ExitCode> {
     build_sources(&mut sources, out, Some(path))
 }
 
+/// What a bundle says about the app: its name, and the file extensions it
+/// opens (`app Name(documentTypes: […])`).
+struct AppInfo {
+    name: String,
+    document_types: Vec<String>,
+}
+
+impl AppInfo {
+    fn of(program: &tessel_compiler::ast::Program) -> Option<AppInfo> {
+        use tessel_compiler::ast::{ExprKind, Item, StrPart};
+        let app = program.items.iter().find_map(|i| match i {
+            Item::App(a) => Some(a),
+            _ => None,
+        })?;
+        // (The checker makes sure the list is written out.)
+        let types = app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "documentTypes"));
+        let document_types = match types.map(|a| &a.value.kind) {
+            Some(ExprKind::List(items)) => items
+                .iter()
+                .filter_map(|e| match &e.kind {
+                    ExprKind::Str(parts) => match parts.as_slice() {
+                        [StrPart::Text(t)] => Some(t.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        Some(AppInfo { name: app.name.name.clone(), document_types })
+    }
+}
+
 /// `program` is where the sources are from, for the app's icon (see `icon::Icon::of`).
-fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) -> Result<Option<String>, ExitCode> {
+fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) -> Result<Option<AppInfo>, ExitCode> {
     let analysis = tessel_compiler::analyze(sources, true);
     if !analysis.diags.is_empty() {
         report(&analysis.diags.list, sources);
@@ -335,10 +368,8 @@ fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) ->
         report(&diags, sources);
         return Err(ExitCode::FAILURE);
     }
-    let app_name = analysis.program.items.iter().find_map(|i| match i {
-        tessel_compiler::ast::Item::App(a) => Some(a.name.name.clone()),
-        _ => None,
-    });
+    let app = AppInfo::of(&analysis.program);
+    let app_name = app.as_ref().map(|a| a.name.clone());
     // On Windows, an app's icon is linked into its .exe.
     let windows = target_triple().map_or(cfg!(windows), |t| t.contains("windows"));
     let resources = (windows && app_name.is_some()).then(|| obj.with_extension("res"));
@@ -353,7 +384,7 @@ fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) ->
         let _ = std::fs::remove_file(res);
     }
     linked.map_err(fail)?;
-    Ok(app_name)
+    Ok(app)
 }
 
 /// The target to compile for: this computer (`None`), except that Windows
@@ -505,14 +536,14 @@ mod bundled {
 /// Wraps a built app in a platform app bundle. On macOS: `Name.app`, next
 /// to the executable (which moves inside it), with the icon of `program`
 /// (see `icon::Icon::of`). Returns the bundle's path.
-fn make_bundle(exe: &Path, app_name: Option<&str>, program: Option<&Path>) -> Result<PathBuf, String> {
+fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
         // Windows apps are already a single double-clickable .exe, with the icon inside.
         return Ok(exe.to_path_buf());
     }
     let icon = icon::Icon::of(program)?;
     let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
-    let name = app_name.unwrap_or(stem);
+    let name = app.map_or(stem, |a| a.name.as_str());
     let bundle = exe.with_file_name(format!("{name}.app"));
     let contents = bundle.join("Contents");
     if bundle.exists() {
@@ -522,6 +553,7 @@ fn make_bundle(exe: &Path, app_name: Option<&str>, program: Option<&Path>) -> Re
         std::fs::create_dir_all(contents.join(folder)).map_err(|e| format!("can't create `{}`: {e}", bundle.display()))?;
     }
     let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
+    let documents = document_types_plist(app.map_or(&[], |a| a.document_types.as_slice()));
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -536,7 +568,7 @@ fn make_bundle(exe: &Path, app_name: Option<&str>, program: Option<&Path>) -> Re
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>
+    <key>NSHighResolutionCapable</key><true/>{documents}
 </dict>
 </plist>
 "#
@@ -546,6 +578,25 @@ fn make_bundle(exe: &Path, app_name: Option<&str>, program: Option<&Path>) -> Re
     // Last, so a bundle with its executable is a complete one.
     std::fs::rename(exe, contents.join("MacOS").join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
     Ok(bundle)
+}
+
+/// `CFBundleDocumentTypes` for an app that opens files with these
+/// extensions: Finder offers it in "Open With", and opens them with it.
+fn document_types_plist(extensions: &[String]) -> String {
+    if extensions.is_empty() {
+        return String::new();
+    }
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let mut out = String::from("\n    <key>CFBundleDocumentTypes</key>\n    <array>");
+    for ext in extensions {
+        let ext = escape(ext);
+        out.push_str(&format!(
+            "\n        <dict>\n            <key>CFBundleTypeName</key><string>{} file</string>\n            <key>CFBundleTypeRole</key><string>Editor</string>\n            <key>LSHandlerRank</key><string>Default</string>\n            <key>CFBundleTypeExtensions</key><array><string>{ext}</string></array>\n        </dict>",
+            ext.to_uppercase()
+        ));
+    }
+    out.push_str("\n    </array>");
+    out
 }
 
 /// The command that links the program's object file with the runtime.
@@ -630,7 +681,8 @@ fn ide(folder: &Path) -> ExitCode {
             return code;
         }
         let installed = if cfg!(target_os = "macos") {
-            make_bundle(&tmp, Some("Tessel"), None).map(drop)
+            let app = AppInfo { name: "Tessel".into(), document_types: Vec::new() };
+            make_bundle(&tmp, Some(&app), None).map(drop)
         } else {
             std::fs::rename(&tmp, &exe).map_err(|e| e.to_string())
         };

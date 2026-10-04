@@ -1,0 +1,25 @@
+rightclick "Roads"
+tree
+hover "Export"
+tree
+click "GeoJSON…"
+rightclick "Rivers"
+key down
+key down
+key right
+tree
+key left
+key down
+key down
+key enter
+click "Map"
+rightclick "Map"
+tree
+click "Locked"
+rightclick "Map"
+click "Clear"
+tree
+key escape
+rightclick "Map"
+click 20 20
+tree

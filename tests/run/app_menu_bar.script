@@ -1,0 +1,38 @@
+menubar native
+tree
+menus
+menu "File" "Open…"
+key cmd+o
+key cmd+s
+menu "File" "Save"
+click "Edited"
+key cmd+s
+menu "File" "Recent" "rivers.shp"
+key cmd+shift+g
+key cmd+k
+key cmd+c
+click "Name"
+type abc
+key cmd+a
+key cmd+c
+key escape
+tree
+menus
+menubar drawn
+dump
+click "File"
+tree
+key down
+key down
+key right
+tree
+key down
+key enter
+key cmd+c
+click "Edit"
+tree
+key escape
+click "Name"
+key cmd+a
+key cmd+x
+tree

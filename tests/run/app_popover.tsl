@@ -1,0 +1,40 @@
+// `.popover(isPresented:edge:)`: content shown next to a view, over the
+// rest of the window, until a click outside it or Escape closes it.
+
+app Style(width: 360, height: 300) {
+    state showStyle = false
+    state showColor = false
+    state showNote = false
+    state width = ""
+    state note = ""
+    state log: [String] = []
+
+    VStack(spacing: 10) {
+        Button("Style") { showStyle = true }
+            .popover(isPresented: showStyle) {
+                VStack(alignment: .leading) {
+                    Text("Line style")
+                    TextField("Width", text: width)
+                    Button("Color…") { showColor = true }
+                        .popover(isPresented: showColor, edge: .trailing) {
+                            Button("Red") {
+                                log.append("red")
+                                showColor = false
+                            }
+                        }
+                    Button("Done") { showStyle = false }
+                }
+            }
+        Spacer()
+        // At the bottom of the window: shown above it instead.
+        Button("Note") { showNote = true }
+            .popover(isPresented: showNote) {
+                TextField("Note", text: note).frame(width: 160)
+            }
+        for line in log {
+            Text(line)
+        }
+        Text("width {width}, note {note}")
+    }
+    .padding()
+}

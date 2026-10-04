@@ -1,0 +1,13 @@
+open "/maps/roads.gpkg"
+open "/maps/city.geo"
+tree
+click "Edited"
+close window
+tree
+click "Cancel"
+quit
+tree
+key cmd+q
+tree
+click "Don't Save"
+tree

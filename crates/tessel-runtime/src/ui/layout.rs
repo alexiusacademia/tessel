@@ -149,6 +149,12 @@ thread_local! {
     /// The window's size, for what's laid out over the rest (a palette).
     static WINDOW: std::cell::Cell<Size> = const { std::cell::Cell::new(Size { w: 0.0, h: 0.0 }) };
 }
+/// Around a popover's content.
+pub const POPOVER_PAD: f64 = 12.0;
+/// The most room a popover's content is offered (it can be larger with a `.frame`).
+const POPOVER_MAX: Size = Size { w: 280.0, h: 480.0 };
+/// Between a popover and its view.
+const POPOVER_GAP: f64 = 6.0;
 
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
@@ -159,10 +165,25 @@ pub struct Layouter<'a> {
 }
 
 impl Layouter<'_> {
-    pub fn run(&mut self, root: &mut Node, w: f64, h: f64) {
+    /// Lays out a window's tree below `top` (a menu bar drawn in the
+    /// window), then its popovers next to their views.
+    pub fn run_below(&mut self, root: &mut Node, w: f64, h: f64, top: f64) {
         WINDOW.with(|s| s.set(Size { w, h }));
-        self.measure(root, Size { w, h }, &Style::default());
-        self.place(root, Rect { x: 0.0, y: 0.0, w, h });
+        let area = Rect { x: 0.0, y: top, w, h: (h - top).max(0.0) };
+        self.measure(root, Size { w: area.w, h: area.h }, &Style::default());
+        self.place(root, area);
+        let window = Rect { x: 0.0, y: 0.0, w, h };
+        for i in 0..root.children.len() {
+            let Kind::Popover { anchor, edge, .. } = root.children[i].kind else { continue };
+            // (In a popover opened from another, the anchor is in that one.)
+            let Some(at) = root.find(anchor).map(|n| n.layout.rect) else { continue };
+            let style = root.layout.style;
+            let c = &mut root.children[i];
+            let room = Size { w: (w - 16.0).clamp(0.0, POPOVER_MAX.w), h: (h - 16.0).clamp(0.0, POPOVER_MAX.h) };
+            let size = self.measure(c, room, &style);
+            let r = popover_rect(at, Size { w: size.w.min(w - 8.0), h: size.h.min(h - 8.0) }, edge, window);
+            self.place(c, r);
+        }
     }
 
     fn style_for(n: &Node, parent: &Style) -> Style {
@@ -199,7 +220,9 @@ impl Layouter<'_> {
     fn measure(&mut self, n: &mut Node, avail: Size, parent: &Style) -> Size {
         let style = Self::style_for(n, parent);
         n.layout.style = style;
-        if n.mods.hidden {
+        // Menus show only when they're opened; popovers are laid out on
+        // their own (see `run_below`).
+        if n.mods.hidden || n.kind.is_menu() {
             n.layout.size = Size::default();
             return n.layout.size;
         }
@@ -395,9 +418,23 @@ impl Layouter<'_> {
             Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
             Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
-            Kind::ZStack(_) | Kind::Root => {
+            Kind::Popover { .. } => {
+                let inner = Size { w: (avail.w - 2.0 * POPOVER_PAD).max(0.0), h: (avail.h - 2.0 * POPOVER_PAD).max(0.0) };
                 let mut size = Size::default();
                 for c in &mut n.children {
+                    let s = self.measure(c, inner, style);
+                    size.w = size.w.max(s.w);
+                    size.h = size.h.max(s.h);
+                }
+                Size { w: size.w + 2.0 * POPOVER_PAD, h: size.h + 2.0 * POPOVER_PAD }
+            }
+            Kind::MenuItem { .. } | Kind::MenuDivider | Kind::Menu { .. } | Kind::MenuList => Size::default(),
+            Kind::ZStack(_) | Kind::Root | Kind::Window { .. } => {
+                let mut size = Size::default();
+                for c in &mut n.children {
+                    if matches!(c.kind, Kind::Popover { .. }) {
+                        continue;
+                    }
                     let s = self.measure(c, avail, style);
                     size.w = size.w.max(s.w);
                     size.h = size.h.max(s.h);
@@ -503,9 +540,20 @@ impl Layouter<'_> {
             Kind::VStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::Y, content),
             Kind::Group => self.place_stack(n, GROUP_SPACING, 1, Axis::Y, content),
             Kind::HStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::X, content),
-            Kind::ZStack(_) | Kind::Root => {
+            Kind::Popover { .. } => {
+                let inner = content.inset(POPOVER_PAD);
+                for c in &mut n.children {
+                    let w = if flex(c, Axis::X, None) { inner.w } else { c.layout.size.w.min(inner.w) };
+                    let h = if flex(c, Axis::Y, None) { inner.h } else { c.layout.size.h.min(inner.h) };
+                    self.place(c, aligned(inner, Size { w, h }, 5));
+                }
+            }
+            Kind::ZStack(_) | Kind::Root | Kind::Window { .. } => {
                 let align = if let Kind::ZStack(a) = n.kind { a } else { 1 };
                 for c in &mut n.children {
+                    if matches!(c.kind, Kind::Popover { .. }) {
+                        continue;
+                    }
                     let w = if flex(c, Axis::X, None) { content.w } else { c.layout.size.w.min(content.w) };
                     let h = if flex(c, Axis::Y, None) { content.h } else { c.layout.size.h.min(content.h) };
                     let r = aligned(content, Size { w, h }, align);
@@ -684,9 +732,44 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),
         Kind::HStack(..) => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
-        Kind::ZStack(_) | Kind::Root => n.children.iter().any(|c| flex(c, axis, None)),
+        Kind::ZStack(_) | Kind::Root | Kind::Window { .. } => n.children.iter().any(|c| flex(c, axis, None)),
         _ => false,
     }
+}
+
+/// Where a popover of `size` goes next to a view at `at`, on its `edge`
+/// (an `Edge` tag: 0 top, 1 bottom, 2 leading, 3 trailing), or on the
+/// other side when there's no room, and inside the window.
+fn popover_rect(at: Rect, size: Size, edge: u8, window: Rect) -> Rect {
+    let margin = 4.0;
+    let fits_x = |x: f64| x >= margin && x + size.w <= window.w - margin;
+    let fits_y = |y: f64| y >= margin && y + size.h <= window.h - margin;
+    let clamp = |v: f64, len: f64, room: f64| v.min(room - len - margin).max(margin);
+    let (x, y) = match edge {
+        0 | 1 => {
+            let below = at.y + at.h + POPOVER_GAP;
+            let above = at.y - POPOVER_GAP - size.h;
+            let y = match edge {
+                0 if !fits_y(above) && fits_y(below) => below,
+                0 => above,
+                _ if !fits_y(below) && fits_y(above) => above,
+                _ => below,
+            };
+            (clamp(at.x + (at.w - size.w) / 2.0, size.w, window.w), clamp(y, size.h, window.h))
+        }
+        _ => {
+            let after = at.x + at.w + POPOVER_GAP;
+            let before = at.x - POPOVER_GAP - size.w;
+            let x = match edge {
+                2 if !fits_x(before) && fits_x(after) => after,
+                2 => before,
+                _ if !fits_x(after) && fits_x(before) => before,
+                _ => after,
+            };
+            (clamp(x, size.w, window.w), clamp(at.y + (at.h - size.h) / 2.0, size.h, window.h))
+        }
+    };
+    Rect { x, y, w: size.w, h: size.h }
 }
 
 /// Reads the `String` a text field's locator points at.

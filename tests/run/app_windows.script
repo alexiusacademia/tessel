@@ -1,0 +1,25 @@
+click "Attribute table"
+tree
+window "Attribute table"
+dump
+click "River Rd: 3.4 km"
+click "Add"
+tree
+window main
+tree
+click "Info"
+tree
+window "Info"
+size 200 100
+dump
+close window
+tree
+window "Attribute table"
+click "Close"
+tree
+click "Attribute table"
+window "Attribute table"
+close window
+tree
+close window
+tree

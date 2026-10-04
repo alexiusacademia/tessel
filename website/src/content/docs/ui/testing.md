@@ -85,11 +85,18 @@ opens a window as usual.
 | `press 40 60` | Presses the mouse on a view with [`.onPointer`](/reference/modifiers/#onpointer) or [`.draggable`](/reference/modifiers/#draggable) (also `press "Label"`). Add `right` or `middle` for another button. |
 | `move 80 60` | Moves the mouse there (or `move "Label"`): a drag while it's pressed. |
 | `release` | Lets the mouse button go (`release 90 60`: somewhere else). |
-| `rightclick 40 60` | A click with the right button, on a view with `.onPointer`. |
+| `rightclick 40 60` | A click with the right button, on a view with `.onPointer`, or one with a [context menu](/ui/menus-windows/#context-menus), which opens (`rightclick "Roads"`: on a labelled view). |
 | `doubleclick 40 60` | Two clicks in a row there. |
 | `pinch 40 60 0.2` | A trackpad pinch that makes things a fifth larger. |
 | `mods shift+alt` | Holds modifier keys for the mouse commands that follow; `mods none` lets them go. |
 | `drop "/tmp/a.csv"` | Drops a file on the window, for [`.onDrop`](/reference/modifiers/#ondrop). |
+| `open "/tmp/a.note"` | The system asks the app to open a file, for [`.onOpenFile`](/reference/modifiers/#onopenfile). |
+| `menu "File" "Save"` | Chooses an item of the [menu bar](/ui/menus-windows/#the-menu-bar), by the titles of its menus and its own. |
+| `menus` | Prints the menu bar: every menu and item, with shortcuts. |
+| `menubar drawn` | Draws the menu bar in the window, as on Windows (`menubar native`: as on macOS, outside the window). Scripts start as the platform does. |
+| `close window` | The user closes the window: [`.onCloseRequest`](/reference/modifiers/#oncloserequest) runs, or it closes. |
+| `quit` | The user quits the app (Cmd+Q). |
+| `window "Table"` | Sends the commands after it to another [window](/reference/views/#window) (`window main`: back to the main one). |
 | `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
 | `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |
 | `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due. |
@@ -100,7 +107,7 @@ opens a window as usual.
 | `animations on` | Turns [animations](/ui/styling/#animation) on. Scripted runs have them off, so views are at once where they end up; with them on, `wait` lets them move, and `dump` and `snapshot` show them on their way. |
 | `snapshot out.png` | Renders the window to a PNG file, at twice the size in pixels (like a Retina screen). |
 | `layout out.json` | Writes the views on screen to a file as JSON: each one's depth in the tree, kind and place. [`tessel preview`](/start/cli/#tessel-preview) uses it. |
-| `tree` | Prints the view tree. |
+| `tree` | Prints the view tree, with the open menu after it, the menu bar's titles first, and the app's other open windows last. |
 | `dump` | Prints the view tree with each view's position and size. |
 
 Before each command, the app is brought up to date: state changes from the

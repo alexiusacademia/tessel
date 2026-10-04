@@ -63,6 +63,9 @@ Shift+Cmd+S too), unless another shortcut asks for exactly the keys held.
 
 Only Cmd (or Ctrl) combinations can be shortcuts. For keys on their own, or
 with other modifiers, use [`.onKeyEvent`](/reference/modifiers/#onkeyevent).
+Items of the [menu bar](/ui/menus-windows/#the-menu-bar) have shortcuts too
+(`MenuItem("Save As…", shortcut: "cmd+shift+s")`), and menu bar shortcuts
+come before `.shortcut`s.
 
 ## Several shortcuts on one view
 

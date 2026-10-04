@@ -26,7 +26,9 @@ language may still change. This page is an honest list of where things stand.
   own in a `Canvas` (shapes, paths, text and pictures), the mouse in full
   with `.onPointer` (every button, moves, the wheel, pinches), keys with
   `.onKey`, tooltips, pointers, files dropped on the window, and drawings
-  saved as pictures.
+  saved as pictures. Context menus, popovers, the menu bar (the system's on
+  macOS, drawn in the window elsewhere), more than one window, files opened
+  with the app from Finder, and asking before the app closes.
 - **Looks:** light and dark appearance that follows the system, colors of
   your own, and animation of views that move, resize or fade.
 - **Text editing:** selecting with the mouse and keyboard, word and line

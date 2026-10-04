@@ -1,0 +1,9 @@
+// `tessel build --bundle` reads the app's document types from the source.
+
+app Main(documentTypes: names()) { // error: `documentTypes` must be a list written out in the app
+    Text("two")
+}
+
+fn names() -> [String] {
+    return ["{1}"]
+}

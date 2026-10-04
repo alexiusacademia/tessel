@@ -117,6 +117,7 @@ export default defineConfig({
 						{ label: 'Code editor', slug: 'ui/code-editor' },
 						{ label: 'Files, commands and the network', slug: 'ui/async' },
 						{ label: 'Keyboard shortcuts', slug: 'ui/shortcuts' },
+						{ label: 'Menus, windows and documents', slug: 'ui/menus-windows' },
 						{ label: 'Testing apps', slug: 'ui/testing' },
 					],
 				},

@@ -52,7 +52,7 @@ direction. See [Layout](/ui/layout/) for how stacks share out space.
 
 ```text
 app Name(title: String = "Name", width: Float = 640, height: Float = 480,
-         appearance: Appearance = .system) { … }
+         appearance: Appearance = .system, documentTypes: [String] = []) { … }
 ```
 
 Declares the program's window. The arguments are optional, but when you give
@@ -64,6 +64,7 @@ them they need their labels and must be in this order.
 | `width` | `640` | The window's starting width, in points. |
 | `height` | `480` | The window's starting height, in points. |
 | `appearance` | `.system` | [`.light` or `.dark`](/reference/colors/#appearance) to always look that way, whatever the system's setting. |
+| `documentTypes` | `[]` | The extensions of the files the app opens, like `["gpkg", "geojson"]`: `tessel build --bundle` tells the system, so Finder offers the app for them. See [Opening documents](/ui/menus-windows/#opening-documents). |
 
 ```tessel
 app Notes(title: "My Notes", width: 400, height: 300) {
@@ -77,7 +78,8 @@ app Notes(title: "My Notes", width: 400, height: 300) {
 The body works like a view body: it can declare `state` and functions, and
 everything else in it must be views. The views are stacked vertically with
 8 points between them, like a `VStack`, and centered in the window. A program
-has at most one `app`, and can't have both an `app` and a `fn main()`.
+has at most one `app`, and can't have both an `app` and a `fn main()`. The
+app's body can also declare other [windows](#window).
 
 ## Custom views
 
@@ -754,3 +756,89 @@ VStack {
   it runs vertically. It is 1 point thick.
 - It makes its stack stretch across the space offered, so a `Divider` in an
   `HStack` makes the row as tall as the space available.
+
+## MenuItem
+
+```text
+MenuItem(_ title: String, shortcut: String = "", checked: Bool = false, action: fn())
+```
+
+An item of a menu: of a [`.contextMenu`](/reference/modifiers/#contextmenu),
+of the [`.menuBar`](/reference/modifiers/#menubar), or of a [`Menu`](#menu)
+in them. Choosing it runs `action`.
+
+```tessel
+Text("Roads").contextMenu {
+    MenuItem("Zoom to Layer", shortcut: "cmd+shift+z") { zoom() }
+    MenuItem("Visible", checked: visible) { visible = !visible }
+    MenuItem("Remove") { remove() }.disabled(locked)
+}
+```
+
+- `shortcut:` shows the keys next to the title, and in the menu bar they
+  choose the item. They're written `"cmd+shift+z"` or `"⇧⌘Z"`; see
+  [Shortcut keys](/ui/menus-windows/#shortcut-keys).
+- `checked: true` shows a check mark.
+- `.disabled(…)` grays it out; `.hidden(…)` leaves it out.
+- It can only be used in a menu (`tessel check` says so otherwise).
+
+## MenuDivider
+
+```text
+MenuDivider()
+```
+
+A line between groups of items in a menu.
+
+## Menu
+
+```text
+Menu(_ title: String, items: View)
+```
+
+A menu of items: one of the [`.menuBar`](/reference/modifiers/#menubar)'s
+menus, or a submenu in another menu, which opens beside it.
+
+```tessel
+.menuBar {
+    Menu("File") {
+        MenuItem("Open…", shortcut: "cmd+o") { open() }
+        Menu("Open Recent") {
+            for path in recent {
+                MenuItem(path.fileName) { open(path) }
+            }
+        }
+    }
+}
+```
+
+Its items are `MenuItem`s, `MenuDivider`s and other `Menu`s (or views of
+your own made of them), built with `if` and `for` like other views.
+`.disabled(…)` on a `Menu` disables all of its items. See
+[Menus, windows and documents](/ui/menus-windows/).
+
+## Window
+
+```text
+Window(_ title: String, isOpen: bind Bool, width: Float = 480, height: Float = 360, content: View)
+```
+
+Another window of the app, open while `isOpen` is `true`. Only the `app`'s
+body can declare one.
+
+```tessel
+app Survey {
+    state showTable = false
+
+    Toggle("Attribute Table", isOn: showTable)
+
+    Window("Attribute Table", isOpen: showTable, width: 280, height: 220) {
+        Text("3 points")
+    }
+}
+```
+
+- It shares the app's state; its content lays out like the main window's.
+- When the user closes it, `isOpen` becomes `false`; setting it to `false`
+  closes the window, as `closeWindow()` from a view inside it does.
+- See [More windows](/ui/menus-windows/#more-windows).

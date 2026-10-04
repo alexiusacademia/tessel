@@ -1,0 +1,43 @@
+// `.menuBar`: the app's menus, with the standard ones Tessel adds (the app
+// menu, Edit and Window on macOS, where the system shows them; drawn at the
+// top of the window elsewhere). `menubar native` / `menubar drawn` picks
+// one in a script; `menu "File" "Open…"` chooses an item; `menus` lists
+// them all.
+
+app Atlas(width: 360, height: 240) {
+    state log: [String] = []
+    state edited = false
+    state grid = true
+    state name = ""
+
+    VStack(spacing: 6) {
+        TextField("Name", text: name)
+        Toggle("Edited", isOn: edited)
+        for line in log {
+            Text(line).font(size: 11)
+        }
+    }
+    .padding()
+    .shortcut("k") { log.append("shortcut K") }
+    .menuBar {
+        Menu("File") {
+            MenuItem("Open…", shortcut: "⌘O") { log.append("open") }
+            MenuItem("Save", shortcut: "cmd+s") {
+                log.append("save")
+                edited = false
+            }.disabled(!edited)
+            MenuDivider()
+            Menu("Recent") {
+                for file in ["roads.gpkg", "rivers.shp"] {
+                    MenuItem(file) { log.append("open {file}") }
+                }
+            }
+        }
+        Menu("View") {
+            MenuItem("Grid", shortcut: "cmd+shift+g", checked: grid) { grid = !grid }
+        }
+        Menu("Edit") {
+            MenuItem("Copy Feature", shortcut: "cmd+c") { log.append("copy feature") }
+        }
+    }
+}

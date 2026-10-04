@@ -12,7 +12,7 @@ default = ["gpu", "native"]
 gpu = ["dep:vello", "dep:vello_svg", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
 # The macOS renderer: Core Graphics, Core Text and ImageIO, which come with
 # the system (see ui/mac).
-native = ["dep:objc2"]
+native = []
 # The Windows renderer: Direct2D, DirectWrite and WIC (see ui/win).
 native-windows = ["dep:windows", "dep:windows-numerics"]
 
@@ -54,7 +54,9 @@ winit = "0.30"
 # The GPU backend each platform draws with, and no others: every backend
 # brings its own code and shader translator into every app.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6", optional = true }
+# The menu bar, and the files and Quit the system sends the app (see ui/native.rs).
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString"] }
 wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "metal"] }
 [target.'cfg(windows)'.dependencies]
 # The Windows renderer: Direct2D, DirectWrite and WIC (see ui/win).
@@ -80,6 +82,12 @@ libc = "0.2"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
+
+# Builds the macOS menu bar with AppKit, which needs the main thread (so no
+# test harness). Only with TESSEL_NATIVE_TEST=1: it talks to the window server.
+[[test]]
+name = "native_menu"
+harness = false
 
 [lints]
 workspace = true

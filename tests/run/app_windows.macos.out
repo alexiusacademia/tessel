@@ -1,0 +1,59 @@
+Root
+  View
+    VStack
+      Text "2 features, selected: "
+      Toggle "Attribute table" = true
+      Button "Info"
+Window "Attribute table" 300x200
+Window "Attribute table" [0,0 300x200]
+  VStack [83,49 133x101]
+    Button "Main St: 1.2 km" [83,49 126x28]
+    Button "River Rd: 3.4 km" [83,86 133x28]
+    HStack [83,122 126x28]
+      Button "Add" [83,122 54x28]
+      Button "Close" [145,122 64x28]
+Window "Attribute table"
+  VStack
+    Button "Main St: 1.2 km"
+    Button "River Rd: 3.4 km"
+    Button "New: 0.5 km"
+    HStack
+      Button "Add"
+      Button "Close"
+Root
+  View
+    VStack
+      Text "3 features, selected: River Rd"
+      Toggle "Attribute table" = true
+      Button "Info"
+Window "Attribute table" 300x200
+info opened
+Root
+  View
+    VStack
+      Text "3 features, selected: River Rd"
+      Toggle "Attribute table" = true
+      Button "Info"
+Window "Attribute table" 300x200
+Window "Info" 480x360
+Window "Info" [0,0 200x100]
+  Text "Selected: River Rd" [41,42 118x16]
+Root
+  View
+    VStack
+      Text "3 features, selected: River Rd"
+      Toggle "Attribute table" = true
+      Button "Info"
+Window "Attribute table" 300x200
+Root
+  View
+    VStack
+      Text "3 features, selected: River Rd"
+      Toggle "Attribute table" = false
+      Button "Info"
+Root
+  View
+    VStack
+      Text "3 features, selected: River Rd"
+      Toggle "Attribute table" = false
+      Button "Info"

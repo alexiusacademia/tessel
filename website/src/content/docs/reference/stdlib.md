@@ -1454,6 +1454,33 @@ so a button that rewrites the code can be undone too. See
 [Editing text](/ui/controls/#editing-text). In a program without a window,
 they do nothing.
 
+### closeWindow
+
+```text
+closeWindow()
+```
+
+Closes the window whose event is being handled (the one a button that calls
+it is in). Closing the main window ends the app; closing a
+[`Window`](/reference/views/#window) sets its `isOpen` to `false`. It doesn't
+ask [`.onCloseRequest`](/reference/modifiers/#oncloserequest): it's what
+that block calls once it has decided to close.
+
+### quit
+
+```text
+quit()
+```
+
+Ends the app (all its windows), without asking
+[`.onCloseRequest`](/reference/modifiers/#oncloserequest), after the event
+being handled. Unlike [`exit`](#exit), the app ends the way it would when the
+user closes it.
+
+```tessel
+Button("Don't Save") { quit() }
+```
+
 ### openURL
 
 ```text

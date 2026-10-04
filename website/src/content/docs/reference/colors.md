@@ -196,6 +196,11 @@ editors and CSS use.
 | `exclusion` | Like difference, with less contrast. |
 | `hue`, `saturation`, `color`, `luminosity` | One part of the layer's color (its hue; its saturation; its hue and saturation; its lightness), with the rest from what's under it. |
 
+## Edge
+
+A side of a view, for [`.popover(edge:)`](/reference/modifiers/#popover):
+`top`, `bottom`, `leading` (the left) and `trailing` (the right).
+
 ## PointerEvent
 
 What [`.onPointer`](/reference/modifiers/#onpointer) tells its block. A
@@ -205,6 +210,7 @@ struct with these fields:
 |---|---|---|
 | `kind` | `PointerKind` | What happened (below). |
 | `x`, `y` | `Float` | Where the mouse is, in points from the view's top left corner (inside its padding). During a drag they can be outside the view, and negative. |
+| `windowX`, `windowY` | `Float` | Where the mouse is, in points from the window's top left corner: for placing a popup of your own, or comparing with other views. |
 | `dx`, `dy` | `Float` | For `.move` and `.drag`: how far the mouse moved since the event before. For `.scroll`: how far to scroll, across and down (positive `dy`: towards what's further down). For `.pinch`: `dy` is how much larger (0.1: a tenth larger; negative: smaller). |
 | `button` | `PointerButton` | `.left`, `.right` or `.middle`, for `.down`, `.drag` and `.up`. |
 | `clicks` | `Int` | For `.down` and `.up`: 1 for a click, 2 for the second click of a double click, and so on. |

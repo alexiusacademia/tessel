@@ -66,6 +66,11 @@ pub struct Interaction {
     pub focus_ring: bool,
     /// A view being dragged with `.draggable`.
     pub dragging: Option<Dragging>,
+    /// The menu that's open (a context menu, or one of the drawn menu
+    /// bar's), and its open submenus, laid out.
+    pub menus: Vec<super::menu::Panel>,
+    /// The menu bar, when it's drawn in the window.
+    pub menu_bar: Option<super::menu::Bar>,
 }
 
 /// A view being dragged (`.draggable`): it follows the pointer.
@@ -353,6 +358,61 @@ impl Painter<'_> {
         self.stroke(r, 6.0, 1.0, theme().field_border);
     }
 
+    /// Draws the menu bar, when it's drawn in the window.
+    pub fn paint_menu_bar(&mut self) {
+        let Some(bar) = self.ui.menu_bar.as_ref() else { return };
+        let r = Rect { x: 0.0, y: 0.0, w: bar.width, h: super::menu::BAR_H };
+        self.fill(r, 0.0, theme().colors[theme::SIDEBAR]);
+        self.fill(Rect { x: 0.0, y: r.h - 1.0, w: r.w, h: 1.0 }, 0.0, theme().colors[theme::SEPARATOR]);
+        for (i, (title, t)) in bar.titles.iter().enumerate() {
+            let hovered = self.ui.pointer.is_some_and(|(x, y)| t.contains(x, y));
+            if bar.open == Some(i) {
+                self.fill(t.inset(2.0), 4.0, theme().selection);
+            } else if hovered {
+                self.fill(t.inset(2.0), 4.0, theme().colors[theme::LIGHT_GRAY]);
+            }
+            let y = t.y + (t.h - title.height() as f64) / 2.0;
+            self.text(title, t.x + 10.0, y, None);
+        }
+    }
+
+    /// Draws the open menus, if any (over everything but the tooltip).
+    pub fn paint_menus(&mut self) {
+        for panel in &self.ui.menus {
+            let r = panel.rect;
+            self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.0), 8.0, Rgba([0, 0, 0, 20]));
+            self.fill(r, 6.0, theme().popup);
+            for (i, row) in panel.rows.iter().enumerate() {
+                let rr = row.rect;
+                let Some(label) = &row.label else {
+                    let line = Rect { x: rr.x + 6.0, y: rr.y + (rr.h / 2.0).floor(), w: rr.w - 12.0, h: 1.0 };
+                    self.fill(line, 0.0, theme().colors[theme::SEPARATOR]);
+                    continue;
+                };
+                let selected = panel.selected == Some(i) && row.enabled;
+                if selected {
+                    self.fill(rr, 4.0, theme().accent);
+                }
+                let tint = selected.then_some(Rgba([255, 255, 255, 255]));
+                let ty = rr.y + (rr.h - label.height() as f64) / 2.0;
+                if row.checked {
+                    let c = tint.unwrap_or(theme().colors[theme::PRIMARY]);
+                    self.svg("check", Rect { x: rr.x + 4.0, y: rr.y + (rr.h - 12.0) / 2.0, w: 12.0, h: 12.0 }, c);
+                }
+                self.text(label, rr.x + 18.0, ty, tint);
+                if let Some(keys) = &row.shortcut {
+                    let x = rr.x + rr.w - 10.0 - keys.width() as f64;
+                    self.text(keys, x, rr.y + (rr.h - keys.height() as f64) / 2.0, tint);
+                }
+                if row.submenu {
+                    let c = tint.unwrap_or(theme().colors[theme::SECONDARY]);
+                    self.svg("chevronRight", Rect { x: rr.x + rr.w - 18.0, y: rr.y + (rr.h - 10.0) / 2.0, w: 10.0, h: 10.0 }, c);
+                }
+            }
+            self.stroke(r, 6.0, 1.0, theme().field_border);
+        }
+    }
+
     /// Draws the tooltip, if one shows (last, so it's on top of everything).
     pub fn paint_tooltip(&mut self) {
         let Some(tip) = self.ui.tooltip.as_ref() else { return };
@@ -396,6 +456,12 @@ impl Painter<'_> {
         }
         self.offset = (r.x - placed.x, r.y - placed.y);
         let content = placed.inset_by(n.mods.padding);
+        // A popover: a card, with a shadow, that its content is drawn on.
+        if let Kind::Popover { .. } = n.kind {
+            self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.0), 10.0, Rgba([0, 0, 0, 20]));
+            self.fill(r, 8.0, theme().popup);
+            self.stroke(r, 8.0, 1.0, theme().field_border);
+        }
         let hovered = self.ui.hovered == Some(n.key) && !style.disabled;
         let pressed = self.ui.pressed == Some(n.key) && !style.disabled;
         match &n.kind {

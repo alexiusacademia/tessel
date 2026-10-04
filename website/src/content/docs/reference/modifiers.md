@@ -330,8 +330,9 @@ Canvas { g in g.fillCircle(x: x, y: y, radius: 6, color: .red) }
 
 - The block gets a [`PointerEvent`](/reference/colors/#pointerevent): what
   happened (`kind`), where (`x`, `y`, from the view's top left corner inside
-  its padding), how far (`dx`, `dy`), which `button`, how many `clicks`, and
-  whether `shift`, `alt` or `command` was held.
+  its padding, and `windowX`, `windowY`, from the window's), how far (`dx`,
+  `dy`), which `button`, how many `clicks`, and whether `shift`, `alt` or
+  `command` was held.
 - From `.down` to `.up`, the view has the mouse: `.drag` events keep coming
   when the mouse leaves the view, and the `.up` comes wherever it is let go.
 - A scroll over the view goes to it (as a `.scroll` event) rather than to a
@@ -755,6 +756,124 @@ HStack { Text(name) }
 - When drop targets are inside each other, the innermost one under the mouse
   gets the drop.
 - Doesn't work while the view is disabled or hidden.
+
+## contextMenu
+
+```text
+.contextMenu(_ items: View)
+```
+
+A menu that opens where the view is right-clicked (or Ctrl-clicked, on
+macOS). Its items are [`MenuItem`](/reference/views/#menuitem)s,
+[`MenuDivider`](/reference/views/#menudivider)s and submenus
+([`Menu`](/reference/views/#menu)).
+
+```tessel
+Text(layer)
+    .contextMenu {
+        MenuItem("Rename…") { rename(layer) }
+        MenuDivider()
+        MenuItem("Remove") { remove(layer) }
+    }
+```
+
+- The menu is drawn in the window, over everything. Arrow keys, Enter and
+  Escape work in it; a click outside closes it.
+- Shortcuts of its items are only shown.
+- On a view with [`onPointer`](#onpointer) too, the right button opens the
+  menu and the others go to `onPointer`.
+
+See [Context menus](/ui/menus-windows/#context-menus).
+
+## menuBar
+
+```text
+.menuBar(_ items: View)
+```
+
+The app's menus, each a [`Menu`](/reference/views/#menu): the menu bar at
+the top of the screen on macOS (with the app, Edit and Window menus Tessel
+adds), drawn at the top of the window on Windows.
+
+```tessel
+VStack { … }
+    .menuBar {
+        Menu("File") {
+            MenuItem("Open…", shortcut: "cmd+o") { open() }
+            MenuItem("Save", shortcut: "cmd+s") { save() }.disabled(!edited)
+        }
+    }
+```
+
+Put it on any view of the main window; the first one that has it counts. The
+items' shortcuts work wherever the keyboard focus is. See
+[The menu bar](/ui/menus-windows/#the-menu-bar).
+
+## popover
+
+```text
+.popover(isPresented: bind Bool, edge: Edge = .bottom, content: View)
+```
+
+Shows `content` next to the view, over the rest of the window, while
+`isPresented` is `true`.
+
+```tessel
+Button("Style…") { showStyle = true }
+    .popover(isPresented: showStyle) {
+        Toggle("Dashed", isOn: dashed)
+    }
+```
+
+- [`edge`](/reference/colors/#edge) is the side it shows on: `.bottom`,
+  `.top`, `.leading` or `.trailing`. When there's no room there, it goes on
+  the other side; it always stays in the window.
+- A click outside it, or Escape, closes it, setting `isPresented` to `false`.
+
+See [Popovers](/ui/menus-windows/#popovers).
+
+## onOpenFile
+
+```text
+.onOpenFile(_ action: fn(String))
+```
+
+Runs `action` with the path of each file the system asks the app to open:
+opened with the app in Finder, dropped on its Dock icon, or the one it was
+started to open (on Windows: files it's started with).
+
+```tessel
+VStack { … }
+    .onOpenFile { path in open(path) }
+```
+
+The first view of the main window with `onOpenFile` that's shown and enabled
+gets the files; files that come before there's one wait for it. List the
+extensions in the app's [`documentTypes:`](/reference/views/#app) for the
+system to offer the app for them. See
+[Opening documents](/ui/menus-windows/#opening-documents).
+
+## onCloseRequest
+
+```text
+.onCloseRequest(_ action: fn())
+```
+
+Runs instead of closing when the user closes the window or quits the app.
+The window stays open until the app calls
+[`closeWindow()`](/reference/stdlib/#closewindow) or
+[`quit()`](/reference/stdlib/#quit).
+
+```tessel
+VStack { … }
+    .onCloseRequest {
+        if edited { askToSave = true } else { quit() }
+    }
+```
+
+On the main window, it also decides what quitting does. In a
+[`Window`](/reference/views/#window), it decides for that window. See
+[Asking before closing](/ui/menus-windows/#asking-before-closing).
 
 ## tooltip
 

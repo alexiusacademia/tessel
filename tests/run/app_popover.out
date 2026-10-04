@@ -1,0 +1,86 @@
+Root [0,0 360x300]
+  View [140,0 81x300]
+    VStack [140,0 81x300]
+      Button "Style" [152,8 57x28]
+      Spacer [180,46 0x181]
+      Button "Note" [152,237 56x28]
+      Text "width , note " [148,276 65x16]
+  Popover [40,42 280x150]
+    VStack [52,54 256x126]
+      Text "Line style" [52,54 54x16]
+      TextField "Width" = "" [52,79 256x28]
+      Button "Color…" [52,115 66x28]
+      Button "Done" [52,152 59x28]
+Root [0,0 360x300]
+  View [130,0 99x300]
+    VStack [130,0 99x300]
+      Button "Style" [152,8 57x28]
+      Spacer [180,46 0x181]
+      Button "Note" [152,237 56x28]
+      Text "width 2.5, note " [138,276 83x16]
+  Popover [40,42 280x150]
+    VStack [52,54 256x126]
+      Text "Line style" [52,54 54x16]
+      TextField "Width" = "2.5" [52,79 256x28]
+      Button "Color…" [52,115 66x28]
+      Button "Done" [52,152 59x28]
+  Popover [124,103 75x52]
+    Button "Red" [136,115 51x28]
+Root
+  View
+    VStack
+      Button "Style"
+      Spacer
+      Button "Note"
+      Text "red"
+      Text "width 2.5, note "
+  Popover
+    VStack
+      Text "Line style"
+      TextField "Width" = "2.5"
+      Button "Color…"
+      Button "Done"
+Root
+  View
+    VStack
+      Button "Style"
+      Spacer
+      Button "Note"
+      Text "red"
+      Text "width 2.5, note "
+Root [0,0 360x300]
+  View [130,0 99x300]
+    VStack [130,0 99x300]
+      Button "Style" [152,8 57x28]
+      Spacer [180,46 0x154]
+      Button "Note" [152,211 56x28]
+      Text "red" [171,249 18x16]
+      Text "width 2.5, note " [138,276 83x16]
+  Popover [88,152 184x52]
+    TextField "Note" = "" [100,164 160x28]
+Root
+  View
+    VStack
+      Button "Style"
+      Spacer
+      Button "Note"
+      Text "red"
+      Text "width 2.5, note sharp bends"
+  Popover
+    TextField "Note" = "sharp bends"
+Root
+  View
+    VStack
+      Button "Style"
+      Spacer
+      Button "Note"
+      Text "red"
+      Text "width 2.5, note sharp bends"
+Root
+  View
+    VStack
+      Button "Style"
+      Spacer
+      Button "Note"
+      Text "red"
+      Text "width 2.5, note sharp bends"
