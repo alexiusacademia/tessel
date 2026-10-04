@@ -312,6 +312,8 @@ jobs:
         with:
           name: tessel-${{ matrix.name }}
           path: dist/tessel-*
+          # Only for the publish job: the packages live in the bucket.
+          retention-days: 1
 
   publish:
     name: Publish to Google Cloud Storage

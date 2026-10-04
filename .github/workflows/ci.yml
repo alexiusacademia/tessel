@@ -100,3 +100,5 @@ jobs:
         with:
           name: example-apps-${{ runner.os }}
           path: apps/
+          # (For trying a build by hand; the repository's storage is limited.)
+          retention-days: 3
