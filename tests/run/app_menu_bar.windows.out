@@ -1,0 +1,172 @@
+MenuBar (native) "Atlas" "File" "View" "Edit" "Window"
+Root
+  View
+    VStack
+      TextField "Name" = ""
+      Toggle "Edited" = false
+Menu "Atlas"
+  MenuItem "About Atlas"
+  MenuDivider
+  MenuItem "Hide Atlas" cmd+h
+  MenuItem "Hide Others" cmd+alt+h
+  MenuItem "Show All"
+  MenuDivider
+  MenuItem "Quit Atlas" cmd+q
+Menu "File"
+  MenuItem "Open…" cmd+o
+  MenuItem "Save" cmd+s disabled
+  MenuDivider
+  Menu "Recent"
+    MenuItem "roads.gpkg"
+    MenuItem "rivers.shp"
+Menu "View"
+  MenuItem "Grid" cmd+shift+g checked
+Menu "Edit"
+  MenuItem "Undo" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy"
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All" cmd+a
+  MenuDivider
+  MenuItem "Copy Feature" cmd+c
+Menu "Window"
+  MenuItem "Minimize" cmd+m
+  MenuItem "Zoom"
+  MenuDivider
+  MenuItem "Close Window" cmd+w
+MenuBar (native) "Atlas" "File" "View" "Edit" "Window"
+Root
+  View
+    VStack
+      TextField "Name" = "abc"
+      Toggle "Edited" = false
+      Text "open"
+      Text "open"
+      Text "save"
+      Text "open rivers.shp"
+      Text "shortcut K"
+      Text "copy feature"
+Menu "Atlas"
+  MenuItem "About Atlas"
+  MenuDivider
+  MenuItem "Hide Atlas" cmd+h
+  MenuItem "Hide Others" cmd+alt+h
+  MenuItem "Show All"
+  MenuDivider
+  MenuItem "Quit Atlas" cmd+q
+Menu "File"
+  MenuItem "Open…" cmd+o
+  MenuItem "Save" cmd+s disabled
+  MenuDivider
+  Menu "Recent"
+    MenuItem "roads.gpkg"
+    MenuItem "rivers.shp"
+Menu "View"
+  MenuItem "Grid" cmd+shift+g
+Menu "Edit"
+  MenuItem "Undo" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy"
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All" cmd+a
+  MenuDivider
+  MenuItem "Copy Feature" cmd+c
+Menu "Window"
+  MenuItem "Minimize" cmd+m
+  MenuItem "Zoom"
+  MenuDivider
+  MenuItem "Close Window" cmd+w
+MenuBar (drawn) "File" "View" "Edit"
+Root [0,26 360x214]
+  View [0,34 360x198]
+    VStack [0,34 360x198]
+      TextField "Name" = "abc" [8,42 344x31]
+      Toggle "Edited" = false [137,78 85x22]
+      Text "open" [168,106 25x15]
+      Text "open" [168,127 25x15]
+      Text "save" [169,148 21x15]
+      Text "open rivers.shp" [143,168 74x15]
+      Text "shortcut K" [155,189 49x15]
+      Text "copy feature" [150,210 61x15]
+MenuBar (drawn) "File" "View" "Edit"
+Root
+  View
+    VStack
+      TextField "Name" = "abc"
+      Toggle "Edited" = false
+      Text "open"
+      Text "open"
+      Text "save"
+      Text "open rivers.shp"
+      Text "shortcut K"
+      Text "copy feature"
+Menu "File"
+  MenuItem "Open…" cmd+o
+  MenuItem "Save" cmd+s disabled
+  MenuDivider
+  Menu "Recent"
+  MenuDivider
+  MenuItem "Quit" cmd+q
+MenuBar (drawn) "File" "View" "Edit"
+Root
+  View
+    VStack
+      TextField "Name" = "abc"
+      Toggle "Edited" = false
+      Text "open"
+      Text "open"
+      Text "save"
+      Text "open rivers.shp"
+      Text "shortcut K"
+      Text "copy feature"
+Menu "File"
+  MenuItem "Open…" cmd+o
+  MenuItem "Save" cmd+s disabled
+  MenuDivider
+  Menu "Recent" [selected]
+    MenuItem "roads.gpkg" [selected]
+    MenuItem "rivers.shp"
+  MenuDivider
+  MenuItem "Quit" cmd+q
+MenuBar (drawn) "File" "View" "Edit"
+Root
+  View
+    VStack
+      TextField "Name" = "abc"
+      Toggle "Edited" = false
+      Text "open"
+      Text "open"
+      Text "save"
+      Text "open rivers.shp"
+      Text "shortcut K"
+      Text "copy feature"
+      Text "open rivers.shp"
+      Text "copy feature"
+Menu "Edit"
+  MenuItem "Undo" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy"
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All" cmd+a
+  MenuDivider
+  MenuItem "Copy Feature" cmd+c
+MenuBar (drawn) "File" "View" "Edit"
+Root
+  View
+    VStack
+      TextField "Name" = ""
+      Toggle "Edited" = false
+      Text "open"
+      Text "open"
+      Text "save"
+      Text "open rivers.shp"
+      Text "shortcut K"
+      Text "copy feature"
+      Text "open rivers.shp"
+      Text "copy feature"
