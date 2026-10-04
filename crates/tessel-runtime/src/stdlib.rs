@@ -624,3 +624,42 @@ pub unsafe extern "C" fn tsl_data_decompressed(d: *const Str, format: *const Str
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+// ===== the app's information =====
+
+/// What `tsl_set_app_info` was given: name, id, version, build,
+/// description, author, copyright.
+static APP_INFO: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The app's information from its `tessel.toml` (with defaults), which a
+/// compiled program gives as it starts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_set_app_info(
+    name: *const Str,
+    id: *const Str,
+    version: *const Str,
+    build: *const Str,
+    description: *const Str,
+    author: *const Str,
+    copyright: *const Str,
+) {
+    let fields = [name, id, version, build, description, author, copyright].map(|s| unsafe { text(s) }.to_string());
+    *APP_INFO.lock().unwrap() = fields.to_vec();
+}
+
+/// The app's information, as `tsl_set_app_info` was given it (empty when
+/// it wasn't, in the REPL).
+pub fn app_info() -> Vec<String> {
+    APP_INFO.lock().unwrap().clone()
+}
+
+/// For the prelude's `appInfo`: the fields, in order.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_app_info() -> *mut crate::List {
+    let mut slot = unsafe { crate::tsl_list_new(&crate::TSL_TYPE_STR, 7) };
+    for f in app_info() {
+        let obj = crate::str_new(&f);
+        unsafe { crate::tsl_list_push(&mut slot, &obj as *const *mut Str as *const u8) };
+    }
+    slot
+}

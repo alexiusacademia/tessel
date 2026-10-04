@@ -313,9 +313,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             record: None,
         });
         let arg = |label: &str| app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == label));
+        // `title:`, or the manifest's name for the app, or its own.
         let title = match arg("title") {
             Some(a) => self.expr_as(&a.value, &Ty::Str).unwrap(),
-            None => self.str_lit(&app.name.name).into(),
+            None => {
+                let name = crate::app_info().name.unwrap_or_else(|| app.name.name.clone());
+                self.str_lit(&name).into()
+            }
         };
         let mut size = |label: &str, default: f64| match arg(label) {
             Some(a) => self.expr_as(&a.value, &Ty::Float).unwrap(),

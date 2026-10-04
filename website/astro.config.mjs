@@ -28,6 +28,7 @@ export default defineConfig({
 						{ label: 'Your first app', slug: 'start/first-app' },
 						{ label: 'The Tessel IDE', slug: 'start/ide' },
 						{ label: 'Command line', slug: 'start/cli' },
+						{ label: 'The project file', slug: 'start/project' },
 						{ label: 'The REPL', slug: 'start/repl' },
 						{ label: 'Editor support', slug: 'start/editors' },
 					],

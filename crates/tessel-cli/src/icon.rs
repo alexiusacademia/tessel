@@ -18,9 +18,14 @@ pub struct Icon {
 }
 
 impl Icon {
-    /// The icon of the program at `path` (a `.tsl` file or a folder), or
-    /// Tessel's with `None` and for programs without an `icon.png`.
-    pub fn of(program: Option<&Path>) -> Result<Icon, String> {
+    /// The icon `chosen` (the manifest's `icon`), or else the program's:
+    /// `icon.png` next to it (it's a `.tsl` file or a folder), or Tessel's
+    /// with `None` and for programs without one.
+    pub fn of_program(program: Option<&Path>, chosen: Option<&Path>) -> Result<Icon, String> {
+        if let Some(file) = chosen {
+            let bytes = std::fs::read(file).map_err(|e| format!("can't read the app's icon `{}`: {e}", file.display()))?;
+            return Icon::decode(&bytes).map_err(|e| format!("can't use `{}` as the app's icon: {e}", file.display()));
+        }
         let folder = program.map(|p| if p.is_dir() { p } else { p.parent().unwrap_or(Path::new("")) });
         let file = folder.map(|f| f.join(FILE_NAME)).filter(|f| f.is_file());
         let Some(file) = file else {
@@ -186,6 +191,82 @@ impl Icon {
 
 /// Appends one resource to a `.res` file: its header (the type and name are
 /// numbers), then its data, up to a multiple of four bytes.
+/// What a Windows `.exe` tells of itself (its Properties' Details): from
+/// the manifest's `[app]`.
+pub struct VersionInfo {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    pub copyright: String,
+    pub file_name: String,
+}
+
+/// The version resource (`VS_VERSIONINFO`) of an `.exe`, to add to its
+/// resource file.
+pub fn version_resource(info: &VersionInfo) -> Vec<u8> {
+    const VERSION: u16 = 16;
+    // "1.2.3" (and a fourth number, if there is one) as four numbers.
+    let mut numbers = [0u16; 4];
+    for (n, part) in numbers.iter_mut().zip(info.version.split(['.', '-', '+'])) {
+        *n = part.trim().parse().unwrap_or(0);
+    }
+    let ms = (numbers[0] as u32) << 16 | numbers[1] as u32;
+    let ls = (numbers[2] as u32) << 16 | numbers[3] as u32;
+    let mut fixed = Vec::new();
+    for v in [0xFEEF04BDu32, 0x0001_0000, ms, ls, ms, ls, 0x3F, 0, 0x0004_0004, 1, 0, 0, 0] {
+        fixed.extend(v.to_le_bytes());
+    }
+    let description = if info.description.is_empty() { &info.name } else { &info.description };
+    let strings: Vec<Vec<u8>> = [
+        ("CompanyName", info.author.as_str()),
+        ("FileDescription", description.as_str()),
+        ("FileVersion", info.version.as_str()),
+        ("InternalName", info.name.as_str()),
+        ("LegalCopyright", info.copyright.as_str()),
+        ("OriginalFilename", info.file_name.as_str()),
+        ("ProductName", info.name.as_str()),
+        ("ProductVersion", info.version.as_str()),
+    ]
+    .iter()
+    .filter(|(_, v)| !v.is_empty())
+    .map(|(k, v)| {
+        let value: Vec<u16> = v.encode_utf16().chain([0]).collect();
+        version_node(k, &value.iter().flat_map(|c| c.to_le_bytes()).collect::<Vec<u8>>(), value.len() as u16, true, &[])
+    })
+    .collect();
+    // US English, Unicode.
+    let table = version_node("040904B0", &[], 0, true, &strings);
+    let string_info = version_node("StringFileInfo", &[], 0, true, &[table]);
+    let translation = version_node("Translation", &0x04B0_0409u32.to_le_bytes(), 4, false, &[]);
+    let var_info = version_node("VarFileInfo", &[], 0, true, &[translation]);
+    let root = version_node("VS_VERSION_INFO", &fixed, fixed.len() as u16, false, &[string_info, var_info]);
+    let mut out = Vec::new();
+    resource(&mut out, VERSION, 1, 0x0030, &root);
+    out
+}
+
+/// One block of a version resource: its length, its value's length, its
+/// type (1 for text), its key, its value and its children, each starting
+/// at a multiple of 4 bytes.
+fn version_node(key: &str, value: &[u8], value_len: u16, text: bool, children: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = vec![0, 0];
+    out.extend(value_len.to_le_bytes());
+    out.extend((text as u16).to_le_bytes());
+    for c in key.encode_utf16().chain([0]) {
+        out.extend(c.to_le_bytes());
+    }
+    out.resize(out.len().next_multiple_of(4), 0);
+    out.extend(value);
+    for child in children {
+        out.resize(out.len().next_multiple_of(4), 0);
+        out.extend(child);
+    }
+    let len = out.len() as u16;
+    out[..2].copy_from_slice(&len.to_le_bytes());
+    out
+}
+
 fn resource(out: &mut Vec<u8>, kind: u16, id: u16, memory_flags: u16, data: &[u8]) {
     out.extend((data.len() as u32).to_le_bytes());
     out.extend(32u32.to_le_bytes()); // the header's size
@@ -212,7 +293,7 @@ mod tests {
 
     #[test]
     fn tessel_icon() {
-        let icon = Icon::of(None).unwrap();
+        let icon = Icon::of_program(None, None).unwrap();
         assert_eq!(icon.size, 1024);
         // A corner is transparent; the middle (between the tiles) is white.
         assert_eq!(icon.rgba[3], 0);
@@ -235,7 +316,7 @@ mod tests {
 
     #[test]
     fn icns_lists_every_size() {
-        let icns = Icon::of(None).unwrap().icns();
+        let icns = Icon::of_program(None, None).unwrap().icns();
         assert_eq!(&icns[..4], b"icns");
         assert_eq!(u32_at(&icns, 4, true) as usize, icns.len());
         let (mut at, mut kinds) = (8, Vec::new());
@@ -246,14 +327,14 @@ mod tests {
         }
         assert_eq!(kinds, ["ic11", "ic12", "ic07", "ic08", "ic09", "ic10"]);
         // A small icon isn't enlarged.
-        let small = Icon::of(None).unwrap().resized(100).icns();
+        let small = Icon::of_program(None, None).unwrap().resized(100).icns();
         assert!(small.windows(4).any(|w| w == b"ic12"));
         assert!(!small.windows(4).any(|w| w == b"ic07"));
     }
 
     #[test]
     fn windows_resources_hold_a_group_of_icons() {
-        let res = Icon::of(None).unwrap().windows_resources();
+        let res = Icon::of_program(None, None).unwrap().windows_resources();
         // (type, id, data) of each resource.
         let (mut at, mut found) = (0, Vec::new());
         while at < res.len() {
@@ -282,18 +363,18 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tessel-icon-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(FILE_NAME), "not a picture").unwrap();
-        let error = Icon::of(Some(&dir)).err().unwrap();
+        let error = Icon::of_program(Some(&dir), None).err().unwrap();
         assert!(error.contains("icon.png` as the app's icon: it isn't a PNG image"), "{error}");
         // For a program that's one file, the icon is next to it.
         std::fs::write(dir.join(FILE_NAME), Icon { size: 2, rgba: vec![7; 16] }.png()).unwrap();
-        assert_eq!(Icon::of(Some(&dir.join("app.tsl"))).unwrap().rgba, vec![7; 16]);
+        assert_eq!(Icon::of_program(Some(&dir.join("app.tsl")), None).unwrap().rgba, vec![7; 16]);
 
         let mut wide = Vec::new();
         let mut encoder = png::Encoder::new(&mut wide, 2, 1);
         encoder.set_color(png::ColorType::Rgb);
         encoder.write_header().unwrap().write_image_data(&[0; 6]).unwrap();
         std::fs::write(dir.join(FILE_NAME), wide).unwrap();
-        let error = Icon::of(Some(&dir)).err().unwrap();
+        let error = Icon::of_program(Some(&dir), None).err().unwrap();
         assert!(error.ends_with("it must be square, but it's 2 × 1 pixels"), "{error}");
         std::fs::remove_dir_all(&dir).unwrap();
     }

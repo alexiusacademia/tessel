@@ -324,6 +324,8 @@ TESSEL_VERSION=0.1.32 tessel run main.tsl
 ```
 
 A project without a `tessel.toml` uses the installed Tessel, as before.
+The same file says what the app says about itself (its name, version,
+icon, …): see [The project file](/start/project/).
 
 ## `tessel complete`
 

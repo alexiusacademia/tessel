@@ -572,6 +572,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let entry_name = self.hot.map_or("tsl_main".to_string(), hot_entry_symbol);
         let entry = self.module.add_function(&entry_name, self.ctx.void_type().fn_type(&[], false), None);
         self.b.position_at_end(self.ctx.append_basic_block(entry, "entry"));
+        self.set_app_info();
         match self.app {
             Some(app) => self.run_app(app, entry),
             None => {
@@ -589,6 +590,28 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.b.position_at_end(self.ctx.append_basic_block(main, "entry"));
         let status = self.call_rt("tsl_start", &[entry.as_global_value().as_pointer_value().into()]).unwrap();
         self.b.build_return(Some(&status)).unwrap();
+    }
+
+    /// Gives the runtime the app's information (`appInfo()`, the About
+    /// panel): its `tessel.toml`'s, with defaults from the program.
+    fn set_app_info(&mut self) {
+        let info = crate::app_info();
+        let name =
+            info.name.clone().or_else(|| self.app.map(|a| a.name.name.clone())).or_else(|| info.program.clone()).unwrap_or_default();
+        let version = info.version.clone().unwrap_or_else(|| "1.0".into());
+        let fields = [
+            info.id.clone().unwrap_or_else(|| crate::default_app_id(&name)),
+            version.clone(),
+            info.build.clone().unwrap_or(version),
+            info.description.clone().unwrap_or_default(),
+            info.author.clone().unwrap_or_default(),
+            info.copyright.clone().unwrap_or_default(),
+        ];
+        let mut args: Vec<BasicMetadataValueEnum> = vec![self.str_lit(&name).into()];
+        args.extend(fields.iter().map(|f| BasicMetadataValueEnum::from(self.str_lit(f))));
+        let p = self.ptr_ty().into();
+        let f = self.declare_rt("tsl_set_app_info", &[p; 7], None);
+        self.b.build_call(f, &args, "").unwrap();
     }
 
     /// The function that runs a REPL entry's statements. The session's

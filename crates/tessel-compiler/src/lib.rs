@@ -21,6 +21,40 @@ use source::SourceMap;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// What a program's `tessel.toml` says about its app (its `[app]` table):
+/// what `appInfo()` gives, and what the About panel shows. A field left out
+/// gets a default from the program (see `codegen`).
+#[derive(Clone, Debug, Default)]
+pub struct AppInfo {
+    pub name: Option<String>,
+    pub id: Option<String>,
+    pub version: Option<String>,
+    pub build: Option<String>,
+    pub description: Option<String>,
+    pub author: Option<String>,
+    pub copyright: Option<String>,
+    /// The program's own name (its file's or folder's), for a program
+    /// without an `app` whose manifest gives no name.
+    pub program: Option<String>,
+}
+
+static APP_INFO: std::sync::Mutex<Option<AppInfo>> = std::sync::Mutex::new(None);
+
+/// Sets the app information that programs compiled from now on carry.
+pub fn set_app_info(info: AppInfo) {
+    *APP_INFO.lock().unwrap() = Some(info);
+}
+
+pub(crate) fn app_info() -> AppInfo {
+    APP_INFO.lock().unwrap().clone().unwrap_or_default()
+}
+
+/// The bundle identifier an app has when its manifest doesn't give one.
+pub fn default_app_id(name: &str) -> String {
+    let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
+    format!("dev.tessel.{id}")
+}
+
 /// The result of running the front end over a program.
 pub struct Analysis {
     pub program: ast::Program,

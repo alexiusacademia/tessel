@@ -304,6 +304,8 @@ app Notes(width: 420, height: 280, documentTypes: ["note"]) {
 `CFBundleDocumentTypes` in its `Info.plist`), so Finder knows the app opens
 `.note` files. Write the extensions without the dot; the list must be written
 out in the `app` (not computed), since the bundle is made from the source.
+The project's [`tessel.toml`](/start/project/#documents) can list them too,
+with a name for each kind of file.
 
 - The first view (from the top of the main window's views) with
   `.onOpenFile` gets each file.

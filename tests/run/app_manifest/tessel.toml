@@ -1,0 +1,15 @@
+# What the app says about itself (see the manifest's docs, and appInfo).
+
+[app]
+name = "Tally Pro"
+id = "com.example.tally"
+version = "1.2.0"
+build = "42"
+description = "Spreadsheets for surveyors"
+author = "Alexius Academia"
+copyright = "© 2026 Alexius Academia"
+category = "productivity"
+
+[[app.documents]]
+name = "Tally Workbook"
+extensions = ["tly"]

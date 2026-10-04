@@ -1,0 +1,11 @@
+# What the app says about itself: its bundle on macOS, its .exe's details
+# on Windows, its About panel, and appInfo().
+
+[app]
+name = "Todos"
+id = "dev.tessel.examples.todos"
+version = "1.0.0"
+description = "A Tessel example: a to-do list"
+author = "The Tessel authors"
+copyright = "Public domain"
+category = "productivity"

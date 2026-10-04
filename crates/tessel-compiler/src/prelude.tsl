@@ -174,3 +174,24 @@ fn readImage(_ path: String) -> (Int, Int, [Int])? {
     }
     (size[0], size[1], pixels)
 }
+
+/// What the app's `tessel.toml` says about it (its `[app]` table), with
+/// defaults for what it leaves out: the name of the `app`, version "1.0".
+struct AppInfo {
+    name: String
+    id: String
+    version: String
+    build: String
+    description: String
+    author: String
+    copyright: String
+}
+
+/// The app's name, version and the rest, from its `tessel.toml`.
+fn appInfo() -> AppInfo {
+    let f = __appInfo()
+    if f.count < 7 {
+        return AppInfo(name: "", id: "", version: "", build: "", description: "", author: "", copyright: "")
+    }
+    AppInfo(name: f[0], id: f[1], version: f[2], build: f[3], description: f[4], author: f[5], copyright: f[6])
+}

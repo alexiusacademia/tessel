@@ -1,0 +1,9 @@
+// appInfo(): what the project's tessel.toml says about the app.
+
+fn main() {
+    let a = appInfo()
+    print("{a.name} {a.version} ({a.build})")
+    print(a.id)
+    print(a.description)
+    print("{a.author}, {a.copyright}")
+}

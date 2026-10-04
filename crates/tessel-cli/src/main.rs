@@ -1,6 +1,7 @@
 mod icon;
 mod hot;
 mod lsp;
+mod manifest;
 mod pin;
 mod preview;
 mod repl;
@@ -205,7 +206,23 @@ fn plural(k: usize, word: &str) -> String {
     format!("{k} {word}{}", if k == 1 { "" } else { "s" })
 }
 
+/// Reads the program's `tessel.toml` (a mistake in it is an error) and gives
+/// the compiler its app information.
+fn use_manifest(path: &Path) -> Result<Option<manifest::Found>, ExitCode> {
+    match manifest::find(path) {
+        Ok(found) => {
+            tessel_compiler::set_app_info(manifest::app_info(found.as_ref(), path));
+            Ok(found)
+        }
+        Err(e) => {
+            eprintln!("tessel: {e}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
 fn load(path: &Path) -> Result<(SourceMap, usize), ExitCode> {
+    use_manifest(path)?;
     let files = program_files(path).map_err(|msg| {
         eprintln!("tessel: {msg}");
         ExitCode::FAILURE
@@ -382,13 +399,19 @@ fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) ->
     }
     let app = AppInfo::of(&analysis.program);
     let app_name = app.as_ref().map(|a| a.name.clone());
-    // On Windows, an app's icon is linked into its .exe.
+    let found = program.and_then(|p| manifest::find(p).ok().flatten());
+    // On Windows, an app's icon and details are linked into its .exe (a
+    // program's too, when its manifest has them).
     let windows = target_triple().map_or(cfg!(windows), |t| t.contains("windows"));
-    let resources = (windows && app_name.is_some()).then(|| obj.with_extension("res"));
+    let resources = (windows && (app_name.is_some() || found.is_some())).then(|| obj.with_extension("res"));
     let linked = match &resources {
-        Some(res) => icon::Icon::of(program)
-            .and_then(|icon| std::fs::write(res, icon.windows_resources()).map_err(|e| format!("can't write `{}`: {e}", res.display())))
-            .and_then(|()| link(&obj, &runtime, out, true, Some(res))),
+        Some(res) => icon::Icon::of_program(program, manifest::icon_path(found.as_ref()).as_deref())
+            .and_then(|icon| {
+                let mut bytes = icon.windows_resources();
+                bytes.extend(icon::version_resource(&version_info(found.as_ref(), app_name.as_deref(), program, out)));
+                std::fs::write(res, bytes).map_err(|e| format!("can't write `{}`: {e}", res.display()))
+            })
+            .and_then(|()| link(&obj, &runtime, out, app_name.is_some(), Some(res))),
         None => link(&obj, &runtime, out, app_name.is_some(), None),
     };
     let _ = std::fs::remove_file(&obj);
@@ -548,14 +571,31 @@ mod bundled {
 /// Wraps a built app in a platform app bundle. On macOS: `Name.app`, next
 /// to the executable (which moves inside it), with the icon of `program`
 /// (see `icon::Icon::of`). Returns the bundle's path.
+/// What a Windows `.exe` tells of itself: the manifest's `[app]`, with the
+/// same defaults as `appInfo()`.
+fn version_info(found: Option<&manifest::Found>, app_name: Option<&str>, program: Option<&Path>, out: &Path) -> icon::VersionInfo {
+    let app = found.map(|f| f.manifest.app.clone()).unwrap_or_default();
+    let stem = program.and_then(|p| p.canonicalize().ok()).and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()));
+    icon::VersionInfo {
+        name: app.name.or(app_name.map(str::to_string)).or(stem).unwrap_or_default(),
+        version: app.version.unwrap_or_else(|| "1.0".into()),
+        description: app.description.unwrap_or_default(),
+        author: app.author.unwrap_or_default(),
+        copyright: app.copyright.unwrap_or_default(),
+        file_name: out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+    }
+}
+
 fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
         // Windows apps are already a single double-clickable .exe, with the icon inside.
         return Ok(exe.to_path_buf());
     }
-    let icon = icon::Icon::of(program)?;
+    let found = program.and_then(|p| manifest::find(p).ok().flatten());
+    let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
+    let icon = icon::Icon::of_program(program, manifest::icon_path(found.as_ref()).as_deref())?;
     let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
-    let name = app.map_or(stem, |a| a.name.as_str());
+    let name = info.name.as_deref().unwrap_or(app.map_or(stem, |a| a.name.as_str()));
     let bundle = exe.with_file_name(format!("{name}.app"));
     let contents = bundle.join("Contents");
     if bundle.exists() {
@@ -564,23 +604,40 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     for folder in ["MacOS", "Resources"] {
         std::fs::create_dir_all(contents.join(folder)).map_err(|e| format!("can't create `{}`: {e}", bundle.display()))?;
     }
-    let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
-    let documents = document_types_plist(app.map_or(&[], |a| a.document_types.as_slice()));
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let id = escape(&info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(name)));
+    let version = escape(info.version.as_deref().unwrap_or("1.0"));
+    let build = info.build.as_deref().map_or(version.clone(), escape);
+    // The documents the manifest lists, and the code's `documentTypes:`.
+    let mut documents: Vec<manifest::Document> = info.documents.clone();
+    for ext in app.map_or(&[][..], |a| a.document_types.as_slice()) {
+        if !documents.iter().any(|d| d.extensions.contains(ext)) {
+            documents.push(manifest::Document { name: None, extensions: vec![ext.clone()], role: None });
+        }
+    }
+    let mut extra = document_types_plist(&documents);
+    if let Some(c) = &info.copyright {
+        extra.push_str(&format!("\n    <key>NSHumanReadableCopyright</key><string>{}</string>", escape(c)));
+    }
+    if let Some(c) = info.category_type() {
+        extra.push_str(&format!("\n    <key>LSApplicationCategoryType</key><string>{}</string>", escape(&c)));
+    }
+    let name_xml = escape(name);
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>{name}</string>
-    <key>CFBundleDisplayName</key><string>{name}</string>
-    <key>CFBundleExecutable</key><string>{name}</string>
-    <key>CFBundleIdentifier</key><string>dev.tessel.{id}</string>
+    <key>CFBundleName</key><string>{name_xml}</string>
+    <key>CFBundleDisplayName</key><string>{name_xml}</string>
+    <key>CFBundleExecutable</key><string>{name_xml}</string>
+    <key>CFBundleIdentifier</key><string>{id}</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>{version}</string>
+    <key>CFBundleVersion</key><string>{build}</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>{documents}
+    <key>NSHighResolutionCapable</key><true/>{extra}
 </dict>
 </plist>
 "#
@@ -592,19 +649,21 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     Ok(bundle)
 }
 
-/// `CFBundleDocumentTypes` for an app that opens files with these
-/// extensions: Finder offers it in "Open With", and opens them with it.
-fn document_types_plist(extensions: &[String]) -> String {
-    if extensions.is_empty() {
+/// `CFBundleDocumentTypes` for an app that opens these kinds of files:
+/// Finder offers it in "Open With", and opens them with it.
+fn document_types_plist(documents: &[manifest::Document]) -> String {
+    if documents.is_empty() {
         return String::new();
     }
     let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut out = String::from("\n    <key>CFBundleDocumentTypes</key>\n    <array>");
-    for ext in extensions {
-        let ext = escape(ext);
+    for d in documents {
+        let name = d.name.clone().unwrap_or_else(|| format!("{} file", d.extensions.first().map_or(String::new(), |e| e.to_uppercase())));
+        let role = if d.role.as_deref() == Some("viewer") { "Viewer" } else { "Editor" };
+        let extensions: String = d.extensions.iter().map(|e| format!("<string>{}</string>", escape(e))).collect();
         out.push_str(&format!(
-            "\n        <dict>\n            <key>CFBundleTypeName</key><string>{} file</string>\n            <key>CFBundleTypeRole</key><string>Editor</string>\n            <key>LSHandlerRank</key><string>Default</string>\n            <key>CFBundleTypeExtensions</key><array><string>{ext}</string></array>\n        </dict>",
-            ext.to_uppercase()
+            "\n        <dict>\n            <key>CFBundleTypeName</key><string>{}</string>\n            <key>CFBundleTypeRole</key><string>{role}</string>\n            <key>LSHandlerRank</key><string>Default</string>\n            <key>CFBundleTypeExtensions</key><array>{extensions}</array>\n        </dict>",
+            escape(&name)
         ));
     }
     out.push_str("\n    </array>");

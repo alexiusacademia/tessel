@@ -574,6 +574,8 @@ impl Builtins {
             },
             // For the prelude's `imageSize`.
             "__imageSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
+            // For the prelude's `appInfo`.
+            "__appInfo" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             // For the prelude's `readImage`.
             "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
@@ -609,7 +611,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
-    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "setWindowTitle", "renderImage", "writePDF",
+    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow",
 ];
@@ -1033,6 +1035,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "readData" => rt("tsl_read_data"),
         "writeImage" => rt("tsl_write_image"),
         "__imageSize" => rt("tsl_image_size"),
+        "__appInfo" => rt("tsl_app_info"),
         "__imagePixels" => rt("tsl_image_pixels"),
         "setWindowTitle" => rt("tsl_set_window_title"),
         "undoTextEdit" => rt("tsl_undo_text_edit"),

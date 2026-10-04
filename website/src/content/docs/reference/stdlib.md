@@ -1371,6 +1371,23 @@ let hours = timeZoneOffset(now(), timeZone: "America/New_York") / 3600   // -5, 
 
 ## The system and other programs
 
+### appInfo
+
+```text
+appInfo() -> AppInfo
+```
+
+What the project's [`tessel.toml`](/start/project/) says about the app: a
+struct with `name`, `id`, `version`, `build`, `description`, `author` and
+`copyright` (all `String`s). What the file leaves out has a default: the
+name of the `app` (or of the program), the identifier `dev.tessel.` and the
+name, version `"1.0"`, the build its version, and empty text for the rest.
+
+```tessel
+let info = appInfo()
+print("{info.name} {info.version}")
+```
+
 ### environment
 
 ```text

@@ -4553,6 +4553,8 @@ impl WindowApp {
             match command {
                 Std::Minimize => w.set_minimized(true),
                 Std::Zoom => w.set_maximized(!w.is_maximized()),
+                #[cfg(target_os = "macos")]
+                Std::About => super::native::show_about(),
                 _ => {}
             }
         }

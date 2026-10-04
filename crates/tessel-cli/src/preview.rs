@@ -24,6 +24,9 @@ use tessel_compiler::source::SourceMap;
 /// editor hasn't saved.
 /// `dark`: in the dark appearance (unless the app asks for one).
 pub fn run(path: &Path, out: &str, texts: &[(PathBuf, PathBuf)], dark: bool) -> ExitCode {
+    if let Err(code) = crate::use_manifest(path) {
+        return code;
+    }
     let files = match crate::program_files(path) {
         Ok(files) => files,
         Err(msg) => {

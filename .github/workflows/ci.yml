@@ -88,6 +88,10 @@ jobs:
           "./$BIN/tessel" build examples/todos -o "apps/todos$EXE"
           # A PDF made with this system's writer (see examples/invoice).
           "./$BIN/tessel" run examples/invoice && mv invoice.pdf apps/invoice.pdf
+          # The details tessel.toml gives a Windows .exe.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            powershell -Command "(Get-Item apps/todos.exe).VersionInfo | Format-List ProductName,FileDescription,FileVersion,ProductVersion,CompanyName,LegalCopyright,OriginalFilename"
+          fi
         env:
           EXE: ${{ runner.os == 'Windows' && '.exe' || '' }}
 

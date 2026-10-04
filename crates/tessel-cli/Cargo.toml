@@ -38,6 +38,8 @@ tessel-compiler = { path = "../tessel-compiler" }
 # that `tessel build` links programs against. `tessel` contains the runtime
 # too, for the code `tessel repl` runs.
 tessel-runtime = { path = "../tessel-runtime", default-features = false }
+toml = "0.9"
+serde = { version = "1.0.229", features = ["derive"] }
 
 [dev-dependencies]
 # The WebSocket echo server of the networking test.

@@ -33,6 +33,15 @@ fn run_programs() {
             .output()
             .unwrap();
         if !built.status.success() {
+            // A program meant not to build (a mistake in its tessel.toml) has
+            // the error as its `.err`.
+            if let Ok(expected) = std::fs::read_to_string(dir.join(format!("{name}.err"))) {
+                let got = String::from_utf8_lossy(&built.stderr).replace('\\', "/").replace("\r\n", "\n");
+                if got != expected {
+                    failures.push(format!("{name}: the build's error differs\n--- expected\n{expected}--- got\n{got}"));
+                }
+                continue;
+            }
             failures.push(format!(
                 "{name}: build failed ({}):\n{}{}",
                 built.status,
@@ -340,4 +349,33 @@ fn ide_session() {
     }
     let _ = std::fs::remove_file(&exe);
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// An app bundle says what its tessel.toml does (macOS).
+#[cfg(target_os = "macos")]
+#[test]
+fn manifest_bundle() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-bundle-{}", std::process::id()));
+    let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .current_dir(repo())
+        .args(["build", "tests/run/app_manifest", "--bundle", "-o"])
+        .arg(dir.join("tally"))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "build failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    let plist = std::fs::read_to_string(dir.join("Tally Pro.app/Contents/Info.plist")).unwrap();
+    for line in [
+        "<key>CFBundleName</key><string>Tally Pro</string>",
+        "<key>CFBundleIdentifier</key><string>com.example.tally</string>",
+        "<key>CFBundleShortVersionString</key><string>1.2.0</string>",
+        "<key>CFBundleVersion</key><string>42</string>",
+        "<key>CFBundleTypeName</key><string>Tally Workbook</string>",
+        "<array><string>tly</string></array>",
+        "<key>NSHumanReadableCopyright</key><string>© 2026 Alexius Academia</string>",
+        "<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>",
+    ] {
+        assert!(plist.contains(line), "Info.plist has no `{line}`:\n{plist}");
+    }
+    assert!(dir.join("Tally Pro.app/Contents/MacOS/Tally Pro").is_file());
+    let _ = std::fs::remove_dir_all(&dir);
 }

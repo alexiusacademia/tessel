@@ -156,7 +156,6 @@ unsafe fn add_items(menu: &AnyObject, items: &[Entry], path: &mut Vec<usize>, pa
                 Entry::Item { label, shortcut, enabled, checked, command } => {
                     // The system's own commands go to the system.
                     let action = match command {
-                        super::menu::Command::Std(Std::About) => sel!(orderFrontStandardAboutPanel:),
                         super::menu::Command::Std(Std::Hide) => sel!(hide:),
                         super::menu::Command::Std(Std::HideOthers) => sel!(hideOtherApplications:),
                         super::menu::Command::Std(Std::ShowAll) => sel!(unhideAllApplications:),
@@ -280,5 +279,30 @@ pub fn check_menu_bar() {
         let copy: *mut AnyObject = msg_send![menu, itemAtIndex: 4isize];
         let _: () = msg_send![delegate, tesselMenuChosen: copy];
         assert!(matches!(taken().as_slice(), [super::app::Shell::Menu(p)] if p == &[1, 4]));
+    }
+}
+
+/// The About panel, with the app's name, version and copyright from its
+/// `tessel.toml` (see `appInfo`): an app run without a bundle has no
+/// Info.plist for the panel to read them from.
+pub fn show_about() {
+    let info = crate::stdlib::app_info();
+    let field = |i: usize| info.get(i).cloned().unwrap_or_default();
+    let (name, version, build, copyright) = (field(0), field(2), field(3), field(6));
+    unsafe {
+        let options: Retained<AnyObject> = msg_send![class!(NSMutableDictionary), new];
+        let set = |key: &str, value: &str| {
+            if !value.is_empty() {
+                let (k, v) = (NSString::from_str(key), NSString::from_str(value));
+                let _: () = msg_send![&*options, setObject: &*v, forKey: &*k];
+            }
+        };
+        set("ApplicationName", &name);
+        set("ApplicationVersion", &version);
+        // (The build number shows in parentheses when it isn't the version.)
+        set("Version", if build != version { &build } else { "" });
+        set("Copyright", &copyright);
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![app, orderFrontStandardAboutPanelWithOptions: &*options];
     }
 }
