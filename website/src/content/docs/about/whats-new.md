@@ -7,6 +7,16 @@ What each release of Tessel brought, newest first. To get the latest, run
 `tessel update` (or take the update the IDE offers). See
 [Installation](/start/installation/) if you don't have Tessel yet.
 
+## 0.1.34
+
+*October 4, 2026*
+
+- **PDF documents.** `writePDF` draws pages with the same `Graphics` as a
+  `Canvas`, and `g.newPage()` starts the next one. Text stays text that can
+  be selected and searched, with its fonts in the file; shapes stay sharp
+  at any zoom. See [Making a PDF](/ui/drawing/#making-a-pdf) and
+  [`writePDF`](/reference/stdlib/#writepdf).
+
 ## 0.1.33
 
 *October 4, 2026*
