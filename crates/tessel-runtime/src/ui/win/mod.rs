@@ -50,7 +50,12 @@ thread_local! {
         // (WIC is a COM object; COM may already be on, in some mode.)
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         Box::leak(Box::new(Factories {
-            d2d: D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).expect("Direct2D"),
+            // (Version 1.1, of Windows 8: its render targets are device
+            // contexts too, which blend modes need.)
+            d2d: D2D1CreateFactory::<ID2D1Factory1>(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)
+                .and_then(|f| f.cast())
+                .or_else(|_| D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None))
+                .expect("Direct2D"),
             dwrite: DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("DirectWrite"),
             wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).expect("WIC"),
         }))
@@ -206,6 +211,14 @@ fn gradient_brush(rt: &ID2D1RenderTarget, gradient: &Gradient, t: Affine) -> Opt
 
 // ===== blending =====
 
+/// With `TESSEL_DEBUG_RENDER` set, says on stderr what went wrong in the
+/// renderer (what it does without is draw a little less).
+fn debug(what: &str, e: impl std::fmt::Debug) {
+    if std::env::var_os("TESSEL_DEBUG_RENDER").is_some() {
+        eprintln!("render: {what}: {e:?}");
+    }
+}
+
 /// Direct2D's blend mode for a layer's `BlendMode` (`None`: normal).
 fn blend_mode(blend: Blend) -> Option<D2D1_BLEND_MODE> {
     Some(match blend {
@@ -258,13 +271,15 @@ fn bitmap_props(dc: &ID2D1DeviceContext, options: D2D1_BITMAP_OPTIONS) -> D2D1_B
 
 /// A clear bitmap the size of the target, to draw into.
 fn target_bitmap(dc: &ID2D1DeviceContext) -> Option<ID2D1Bitmap1> {
-    unsafe { dc.CreateBitmap(dc.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_TARGET)).ok() }
+    unsafe { dc.CreateBitmap(dc.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_TARGET)) }
+        .map_err(|e| debug("a bitmap to draw into", e))
+        .ok()
 }
 
 /// Starts a blended layer: what's drawn next goes into a bitmap of its own.
 fn begin_blend(dc: &ID2D1DeviceContext, clip: Option<ID2D1Geometry>, alpha: f32, mode: D2D1_BLEND_MODE) -> Option<Opened> {
     unsafe {
-        let under = dc.GetTarget().ok()?;
+        let under = dc.GetTarget().map_err(|e| debug("the layer's target", e)).ok()?;
         let layer = target_bitmap(dc)?;
         dc.SetTarget(&layer);
         dc.Clear(Some(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }));
@@ -303,18 +318,18 @@ fn close(dc: Option<&ID2D1DeviceContext>, rt: &ID2D1RenderTarget, opened: Opened
         dc.SetTarget(&under);
         // The effect reads what's under the layer while drawing onto it, so
         // it reads a copy. (`under` is a bitmap: see `play_all`.)
-        let blended = || -> Option<ID2D1Image> {
-            let under: ID2D1Bitmap1 = under.cast().ok()?;
-            let copy = dc.CreateBitmap(under.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_NONE)).ok()?;
-            copy.CopyFromBitmap(None, &under, None).ok()?;
-            let effect = dc.CreateEffect(&CLSID_D2D1Blend).ok()?;
+        let blended = || -> windows::core::Result<ID2D1Image> {
+            let under: ID2D1Bitmap1 = under.cast()?;
+            let copy = dc.CreateBitmap(under.GetPixelSize(), None, 0, &bitmap_props(dc, D2D1_BITMAP_OPTIONS_NONE))?;
+            copy.CopyFromBitmap(None, &under, None)?;
+            let effect = dc.CreateEffect(&CLSID_D2D1Blend)?;
             effect.SetInput(0, &copy, true);
             effect.SetInput(1, &layer, true);
-            effect.SetValue(D2D1_BLEND_PROP_MODE.0 as u32, D2D1_PROPERTY_TYPE_ENUM, &(mode.0 as u32).to_le_bytes()).ok()?;
-            effect.GetOutput().ok()
+            effect.SetValue(D2D1_BLEND_PROP_MODE.0 as u32, D2D1_PROPERTY_TYPE_ENUM, &(mode.0 as u32).to_le_bytes())?;
+            effect.GetOutput()
         };
         push_layer(rt, clip, alpha);
-        match blended() {
+        match blended().map_err(|e| debug("blending a layer", e)).ok() {
             // (It has what was under it, blended: it replaces that.)
             Some(image) => dc.DrawImage(&image, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_COPY),
             None => dc.DrawImage(&layer, None, None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER),
@@ -404,9 +419,10 @@ fn play(list: &DrawList, rt: &ID2D1RenderTarget, dc: Option<&ID2D1DeviceContext>
 fn play_all(list: &DrawList, rt: &ID2D1RenderTarget, res: &mut Resources) {
     // Blending needs the target as a device context (Windows 8 and later),
     // drawing into a bitmap: what's under a layer is read back from it.
-    let dc: Option<ID2D1DeviceContext> = if blends(list) { rt.cast().ok() } else { None };
+    let dc: Option<ID2D1DeviceContext> =
+        if blends(list) { rt.cast().map_err(|e| debug("the target as a device context", e)).ok() } else { None };
     let canvas = dc.as_ref().and_then(|dc| unsafe {
-        let screen = dc.GetTarget().ok()?;
+        let screen = dc.GetTarget().map_err(|e| debug("the target", e)).ok()?;
         let canvas = target_bitmap(dc)?;
         dc.SetTarget(&canvas);
         dc.Clear(Some(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }));

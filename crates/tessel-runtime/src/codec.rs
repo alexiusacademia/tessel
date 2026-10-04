@@ -78,7 +78,15 @@ fn grow_capacity(len: usize) -> usize {
     len.next_power_of_two().max(16)
 }
 
+/// How many growable `Data` values have been freed. Counting them also keeps
+/// `grow_drop`'s code unlike any other drop function's: `is_growable` tells
+/// growable values apart by that function's address, and the compiler or
+/// linker would make identical functions one (on Windows it does, and every
+/// `Data` then looked growable, so appending wrote past its end).
+static GROWN_FREED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 unsafe extern "C" fn grow_drop(h: *mut crate::Header) {
+    GROWN_FREED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     unsafe { crate::free(h as *mut u8) };
 }
 
