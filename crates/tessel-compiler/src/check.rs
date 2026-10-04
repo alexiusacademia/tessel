@@ -3230,25 +3230,45 @@ impl Checker<'_> {
 
     /// Can values of `t` be written as JSON or binary? Err says why not.
     fn saveable(&self, t: &Ty) -> Result<(), String> {
+        self.saveable_in(t, &mut Vec::new())
+    }
+
+    /// `saveable`, with the structs, enums and interfaces being looked into
+    /// (`open`): a type that contains itself (an enum of lists of itself, a
+    /// tree) is saveable if the rest of it is.
+    fn saveable_in(&self, t: &Ty, open: &mut Vec<Ty>) -> Result<(), String> {
+        if matches!(t, Ty::Struct(_) | Ty::Enum(_) | Ty::Iface(_)) {
+            if open.contains(t) {
+                return Ok(());
+            }
+            open.push(t.clone());
+            let result = self.saveable_parts(t, open);
+            open.pop();
+            return result;
+        }
+        self.saveable_parts(t, open)
+    }
+
+    fn saveable_parts(&self, t: &Ty, open: &mut Vec<Ty>) -> Result<(), String> {
         match t {
             Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error | Ty::Generic(_) => Ok(()),
-            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => self.saveable(e),
+            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => self.saveable_in(e, open),
             Ty::Dict(k, v) => {
                 if !matches!(**k, Ty::Str | Ty::Int | Ty::Bool) && !matches!(**k, Ty::Enum(_)) {
                     return Err("dictionary keys must be String, Int, Bool or an enum".into());
                 }
-                self.saveable(v)
+                self.saveable_in(v, open)
             }
             Ty::Struct(id) => {
                 for f in &self.structs[*id].fields {
-                    self.saveable(&f.ty).map_err(|e| format!("field `{}`: {e}", f.name))?;
+                    self.saveable_in(&f.ty, open).map_err(|e| format!("field `{}`: {e}", f.name))?;
                 }
                 Ok(())
             }
             Ty::Enum(id) => {
                 for c in &self.enums[*id].cases {
                     for f in &c.fields {
-                        self.saveable(&f.ty).map_err(|e| format!("case `{}`: {e}", c.name))?;
+                        self.saveable_in(&f.ty, open).map_err(|e| format!("case `{}`: {e}", c.name))?;
                     }
                 }
                 Ok(())
@@ -3257,7 +3277,7 @@ impl Checker<'_> {
             Ty::Iface(i) => {
                 // Saved with its type's name, so any conforming type can be loaded back.
                 for (t, _, _) in self.conforms.iter().filter(|(_, j, _)| j == i) {
-                    self.saveable(t).map_err(|e| format!("`{}` (a `{}`): {e}", self.show(t), self.ifaces[*i].name))?;
+                    self.saveable_in(t, open).map_err(|e| format!("`{}` (a `{}`): {e}", self.show(t), self.ifaces[*i].name))?;
                 }
                 Ok(())
             }

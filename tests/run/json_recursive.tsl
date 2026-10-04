@@ -1,0 +1,43 @@
+// Types that contain themselves (issue #4): an enum of lists of itself, a
+// struct holding one, and a tree of structs, to JSON and binary and back.
+
+enum Val {
+    empty
+    num(v: Float)
+    arr(items: [Val])
+}
+
+struct Cell {
+    name: String
+    value: Val
+}
+
+struct Node {
+    label: String
+    children: [Node] = []
+}
+
+fn main() {
+    let v = Val.arr(items: [Val.num(v: 2), Val.empty, Val.arr(items: [Val.num(v: 3)])])
+    let json = toJson(v)
+    print(json)
+    let back: Val? = fromJson(json)
+    print(back != nil)
+    if let b = back {
+        print(toJson(b) == json)
+    }
+
+    let cell = Cell(name: "A1", value: v)
+    let cellJson = toJson(cell)
+    print(cellJson)
+    if let c: Cell = fromBinary(toBinary(cell)) {
+        print("{c.name} {toJson(c.value) == json}")
+    }
+
+    let tree = Node(label: "root", children: [Node(label: "a", children: [Node(label: "a1")]), Node(label: "b")])
+    let treeJson = toJson(tree)
+    print(treeJson)
+    if let t: Node = fromJson(treeJson) {
+        print("{t.children.count} {t.children[0].children[0].label}")
+    }
+}
