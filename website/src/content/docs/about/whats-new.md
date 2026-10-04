@@ -13,7 +13,7 @@ What each release of Tessel brought, newest first. To get the latest, run
 
 - **Much smaller apps on Windows.** Apps draw, lay out text and read
   pictures with what comes with Windows (Direct2D, DirectWrite and WIC), as
-  they do on macOS: a one-`Text` app is about 1 MB instead of 7.5 MB. See
+  they do on macOS: a one-`Text` app is about 1.3 MB instead of 7.5 MB. See
   [How big an app is](/start/cli/#how-big-an-app-is).
 - **Blend modes on Windows:** layers drawn with
   `g.beginLayer(blend:)` blend as they do on macOS.
