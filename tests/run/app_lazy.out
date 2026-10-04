@@ -1,0 +1,244 @@
+Root
+  View
+    VStack
+      Text "nothing selected"
+      Scroll
+        LazyVStack 100000 rows, built 0..20
+          VStack
+            Text "Row 0"
+          VStack
+            Text "Row 1"
+          VStack
+            Text "Row 2"
+          VStack
+            Text "Row 3"
+          VStack
+            Text "Row 4"
+          VStack
+            Text "Row 5"
+          VStack
+            Text "Row 6"
+          VStack
+            Text "Row 7"
+          VStack
+            Text "Row 8"
+          VStack
+            Text "Row 9"
+          VStack
+            Text "Row 10"
+          VStack
+            Text "Row 11"
+          VStack
+            Text "Row 12"
+          VStack
+            Text "Row 13"
+          VStack
+            Text "Row 14"
+          VStack
+            Text "Row 15"
+          VStack
+            Text "Row 16"
+          VStack
+            Text "Row 17"
+          VStack
+            Text "Row 18"
+          VStack
+            Text "Row 19"
+Root
+  View
+    VStack
+      Text "selected 3"
+      Scroll
+        LazyVStack 100000 rows, built 49990..50020
+          VStack
+            Text "Row 49990"
+          VStack
+            Text "Row 49991"
+          VStack
+            Text "Row 49992"
+          VStack
+            Text "Row 49993"
+          VStack
+            Text "Row 49994"
+          VStack
+            Text "Row 49995"
+          VStack
+            Text "Row 49996"
+          VStack
+            Text "Row 49997"
+          VStack
+            Text "Row 49998"
+          VStack
+            Text "Row 49999"
+          VStack
+            Text "Row 50000"
+          VStack
+            Text "Row 50001"
+          VStack
+            Text "Row 50002"
+          VStack
+            Text "Row 50003"
+          VStack
+            Text "Row 50004"
+          VStack
+            Text "Row 50005"
+          VStack
+            Text "Row 50006"
+          VStack
+            Text "Row 50007"
+          VStack
+            Text "Row 50008"
+          VStack
+            Text "Row 50009"
+          VStack
+            Text "Row 50010"
+          VStack
+            Text "Row 50011"
+          VStack
+            Text "Row 50012"
+          VStack
+            Text "Row 50013"
+          VStack
+            Text "Row 50014"
+          VStack
+            Text "Row 50015"
+          VStack
+            Text "Row 50016"
+          VStack
+            Text "Row 50017"
+          VStack
+            Text "Row 50018"
+          VStack
+            Text "Row 50019"
+Root [0,0 300x200]
+  View [0,0 300x200]
+    VStack [0,0 300x200]
+      Text "selected 3" [120,0 59x16]
+      Scroll [0,16 300x184]
+        LazyVStack 100000 rows, built 1990..2020 [0,-39984 300x2000000]
+          VStack [0,-184 300x20]
+            Text "Row 1990" [0,-182 300x16]
+          VStack [0,-164 300x20]
+            Text "Row 1991" [0,-162 300x16]
+          VStack [0,-144 300x20]
+            Text "Row 1992" [0,-142 300x16]
+          VStack [0,-124 300x20]
+            Text "Row 1993" [0,-122 300x16]
+          VStack [0,-104 300x20]
+            Text "Row 1994" [0,-102 300x16]
+          VStack [0,-84 300x20]
+            Text "Row 1995" [0,-82 300x16]
+          VStack [0,-64 300x20]
+            Text "Row 1996" [0,-62 300x16]
+          VStack [0,-44 300x20]
+            Text "Row 1997" [0,-42 300x16]
+          VStack [0,-24 300x20]
+            Text "Row 1998" [0,-22 300x16]
+          VStack [0,-4 300x20]
+            Text "Row 1999" [0,-2 300x16]
+          VStack [0,16 300x20]
+            Text "Row 2000" [0,18 300x16]
+          VStack [0,36 300x20]
+            Text "Row 2001" [0,38 300x16]
+          VStack [0,56 300x20]
+            Text "Row 2002" [0,58 300x16]
+          VStack [0,76 300x20]
+            Text "Row 2003" [0,78 300x16]
+          VStack [0,96 300x20]
+            Text "Row 2004" [0,98 300x16]
+          VStack [0,116 300x20]
+            Text "Row 2005" [0,118 300x16]
+          VStack [0,136 300x20]
+            Text "Row 2006" [0,138 300x16]
+          VStack [0,156 300x20]
+            Text "Row 2007" [0,158 300x16]
+          VStack [0,176 300x20]
+            Text "Row 2008" [0,178 300x16]
+          VStack [0,196 300x20]
+            Text "Row 2009" [0,198 300x16]
+          VStack [0,216 300x20]
+            Text "Row 2010" [0,218 300x16]
+          VStack [0,236 300x20]
+            Text "Row 2011" [0,238 300x16]
+          VStack [0,256 300x20]
+            Text "Row 2012" [0,258 300x16]
+          VStack [0,276 300x20]
+            Text "Row 2013" [0,278 300x16]
+          VStack [0,296 300x20]
+            Text "Row 2014" [0,298 300x16]
+          VStack [0,316 300x20]
+            Text "Row 2015" [0,318 300x16]
+          VStack [0,336 300x20]
+            Text "Row 2016" [0,338 300x16]
+          VStack [0,356 300x20]
+            Text "Row 2017" [0,358 300x16]
+          VStack [0,376 300x20]
+            Text "Row 2018" [0,378 300x16]
+          VStack [0,396 300x20]
+            Text "Row 2019" [0,398 300x16]
+Root
+  View
+    VStack
+      Text "selected 2003"
+      Scroll
+        LazyVStack 100000 rows, built 1990..2020
+          VStack
+            Text "Row 1990"
+          VStack
+            Text "Row 1991"
+          VStack
+            Text "Row 1992"
+          VStack
+            Text "Row 1993"
+          VStack
+            Text "Row 1994"
+          VStack
+            Text "Row 1995"
+          VStack
+            Text "Row 1996"
+          VStack
+            Text "Row 1997"
+          VStack
+            Text "Row 1998"
+          VStack
+            Text "Row 1999"
+          VStack
+            Text "Row 2000"
+          VStack
+            Text "Row 2001"
+          VStack
+            Text "Row 2002"
+          VStack
+            Text "Row 2003"
+          VStack
+            Text "Row 2004"
+          VStack
+            Text "Row 2005"
+          VStack
+            Text "Row 2006"
+          VStack
+            Text "Row 2007"
+          VStack
+            Text "Row 2008"
+          VStack
+            Text "Row 2009"
+          VStack
+            Text "Row 2010"
+          VStack
+            Text "Row 2011"
+          VStack
+            Text "Row 2012"
+          VStack
+            Text "Row 2013"
+          VStack
+            Text "Row 2014"
+          VStack
+            Text "Row 2015"
+          VStack
+            Text "Row 2016"
+          VStack
+            Text "Row 2017"
+          VStack
+            Text "Row 2018"
+          VStack
+            Text "Row 2019"

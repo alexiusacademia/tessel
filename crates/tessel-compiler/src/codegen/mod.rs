@@ -259,6 +259,9 @@ enum Body<'b> {
     /// A function declared inside a function: like `Fn`, and its own name
     /// refers to the closure itself (so it can call itself).
     LocalFn(&'b FnDecl),
+    /// Content built for a number (`LazyVStack`'s rows, `{ i in … }`):
+    /// calling it with the number emits the views.
+    Rows(&'b Ident, &'b Block),
 }
 
 /// How a closure captures a variable.
@@ -1115,7 +1118,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),
-            "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),
+            "tsl_ui_on_pointer" | "tsl_ui_on_key" | "tsl_ui_on_key_event" => (vec![p, p], None),
+            "tsl_ui_slider" => (vec![p, p, f64t, f64t, f64t, p, p], None),
+            "tsl_ui_stepper" => (vec![p, p, i8t, f64t, f64t, f64t, i, p, p], None),
+            "tsl_ui_color_picker" | "tsl_ui_drop_target" => (vec![p, p, p, p], None),
+            "tsl_ui_begin_disclosure" => (vec![p, p, p], Some(i8t)),
+            "tsl_ui_lazy" => (vec![i, f64t, p, p], None),
+            "tsl_ui_draggable" => (vec![p], None),
             "tsl_ui_cursor" => (vec![i32t], None),
             "tsl_ui_offset" => (vec![f64t, f64t], None),
             "tsl_ui_clipped" => (vec![i8t], None),
@@ -3446,6 +3455,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone())
             }
             (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
+            (Body::Rows(..), _) => {
+                (self.ctx.void_type().fn_type(&[self.ptr_ty().into(), self.i64().into()], false), vec![Ty::Int], Ty::Void)
+            }
             _ => (self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
         };
         self.closures += 1;
@@ -3458,6 +3470,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 free_block(b, &mut bound, &mut free);
             }
             Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
+            Body::Rows(p, b) => free_block(b, &mut vec![p.name.clone()], &mut free),
             Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
             Body::ViewFnRef(name) => {
                 free.insert(name.clone());
@@ -3626,7 +3639,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
         }
         let boxed = match &body {
-            Body::Fn(_, b) | Body::Content(b) => boxed_vars(b),
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => boxed_vars(b),
             Body::LocalFn(d) => boxed_vars(&d.body),
             _ => HashSet::new(),
         };
@@ -3656,6 +3669,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.finish_function(v);
             }
             Body::Content(b) => {
+                self.content_block(b, false);
+                self.finish_function(None);
+            }
+            Body::Rows(p, b) => {
+                let v = f.get_nth_param(1).unwrap();
+                self.declare_value(&p.name, &Ty::Int, Some(v));
                 self.content_block(b, false);
                 self.finish_function(None);
             }
@@ -3981,6 +4000,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         });
                     }
                     let ov = self.expr(object).unwrap();
+                    // `job?.cancel()`: a method that gives nothing runs only when there's a value.
+                    if t == Ty::Void {
+                        let Ty::Opt(inner) = &ot else { unreachable!() };
+                        let flag = self.b.build_extract_value(ov.into_struct_value(), 0, "").unwrap().into_int_value();
+                        let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+                        self.b.build_conditional_branch(flag, some_bb, done).unwrap();
+                        self.b.position_at_end(some_bb);
+                        let iv = self.b.build_extract_value(ov.into_struct_value(), 1, "").unwrap();
+                        self.builtin_on_value(&recv, &name, iv, &info, &arg, e.span);
+                        self.release(iv, inner);
+                        self.br(done);
+                        self.b.position_at_end(done);
+                        return None;
+                    }
                     let info2 = info.clone();
                     let r = self.optional_chain(ov, &ot, &t, |g, v| {
                         g.builtin_on_value(&recv, &name, v, &info2, &arg, e.span).unwrap()
@@ -4301,7 +4334,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         if let (Some(call), Some(m)) = (builtins::runtime_method(recv, name), builtins::method_of(recv, name)) {
             // (The receiver is borrowed; the arguments are released below.)
-            let mut vals = if call.no_receiver { Vec::new() } else { vec![(v, recv.clone())] };
+            let mut vals = if call.no_receiver {
+                Vec::new()
+            } else if *recv == builtins::JOB {
+                // A `BackgroundJob` goes as its `id`.
+                let id = self.b.build_extract_value(v.into_struct_value(), 0, "").unwrap();
+                vec![(id, Ty::Int)]
+            } else {
+                vec![(v, recv.clone())]
+            };
             let own = vals.len();
             for (i, p) in m.sig.params.iter().enumerate() {
                 let x = match a(self, i, &p.ty) {
@@ -4662,24 +4703,67 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// `adapter(box, KeyC*)`: builds a `KeyEvent` (taking over its strings)
+    /// and calls the `.onKeyEvent` block in the box.
+    pub(super) fn key_event_adapter(&mut self) -> PointerValue<'ctx> {
+        let name = "tsl_h_on_key_event";
+        if let Some(f) = self.helpers.get(name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name.to_string(), f);
+        let ft = Ty::func(vec![builtins::KEY_EVENT], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let ec = f.get_nth_param(1).unwrap().into_pointer_value();
+            let closure = g.load(&ft, g.box_data(bx));
+            // KeyC: { ptr key, ptr text, i8 shift, alt, command, control, repeated }
+            let i8t = g.i8();
+            let ct = g.ctx.struct_type(
+                &[p.into(), p.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into()],
+                false,
+            );
+            let st = g.llty(&builtins::KEY_EVENT).unwrap().into_struct_type();
+            let mut s = st.get_undef();
+            for i in 0..7u32 {
+                let fp = g.b.build_struct_gep(ct, ec, i, "").unwrap();
+                let v = if i < 2 {
+                    g.b.build_load(p, fp, "").unwrap()
+                } else {
+                    let v = g.b.build_load(i8t, fp, "").unwrap();
+                    g.truthy(Some(v)).into()
+                };
+                s = g.b.build_insert_value(s, v, i, "").unwrap().into_struct_value();
+            }
+            g.call_fn_value(closure, &ft, &[s.into()]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
     /// `background(work: { … }) { result in … }`. The values `work` uses
     /// are encoded (as for `toBinary`) into one tree here; a worker function,
     /// run on another thread, decodes them into its own copies, runs `work`
     /// and encodes the result; the done adapter decodes that back on the UI
     /// thread. So no value is ever shared between threads.
-    fn background<'e>(&mut self, args: &'e [Arg], arg: &dyn Fn(ArgRef) -> &'e Expr, span: Span) {
+    ///
+    /// The worker gets the job's id too, for a `work: { job in … }` block,
+    /// and the job (a `BackgroundJob`) is the value of the call.
+    fn background<'e>(&mut self, args: &'e [Arg], arg: &dyn Fn(ArgRef) -> &'e Expr, span: Span) -> Val<'ctx> {
         let label = |a: &&Arg, l: &str| a.label.as_ref().is_some_and(|x| x.name == l);
         let work = &args.iter().find(|a| label(a, "work")).unwrap().value;
         let done = match args.iter().find(|a| label(a, "done")) {
             Some(a) => &a.value,
             None => arg(ArgRef::Trailing),
         };
-        let ExprKind::Closure { body, .. } = &work.kind else { unreachable!("checked: `work` is a block") };
+        let progress = args.iter().find(|a| label(a, "progress")).map(|a| &a.value);
+        let ExprKind::Closure { body, params } = &work.kind else { unreachable!("checked: `work` is a block") };
         let Ty::Fn(_, result) = self.ty(work) else { unreachable!() };
         let result = *result;
         // What `work` uses from here, into one tree.
         let mut free = BTreeSet::new();
-        free_block(body, &mut Vec::new(), &mut free);
+        free_block(body, &mut params.iter().map(|p| p.name.clone()).collect(), &mut free);
         let captures: Vec<Var<'ctx>> = free.iter().filter_map(|n| self.lookup(n)).collect();
         let input = self.tree_call("tsl_tree_array", &[], Some("ptr"), &[]).unwrap().into_pointer_value();
         for v in &captures {
@@ -4689,12 +4773,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.tree_call("tsl_tree_push", &["ptr", "ptr"], None, &[input.into(), item]);
         }
 
-        // The worker: `ptr tsl_bg_N(ptr input)`.
+        // The worker: `ptr tsl_bg_N(ptr input, i64 job)`.
         self.closures += 1;
         let p = self.ptr_ty();
-        let worker = self.module.add_function(&format!("tsl_bg_{}", self.closures), p.fn_type(&[p.into()], false), Some(Linkage::Internal));
+        let i64t = self.i64();
+        let worker =
+            self.module.add_function(&format!("tsl_bg_{}", self.closures), p.fn_type(&[p.into(), i64t.into()], false), Some(Linkage::Internal));
         let names: Vec<(String, Ty)> = captures.iter().map(|v| (v.name.clone(), v.ty.clone())).collect();
-        let work_t = Ty::func(vec![], result.clone());
+        let takes_job = !params.is_empty();
+        let work_t = Ty::func(if takes_job { vec![builtins::JOB] } else { vec![] }, result.clone());
+        let job_st = self.llty(&builtins::JOB).unwrap().into_struct_type();
         self.in_helper(worker, |g| {
             let tree = worker.get_nth_param(0).unwrap().into_pointer_value();
             for (i, (name, ty)) in names.iter().enumerate() {
@@ -4708,8 +4796,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
             g.b.build_call(free, &[tree.into()], "").unwrap();
             // `work` as a closure over those copies, so `return` works as in any block.
-            let f = g.closure(&[], body, &work_t);
-            let v = g.call_fn_value(f, &work_t, &[]).unwrap();
+            let f = g.closure(params, body, &work_t);
+            let job_args: Vec<Val<'ctx>> = if takes_job {
+                let id = worker.get_nth_param(1).unwrap();
+                vec![g.b.build_insert_value(job_st.get_undef(), id, 0, "").unwrap().into_struct_value().into()]
+            } else {
+                vec![]
+            };
+            let v = g.call_fn_value(f, &work_t, &job_args).unwrap();
             g.release(f, &work_t);
             let vp = g.spill(&result, v);
             let enc = g.enc_helper(&result);
@@ -4723,9 +4817,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let closure = self.expr_as(done, &dt).unwrap();
         let bx = self.box_closure(&dt, closure);
         let adapter = self.background_adapter(&result);
-        let f = self.declare_rt("tsl_background", &[p.into(), p.into(), p.into(), p.into()], None);
+        // The progress block, `void fn(env, Float, String)`, or null.
+        let (pf, penv): (Val, Val) = match progress {
+            Some(x) => {
+                let c = self.expr_as(x, &Ty::func(vec![Ty::Float, Ty::Str], Ty::Void)).unwrap().into_struct_value();
+                (self.b.build_extract_value(c, 0, "").unwrap(), self.b.build_extract_value(c, 1, "").unwrap())
+            }
+            None => (p.const_null().into(), p.const_null().into()),
+        };
+        let f = self.declare_rt("tsl_background", &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], Some(i64t.into()));
         let wp = worker.as_global_value().as_pointer_value();
-        self.b.build_call(f, &[wp.into(), input.into(), adapter.into(), bx.into()], "").unwrap();
+        let id = self
+            .b
+            .build_call(f, &[wp.into(), input.into(), adapter.into(), bx.into(), pf.into(), penv.into()], "")
+            .unwrap()
+            .try_as_basic_value()
+            .basic()
+            .unwrap();
+        self.b.build_insert_value(job_st.get_undef(), id, 0, "").unwrap().into_struct_value().into()
     }
 
     /// `adapter(box, tree)`: decodes a `background` result and calls the `fn(T)` block in the box.
@@ -5627,10 +5736,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 None => self.call_rt_generic("tsl_data_empty", &[], &Ty::Data).unwrap(),
             }),
-            "background" => {
-                self.background(args, arg, span);
-                None
-            }
+            "background" => Some(self.background(args, arg, span)),
             "random" => {
                 // An empty range stops the program, so it needs the location.
                 let r = self.expr_as(arg(info.args[0].unwrap()), &Ty::Range).unwrap().into_struct_value();

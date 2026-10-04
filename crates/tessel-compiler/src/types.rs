@@ -85,11 +85,22 @@ pub struct ParamSig {
     pub sets_tag: bool,
     /// A `fn(T)` whose `T` is that tag type (TabView's `onClose`).
     pub tag_fn: bool,
+    /// Content built for each number, `{ i in … }` (`LazyVStack`'s rows).
+    pub rows: bool,
 }
 
 impl ParamSig {
     pub fn new(label: &str, ty: Ty) -> ParamSig {
-        ParamSig { label: label.into(), unlabeled: false, ty, has_default: false, bind: false, sets_tag: false, tag_fn: false }
+        ParamSig {
+            label: label.into(),
+            unlabeled: false,
+            ty,
+            has_default: false,
+            bind: false,
+            sets_tag: false,
+            tag_fn: false,
+            rows: false,
+        }
     }
 
     /// `_ label: T`

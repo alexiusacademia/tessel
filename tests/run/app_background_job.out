@@ -1,0 +1,32 @@
+Root
+  View
+    VStack
+      Text "Counting…"
+      Text "0% "
+      Button "Count"
+      Button "Spin"
+      Button "Cancel"
+Root
+  View
+    VStack
+      Text "Total 55"
+      Text "100% added 10"
+      Button "Count"
+      Button "Spin"
+      Button "Cancel" disabled
+Root
+  View
+    VStack
+      Text "Spinning"
+      Text "100% added 10"
+      Button "Count"
+      Button "Spin"
+      Button "Cancel"
+Root
+  View
+    VStack
+      Text "Cancelled"
+      Text "100% added 10"
+      Button "Count"
+      Button "Spin"
+      Button "Cancel" disabled

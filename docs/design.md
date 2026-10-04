@@ -388,6 +388,15 @@ separate edges; the most specific value wins, and edges not named get 0:
 | `TabView` | `TabView(selection: bind T, onClose: fn(T)?, content: View)` with `.tabItem(title)` and `.tag(value)` on pages |
 | `Divider` | `Divider()` — a thin separator line |
 | `Canvas` | `Canvas(redraw: Int = …, draw: fn(Graphics))` — the program's own drawing: paths, shapes, text and pictures through the `Graphics` it's given |
+| `Slider` | `Slider(value: bind Float, from: Float = 0, to: Float = 1, step: Float = 0, onChange: fn() = …)` |
+| `Stepper` | `Stepper(value: bind Int or Float, step: Float = 1, from:, to:, decimals:, onChange:)` — − and + buttons around the value |
+| `ColorPicker` | `ColorPicker(color: bind Color, onChange: fn() = …)` — a swatch opening a palette (drawn over the window) with a hex field |
+| `DisclosureGroup` | `DisclosureGroup(_ title: String, isExpanded: bind Bool, content: View)` — content built only while open; nests into trees |
+| `LazyVStack` | `LazyVStack(count: Int, rowHeight: Float) { i in … }` — builds only the rows near what shows (decided after layout, from the scroll views around it) |
+
+Tab goes through text fields and these controls (sliders, steppers, color
+pickers, disclosure groups); arrows, Enter and Space work the one the
+keyboard is on.
 
 **Icons.** `IconName` is a built-in enum of commonly used icons (from the
 Lucide set, ISC license): `file`, `fileText`, `fileCode`, `filePlus`,
@@ -413,7 +422,9 @@ In `Svg` and SVG files, `currentColor` is drawn in the view's `.color`.
 Common modifiers: `padding`, `frame(width:height:minWidth:maxWidth:minHeight:maxHeight:alignment:)`, `font`, `color`,
 `textAlignment`, `background`, `border`, `opacity`, `hidden`, `disabled`, `onTap`, `id`.
 For the mouse and keys: `onPointer` (a `PointerEvent`: what happened, where, which button), `onDrag`, `onKey`,
-`cursor`, `tooltip`, `onDrop`; and `offset`, `clipped` and `onResize` for views that are moved or drawn by hand.
+`onKeyEvent` (a `KeyEvent`: the key and the modifiers held), `cursor`, `tooltip`, `onDrop`, `shortcut` (several
+per view; `"shift+z"`); `draggable` and `dropTarget(isTargeted:)` to drag views onto others inside the app; and
+`offset`, `clipped` and `onResize` for views that are moved or drawn by hand.
 
 ### 8.6 Alignment
 
@@ -517,6 +528,11 @@ example a text field being edited) follows its item when the list reorders.
   well as values or results that can't be encoded; the fix is to copy what
   the work needs into a `let` first. `fn main` programs and the headless
   test `wait` command wait for background work like they do for timers.
+  The work block may take the job (`work: { job in … }`) to report progress
+  (`job.progress(f, note:)`, delivered to a `progress:` block on the UI thread,
+  coalesced to the latest) and to see `job.isCancelled()`. `background`
+  returns the `BackgroundJob` (a struct holding an id); after `job.cancel()`
+  its blocks don't run.
 
 ## 10. Implementation architecture
 

@@ -1,6 +1,6 @@
 ---
 title: Lists and conditions
-description: Show views for each item in a list with for, choose views with if and match, and keep row state attached to the right item with .id.
+description: Show views for each item in a list with for, choose views with if and match, keep row state attached to the right item with .id, reorder rows by dragging, build long lists lazily with LazyVStack, and show trees with DisclosureGroup.
 ---
 
 Inside a view body, `for`, `if` and `match` decide *which* views to show. They
@@ -155,6 +155,154 @@ for todo in todos {
         .id(todo.id)
 }
 ```
+
+## Reordering by dragging
+
+A row with [`.draggable(…)`](/reference/modifiers/#draggable) can be dragged
+with the mouse, and a view with
+[`.dropTarget { payload, x, y in … }`](/reference/modifiers/#droptarget) can
+take it. That's how a layers panel lets its layers be put in another order:
+
+```tessel
+view LayerRow(name: String, index: Int, move: fn(String, Int)) {
+    state targeted = false
+
+    HStack {
+        Icon(.menu).color(.secondary)
+        Text(name)
+        Spacer()
+    }
+    .padding(horizontal: 8, vertical: 4)
+    .background(if targeted { .highlight } else { .clear }, radius: 4)
+    .draggable(name)
+    .dropTarget(isTargeted: targeted) { payload, x, y in
+        // On the lower half of the row: after it.
+        move(payload, if y > 8 { index + 1 } else { index })
+    }
+}
+
+app Layers(width: 260, height: 200) {
+    state layers = ["Roads", "Rivers", "Parcels", "Imagery"]
+
+    VStack(spacing: 0, alignment: .leading) {
+        for (i, name) in layers.enumerated() {
+            LayerRow(name: name, index: i, move: { payload, to in
+                moveLayer(payload, to: to)
+            })
+            .id(name)
+        }
+    }
+    .padding(8)
+
+    fn moveLayer(_ name: String, to: Int) {
+        if let from = layers.index(of: name) {
+            layers.remove(at: from)
+            layers.insert(name, at: if to > from { to - 1 } else { to })
+        }
+    }
+}
+```
+
+![A layers panel with Imagery being dragged: a see-through copy of its row follows the pointer, and the Rivers row it's over is highlighted](../../../assets/screens/ui-drag-rows.png)
+
+- The payload is a `String` that says what's dragged: here the layer's name.
+  Use an id when names can repeat.
+- While a row is dragged, a see-through copy of it follows the mouse, and
+  the drop target under the mouse has its `isTargeted:` set to `true`. Each
+  `LayerRow` keeps its own `targeted` state, so only the row under the mouse
+  lights up.
+- `x` and `y` say where in the target the row was dropped (inside its
+  padding), to put it before or after.
+- `.id(name)` keeps each row's state with its layer as the order changes.
+- Escape cancels a drag, and letting go anywhere that isn't a drop target
+  does nothing.
+
+Rows of a [`LazyVStack`](#long-lists-with-lazyvstack) can be dragged and
+dropped on in the same way.
+
+## Long lists with `LazyVStack`
+
+A `for` loop builds a view for every item, each time the body runs. That's
+fine for hundreds of items, but a table of 100 000 features would take a
+while to build, every time anything changes. `LazyVStack` builds only the
+rows that show (and a screenful more on each side); scroll, and it builds
+the ones that come into view:
+
+```tessel
+app Features(width: 320, height: 300) {
+    state selected = -1
+
+    VStack(spacing: 0) {
+        Text(if selected < 0 { "Click a feature" } else { "Feature {selected}" }).padding(8)
+        Scroll {
+            LazyVStack(count: 100000, rowHeight: 22) { i in
+                HStack {
+                    Text("Feature {i}")
+                    Spacer()
+                    Text("{i * 7 % 100} m").color(.secondary)
+                }
+                .padding(horizontal: 8)
+                .background(if i == selected { .highlight } else { .clear })
+                .onTap { selected = i }
+            }
+        }
+    }
+}
+```
+
+`count:` is how many rows there are and `rowHeight:` how tall each one is,
+in points; every row is the same height, which is how the list knows which
+rows show without building them. The block after it builds row `i`, from 0
+to `count - 1`. Put the list in a [`Scroll`](/ui/layout/#scroll), where
+it's as tall as all its rows.
+
+## Trees with `DisclosureGroup`
+
+A [`DisclosureGroup`](/reference/views/#disclosuregroup) is a title with an
+arrow, and content that shows while it's open. Clicking the title opens or
+closes it, through a `Bool` it's bound to. Groups inside groups make a tree:
+
+```tessel
+struct Folder {
+    name: String
+    files: [String]
+    folders: [Folder]
+}
+
+view FolderRow(folder: Folder) {
+    state open = false
+
+    DisclosureGroup(folder.name, isExpanded: open) {
+        for file in folder.files {
+            Text(file)
+        }
+        for sub in folder.folders {
+            FolderRow(folder: sub)
+        }
+    }
+}
+
+app Browser(width: 300, height: 260) {
+    let root = Folder(name: "project", files: ["main.tsl"], folders: [
+        Folder(name: "data", files: ["roads.shp", "rivers.shp"], folders: []),
+        Folder(name: "styles", files: ["dark.json"], folders: []),
+    ])
+
+    VStack(alignment: .leading) {
+        FolderRow(folder: root)
+    }
+    .padding(12)
+}
+```
+
+![A folder tree: "project" open, showing main.tsl, a closed "data" folder and an open "styles" folder with dark.json](../../../assets/screens/ui-tree.png)
+
+Each `FolderRow` keeps whether it's open in its own `state`, and shows its
+sub-folders as more `FolderRow`s, indented one level further. A group's
+content is only built while it's open, so a large tree costs little until
+it's opened. When a group closes, the groups inside it go away with their
+state; keep what's open in your own data (a `Set` of paths, say) to
+remember it.
 
 ## A complete example
 

@@ -1,0 +1,18 @@
+// A list of 100 000 rows that builds only the rows near what shows.
+
+app Big(width: 300, height: 200) {
+    state selected = -1
+    state built = 0
+
+    VStack(spacing: 0) {
+        Text(if selected < 0 { "nothing selected" } else { "selected {selected}" })
+        Scroll {
+            LazyVStack(count: 100000, rowHeight: 20) { i in
+                Text("Row {i}")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(if i == selected { .highlight } else { .clear })
+                    .onTap { selected = i }
+            }
+        }
+    }
+}

@@ -1,0 +1,30 @@
+tree
+click slider 1
+key right
+key right
+tree
+key tab
+key right
+key right
+key up
+key up
+key up
+key up
+key tab
+key down
+key down
+key down
+key down
+tree
+key tab
+key enter
+tree
+type "ff8800"
+key enter
+tree
+click colorpicker 1
+click "#000000"
+tree
+click colorpicker 1
+click "Opacity"
+tree

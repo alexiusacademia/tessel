@@ -51,14 +51,44 @@ wherever the keyboard focus is.
 The key is a string:
 
 - **One character** that isn't an uppercase letter or a space, such as
-  `"s"`, `"1"` or `","`. Write letters in lowercase; Shift isn't taken into
-  account, so `.shortcut("s")` also runs on Shift+Cmd+S.
+  `"s"`, `"1"` or `","`. Write letters in lowercase.
 - **The name of a special key:** `"enter"`, `"tab"`, `"escape"`,
   `"backspace"`, `"delete"`, `"left"`, `"right"`, `"up"`, `"down"`, `"home"`
   or `"end"`.
 
-Only Cmd (or Ctrl) combinations can be shortcuts. There's no way to require
-Shift or Option as well, or to use a key on its own without Cmd.
+Before the key, `shift+` or `alt+` (Option on a Mac), or both, ask for those
+keys to be held too: `.shortcut("shift+z")` runs on Shift+Cmd+Z. A shortcut
+without them also runs when they're held (`.shortcut("s")` runs on
+Shift+Cmd+S too), unless another shortcut asks for exactly the keys held.
+
+Only Cmd (or Ctrl) combinations can be shortcuts. For keys on their own, or
+with other modifiers, use [`.onKeyEvent`](/reference/modifiers/#onkeyevent).
+
+## Several shortcuts on one view
+
+Each `.shortcut` adds one, so one view can carry a whole menu's worth:
+
+```tessel
+app Editor(width: 400, height: 200) {
+    state log: [String] = []
+
+    VStack(alignment: .leading) {
+        for line in log {
+            Text(line)
+        }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(12)
+    .shortcut("z") { log.append("undo") }
+    .shortcut("shift+z") { log.append("redo") }
+    .shortcut("s") { log.append("save") }
+    .shortcut("alt+shift+s") { log.append("save a copy") }
+}
+```
+
+Cmd+Z undoes and Shift+Cmd+Z redoes: the `"shift+z"` shortcut asks for
+exactly Shift, so it wins over `"z"` when Shift is held. Shift+Cmd+S still
+saves, as no shortcut asks for `"shift+s"`.
 
 `tessel check` checks the key, so a shortcut that could never be pressed is
 an error. Cmd is added for you, so don't write it:
@@ -110,4 +140,4 @@ if running == nil {
 ```
 
 To try shortcuts in a [headless test script](/ui/testing/), use
-`key cmd+s` (`cmd` and `ctrl` mean the same there).
+`key cmd+s` (`cmd` and `ctrl` mean the same there), or `key cmd+shift+z`.

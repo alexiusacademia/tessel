@@ -9,6 +9,7 @@
 mod anim;
 mod app;
 mod canvas;
+mod controls;
 mod draw;
 mod edit;
 mod highlight;
@@ -96,6 +97,18 @@ impl Callback {
     pub fn call_with_floats(&self, a: f64, b: f64) {
         let f: extern "C" fn(*mut Header, f64, f64) = unsafe { std::mem::transmute(self.f) };
         f(self.env, a, b);
+    }
+
+    /// Runs a closure taking a `Float` and a pointer: `void fn(env, f64, ptr)`.
+    pub fn call_with_float_ptr(&self, a: f64, b: *mut u8) {
+        let f: extern "C" fn(*mut Header, f64, *mut u8) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, b);
+    }
+
+    /// Runs a closure taking a pointer and two `Float`s: `void fn(env, ptr, f64, f64)`.
+    pub fn call_with_ptr_floats(&self, a: *mut u8, x: f64, y: f64) {
+        let f: extern "C" fn(*mut Header, *mut u8, f64, f64) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, x, y);
     }
 
     /// Runs a locator: `ptr fn(env)`, giving a pointer to a value's storage.
@@ -215,6 +228,23 @@ pub enum Kind {
     /// width and height when it's painted. With `redraw`, the drawing is kept
     /// until that number changes.
     Canvas { draw: Callback, redraw: Option<i64> },
+    /// `Slider(value:from:to:step:onChange:)`: `value` locates a `Float`;
+    /// a `step` of 0 means any value.
+    Slider { value: Callback, from: f64, to: f64, step: f64, on_change: Option<Callback> },
+    /// `Stepper(value:step:from:to:decimals:onChange:)`: `value` locates an
+    /// `Int` (`int`) or a `Float`. `decimals` is how many the value shows.
+    Stepper { value: Callback, int: bool, step: f64, from: f64, to: f64, decimals: usize, on_change: Option<Callback> },
+    /// `ColorPicker(color:onChange:)`: `color` locates a `Color`. While its
+    /// palette is open, its one child is the palette (see `picker`).
+    ColorPicker { color: Callback, on_change: Option<Callback> },
+    /// A color in a `ColorPicker`'s palette.
+    Swatch(Rgba),
+    /// `DisclosureGroup(title, isExpanded:)`: its children show while it's open.
+    Disclosure { title: String, expanded: Callback },
+    /// `LazyVStack(count:rowHeight:)`: rows `first ..` (its children, one
+    /// stack each) of `count`, each `row_height` tall; only those near
+    /// what shows are built (see `lazy`).
+    Lazy { count: usize, row_height: f64, first: usize },
 }
 
 #[derive(Default)]
@@ -246,8 +276,9 @@ pub struct Mods {
     /// held down on the view, with how far it moved since the last call.
     pub on_drag: Option<Callback>,
     pub tag: Option<Value>,
-    /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows).
-    pub shortcut: Option<(String, Callback)>,
+    /// `.shortcut("s") { … }`: runs with Cmd+S (Ctrl+S on Windows). A view
+    /// can have several; each adds one.
+    pub shortcuts: Vec<Shortcut>,
     /// `.onAppear { … }`: runs when the view first appears.
     pub on_appear: Option<Callback>,
     /// `.onSubmit { … }`: runs when Enter is pressed in a text field.
@@ -266,6 +297,9 @@ pub struct Mods {
     pub on_pointer: Option<Callback>,
     /// `.onKey { key in … }`: called with keys pressed while no text is edited.
     pub on_key: Option<Callback>,
+    /// `.onKeyEvent { event in … }`: like `on_key`, with the modifier keys
+    /// held (see `KeyC`).
+    pub on_key_event: Option<Callback>,
     /// `.cursor(…)`: the pointer shown over the view (a `CursorStyle` tag).
     pub cursor: Option<u8>,
     /// `.offset(x:y:)`: the view (and what's in it) is shown this far from
@@ -275,6 +309,11 @@ pub struct Mods {
     pub clipped: bool,
     /// `.onDrop { path in … }`: called with each file dropped on the window.
     pub on_drop: Option<Callback>,
+    /// `.draggable("payload")`: the view can be dragged onto a `.dropTarget`,
+    /// which gets this text.
+    pub draggable: Option<String>,
+    /// `.dropTarget(isTargeted:) { payload, x, y in … }`.
+    pub drop_target: Option<DropTarget>,
     /// `.tooltip("…")`: shown next to the pointer when it rests on the view.
     pub tooltip: Option<String>,
     /// `.onResize { width, height in … }`: called with the view's size
@@ -283,6 +322,42 @@ pub struct Mods {
     /// Which view expression of the source this is, for `tessel preview`:
     /// its number among the ones the compiler listed.
     pub source: Option<u32>,
+}
+
+/// A `.dropTarget`: `action` gets what's dropped (`fn(env, String, x, y)`),
+/// and `targeted` (a `Bool` binding) says whether something is dragged over it.
+pub struct DropTarget {
+    pub action: Callback,
+    pub targeted: Option<Callback>,
+}
+
+/// A `.shortcut(…)`: the key (lowercase), and whether Shift or Alt must be
+/// held as well (`"shift+s"`). Cmd (Ctrl on Windows) always is.
+pub struct Shortcut {
+    pub key: String,
+    pub shift: bool,
+    pub alt: bool,
+    pub action: Callback,
+}
+
+impl Shortcut {
+    /// Reads a shortcut's key: `"s"`, `"shift+s"`, `"alt+shift+left"`.
+    pub fn parse(text: &str, action: Callback) -> Shortcut {
+        let mut key = text.to_lowercase();
+        let (mut shift, mut alt) = (false, false);
+        loop {
+            if let Some(rest) = key.strip_prefix("shift+").filter(|r| !r.is_empty()) {
+                shift = true;
+                key = rest.to_string();
+            } else if let Some(rest) = key.strip_prefix("alt+").filter(|r| !r.is_empty()) {
+                alt = true;
+                key = rest.to_string();
+            } else {
+                break;
+            }
+        }
+        Shortcut { key, shift, alt, action }
+    }
 }
 
 /// A `PointerEvent`, as the adapter the compiler generates reads it.
@@ -300,6 +375,19 @@ pub struct PointerC {
     pub shift: u8,
     pub alt: u8,
     pub command: u8,
+}
+
+/// A `KeyEvent`, as the adapter the compiler generates reads it. The
+/// strings are the callee's.
+#[repr(C)]
+pub struct KeyC {
+    pub key: *mut Str,
+    pub text: *mut Str,
+    pub shift: u8,
+    pub alt: u8,
+    pub command: u8,
+    pub control: u8,
+    pub repeated: u8,
 }
 
 pub struct Node {
@@ -367,6 +455,12 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Svg { .. } => 17,
         Kind::Markdown { .. } => 18,
         Kind::Canvas { .. } => 19,
+        Kind::Slider { .. } => 20,
+        Kind::Stepper { .. } => 21,
+        Kind::ColorPicker { .. } => 22,
+        Kind::Swatch(_) => 23,
+        Kind::Disclosure { .. } => 24,
+        Kind::Lazy { .. } => 25,
     }
 }
 
@@ -478,6 +572,7 @@ pub fn release_caches() {
 /// Releases all view state (at exit, so leak checkers see a clean heap).
 pub fn release_all_state() {
     release_caches();
+    controls::forget_hex_text();
     let records: Vec<*mut Header> = STATES.with(|s| s.borrow_mut().drain().map(|(_, v)| v.record).collect());
     for r in records {
         unsafe { tsl_release(r) };
@@ -899,6 +994,13 @@ pub unsafe extern "C" fn tsl_ui_on_key(f: *const c_void, env: *mut Header) {
     modify(|m| m.on_key = Some(cb));
 }
 
+/// `.onKeyEvent { event in … }`: `f` is called as `f(env, &KeyC)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_key_event(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_key_event = Some(cb));
+}
+
 /// `.offset(x:y:)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_offset(x: f64, y: f64) {
@@ -916,6 +1018,22 @@ pub extern "C" fn tsl_ui_clipped(clipped: u8) {
 pub unsafe extern "C" fn tsl_ui_on_drop(f: *const c_void, env: *mut Header) {
     let cb = Callback::new(f, env);
     modify(|m| m.on_drop = Some(cb));
+}
+
+/// `.draggable(payload)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_draggable(payload: *const Str) {
+    let payload = unsafe { text_of(payload) };
+    modify(|m| m.draggable = Some(payload));
+}
+
+/// `.dropTarget(isTargeted:) { payload, x, y in … }`: `f` is called as
+/// `f(env, String, x, y)`; `targeted_f` (a locator) is null without `isTargeted`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_drop_target(f: *const c_void, env: *mut Header, targeted_f: *const c_void, targeted_env: *mut Header) {
+    let action = Callback::new(f, env);
+    let targeted = (!targeted_f.is_null()).then(|| Callback::new(targeted_f, targeted_env));
+    modify(|m| m.drop_target = Some(DropTarget { action, targeted }));
 }
 
 /// `.onResize { width, height in … }`: `f` is called as `f(env, width, height)`.
@@ -940,9 +1058,9 @@ pub extern "C" fn tsl_ui_cursor(style: i32) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env: *mut Header) {
-    let key = unsafe { text_of(key) }.to_lowercase();
-    let cb = Callback::new(f, env);
-    modify(|m| m.shortcut = Some((key, cb)));
+    let key = unsafe { text_of(key) };
+    let shortcut = Shortcut::parse(&key, Callback::new(f, env));
+    modify(|m| m.shortcuts.push(shortcut));
 }
 
 #[unsafe(no_mangle)]

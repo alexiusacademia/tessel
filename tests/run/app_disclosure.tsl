@@ -1,0 +1,39 @@
+// Disclosure groups nested into a tree, opened and closed with the mouse
+// and the keyboard.
+
+struct Folder {
+    name: String
+    files: [String]
+    folders: [Folder]
+}
+
+view FolderRow(folder: Folder) {
+    state open = false
+
+    DisclosureGroup(folder.name, isExpanded: open) {
+        for file in folder.files {
+            Text(file)
+        }
+        for sub in folder.folders {
+            FolderRow(folder: sub)
+        }
+    }
+}
+
+app Tree(width: 320, height: 300) {
+    state layersOpen = true
+    let project = Folder(name: "project", files: ["main.tsl"], folders: [
+        Folder(name: "data", files: ["roads.shp", "rivers.shp"], folders: []),
+        Folder(name: "styles", files: [], folders: [Folder(name: "dark", files: ["dark.json"], folders: [])]),
+    ])
+
+    VStack(alignment: .leading) {
+        DisclosureGroup("Layers", isExpanded: layersOpen) {
+            Text("Roads")
+            Text("Rivers")
+        }
+        FolderRow(folder: project)
+        Text(if layersOpen { "layers shown" } else { "layers hidden" })
+    }
+    .padding(12)
+}

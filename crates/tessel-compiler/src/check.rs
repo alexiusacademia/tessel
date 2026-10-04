@@ -877,6 +877,7 @@ impl Checker<'_> {
                 bind: p.bind && allow_bind,
                 sets_tag: false,
                 tag_fn: false,
+                rows: false,
             });
         }
         out
@@ -2612,7 +2613,7 @@ impl Checker<'_> {
                     let (t, decl, owner) = (f.ty.clone(), f.span, def.name.clone());
                     self.check_private_member(&format!("field `{n}`"), &owner, decl, name.span);
                     t
-                } else if def.methods.iter().any(|m| m.name == n) {
+                } else if def.methods.iter().any(|m| m.name == n) || builtins::method_of(&recv, n).is_some() {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}()`"));
                     Ty::Error
                 } else if is_tuple_name(&def.name) {
@@ -2885,6 +2886,16 @@ impl Checker<'_> {
                     let saved = self.tag_ty.take();
                     self.args(&what, &params, args, trailing, span);
                     self.tag_ty = saved;
+                    // A stepper counts in `Int`s or `Float`s.
+                    if n == "Stepper" {
+                        if let Some(a) = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "value")) {
+                            let t = self.types.get(&a.value.id).cloned().unwrap_or(Ty::Error);
+                            if !matches!(t, Ty::Int | Ty::Float) && !t.has_error() {
+                                let what = self.a(&t);
+                                self.error(a.value.span, format!("a `Stepper` changes an `Int` or a `Float`, not {what}"));
+                            }
+                        }
+                    }
                     return Ty::View;
                 }
                 if builtins::FUNCTION_NAMES.contains(&n) {
@@ -2926,23 +2937,46 @@ impl Checker<'_> {
     /// its result on the UI thread. So `work` may only use values that can be
     /// copied that way (not `state`, bindings, or the app's functions), and
     /// its result must be something `toBinary` could save.
+    ///
+    /// `work` may take the job (`work: { job in … }`), to report progress
+    /// (`job.progress(0.5)`, to the `progress:` block) and see whether it was
+    /// cancelled (`job.isCancelled()`). `background` returns the job.
     fn background(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
-        let work = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "work"));
-        let done = trailing.or_else(|| args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "done")).map(|a| &a.value));
+        let labeled = |l: &str| args.iter().find(|a| a.label.as_ref().is_some_and(|x| x.name == l));
+        let work = labeled("work");
+        let progress = labeled("progress");
+        let done = trailing.or_else(|| labeled("done").map(|a| &a.value));
         let (Some(work), Some(done)) = (work, done) else {
             self.error(span, "write it as `background(work: { … }) { result in … }`");
-            return Ty::Void;
+            return builtins::JOB;
         };
+        for a in args {
+            match &a.label {
+                Some(l) if matches!(l.name.as_str(), "work" | "progress" | "done") => {}
+                Some(l) => {
+                    self.error(l.span, format!("`background` has no `{}:`", l.name))
+                        .help("it takes `work:`, `progress:` and the block for the result");
+                }
+                None => {
+                    self.error(a.value.span, "`background`'s values need their labels")
+                        .help("write it as `background(work: { … }) { result in … }`");
+                }
+            }
+        }
+        if let Some(p) = progress {
+            self.expect(&p.value, &Ty::func(vec![Ty::Float, Ty::Str], Ty::Void));
+        }
         let ExprKind::Closure { params, body } = &work.value.kind else {
             self.error(work.value.span, "`work:` must be a block, like `work: { compute(input) }`");
-            return Ty::Void;
+            return builtins::JOB;
         };
-        if !params.is_empty() {
-            self.error(work.value.span, "the `work:` block takes no values")
-                .help("it uses the values around it: `let input = x` then `background(work: { compute(input) }) { … }`");
-            return Ty::Void;
+        if params.len() > 1 {
+            self.error(work.value.span, "the `work:` block takes at most one value: the job")
+                .help("it uses the values around it: `let input = x` then `background(work: { job in compute(input) }) { … }`");
+            return builtins::JOB;
         }
-        let wt = self.expr(&work.value, None);
+        let expected = (!params.is_empty()).then(|| Ty::func(vec![builtins::JOB], Ty::Any));
+        let wt = self.expr(&work.value, expected.as_ref());
         let result = match wt {
             Ty::Fn(_, r) => *r,
             _ => Ty::Error,
@@ -2956,7 +2990,7 @@ impl Checker<'_> {
         }
         // What the work uses from outside: copied in, so it must be plain values.
         let mut free = std::collections::BTreeSet::new();
-        crate::codegen::free_block(body, &mut Vec::new(), &mut free);
+        crate::codegen::free_block(body, &mut params.iter().map(|p| p.name.clone()).collect(), &mut free);
         for name in &free {
             let Some(local) = self.lookup(name).cloned() else { continue };
             let problem = match &local.kind {
@@ -2984,7 +3018,7 @@ impl Checker<'_> {
         if result != Ty::Void && !result.has_error() {
             self.expect(done, &Ty::func(vec![result], Ty::Void));
         }
-        Ty::Void
+        builtins::JOB
     }
 
     /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`.
@@ -3278,6 +3312,23 @@ impl Checker<'_> {
                     Ty::Error
                 }
             },
+            // `BackgroundJob`: its methods are the runtime's too.
+            t if *t == builtins::JOB => match builtins::method_of(&recv, n) {
+                Some(m) => {
+                    self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
+                    self.args(&what, &m.sig.params, args, trailing, span);
+                    m.sig.ret
+                }
+                None if n == "id" => {
+                    self.error(name.span, format!("`{n}` is a field, not a method")).help("remove the parentheses");
+                    Ty::Error
+                }
+                None => {
+                    let names = builtins::member_names(&recv).iter().map(|s| s.to_string()).collect();
+                    self.no_member(name, &format!("`BackgroundJob` has no method `{n}`"), names);
+                    Ty::Error
+                }
+            },
             Ty::Struct(_) | Ty::Enum(_) => {
                 let (methods, owner, fields) = match &recv {
                     Ty::Struct(id) => {
@@ -3516,17 +3567,25 @@ impl Checker<'_> {
         let [StrPart::Text(key)] = parts.as_slice() else { return };
         const NAMED: &[&str] =
             &["enter", "escape", "tab", "backspace", "delete", "left", "right", "up", "down", "home", "end"];
-        let mut chars = key.chars();
+        // Shift and Alt may be asked for too: `"shift+s"`, `"alt+shift+left"`.
+        let mut bare = key.as_str();
+        while let Some(rest) = bare.strip_prefix("shift+").or_else(|| bare.strip_prefix("alt+")).filter(|r| !r.is_empty()) {
+            bare = rest;
+        }
+        let held = &key[..key.len() - bare.len()];
+        let mut chars = bare.chars();
         let single = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_whitespace() && !c.is_uppercase());
-        if single || NAMED.contains(&key.as_str()) {
+        if single || NAMED.contains(&bare) {
             return;
         }
-        let help = if let Some(rest) = key.strip_prefix("cmd+").or_else(|| key.strip_prefix("ctrl+")) {
-            format!("Cmd (Ctrl on Windows) is added for you: write `.shortcut(\"{rest}\")`")
-        } else if key.chars().count() == 1 {
-            format!("use the lowercase letter: `.shortcut(\"{}\")`", key.to_lowercase())
+        let help = if let Some(rest) = bare.strip_prefix("cmd+").or_else(|| bare.strip_prefix("ctrl+")) {
+            format!("Cmd (Ctrl on Windows) is added for you: write `.shortcut(\"{held}{rest}\")`")
+        } else if bare.chars().count() == 1 {
+            format!("use the lowercase letter (add `shift+` for Shift): `.shortcut(\"{held}{}\")`", bare.to_lowercase())
         } else {
-            "use one character, like \"s\", or one of: enter, escape, tab, backspace, delete, left, right, up, down, home, end".to_string()
+            "use one character, like \"s\", or one of: enter, escape, tab, backspace, delete, left, right, up, down, home, end; \
+             put `shift+` or `alt+` before it to need Shift or Alt too"
+                .to_string()
         };
         self.error(arg.value.span, format!("`{key}` isn't a key a shortcut can use")).help(help);
     }
@@ -3667,6 +3726,27 @@ impl Checker<'_> {
         if p.ty == Ty::View {
             self.content_closure(v);
             return;
+        }
+        // Content built for each number (`LazyVStack`'s rows): `{ i in … }`.
+        if let (Ty::Fn(ps, _), true) = (&p.ty, p.rows) {
+            {
+                let pt = ps[0].clone();
+                match &v.kind {
+                    ExprKind::Closure { params, body } if params.len() == 1 => self.with_scope(|c| {
+                        c.declare(&params[0], pt, Kind::Let);
+                        c.content_block(body, false);
+                    }),
+                    ExprKind::Closure { .. } => {
+                        self.error(v.span, "this block gets each row's number; name it at the start, like `{ i in … }`");
+                    }
+                    _ => {
+                        self.expr(v, None);
+                        self.error(v.span, "write the rows as a block, like `{ i in Text(\"Row {i}\") }`");
+                    }
+                }
+                self.types.insert(v.id, p.ty.clone());
+                return;
+            }
         }
         if p.tag_fn {
             let t = self.tag_ty.clone().unwrap_or(Ty::Error);

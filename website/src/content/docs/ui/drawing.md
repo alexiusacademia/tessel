@@ -1,6 +1,6 @@
 ---
 title: Drawing and the mouse
-description: Draw your own views with Canvas and Graphics (shapes, paths, text and pictures), and follow the mouse with onPointer, onKey and cursor.
+description: Draw your own views with Canvas and Graphics (shapes, paths, text and pictures), and follow the mouse and keys with onPointer, onKey, onKeyEvent and cursor.
 ---
 
 The built-in views cover text, controls and layout. When you need something
@@ -279,6 +279,40 @@ key: `"enter"`, `"escape"`, `"tab"`, `"backspace"`, `"delete"`, `"left"`,
 outermost view to hear every key. Keys pressed with Cmd (or Ctrl on Windows)
 go to [`.shortcut`](/ui/shortcuts/) instead.
 
+When the modifier keys matter (Shift+arrow to pan further, Delete without
+Cmd), use `.onKeyEvent`. Its block gets a
+[`KeyEvent`](/reference/colors/#keyevent): the `key` (without the modifiers:
+`"a"` for Shift+A), the `text` it types, whether `shift`, `alt`, `command`
+or `control` was held, and whether it's `repeated` (a key held down):
+
+```tessel
+app Pan(width: 320, height: 200) {
+    state x = 160.0
+    state y = 100.0
+
+    Canvas { g in
+        g.fillCircle(x: x, y: y, radius: 10, color: .blue)
+    }
+    .onKeyEvent { e in
+        let step = if e.shift { 40.0 } else { 5.0 }
+        match e.key {
+            "left" -> { x -= step }
+            "right" -> { x += step }
+            "up" -> { y -= step }
+            "down" -> { y += step }
+            "space" -> {
+                x = 160
+                y = 100
+            }
+            _ -> {}
+        }
+    }
+}
+```
+
+`.onKeyEvent` also gets keys pressed with Cmd that no shortcut takes. When a
+view has `.onKeyEvent`, keys go to it rather than to `.onKey`.
+
 ## Saving a drawing as a picture
 
 [`renderImage`](/reference/stdlib/#renderimage) runs a drawing block without
@@ -306,4 +340,5 @@ In a [headless run](/ui/testing/), `tree` and `dump` say what each canvas
 drew: `Canvas (6 fills, 1 stroke, 12 texts)`. The script commands `press`,
 `move`, `release`, `rightclick`, `doubleclick`, `wheel` and `pinch` play the
 mouse for views with `.onPointer`, and `click`, `drag` and `hover` work on
-them too. `key x` sends a key to `.onKey`.
+them too. `key x` sends a key to `.onKey` or `.onKeyEvent`, with modifiers
+as in `key shift+left`.

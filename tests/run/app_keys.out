@@ -1,0 +1,49 @@
+Root
+  View
+    VStack
+      Text "last: save"
+      Text "5 entries"
+      TextField "Name" = ""
+      Text "undo"
+      Text "redo"
+      Text "save"
+      Text "save as"
+      Text "save"
+Root
+  View
+    VStack
+      Text "last: k 'k' [cmd]"
+      Text "13 entries"
+      TextField "Name" = ""
+      Text "undo"
+      Text "redo"
+      Text "save"
+      Text "save as"
+      Text "save"
+      Text "a 'a' []"
+      Text "a 'A' [shift]"
+      Text "left '' [alt]"
+      Text "c 'c' [control]"
+      Text "down '' [repeat]"
+      Text "space ' ' []"
+      Text "f5 '' []"
+      Text "k 'k' [cmd]"
+Root
+  View
+    VStack
+      Text "last: k 'k' [cmd]"
+      Text "13 entries"
+      TextField "Name" = "hiA"
+      Text "undo"
+      Text "redo"
+      Text "save"
+      Text "save as"
+      Text "save"
+      Text "a 'a' []"
+      Text "a 'A' [shift]"
+      Text "left '' [alt]"
+      Text "c 'c' [control]"
+      Text "down '' [repeat]"
+      Text "space ' ' []"
+      Text "f5 '' []"
+      Text "k 'k' [cmd]"

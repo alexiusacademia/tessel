@@ -1,0 +1,39 @@
+// Several shortcuts on one view, shortcuts that need Shift or Alt too, and
+// keys with the modifier keys held (`.onKeyEvent`).
+app Keys(width: 360, height: 220) {
+    state log: [String] = []
+    state text = ""
+
+    VStack(spacing: 6) {
+        Text("last: {log.last ?? "-"}")
+            .shortcut("z") { log.append("undo") }
+            .shortcut("shift+z") { log.append("redo") }
+            .shortcut("s") { log.append("save") }
+            .shortcut("alt+s") { log.append("save as") }
+        Text("{log.count} entries")
+            .onKeyEvent { e in
+                var held: [String] = []
+                if e.shift {
+                    held.append("shift")
+                }
+                if e.alt {
+                    held.append("alt")
+                }
+                if e.command {
+                    held.append("cmd")
+                }
+                if e.control {
+                    held.append("control")
+                }
+                if e.repeated {
+                    held.append("repeat")
+                }
+                log.append("{e.key} '{e.text}' [{held.joined(separator: "+")}]")
+            }
+        TextField("Name", text: text)
+        for entry in log {
+            Text(entry)
+        }
+    }
+    .padding(16)
+}

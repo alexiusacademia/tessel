@@ -606,6 +606,85 @@ background(work: {
 }
 ```
 
+### Progress, and cancelling
+
+Work that takes a while should say how far it is, and let the user stop it.
+Give the `work:` block a name for its job, `work: { job in … }`; then:
+
+- `job.progress(fraction, note: "…")` reports how far it is (usually from 0
+  to 1, with an optional note), to a `progress:` block that runs on the UI
+  thread and can change `state`;
+- `job.isCancelled()` says whether the job was cancelled, so the work can
+  stop early;
+- `background` returns the job (a [`BackgroundJob`](/reference/stdlib/#backgroundjob)),
+  whose `cancel()` cancels it.
+
+```tessel
+fn countPrimes(limit: Int, job: BackgroundJob) -> Int {
+    var count = 0
+    for n in 2..limit {
+        if n % 1000 == 0 {
+            if job.isCancelled() {
+                return count
+            }
+            job.progress(Float(n) / Float(limit), note: "{count} so far")
+        }
+        var prime = true
+        var d = 2
+        while d * d <= n {
+            if n % d == 0 {
+                prime = false
+                break
+            }
+            d += 1
+        }
+        if prime {
+            count += 1
+        }
+    }
+    count
+}
+
+app Primes(width: 360, height: 200) {
+    state status = "Idle"
+    state fraction = 0.0
+    state job: BackgroundJob? = nil
+
+    VStack(spacing: 12) {
+        Text(status)
+        Text("{(fraction * 100).formatted(decimals: 0)}%")
+        HStack {
+            Button("Count") {
+                status = "Counting…"
+                job = background(work: { job in countPrimes(limit: 2000000, job: job) }, progress: { f, note in
+                    fraction = f
+                    status = note
+                }) { count in
+                    status = "{count} primes"
+                    job = nil
+                }
+            }
+            .disabled(job != nil)
+            Button("Cancel") {
+                job?.cancel()
+                job = nil
+                status = "Cancelled"
+            }
+            .disabled(job == nil)
+        }
+    }
+    .padding(24)
+}
+```
+
+Reports can come much faster than the window can show them, so the
+`progress:` block gets the latest one each time the app gets round to it,
+skipping those in between; the last report always arrives before the result.
+After `cancel()`, neither block runs again: the work sees `isCancelled()`,
+stops, and what it returns is dropped. The job can be passed on to the
+functions doing the work, like `countPrimes` here, and kept in `state` to
+cancel it later.
+
 ## Callbacks in a program without an app
 
 `fetch`, `request`, `download`, WebSockets, `runCommand`, `after`, `every`

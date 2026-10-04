@@ -1,0 +1,54 @@
+// Background work that reports its progress, and work that's cancelled.
+
+fn sumTo(n: Int, job: BackgroundJob) -> Int {
+    var total = 0
+    for i in 1..(n + 1) {
+        total += i
+        job.progress(Float(i) / Float(n), note: "added {i}")
+    }
+    total
+}
+
+app Jobs(width: 360, height: 240) {
+    state status = "Idle"
+    state fraction = 0.0
+    state note = ""
+    state job: BackgroundJob? = nil
+
+    VStack(spacing: 8) {
+        Text(status)
+        Text("{(fraction * 100.0).formatted(decimals: 0)}% {note}")
+        Button("Count") {
+            status = "Counting…"
+            let n = 10
+            job = background(work: { job in sumTo(n: n, job: job) }, progress: { f, text in
+                fraction = f
+                note = text
+            }) { total in
+                status = "Total {total}"
+                job = nil
+            }
+        }
+        Button("Spin") {
+            status = "Spinning"
+            job = background(work: { job in
+                var spins = 0
+                while !job.isCancelled() {
+                    spins += 1
+                }
+                spins
+            }) { spins in
+                status = "Stopped by itself"
+            }
+        }
+        Button("Cancel") {
+            if let j = job {
+                j.cancel()
+                status = "Cancelled"
+            }
+            job = nil
+        }
+        .disabled(job == nil)
+    }
+    .padding(16)
+}

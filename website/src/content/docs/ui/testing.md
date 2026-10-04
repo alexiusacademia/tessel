@@ -71,18 +71,19 @@ opens a window as usual.
 | `size 400 300` | Sets the window size, in points. The app starts at the size its `app` declaration gives. |
 | `click "Save"` | Clicks the first view with this label (see below). |
 | `click 40 60` | Clicks at a point, in points from the window's top left corner. |
-| `click button 2` | Clicks the 2nd view of a kind: `button`, `toggle`, `field`, `text` or `editor`. Counting starts at 1. |
+| `click button 2` | Clicks the 2nd view of a kind: `button`, `toggle`, `field`, `text`, `editor`, `slider`, `stepper` or `colorpicker`. Counting starts at 1. |
 | `hover "Save"` | Moves the mouse pointer over the first view with this label, to show [hover backgrounds](/ui/styling/#hover-backgrounds). |
 | `hover 40 60` | Moves the pointer to a point. |
 | `close "main.tsl"` | Clicks the close button of the tab with this title. |
 | `type hello world` | Types text into the text field or code editor being edited. |
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
 | `key enter` | Presses a key, optionally with modifiers (see below). |
-| `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag) and for scroll bars. |
+| `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag), sliders and scroll bars. |
+| `dragto "Roads" "Parcels"` | Drags the view with [`.draggable`](/reference/modifiers/#draggable) at the first label onto the second, and lets go there (or `dragto 40 60 40 200`, with points). |
 | `scroll 0 120` | Scrolls the scroll view (or code editor) under the middle of the window down by 120 points. A negative number scrolls up. |
 | `wheel 40 60 0 120` | The same, for what's at a point: here (40, 60). |
-| `press 40 60` | Presses the mouse on a view with [`.onPointer`](/reference/modifiers/#onpointer). Add `right` or `middle` for another button. |
-| `move 80 60` | Moves the mouse there: a drag while it's pressed. |
+| `press 40 60` | Presses the mouse on a view with [`.onPointer`](/reference/modifiers/#onpointer) or [`.draggable`](/reference/modifiers/#draggable) (also `press "Label"`). Add `right` or `middle` for another button. |
+| `move 80 60` | Moves the mouse there (or `move "Label"`): a drag while it's pressed. |
 | `release` | Lets the mouse button go (`release 90 60`: somewhere else). |
 | `rightclick 40 60` | A click with the right button, on a view with `.onPointer`. |
 | `doubleclick 40 60` | Two clicks in a row there. |
@@ -114,7 +115,9 @@ whose label is exactly the given text:
 - a `Text`'s text, a `Button`'s or `Toggle`'s label;
 - a `TextField`'s placeholder;
 - an `Icon`'s name, such as `click "trash"` for `Icon(.trash)`;
-- a tab's title in a `TabView`.
+- a tab's title in a `TabView`, or a `DisclosureGroup`'s title;
+- a color in an open `ColorPicker`'s palette, by its hex code, like
+  `click "#000000"`.
 
 It clicks the middle of that view. Hidden views, and pages of a `TabView` that
 aren't selected, are skipped.
@@ -137,7 +140,8 @@ its middle without clicking, so a `snapshot` afterwards shows its
 gets the same automatic indentation as real typing does.
 
 `key` presses one key: `backspace`, `delete`, `left`, `right`, `up`, `down`,
-`home`, `end`, `enter`, `tab` or `escape`, or a letter (for shortcuts). Add
+`home`, `end`, `pageup`, `pagedown`, `enter`, `tab`, `escape`, `space`, `f1`
+to `f12`, or a character, which types it in a field being edited. Add
 modifiers in front, joined with `+`:
 
 ```text
@@ -146,11 +150,14 @@ key alt+backspace    delete a word
 key cmd+a            select all
 key cmd+shift+z      redo
 key cmd+s            run a .shortcut("s")
+key shift+a          type "A" (or an .onKeyEvent gets "a" with shift)
+key repeat+down      a key held down (repeated is true)
 ```
 
 `cmd` and `ctrl` mean the same thing: the platform's shortcut key (Cmd on
 macOS, Ctrl on Windows). `alt` is Option on macOS. So scripts behave the same on
-both systems.
+both systems. `control` is the Ctrl key itself, as
+[`KeyEvent`](/reference/colors/#keyevent)'s `control` sees it.
 
 The clipboard in a headless run is private to the script: `cmd+c` and `cmd+v`
 work, but never touch your real clipboard. `copyToClipboard` and
@@ -217,7 +224,16 @@ CodeEditor errors [2] = "app Hello {\n    Text(\"hi\")\n}"
 Icon trash
 Text "secret" hidden
 Button "Send" disabled
+Slider = 0.7 focused
+Stepper = 1.5
+ColorPicker = #3478f6 open
+DisclosureGroup "Layers" open
+LazyVStack 100000 rows, built 1990..2020
+HStack dragged
 ```
+
+`focused` marks the control the keyboard is on; during a drag, `dragged`
+marks the view being dragged and `drop target` the one under the mouse.
 
 `dump` adds `[x,y widthxheight]` in points after each view, which is useful for
 checking a [layout](/ui/layout/). Anything your program prints with `print`
@@ -231,7 +247,21 @@ that's showing is printed after the tree: `Tooltip "Delete the selected rows"`
 On a view with `.onPointer`, `click`, `drag` and `hover` send it the events a
 real mouse would: a press and a release, a press, a move and a release, or a
 move. `key x` (or `type x`) while no field is being edited goes to
-[`.onKey`](/reference/modifiers/#onkey).
+[`.onKey`](/reference/modifiers/#onkey); `key` also goes to
+[`.onKeyEvent`](/reference/modifiers/#onkeyevent).
+
+`press` on a view with `.draggable`, then `move`, holds it over what's
+there (a `tree` or `snapshot` shows the drag on its way), and `release`
+drops it; `key escape` before the release cancels it. `dragto` does it all
+in one go:
+
+```text
+dragto "Roads" "Parcels"
+press "Imagery"
+move "Rivers"
+snapshot dragging.png
+release
+```
 
 `snapshot` renders exactly what the window would show, including the text
 cursor and selection. It needs a GPU (the screenshots on this site were made
