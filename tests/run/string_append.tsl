@@ -1,0 +1,50 @@
+// `text += more` adds to the text where it is (issue #5), and stays a
+// value: copies don't change.
+
+struct Doc {
+    title: String
+    lines: [String] = []
+}
+
+fn main() {
+    var a = "x"
+    let b = a
+    a += "y"
+    a += "z"
+    print("{a} {b}")
+
+    var c = a
+    c += "!"
+    print("{a} {c}")
+
+    var s = "ab"
+    s += s
+    s += s
+    print(s)
+
+    var d = Doc(title: "Notes")
+    d.title += " — 2026"
+    d.lines.append("first")
+    d.lines[0] += " line"
+    print("{d.title} / {d.lines[0]}")
+
+    var u = "größe"
+    u += " ✓ "
+    u += "日本"
+    print("{u} {u.count}")
+
+    // Many appends, then the text used as any other.
+    var csv = ""
+    for i in 0..1000 {
+        csv += "{i},"
+    }
+    print("{csv.count} {csv.hasPrefix("0,1,2,")} {csv.hasSuffix("998,999,")}")
+    let words = csv.split(",")
+    print(words.count)
+    var set: Set<String> = []
+    var k = "key"
+    set.insert(k)
+    k += "2"
+    set.insert(k)
+    print(set.contains("key") && set.contains("key2"))
+}

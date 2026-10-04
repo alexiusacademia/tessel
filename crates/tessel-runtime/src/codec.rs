@@ -163,6 +163,13 @@ pub unsafe extern "C" fn tsl_data_append(slot: *mut *mut Str, other: *const Str)
     }
 }
 
+/// `text += more`: a `String` is laid out as `Data` is, and its UTF-8
+/// bytes join the same way, in place when there's room.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_str_append(slot: *mut *mut Str, other: *const Str) {
+    unsafe { tsl_data_append(slot, other) };
+}
+
 /// `data.append(byte: n)`: one byte, `n` modulo 256 (like `Data(bytes:)`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_data_append_byte(slot: *mut *mut Str, byte: i64) {

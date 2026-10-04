@@ -1126,6 +1126,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_data_eq" => (vec![p, p], Some(i8t)),
             "tsl_data_concat" => (vec![p, p], Some(p)),
             "tsl_data_append" => (vec![p, p], None),
+            "tsl_str_append" => (vec![p, p], None),
             "tsl_data_append_byte" => (vec![p, i], None),
             "tsl_str_eq" | "tsl_str_contains" | "tsl_str_has_prefix" | "tsl_str_has_suffix" => {
                 (vec![p, p], Some(i8t))
@@ -2117,9 +2118,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.list_mutating(p, elem, "appendAll", &[v], l);
             return;
         }
-        // `data += more` too: the bytes go on the end, where there's room.
-        if let (AssignOp::Op(BinOp::Add), Ty::Data) = (op, &tt) {
-            self.call_rt("tsl_data_append", &[p.into(), v]);
+        // `data += more` and `text += more` too: the bytes go on the end,
+        // where there's room.
+        if let (AssignOp::Op(BinOp::Add), Ty::Data | Ty::Str) = (op, &tt) {
+            let f = if tt == Ty::Str { "tsl_str_append" } else { "tsl_data_append" };
+            self.call_rt(f, &[p.into(), v]);
             self.release(v, &tt);
             return;
         }

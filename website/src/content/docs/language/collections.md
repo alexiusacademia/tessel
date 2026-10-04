@@ -455,5 +455,8 @@ Strings have more methods, such as `words()`, `padStart`, `capitalized()`
 and `urlEncoded`; see [String](/reference/stdlib/#string) in the standard
 library reference.
 
-`+` joins strings, and `+=` adds to a string variable. Strings compare with
-`==` and, in dictionary order, with `<` and `>`.
+`+` joins strings, and `+=` adds to a string variable. Like `+=` on a
+list, it adds to the string where it is, so building a long text a piece at
+a time (a CSV file of 100 000 rows, say) takes time in proportion to its
+length; a copy of the string made earlier doesn't change. Strings compare
+with `==` and, in dictionary order, with `<` and `>`.
