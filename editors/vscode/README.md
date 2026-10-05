@@ -14,10 +14,23 @@ Swift-like language for native apps and command-line programs.
   `.`, a module's public names after `geometry.`, and every variable,
   function, type and view in scope. Typing `.` opens the list; Ctrl+Space
   asks for it anywhere.
+- **Run and build.** The ▶ button in the editor's title bar runs the program
+  (or with hot reload, from its menu), and the Command Palette has **Tessel:
+  Run Program**, **Run with Hot Reload**, **Check Program**, **Build App**
+  and **Pin Tessel Version**. They run `tessel` in a terminal.
+- **`tessel.toml`.** With the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+  extension, a project's `tessel.toml` gets completion, descriptions and
+  checking of its keys (`[app]`, `[[app.documents]]`, …). See
+  [The project file](https://tessel-lang.syncster.dev/start/project/).
+- **The project's version of Tessel.** When `tessel.toml` pins a version,
+  errors and completion come from that version; the language server starts
+  again when the file changes.
 - Comment toggling, bracket matching, auto-closing pairs and indentation.
 
 A program is a folder of `.tsl` files, and the whole folder is checked
-together, including the modules it imports.
+together, including the modules it imports. The run commands run the active
+file's folder when it has a `main.tsl` or a `tessel.toml`, and otherwise the
+file on its own.
 
 ## Requirements
 

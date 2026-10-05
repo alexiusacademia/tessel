@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tessel-lang.syncster.dev/schemas/tessel.toml.json",
+  "title": "tessel.toml",
+  "description": "A Tessel project's file: the version of Tessel it uses, and what the app says about itself. https://tessel-lang.syncster.dev/start/project/",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tessel": {
+      "type": "string",
+      "description": "The version of Tessel this project uses, like \"0.1.35\". Tessel's commands (and editors) hand the project's work to that version, installing it the first time. `tessel pin` writes this.",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "app": {
+      "type": "object",
+      "description": "What the app says about itself: its bundle on macOS, its .exe's details on Windows, its About panel, and appInfo().",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The app's name, as people see it: the bundle's and the menu's name on macOS, the product name on Windows, the window's title. Default: the app's name in the code.",
+          "pattern": "^[^/\\\\:]+$"
+        },
+        "id": {
+          "type": "string",
+          "description": "A name no other app has, like \"com.example.tally\". macOS tells apps apart by it: keep it from one version to the next. Default: dev.tessel. and the name.",
+          "pattern": "^[A-Za-z0-9.-]+$"
+        },
+        "version": { "type": "string", "description": "The version people see, like \"1.2.0\". Default: \"1.0\"." },
+        "build": { "type": "string", "description": "A build number, for telling builds of one version apart. Default: the version." },
+        "description": { "type": "string", "description": "What the app is, in a few words (Windows shows it in the file's Details)." },
+        "author": { "type": "string", "description": "Who makes the app: a person or a company." },
+        "copyright": { "type": "string", "description": "The copyright notice, like \"© 2026 Example Surveys\"." },
+        "icon": { "type": "string", "description": "A square PNG, relative to tessel.toml. Default: icon.png next to the code." },
+        "category": {
+          "type": "string",
+          "description": "Where the App Store and Finder file the app.",
+          "enum": [
+            "business", "developer-tools", "education", "entertainment", "finance", "games", "graphics-design",
+            "healthcare-fitness", "lifestyle", "medical", "music", "news", "photography", "productivity", "reference",
+            "social-networking", "sports", "travel", "utilities", "video", "weather"
+          ]
+        },
+        "documents": {
+          "type": "array",
+          "description": "The kinds of files the app opens ([[app.documents]]). On macOS, Finder offers the app for them.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["extensions"],
+            "properties": {
+              "name": { "type": "string", "description": "A name for the kind of file, like \"Tally Workbook\"." },
+              "extensions": {
+                "type": "array",
+                "description": "The files' extensions, without the dot: [\"tly\"].",
+                "minItems": 1,
+                "items": { "type": "string", "pattern": "^[^./ ][^/ ]*$" }
+              },
+              "role": {
+                "type": "string",
+                "description": "\"editor\" (the default) for files the app changes, \"viewer\" for ones it only shows.",
+                "enum": ["editor", "viewer"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

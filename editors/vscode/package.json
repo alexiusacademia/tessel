@@ -1,8 +1,8 @@
 {
   "name": "tessel",
   "displayName": "Tessel",
-  "description": "Tessel language support: syntax highlighting, errors as you type, types on hover and code completion",
-  "version": "0.2.0",
+  "description": "Tessel language support: highlighting, errors as you type, types on hover, completion, commands to run and build, and tessel.toml checking",
+  "version": "0.3.0",
   "publisher": "alexiusacademia",
   "license": "MIT",
   "icon": "icon.png",
@@ -62,7 +62,79 @@
           "description": "Path to the `tessel` command, used for errors, hover and completion."
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "tessel.run",
+        "title": "Run Program",
+        "category": "Tessel",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tessel.runHot",
+        "title": "Run with Hot Reload",
+        "category": "Tessel",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "tessel.check",
+        "title": "Check Program",
+        "category": "Tessel"
+      },
+      {
+        "command": "tessel.build",
+        "title": "Build App",
+        "category": "Tessel"
+      },
+      {
+        "command": "tessel.pin",
+        "title": "Pin Tessel Version",
+        "category": "Tessel"
+      },
+      {
+        "command": "tessel.restart",
+        "title": "Restart Language Server",
+        "category": "Tessel"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "tessel.run",
+          "when": "resourceLangId == tessel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tessel.runHot",
+          "when": "resourceLangId == tessel",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "tessel.run",
+          "when": "editorLangId == tessel"
+        },
+        {
+          "command": "tessel.runHot",
+          "when": "editorLangId == tessel"
+        },
+        {
+          "command": "tessel.check",
+          "when": "editorLangId == tessel"
+        },
+        {
+          "command": "tessel.build",
+          "when": "editorLangId == tessel"
+        }
+      ]
+    },
+    "tomlValidation": [
+      {
+        "fileMatch": "tessel.toml",
+        "url": "./schemas/tessel.toml.json"
+      }
+    ]
   },
   "main": "./extension.js",
   "activationEvents": [
