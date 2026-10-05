@@ -39,6 +39,9 @@ jobs:
       matrix:
         include: ${{ fromJSON((github.event_name == 'push' || inputs.windows) && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write # to sign in to Google Cloud (staging the package)
     steps:
       - uses: actions/checkout@v4
 
@@ -308,12 +311,30 @@ jobs:
           fi
           ls -la ..
 
+      # (For looking at a build by hand; publishing doesn't use it, so a
+      # full artifact storage can't stop a release.)
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: tessel-${{ matrix.name }}
           path: dist/tessel-*
-          # Only for the publish job: the packages live in the bucket.
           retention-days: 1
+
+      # The package waits in the bucket's staging folder until the publish
+      # job has both platforms'. (gcloud comes with GitHub's Windows
+      # runners, and is installed on the Mac.)
+      - if: github.ref_type == 'tag' || inputs.publish
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
+          service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
+
+      - name: Stage the package
+        if: github.ref_type == 'tag' || inputs.publish
+        shell: bash
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          gcloud storage cp dist/tessel-* "gs://tessel-releases/staging/$version/"
 
   publish:
     name: Publish to Google Cloud Storage
@@ -326,11 +347,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
@@ -341,6 +357,9 @@ jobs:
       - name: Upload
         run: |
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          # The packages the package jobs staged.
+          mkdir -p dist
+          gcloud storage cp "gs://tessel-releases/staging/$version/*" dist/
           ls -la dist
           (cd dist && sha256sum tessel-* > SHA256SUMS)
           gcloud storage cp dist/* "gs://tessel-releases/$version/"
@@ -357,4 +376,5 @@ jobs:
           [[ -f latest-macos.txt ]] && cp latest-macos.txt latest.txt && pointers+=(latest.txt)
           gcloud storage cp "${pointers[@]}" install/install.sh install/install.ps1 gs://tessel-releases/ \
             --cache-control="no-cache, max-age=0"
+          gcloud storage rm -r "gs://tessel-releases/staging/$version/" || true
           echo "Published https://storage.googleapis.com/tessel-releases/$version/"
