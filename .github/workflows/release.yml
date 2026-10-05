@@ -321,13 +321,16 @@ jobs:
           retention-days: 1
 
       # The package waits in the bucket's staging folder until the publish
-      # job has both platforms'. (gcloud comes with GitHub's Windows
-      # runners, and is installed on the Mac.)
+      # job has both platforms'. (gcloud is installed on the Mac; GitHub's
+      # Windows runners need it installed.)
       - if: github.ref_type == 'tag' || inputs.publish
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
           service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
+
+      - if: (github.ref_type == 'tag' || inputs.publish) && runner.os == 'Windows'
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Stage the package
         if: github.ref_type == 'tag' || inputs.publish
