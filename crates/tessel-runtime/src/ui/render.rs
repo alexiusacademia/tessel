@@ -712,7 +712,8 @@ impl Painter<'_> {
                 }
             }
             Kind::Divider => {
-                self.fill(placed, 0.0, theme().colors[theme::SEPARATOR]);
+                // (Inside its padding: padding is room around the line.)
+                self.fill(content, 0.0, theme().colors[theme::SEPARATOR]);
             }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
