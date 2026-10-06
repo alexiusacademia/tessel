@@ -209,7 +209,15 @@ fn add_prelude(program: &mut ast::Program, diags: &mut Diagnostics, next_id: &mu
         return;
     }
     let prelude = parser::parse_file(source::PRELUDE_FILE, source::PRELUDE, diags, next_id);
-    program.items.extend(prelude.items.into_iter().filter(|i| !own.contains(&i.name().name)));
+    // Databases' declarations go together: a program with its own
+    // `Database` (or another of their names) gets none of them.
+    let database = |name: &str| {
+        matches!(name, "SqlValue" | "Database" | "DatabaseRow" | "__DatabaseTable" | "openDatabase") || name.starts_with("__sql")
+    };
+    let own_database = own.iter().any(|n| database(n));
+    program.items.extend(
+        prelude.items.into_iter().filter(|i| !own.contains(&i.name().name) && !(own_database && database(&i.name().name))),
+    );
 }
 
 /// The generic structs behind tuples: `(,)<A, B>` with fields `0` and `1`

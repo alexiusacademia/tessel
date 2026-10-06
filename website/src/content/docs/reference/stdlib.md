@@ -929,6 +929,60 @@ error: `Counter` can't be saved with `toJson`
 
 Dictionary keys must be `String`, `Int`, `Bool` or an enum.
 
+## Databases
+
+SQLite, built into Tessel. See
+[Saving data in a database](/guides/database/).
+
+### openDatabase
+
+```text
+openDatabase(_ path: String) -> Result<Database>
+```
+
+Opens a SQLite database file, or creates it. `":memory:"` is a database
+that lasts only while the program runs. The reason for a failure is
+SQLite's.
+
+### Database
+
+A database opened with `openDatabase`:
+
+| Method | What it does |
+|---|---|
+| `execute(_ sql: String, _ values: [SqlValue] = []) -> Result<Int>` | Runs SQL that changes the database, with `values` for its `?`s; returns how many rows the last statement changed. SQL without values can be several statements, separated by `;`. |
+| `query(_ sql: String, _ values: [SqlValue] = []) -> Result<[DatabaseRow]>` | Runs a `SELECT`, with `values` for its `?`s, and returns its rows. |
+| `lastInsertId() -> Int` | The `rowid` of the row the last `INSERT` added. |
+| `close()` | Closes the database (it's closed when the program ends, too). |
+
+### DatabaseRow
+
+A row of a query: `columns` (the names, as the query gives them) and
+`values`. Its methods read a column by name, converting it the way SQLite
+does; a name the row doesn't have stops the program.
+
+| Method | |
+|---|---|
+| `int(_ column: String) -> Int` | A number (a text of one, or 0). |
+| `float(_ column: String) -> Float` | A number (a text of one, or 0). |
+| `text(_ column: String) -> String` | Text (empty for null). |
+| `bool(_ column: String) -> Bool` | `true` for a number that isn't 0. |
+| `data(_ column: String) -> Data` | Bytes (a blob, or text's bytes). |
+| `isNull(_ column: String) -> Bool` | Whether it's null. |
+| `value(_ column: String) -> SqlValue` | The value as it is. |
+
+### SqlValue
+
+A value in a database: `.null`, `.int(value: Int)`, `.float(value:
+Float)`, `.text(value: String)` or `.data(value: Data)`. Where one is
+wanted, as in `execute`'s and `query`'s values, an `Int`, `Float`,
+`String`, `Bool` (1 or 0) or `Data`, an optional one, or `nil` (null) is
+given as it is:
+
+```tessel
+try db.execute("INSERT INTO t (a, b, c) VALUES (?, ?, ?)", [42, "text", nil])
+```
+
 ## Data
 
 `Data` holds raw bytes: the contents of a file that isn't text, the result of

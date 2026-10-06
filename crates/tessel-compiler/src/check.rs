@@ -27,6 +27,9 @@ pub struct Checked {
     /// Arguments given to `bind` parameters: the caller's variable they
     /// name is shared with the callee (so it lives in a box).
     pub bind_args: HashSet<ExprId>,
+    /// The prelude's `SqlValue` enum: an `Int`, `Float`, `String`, `Bool` or
+    /// `Data` (or an optional one) converts to it where it's wanted.
+    pub sql_value: Option<usize>,
     /// Parameters of each user view.
     pub views: HashMap<String, Vec<ParamSig>>,
     /// Signatures of functions declared inside views: (view, function).
@@ -270,6 +273,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         locals: HashMap::new(),
         loop_places: HashSet::new(),
         bind_args: HashSet::new(),
+        sql_value: None,
         view_fns: HashMap::new(),
         local_fns: HashMap::new(),
         completion: None,
@@ -299,6 +303,8 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
     let ids = c.collect(&program.items, require_entry);
     c.check_templates();
     c.signatures(&program.items, &ids);
+    // The prelude's `SqlValue`, which plain values convert to (see `fits`).
+    c.sql_value = c.enums.iter().position(|e| e.name == "SqlValue" && e.span.is_some_and(|s| s.file == crate::source::PRELUDE_FILE));
     c.check_main(&program.items, require_entry);
     c.bodies(&program.items, &ids);
     c.check_pending();
@@ -314,6 +320,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         locals: c.locals,
         loop_places: c.loop_places,
         bind_args: c.bind_args,
+        sql_value: c.sql_value,
         views: program
             .items
             .iter()
@@ -453,6 +460,7 @@ struct Checker<'a> {
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
     bind_args: HashSet<ExprId>,
+    sql_value: Option<usize>,
     view_fns: HashMap<(String, String), FnSig>,
     local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
     completion: Option<Vec<Suggestion>>,
@@ -548,6 +556,9 @@ impl Checker<'_> {
             (e, Ty::Opt(inner)) if self.fits(inner, e) => Some(
                 "this value might be `nil`; unwrap it with `if let`, or give a default with `?? …`".to_string(),
             ),
+            (Ty::Enum(id), _) if Some(*id) == self.sql_value => {
+                Some("a value for SQL is an `Int`, `Float`, `String`, `Bool` or `Data` (or `nil`, for null); give one of its fields".to_string())
+            }
             _ => None,
         };
         let d = self.error(span, msg);
@@ -804,7 +815,20 @@ impl Checker<'_> {
     /// Does `found` fit where `expected` is wanted (including a type that
     /// conforms to an expected interface)?
     fn fits(&self, found: &Ty, expected: &Ty) -> bool {
-        fits_with(found, expected, &self.conforms)
+        self.converts_to_sql(found, expected) || fits_with(found, expected, &self.conforms)
+    }
+
+    /// An `Int`, `Float`, `String`, `Bool` or `Data` (or an optional one)
+    /// where a `SqlValue` is wanted, or a list of them where `[SqlValue]` is.
+    fn converts_to_sql(&self, found: &Ty, expected: &Ty) -> bool {
+        let Some(id) = self.sql_value else { return false };
+        let plain = |t: &Ty| matches!(t, Ty::Int | Ty::Float | Ty::Str | Ty::Bool | Ty::Data);
+        let value = |t: &Ty| plain(t) || matches!(t, Ty::Opt(inner) if plain(inner));
+        match (found, expected) {
+            (_, Ty::Enum(e)) if *e == id => value(found),
+            (Ty::List(f), Ty::List(e)) if **e == Ty::Enum(id) => value(f),
+            _ => false,
+        }
     }
 
     fn resolve(&mut self, t: &TypeExpr) -> Ty {
@@ -1926,6 +1950,8 @@ impl Checker<'_> {
             ExprKind::Bool(_) => Ty::Bool,
             ExprKind::Nil => match expected {
                 Some(t @ Ty::Opt(_)) => t.clone(),
+                // For SQL, `nil` is null (it converts as an `Int?` that's nil).
+                Some(Ty::Enum(id)) if Some(*id) == self.sql_value => Ty::opt(Ty::Int),
                 Some(t) if !t.has_error() && *t != Ty::Any => {
                     let what = self.show(t);
                     self.error(e.span, format!("`nil` can't be used as `{what}`"))

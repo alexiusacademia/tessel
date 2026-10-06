@@ -2418,6 +2418,27 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         if from == to {
             return v;
         }
+        // A plain value where a `SqlValue` is wanted: the prelude's
+        // `__sqlInt`, `__sqlOptText`, … make it one.
+        if let Some(id) = self.checked.sql_value.filter(|id| *to == Ty::Enum(*id)) {
+            let kind = |t: &Ty| match t {
+                Ty::Int => Some("Int"),
+                Ty::Float => Some("Float"),
+                Ty::Str => Some("Text"),
+                Ty::Bool => Some("Bool"),
+                Ty::Data => Some("Data"),
+                _ => None,
+            };
+            let name = match from {
+                Ty::Opt(inner) => kind(inner).map(|k| format!("__sqlOpt{k}")),
+                t => kind(t).map(|k| format!("__sql{k}")),
+            };
+            if let Some(f) = name.and_then(|n| self.fns.get(&n).copied()) {
+                let null = self.ptr_ty().const_null();
+                let _ = id;
+                return self.b.build_call(f, &[null.into(), v.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+            }
+        }
         match to {
             Ty::Opt(inner) if !matches!(from, Ty::Opt(_)) => {
                 let inner_v = self.coerce(v, from, inner);

@@ -50,6 +50,7 @@ kurbo = "0.13"
 winit = "0.30"
 pdf-writer = "0.15.0"
 subsetter = { version = "0.2.6", default-features = false }
+libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 
 # The GPU backend each platform draws with, and no others: every backend
 # brings its own code and shader translator into every app.

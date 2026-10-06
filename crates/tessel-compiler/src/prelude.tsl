@@ -195,3 +195,185 @@ fn appInfo() -> AppInfo {
     }
     AppInfo(name: f[0], id: f[1], version: f[2], build: f[3], description: f[4], author: f[5], copyright: f[6])
 }
+
+// ===== databases =====
+
+/// A value in a database: what a column of a row holds, or a value given
+/// for a `?` in SQL. Where one is wanted, an `Int`, `Float`, `String`,
+/// `Bool` (stored as 1 or 0) or `Data` can be given as it is, and an
+/// optional one too (`nil` is `.null`).
+enum SqlValue {
+    null
+    int(value: Int)
+    float(value: Float)
+    text(value: String)
+    data(value: Data)
+}
+
+/// A SQLite database file, opened with `openDatabase`.
+struct Database {
+    id: Int
+
+    /// Runs SQL that changes the database (`CREATE TABLE`, `INSERT`,
+    /// `UPDATE`, `DELETE`, …), with `values` for its `?`s. SQL without
+    /// values can be several statements, separated by `;`. Returns how many
+    /// rows the last statement changed.
+    fn execute(_ sql: String, _ values: [SqlValue] = []) -> Result<Int> {
+        __clearError()
+        let changed = __dbExecute(id, sql, toJson(values))
+        if changed < 0 {
+            return Result.failure(error: Error(message: __lastError()))
+        }
+        Result.ok(value: changed)
+    }
+
+    /// Runs a `SELECT`, with `values` for its `?`s: its rows.
+    fn query(_ sql: String, _ values: [SqlValue] = []) -> Result<[DatabaseRow]> {
+        __clearError()
+        if let json = __dbQuery(id, sql, toJson(values)) {
+            if let table: __DatabaseTable = fromJson(json) {
+                var rows: [DatabaseRow] = []
+                for cells in table.rows {
+                    rows.append(DatabaseRow(columns: table.columns, values: cells))
+                }
+                return Result.ok(value: rows)
+            }
+        }
+        Result.failure(error: Error(message: __lastError()))
+    }
+
+    /// The row number (`rowid`) of the row the last `INSERT` added.
+    fn lastInsertId() -> Int {
+        __dbLastInsertId(id)
+    }
+
+    /// Closes the database. (It's closed when the program ends, too.)
+    fn close() {
+        __dbClose(id)
+    }
+}
+
+/// A row a query found: its columns' names, and their values.
+struct DatabaseRow {
+    columns: [String]
+    values: [SqlValue]
+
+    /// The value of a column (by its name in the query). A name the row
+    /// doesn't have stops the program.
+    fn value(_ column: String) -> SqlValue {
+        for (i, name) in columns.enumerated() {
+            if name == column {
+                return values[i]
+            }
+        }
+        __dbNoColumn(column, columns)
+        SqlValue.null
+    }
+
+    /// A column as an `Int`: a number, text of one, or 0.
+    fn int(_ column: String) -> Int {
+        match value(column) {
+            .int(v) -> v
+            .float(v) -> Int(v)
+            .text(t) -> parseInt(t).valueOr(0)
+            _ -> 0
+        }
+    }
+
+    /// A column as a `Float`: a number, text of one, or 0.
+    fn float(_ column: String) -> Float {
+        match value(column) {
+            .int(v) -> Float(v)
+            .float(v) -> v
+            .text(t) -> parseFloat(t).valueOr(0.0)
+            _ -> 0.0
+        }
+    }
+
+    /// A column as text (empty for null).
+    fn text(_ column: String) -> String {
+        match value(column) {
+            .text(t) -> t
+            .int(v) -> "{v}"
+            .float(v) -> "{v}"
+            .data(d) -> d.text ?? ""
+            .null -> ""
+        }
+    }
+
+    /// A column as a `Bool`: true when it's a number that isn't 0.
+    fn bool(_ column: String) -> Bool {
+        int(column) != 0
+    }
+
+    /// A column as bytes (a blob, or text's bytes).
+    fn data(_ column: String) -> Data {
+        match value(column) {
+            .data(d) -> d
+            .text(t) -> Data(text: t)
+            _ -> Data()
+        }
+    }
+
+    /// Whether a column is null.
+    fn isNull(_ column: String) -> Bool {
+        match value(column) {
+            .null -> true
+            _ -> false
+        }
+    }
+}
+
+/// A query's result, as the runtime gives it.
+struct __DatabaseTable {
+    columns: [String]
+    rows: [[SqlValue]]
+}
+
+/// Opens (or creates) a SQLite database file. `":memory:"` is a database
+/// that lives only while the program runs.
+fn openDatabase(_ path: String) -> Result<Database> {
+    __clearError()
+    let id = __dbOpen(path)
+    if id < 0 {
+        return Result.failure(error: Error(message: __lastError()))
+    }
+    Result.ok(value: Database(id: id))
+}
+
+// What a value given where a `SqlValue` is wanted becomes (see the checker).
+fn __sqlInt(_ v: Int) -> SqlValue { SqlValue.int(value: v) }
+fn __sqlFloat(_ v: Float) -> SqlValue { SqlValue.float(value: v) }
+fn __sqlText(_ v: String) -> SqlValue { SqlValue.text(value: v) }
+fn __sqlBool(_ v: Bool) -> SqlValue { SqlValue.int(value: if v { 1 } else { 0 }) }
+fn __sqlData(_ v: Data) -> SqlValue { SqlValue.data(value: v) }
+fn __sqlOptInt(_ v: Int?) -> SqlValue {
+    if let x = v {
+        return __sqlInt(x)
+    }
+    SqlValue.null
+}
+fn __sqlOptFloat(_ v: Float?) -> SqlValue {
+    if let x = v {
+        return __sqlFloat(x)
+    }
+    SqlValue.null
+}
+fn __sqlOptText(_ v: String?) -> SqlValue {
+    if let x = v {
+        return __sqlText(x)
+    }
+    SqlValue.null
+}
+fn __sqlOptBool(_ v: Bool?) -> SqlValue {
+    if let x = v {
+        return __sqlBool(x)
+    }
+    SqlValue.null
+}
+fn __sqlOptData(_ v: Data?) -> SqlValue {
+    if let x = v {
+        return __sqlData(x)
+    }
+    SqlValue.null
+}

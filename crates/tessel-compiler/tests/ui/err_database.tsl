@@ -1,0 +1,16 @@
+// Values for a database's `?`s.
+
+struct Point {
+    x: Int
+}
+
+fn values() -> Result<Int> {
+    let db = try openDatabase(":memory:")
+    try db.execute("SELECT ?, ?, ?", [1, "two", nil])
+    try db.execute("SELECT ?", [Point(x: 1)]) // error: a value for SQL is an `Int`, `Float`, `String`, `Bool` or `Data`
+    let names: [String] = ["a"]
+    try db.execute("SELECT ?", names)
+    let points = [Point(x: 1)]
+    try db.execute("SELECT ?", points) // error: expected `[SqlValue]`, found `[Point]`
+    Result.ok(value: 0)
+}

@@ -1,0 +1,14 @@
+inserted 1 row, id 1
+inserted 1 row, id 2
+inserted 1 row, id 3
+1 Lot 12 1250.5 true true  [1, 2, 3]
+3 Lot 3 2100.25 true false river [1, 2, 3]
+3 parcels, 4330.75 m²
+["n", "total"]
+2
+["Lot 12", "Lot 3"]
+after the rollback: 3
+no such table: nowhere
+the SQL has 2 values to fill in (`?`), but 1 was given
+the database is closed
+kept

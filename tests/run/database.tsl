@@ -1,0 +1,61 @@
+// Databases: SQLite, built into Tessel. Values for `?`s are given as they
+// are; rows are read by column name.
+
+struct Parcel {
+    name: String
+    area: Float
+    surveyed: Bool
+    note: String?
+}
+
+fn main() {
+    let db = try openDatabase(":memory:")
+    try db.execute("CREATE TABLE parcels (id INTEGER PRIMARY KEY, name TEXT, area REAL, surveyed INTEGER, note TEXT, scan BLOB)")
+    let parcels = [
+        Parcel(name: "Lot 12", area: 1250.5, surveyed: true, note: nil),
+        Parcel(name: "Lot 7", area: 980, surveyed: false, note: "corner"),
+        Parcel(name: "Lot 3", area: 2100.25, surveyed: true, note: "river"),
+    ]
+    for p in parcels {
+        let changed = try db.execute(
+            "INSERT INTO parcels (name, area, surveyed, note, scan) VALUES (?, ?, ?, ?, ?)",
+            [p.name, p.area, p.surveyed, p.note, Data(bytes: [1, 2, 3])]
+        )
+        print("inserted {changed} row, id {db.lastInsertId()}")
+    }
+
+    // A query with a value, and each kind of column.
+    for row in try db.query("SELECT id, name, area, surveyed, note, scan FROM parcels WHERE area > ? ORDER BY area", [1000]) {
+        print("{row.int("id")} {row.text("name")} {row.float("area")} {row.bool("surveyed")} {row.isNull("note")} {row.text("note")} {row.data("scan").bytes}")
+    }
+    let rows = try db.query("SELECT count(*) AS n, sum(area) AS total FROM parcels")
+    print("{rows[0].int("n")} parcels, {rows[0].float("total")} m²")
+    print(rows[0].columns)
+
+    // Updating, with `nil` for null.
+    print(try db.execute("UPDATE parcels SET note = ? WHERE surveyed = ?", [nil, true]))
+    let notes = try db.query("SELECT name FROM parcels WHERE note IS NULL ORDER BY name")
+    print(notes.map { r in r.text("name") })
+
+    // Several statements at once; a rolled-back transaction leaves nothing.
+    try db.execute("BEGIN; DELETE FROM parcels; ROLLBACK")
+    let left = try db.query("SELECT count(*) AS n FROM parcels")
+    print("after the rollback: {left[0].int("n")}")
+
+    // Failures say why.
+    print(db.execute("INSERT INTO nowhere VALUES (1)").error()?.message ?? "")
+    print(db.query("SELECT ? + ?", [1]).error()?.message ?? "")
+
+    // A file stays.
+    let path = joinPath(tempFolder(), "tessel-test-database.db")
+    deleteFile(path)
+    let file = try openDatabase(path)
+    try file.execute("CREATE TABLE t (x TEXT); INSERT INTO t VALUES ('kept')")
+    file.close()
+    print(file.query("SELECT x FROM t").error()?.message ?? "")
+    let again = try openDatabase(path)
+    let kept = try again.query("SELECT x FROM t")
+    print(kept[0].text("x"))
+    again.close()
+    deleteFile(path)
+}

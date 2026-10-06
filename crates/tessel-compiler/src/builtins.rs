@@ -578,6 +578,19 @@ impl Builtins {
             "__appInfo" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             // For the prelude's `readImage`.
             "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
+            // For the prelude's databases (see `Database`).
+            "__dbOpen" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::Int },
+            "__dbClose" | "__dbLastInsertId" => {
+                FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: if name == "__dbClose" { Ty::Void } else { Ty::Int } }
+            }
+            "__dbExecute" | "__dbQuery" => FnSig {
+                params: vec![P::unlabeled("id", Ty::Int), P::unlabeled("sql", Ty::Str), P::unlabeled("values", Ty::Str)],
+                ret: if name == "__dbExecute" { Ty::Int } else { Ty::opt(Ty::Str) },
+            },
+            "__dbNoColumn" => FnSig {
+                params: vec![P::unlabeled("column", Ty::Str), P::unlabeled("columns", Ty::list(Ty::Str))],
+                ret: Ty::Int,
+            },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
             "undoTextEdit" | "redoTextEdit" => FnSig { params: vec![], ret: Ty::Void },
             "quit" | "closeWindow" => FnSig { params: vec![], ret: Ty::Void },
@@ -611,7 +624,8 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
-    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "setWindowTitle", "renderImage", "writePDF",
+    "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "__dbOpen", "__dbClose", "__dbLastInsertId", "__dbExecute", "__dbQuery",
+    "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow",
 ];
@@ -1037,6 +1051,12 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "__imageSize" => rt("tsl_image_size"),
         "__appInfo" => rt("tsl_app_info"),
         "__imagePixels" => rt("tsl_image_pixels"),
+        "__dbOpen" => rt("tsl_db_open"),
+        "__dbClose" => rt("tsl_db_close"),
+        "__dbLastInsertId" => rt("tsl_db_last_insert_id"),
+        "__dbExecute" => rt("tsl_db_execute"),
+        "__dbQuery" => rt("tsl_db_query"),
+        "__dbNoColumn" => rt("tsl_db_no_column"),
         "setWindowTitle" => rt("tsl_set_window_title"),
         "undoTextEdit" => rt("tsl_undo_text_edit"),
         "redoTextEdit" => rt("tsl_redo_text_edit"),
