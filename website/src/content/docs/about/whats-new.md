@@ -11,10 +11,15 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.1.36
+## 0.1.37
 
-*October 6, 2026*
+*October 6, 2026 · 0.1.36 and 0.1.37*
 
+- **`tessel new`** starts a project from a template: a small to-do list app
+  in a few files (the default), an app with one window, or a command-line
+  program, with a `tessel.toml`, a README and a `.gitignore`. The IDE offers
+  the same templates in an empty folder. See
+  [`tessel new`](/start/cli/#tessel-new).
 - **Databases.** `openDatabase` opens (or creates) an SQLite database file,
   and `execute` and `query` run SQL on it, with values filled in for `?`s.
   SQLite is built into Tessel, so it works the same on macOS and Windows
