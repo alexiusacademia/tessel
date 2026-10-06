@@ -1,0 +1,6 @@
+tree
+click "Bold"
+click "View"
+tree
+click "Italic"
+click "In"

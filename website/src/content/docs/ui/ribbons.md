@@ -88,6 +88,43 @@ A group can hold other views too, such as a `Picker` of fonts or a
 `TextField` for a cell's value. They go in the group's columns like small
 items, taking the height they need.
 
+## A ribbon in several files
+
+A large ribbon doesn't have to be written in one place. A view of your own
+can make a tab, a group, or some of a group's items, and the ribbon uses
+them as if they were written in it:
+
+```tessel
+// home.tsl
+view HomeTab() {
+    RibbonTab("Home") {
+        ClipboardGroup()
+        RibbonGroup("Font") {
+            StyleButtons()
+        }
+    }
+}
+
+view ClipboardGroup() {
+    RibbonGroup("Clipboard") {
+        RibbonButton("Paste", icon: .paste, size: .large) { paste() }
+    }
+}
+
+view StyleButtons() {
+    RibbonButton("Bold", icon: .bold) { toggleBold() }
+    RibbonButton("Italic", icon: .italic) { toggleItalic() }
+}
+```
+
+```tessel
+Ribbon(selection: tab) {
+    HomeTab()
+    InsertTab()
+    ViewTab()
+}
+```
+
 ## When the window is narrow
 
 When the groups don't fit, the ribbon shows them smaller, starting from the

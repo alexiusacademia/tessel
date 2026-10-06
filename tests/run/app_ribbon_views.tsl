@@ -1,0 +1,42 @@
+// A ribbon's tabs, groups and items can come from views of the program's
+// own, so a large ribbon can be split over files (issue #10).
+
+view HomeTab() {
+    RibbonTab("Home") {
+        RibbonGroup("Clipboard") {
+            RibbonButton("Paste", icon: .paste) { print("paste") }
+        }
+        FontGroup()
+    }
+}
+
+view FontGroup() {
+    RibbonGroup("Font") {
+        StyleButtons()
+        RibbonButton("Color", icon: .textColor) { print("color") }
+    }
+}
+
+// Several items, with nothing around them.
+view StyleButtons() {
+    RibbonButton("Bold", icon: .bold) { print("bold") }
+    RibbonButton("Italic", icon: .italic) { print("italic") }
+}
+
+app Rib(width: 500, height: 200) {
+    state tab = "Home"
+
+    VStack {
+        Ribbon(selection: tab) {
+            HomeTab()
+            RibbonTab("View") {
+                FontGroup()
+                RibbonGroup("Zoom") {
+                    RibbonButton("In", icon: .plus) { print("in") }
+                }
+            }
+        }
+        Text("Tab: {tab}")
+        Spacer()
+    }
+}

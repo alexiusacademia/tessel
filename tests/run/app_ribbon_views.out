@@ -1,0 +1,29 @@
+Root
+  View
+    VStack
+      Ribbon ["Home", "View"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard"
+            RibbonButton "Paste"
+          RibbonGroup "Font"
+            RibbonButton "Bold"
+            RibbonButton "Italic"
+            RibbonButton "Color"
+      Text "Tab: Home"
+      Spacer
+bold
+Root
+  View
+    VStack
+      Ribbon ["Home", "View"] selected "View"
+        RibbonTab "View"
+          RibbonGroup "Font"
+            RibbonButton "Bold"
+            RibbonButton "Italic"
+            RibbonButton "Color"
+          RibbonGroup "Zoom"
+            RibbonButton "In"
+      Text "Tab: View"
+      Spacer
+italic
+in

@@ -606,7 +606,8 @@ impl Builder {
     }
 
     fn end(&mut self) {
-        let node = self.stack.pop().expect("unbalanced end");
+        let mut node = self.stack.pop().expect("unbalanced end");
+        lift_ribbon_parts(&mut node);
         self.parent().children.push(node);
     }
 
@@ -658,6 +659,43 @@ fn with_builder(f: impl FnOnce(&mut Builder)) {
 
 /// Runs the program's build function and returns the new tree. View states
 /// that weren't used in this build (their views disappeared) are released.
+/// A ribbon's tabs, a tab's groups and a group's items can come from views
+/// of the program's own (`view HomeTab() { RibbonTab("Home") { … } }`),
+/// which wrap what they make: here they're taken out of the wrapping, so
+/// the ribbon finds them as if they were written in it.
+fn lift_ribbon_parts(node: &mut Node) {
+    fn wanted(parent: &Kind, c: &Node) -> bool {
+        match (parent, &c.kind) {
+            (Kind::Ribbon { .. }, Kind::RibbonTab { .. }) => true,
+            (Kind::RibbonTab { .. }, Kind::RibbonGroup { .. }) => true,
+            (Kind::RibbonGroup { .. }, Kind::RibbonItem { .. }) => true,
+            _ => false,
+        }
+    }
+    /// Whether a custom view holds only such parts (in views of its own too).
+    fn only_parts(parent: &Kind, c: &Node) -> bool {
+        matches!(c.kind, Kind::Group) && !c.children.is_empty() && c.children.iter().all(|g| wanted(parent, g) || only_parts(parent, g))
+    }
+    fn lift(parent: &Kind, children: Vec<Node>, out: &mut Vec<Node>) {
+        for c in children {
+            if only_parts(parent, &c) {
+                lift(parent, c.children, out);
+            } else {
+                out.push(c);
+            }
+        }
+    }
+    if !matches!(node.kind, Kind::Ribbon { .. } | Kind::RibbonTab { .. } | Kind::RibbonGroup { .. }) {
+        return;
+    }
+    if !node.children.iter().any(|c| only_parts(&node.kind, c)) {
+        return;
+    }
+    let mut out = Vec::with_capacity(node.children.len());
+    lift(&node.kind, std::mem::take(&mut node.children), &mut out);
+    node.children = out;
+}
+
 pub fn build(root: &Callback) -> Node {
     build_all(root).root
 }
