@@ -1,0 +1,30 @@
+// `==` on enums whose cases hold different values (issue #8): different
+// cases are unequal, without looking at their values.
+
+enum Val {
+    text(s: String)
+    pair(a: Int, b: Int)
+    items(list: [Int])
+    none
+}
+
+struct Cell {
+    name: String
+    value: Val
+}
+
+fn main() {
+    let a = Val.text(s: "one")
+    let b = Val.pair(a: 1, b: 2)
+    print("{a == b} {b == a} {a != b}")
+    print("{a == Val.text(s: "one")} {b == Val.pair(a: 1, b: 2)} {b == Val.pair(a: 1, b: 3)}")
+    print("{Val.none == Val.none} {Val.none == a} {Val.items(list: [1]) == b}")
+
+    // In lists, dictionaries and structs.
+    let values = [a, b, Val.none]
+    print("{values.contains(Val.pair(a: 1, b: 2))} {values.contains(Val.text(s: "two"))}")
+    print(values.firstIndex(where: { v in v == Val.none }) ?? -1)
+    print(values.filter({ v in v != b }).count)
+    print(Cell(name: "A1", value: a) == Cell(name: "A1", value: b))
+    print(Cell(name: "A1", value: b) == Cell(name: "A1", value: Val.pair(a: 1, b: 2)))
+}

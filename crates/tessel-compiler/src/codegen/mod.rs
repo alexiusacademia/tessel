@@ -1700,15 +1700,26 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_int_compare(IntPredicate::EQ, a.into_int_value(), b.into_int_value(), "").unwrap()
             }
             Ty::Enum(_) => {
+                // The same case, and then its values: two cases' values are
+                // laid out differently, so they're compared only within one.
                 let (sa, sb) = (a.into_struct_value(), b.into_struct_value());
                 let ta = self.b.build_extract_value(sa, 0, "").unwrap().into_int_value();
                 let tb = self.b.build_extract_value(sb, 0, "").unwrap().into_int_value();
                 let same_tag = self.b.build_int_compare(IntPredicate::EQ, ta, tb, "").unwrap();
+                let start = self.b.get_insert_block().unwrap();
+                let (values, done) = (self.block_named("same_case"), self.block_named("compared"));
+                self.b.build_conditional_branch(same_tag, values, done).unwrap();
+                self.b.position_at_end(values);
                 let pa = self.b.build_extract_value(sa, 1, "").unwrap();
                 let pb = self.b.build_extract_value(sb, 1, "").unwrap();
                 let r = self.call_rt("tsl_box_eq", &[pa, pb]);
-                let same_payload = self.truthy(r);
-                self.b.build_and(same_tag, same_payload, "").unwrap()
+                let same_values = self.truthy(r);
+                let values_end = self.b.get_insert_block().unwrap();
+                self.br(done);
+                self.b.position_at_end(done);
+                let phi = self.b.build_phi(self.ctx.bool_type(), "equal").unwrap();
+                phi.add_incoming(&[(&self.ctx.bool_type().const_zero(), start), (&same_values, values_end)]);
+                phi.as_basic_value().into_int_value()
             }
             Ty::Range => {
                 let (sa, sb) = (a.into_struct_value(), b.into_struct_value());
