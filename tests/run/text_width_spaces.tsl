@@ -1,0 +1,23 @@
+// `g.textWidth` counts the spaces at the end of a text (issue #11), so a
+// program that places words itself can measure them.
+
+// (Widths are sums of rounded numbers: equal to within a hundredth.)
+fn near(_ a: Float, _ b: Float) -> Bool {
+    abs(a - b) < 0.01
+}
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-text-width.png")
+    let ok = renderImage(path: path, width: 1, height: 1) { g in
+        let space = g.textWidth(" ", size: 12)
+        let a = g.textWidth("a", size: 12)
+        print("a space has a width: {space > 1.0}")
+        print("after a word: {near(g.textWidth("a ", size: 12), a + space)}")
+        print("two of them: {near(g.textWidth("a  ", size: 12), a + 2.0 * space)}")
+        print("between words: {near(g.textWidth("a a", size: 12), 2.0 * a + space)}")
+        print("before a word: {near(g.textWidth(" a", size: 12), a + space)}")
+        print("monospaced: {near(g.textWidth("ab ", family: "monospaced"), g.textWidth("abc", family: "monospaced"))}")
+        print("no text: {g.textWidth("")}")
+    }
+    deleteFile(path)
+}

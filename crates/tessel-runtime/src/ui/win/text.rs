@@ -160,6 +160,7 @@ impl TextEngine {
         let unit = |b: usize| bytes.partition_point(|&x| x < b) as u32;
         let empty = |color| TextLayout {
             width: 0.0,
+            advance: 0.0,
             height: font.size * 1.2,
             lines: vec![Line { range: 0..text.len(), top: 0.0, bottom: font.size * 1.2, stops: vec![(0, 0.0)], end_x: 0.0 }],
             len: text.len(),
@@ -274,6 +275,7 @@ impl TextEngine {
         }
         TextLayout {
             width: m.width as f64,
+            advance: (m.widthIncludingTrailingWhitespace as f64).max(m.width as f64),
             height: m.height as f64,
             lines,
             len: text.len(),

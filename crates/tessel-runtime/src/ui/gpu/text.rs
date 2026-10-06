@@ -204,6 +204,7 @@ fn finish(mut shaped: parley::Layout<Paint>, text: &str, max_w: Option<f64>, ali
     if lines.is_empty() {
         lines.push(Line { range: 0..0, top: 0.0, bottom: shaped.height() as f64, stops: vec![(0, 0.0)], end_x: 0.0 });
     }
-    TextLayout { width: shaped.width() as f64, height: shaped.height() as f64, lines, len: text.len(), shaped }
+    let advance = shaped.lines().map(|l| l.metrics().advance as f64).fold(shaped.width() as f64, f64::max);
+    TextLayout { width: shaped.width() as f64, advance, height: shaped.height() as f64, lines, len: text.len(), shaped }
 }
 

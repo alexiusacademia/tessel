@@ -198,12 +198,14 @@ impl TextEngine {
             let (fa, fd, fl) = (CTFontGetAscent(base_font), CTFontGetDescent(base_font), CTFontGetLeading(base_font));
             let mut measured = Vec::new();
             let mut widest: f64 = 0.0;
+            let mut advance: f64 = 0.0;
             for (start, count, line) in &made {
                 let (mut asc, mut desc, mut lead) = (fa, fd, fl);
                 let mut visible = 0.0;
                 if let Some(l) = line {
                     let w = CTLineGetTypographicBounds(l.get(), &mut asc, &mut desc, &mut lead);
                     visible = (w - CTLineGetTrailingWhitespaceWidth(l.get())).max(0.0);
+                    advance = advance.max(w);
                 }
                 widest = widest.max(visible);
                 measured.push((*start, *count, asc, desc, lead, visible));
@@ -255,7 +257,7 @@ impl TextEngine {
                 top += h;
             }
             let height = top;
-            TextLayout { width: widest, height, lines, len: text.len(), shaped: Shaped { lines: shaped } }
+            TextLayout { width: widest, advance: advance.max(widest), height, lines, len: text.len(), shaped: Shaped { lines: shaped } }
         }
     }
 

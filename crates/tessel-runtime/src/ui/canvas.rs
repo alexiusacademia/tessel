@@ -873,7 +873,9 @@ pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weig
     }
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
     let face = unsafe { face(italic, family) };
-    with_text(|t| t.styled(text, size, weight, face, Rgba([0, 0, 0, 255]), None, 0).width())
+    // (With the spaces at its end: a program that places words itself
+    // measures them too.)
+    with_text(|t| t.styled(text, size, weight, face, Rgba([0, 0, 0, 255]), None, 0).advance)
 }
 
 /// `italic:` and `family:` of `g.text` and `g.textWidth`.

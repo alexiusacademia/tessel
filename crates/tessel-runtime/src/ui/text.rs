@@ -102,6 +102,9 @@ pub struct Line {
 
 pub struct TextLayout {
     pub width: f64,
+    /// The width with the spaces at the ends of its lines (`width` leaves
+    /// them out, so that text lines up by what shows).
+    pub advance: f64,
     pub height: f64,
     pub lines: Vec<Line>,
     /// The length of the text.

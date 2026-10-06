@@ -1,0 +1,7 @@
+a space has a width: true
+after a word: true
+two of them: true
+between words: true
+before a word: true
+monospaced: true
+no text: 0.0
