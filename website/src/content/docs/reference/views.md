@@ -139,7 +139,7 @@ Button("Add one") {
 ## TextField
 
 ```text
-TextField(_ placeholder: String, text: bind String)
+TextField(_ placeholder: String, text: bind String, secure: Bool = false)
 ```
 
 A one-line text input. `text` is changed as the user types. The placeholder is
@@ -148,8 +148,12 @@ shown in gray while the text is empty.
 ```tessel
 TextField("Your name", text: name)
     .onSubmit { save() }
+TextField("Password", text: password, secure: true)
 ```
 
+- `secure: true` is for passwords: the field shows a dot for each
+  character, and its text can't be copied or cut. `text` holds what was
+  typed, as usual.
 - Click the field to start editing. **Enter** or **Escape** stops editing;
   Enter also runs the field's [`.onSubmit`](/reference/modifiers/#onsubmit)
   action.

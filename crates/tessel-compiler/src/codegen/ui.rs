@@ -546,11 +546,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_button", &[label], action);
                 self.release(label, &Ty::Str);
             }
-            "TextField" | "Toggle" => {
+            "TextField" => {
                 let label = string(self, a(0));
                 let loc = self.locator(a(1).unwrap());
-                let f = if name == "TextField" { "tsl_ui_text_field" } else { "tsl_ui_toggle" };
-                self.pass_closure(f, &[label], loc);
+                let secure = match a(2) {
+                    Some(x) => {
+                        let v = self.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(v)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                self.pass_closure("tsl_ui_text_field", &[label, secure], loc);
+                self.release(label, &Ty::Str);
+            }
+            "Toggle" => {
+                let label = string(self, a(0));
+                let loc = self.locator(a(1).unwrap());
+                self.pass_closure("tsl_ui_toggle", &[label], loc);
                 self.release(label, &Ty::Str);
             }
             "CodeEditor" => {

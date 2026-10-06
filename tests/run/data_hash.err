@@ -1,0 +1,2 @@
+error: `hash` knows "sha256", "sha1", "sha224", "sha384", "sha512" and "md5", not "crc32"
+ --> tests/run/data_hash.tsl:27:11

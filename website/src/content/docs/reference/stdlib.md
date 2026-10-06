@@ -1011,12 +1011,14 @@ print(bytes == Data(text: "Hi!"))       // true
 | `bytes` | `[Int]` | The bytes, each from 0 to 255. |
 | `text` | `String?` | The bytes read as UTF-8 text, or `nil` if they aren't valid UTF-8. |
 | `base64` | `String` | The bytes as [base64](#base64) text. |
+| `hex` | `String` | The bytes as hexadecimal digits, two to a byte. See [hash and hex](#hash-and-hex). |
 | `latin1` | `String` | Each byte as the character with that number, up to the first zero byte: the text of old files that aren't UTF-8. |
 | `slice(from: Int, to: Int)` | `Data` | The bytes from index `from` up to `to`. |
 | `int8(at:)`, `int16(at:)`, `uint16(at:)`, `int32(at:)`, `uint32(at:)`, `int64(at:)` | `Int` | The whole number stored in the bytes starting at an index. |
 | `float32(at:)`, `float64(at:)` | `Float` | The decimal number stored there. |
 | `compressed(_ format: String = "zlib")` | `Data` | The bytes, made smaller. |
 | `decompressed(_ format: String = "zlib")` | `Data?` | Compressed bytes, as they were. |
+| `hash(_ algorithm: String = "sha256")` | `Data` | The bytes' digest: SHA-256, SHA-1, SHA-512, MD5 and others. See [hash and hex](#hash-and-hex). |
 | `append(_ data: Data)` | | Adds the bytes of `data` to the end. Changes the value, so it must be a `var`. |
 | `append(byte: Int)` | | Adds one byte (from 0 to 255; other values are wrapped into that range, as in `Data(bytes:)`). |
 
@@ -1152,6 +1154,36 @@ if let decoded = decodeBase64("SGkh") {
 
 `decodeBase64` returns `nil` if the text isn't base64. Spaces and line
 breaks around it are ignored.
+
+### hash and hex
+
+```text
+data.hash(_ algorithm: String = "sha256") -> Data
+data.hex -> String
+```
+
+`hash` gives the bytes' digest: a short, fixed-size fingerprint that changes
+completely when any byte does, for checking a download or storing a
+password's hash. `hex` writes bytes as hexadecimal digits, the usual way to
+show a digest.
+
+```tessel
+let digest = Data(text: "abc").hash()
+print(digest.count)     // 32
+print(digest.hex)       // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+print(Data(text: "abc").hash("md5").hex)    // 900150983cd24fb0d6963f7d28e17f72
+```
+
+| Algorithm | Bytes | |
+|---|---|---|
+| `"sha256"` (the default) | 32 | SHA-256. |
+| `"sha224"`, `"sha384"`, `"sha512"` | 28, 48, 64 | The other SHA-2 digests. |
+| `"sha1"` | 20 | SHA-1: for file formats and protocols that ask for it. |
+| `"md5"` | 16 | MD5: for old file formats only. |
+
+SHA-1 and MD5 are broken for security; use them only where a format
+requires them. Another algorithm stops the program. Case and dashes don't
+matter: `"SHA-256"` is `"sha256"`.
 
 ## Dates and time
 
@@ -2164,6 +2196,9 @@ An `Int` is a whole number. The arithmetic operators work on it, and
 | `isOdd` | `Bool` | Whether the number is odd. |
 | `clamped(min: Int, max: Int)` | `Int` | The number, moved into the range from `min` to `max`. |
 | `bytes(count: Int, bigEndian: Bool = false)` | `[Int]` | The number as `count` bytes (1 to 8), as files store it. See [bytes](#bytes). |
+| `wrappingAdd(_ other: Int)` | `Int` | The sum, going round past the largest and smallest `Int`. |
+| `wrappingSubtract(_ other: Int)` | `Int` | The difference, going round the same way. |
+| `wrappingMultiply(_ other: Int)` | `Int` | The product, going round the same way. |
 
 ```tessel
 print((4).isEven)                       // true
@@ -2174,6 +2209,20 @@ let shade = if row.isEven { Color.lightGray } else { Color.white }
 ```
 
 Write a number literal in parentheses to use a member on it: `(4).isEven`.
+
+`+`, `-` and `*` stop the program when the result doesn't fit in an `Int`
+(it's past 9 223 372 036 854 775 807 or below −9 223 372 036 854 775 808),
+since a wrong number would be worse. Hashes and checksums want the other
+behavior: the `wrapping` methods keep the lowest 64 bits, so the largest
+`Int` plus 1 is the smallest.
+
+```tessel
+// An FNV-1a hash.
+var h = -3750763034362895579
+for b in Data(text: "hello").bytes {
+    h = (h ^ b).wrappingMultiply(1099511628211)
+}
+```
 
 ## Float
 

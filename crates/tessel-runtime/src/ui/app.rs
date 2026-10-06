@@ -3021,6 +3021,10 @@ impl App {
         let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
         let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
         let multiline = matches!(node.kind, Kind::CodeEditor { .. });
+        // (What's typed in a secure field stays in it.)
+        if matches!(node.kind, Kind::TextField { secure: true, .. }) && matches!(change, Edit::Copy | Edit::Cut) {
+            return;
+        }
         if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard, multiline) {
             let slot = text.locate() as *mut *mut Str;
             unsafe {
@@ -3500,9 +3504,13 @@ impl App {
                 Kind::Group => "View".to_string(),
                 Kind::Text(s) => format!("Text {s:?}"),
                 Kind::Button { label, .. } => format!("Button {label:?}"),
-                Kind::TextField { text, placeholder } => {
+                Kind::TextField { text, placeholder, secure } => {
                     let composing = ui.composing_in(n.key).map(|(_, c)| format!(" composing {:?}", c.text)).unwrap_or_default();
-                    format!("TextField {placeholder:?} = {:?}{composing}", read_string(text))
+                    let mut value = read_string(text);
+                    if *secure {
+                        value = value.chars().map(|_| '•').collect();
+                    }
+                    format!("TextField {placeholder:?} = {value:?}{composing}")
                 }
                 Kind::Toggle { label, is_on } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
                 Kind::Picker { .. } => "Picker".to_string(),

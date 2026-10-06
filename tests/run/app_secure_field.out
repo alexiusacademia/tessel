@@ -1,0 +1,16 @@
+Root
+  View
+    VStack
+      TextField "Password" = "•••••••••••••••"
+      Button "Copy greeting"
+      Button "Read clipboard"
+      Text "15 characters: s3cret pässwWrd"
+      Text "Clipboard: nothing"
+Root
+  View
+    VStack
+      TextField "Password" = "•••••••••••••••"
+      Button "Copy greeting"
+      Button "Read clipboard"
+      Text "15 characters: s3cret pässwWrd"
+      Text "Clipboard: hello"

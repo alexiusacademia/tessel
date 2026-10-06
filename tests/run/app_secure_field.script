@@ -1,0 +1,13 @@
+click "Copy greeting"
+click "Password"
+type "s3cret pässword"
+key left
+key left
+key backspace
+type "W"
+tree
+key cmd+a
+key cmd+c
+key cmd+x
+click "Read clipboard"
+tree

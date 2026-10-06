@@ -195,7 +195,9 @@ pub enum Kind {
     Group,
     Text(String),
     Button { label: String, action: Callback },
-    TextField { placeholder: String, text: Callback },
+    /// `secure`: shows a dot for each character, and its text can't be
+    /// copied.
+    TextField { placeholder: String, text: Callback, secure: bool },
     Toggle { label: String, is_on: Callback },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
     CodeEditor {
@@ -733,10 +735,10 @@ pub unsafe extern "C" fn tsl_ui_button(label: *const Str, f: *const c_void, env:
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, secure: u8, f: *const c_void, env: *mut Header) {
     let placeholder = unsafe { text_of(placeholder) };
     let text = Callback::new(f, env);
-    with_builder(|b| b.leaf(Kind::TextField { placeholder, text }));
+    with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure: secure != 0 }));
 }
 
 #[unsafe(no_mangle)]
@@ -1391,7 +1393,7 @@ mod tests {
             tsl_ui_button(str_new("-"), f, std::ptr::null_mut());
             tsl_ui_button(str_new("+"), f, std::ptr::null_mut());
             tsl_ui_end();
-            tsl_ui_text_field(str_new("Your name"), name as *const c_void, std::ptr::null_mut());
+            tsl_ui_text_field(str_new("Your name"), 0, name as *const c_void, std::ptr::null_mut());
             tsl_ui_toggle(str_new("Enabled"), flag as *const c_void, std::ptr::null_mut());
             tsl_ui_end();
             tsl_ui_padding(24.0, 24.0, 24.0, 24.0);

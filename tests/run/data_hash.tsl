@@ -1,0 +1,28 @@
+// `data.hash(…)`, `data.hex` and wrapping arithmetic (issue #9).
+
+fn main() {
+    let abc = Data(text: "abc")
+    print(abc.hex)
+    print(abc.hash().hex)
+    print(abc.hash("sha1").hex)
+    print(abc.hash("sha224").hex)
+    print(abc.hash("SHA-384").hex)
+    print(abc.hash("sha512").hex)
+    print(abc.hash("md5").hex)
+    print(Data().hash("sha256").hex)
+    print("{abc.hash().count} {abc.hash("sha512").count} bytes")
+
+    let big = 9223372036854775807
+    print(big.wrappingAdd(1))
+    print((-big - 1).wrappingSubtract(1))
+    print(big.wrappingMultiply(2))
+    print(3.wrappingAdd(4) + 5.wrappingMultiply(6) - 10.wrappingSubtract(3))
+    // An FNV-1a hash, written in Tessel.
+    var h = -3750763034362895579
+    for b in Data(text: "hello").bytes {
+        h = (h ^ b).wrappingMultiply(1099511628211)
+    }
+    print(h)
+
+    print(abc.hash("crc32").count)
+}

@@ -274,6 +274,25 @@ impl Layouter<'_> {
         std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, 0))
     }
 
+    /// A secure field's text: a dot for each character, laid out so that
+    /// its offsets are the text's own (editing works on the text).
+    fn masked(&mut self, s: &str, style: &Style) -> std::rc::Rc<super::text::TextLayout> {
+        const DOT: char = '•';
+        let dots: String = s.chars().map(|_| DOT).collect();
+        let mut t = self.text.styled(&dots, style.size, style.weight, style.face, style.color, None, 0);
+        // Where each dot starts, and where its character does.
+        let starts: Vec<usize> = s.char_indices().map(|(i, _)| i).chain(std::iter::once(s.len())).collect();
+        let real = |b: usize| starts[(b / DOT.len_utf8()).min(starts.len() - 1)];
+        for l in &mut t.lines {
+            l.range = real(l.range.start)..real(l.range.end);
+            for stop in &mut l.stops {
+                stop.0 = real(stop.0);
+            }
+        }
+        t.len = s.len();
+        std::rc::Rc::new(t)
+    }
+
     /// A `Text`'s layout: like `text_layout`, with its lines aligned.
     fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
         std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, style.text_align))
@@ -328,11 +347,11 @@ impl Layouter<'_> {
                 n.layout.text = Some(t);
                 size
             }
-            Kind::TextField { placeholder, text } => {
+            Kind::TextField { placeholder, text, secure } => {
                 let value = self.shown_text(n.key, read_string(text));
-                let placeholder = placeholder.clone();
+                let (placeholder, secure) = (placeholder.clone(), *secure);
                 let ph = self.text_layout(&placeholder, style, None);
-                let t = self.text_layout(&value, style, None);
+                let t = if secure { self.masked(&value, style) } else { self.text_layout(&value, style, None) };
                 let line_h = (ph.height()).max(t.height());
                 let w = (t.width().max(ph.width()) + 2.0 * FIELD_PAD.0).max(120.0);
                 n.layout.empty = value.is_empty();

@@ -199,6 +199,24 @@ pub unsafe extern "C" fn tsl_path_folder(s: *const Str) -> *mut Str {
     str_new(path_parts(unsafe { text(s) }).0)
 }
 
+/// `a.wrappingAdd(b)`, `a.wrappingSubtract(b)`, `a.wrappingMultiply(b)`:
+/// arithmetic that goes round past the largest and smallest `Int` instead of
+/// stopping the program, for hashes and checksums.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_int_wrapping_add(a: i64, b: i64) -> i64 {
+    a.wrapping_add(b)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_int_wrapping_sub(a: i64, b: i64) -> i64 {
+    a.wrapping_sub(b)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_int_wrapping_mul(a: i64, b: i64) -> i64 {
+    a.wrapping_mul(b)
+}
+
 /// `joinPath(folder, name)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_join_path(folder: *const Str, name: *const Str) -> *mut Str {
@@ -482,6 +500,41 @@ pub extern "C" fn tsl_clipboard_text() -> *mut Str {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_data_base64(d: *const Str) -> *mut Str {
     str_new(&base64_encode(unsafe { data_bytes(d) }))
+}
+
+/// `data.hex`: the bytes as hexadecimal digits, two to a byte.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_hex(d: *const Str) -> *mut Str {
+    let bytes = unsafe { data_bytes(d) };
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    str_new(&out)
+}
+
+/// `data.hash(algorithm)`: the bytes' digest by "sha256" (the default),
+/// "sha1", "sha224", "sha384", "sha512" or "md5". Another name stops the
+/// program.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_hash(d: *const Str, algorithm: *const Str, loc: *const crate::Loc) -> *mut Str {
+    use sha2::Digest;
+    let bytes = unsafe { data_bytes(d) };
+    let name = unsafe { text(algorithm) };
+    let out: Vec<u8> = match name.to_ascii_lowercase().replace('-', "").as_str() {
+        "sha256" => sha2::Sha256::digest(bytes).to_vec(),
+        "sha1" => sha1::Sha1::digest(bytes).to_vec(),
+        "sha224" => sha2::Sha224::digest(bytes).to_vec(),
+        "sha384" => sha2::Sha384::digest(bytes).to_vec(),
+        "sha512" => sha2::Sha512::digest(bytes).to_vec(),
+        "md5" => md5::Md5::digest(bytes).to_vec(),
+        _ => {
+            let msg = format!("`hash` knows \"sha256\", \"sha1\", \"sha224\", \"sha384\", \"sha512\" and \"md5\", not {name:?}");
+            let msg = std::ffi::CString::new(msg).unwrap_or_default();
+            unsafe { crate::tsl_panic(msg.as_ptr(), loc) }
+        }
+    };
+    data_new(&out)
 }
 
 /// `decodeBase64(text)`: nil if it isn't base64.

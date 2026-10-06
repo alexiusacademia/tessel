@@ -1,0 +1,16 @@
+// `TextField(secure: true)`: a dot for each character, its text kept as
+// typed, and copy and cut leave the clipboard alone.
+
+app Login(width: 360, height: 200) {
+    state password = ""
+    state clip = "nothing"
+
+    VStack(spacing: 8) {
+        TextField("Password", text: password, secure: true)
+        Button("Copy greeting") { copyToClipboard("hello") }
+        Button("Read clipboard") { clip = clipboardText() ?? "nothing" }
+        Text("{password.count} characters: {password}")
+        Text("Clipboard: {clip}")
+    }
+    .padding(16)
+}

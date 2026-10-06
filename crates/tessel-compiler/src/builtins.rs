@@ -211,7 +211,11 @@ impl Builtins {
         Some(match name {
             "Text" => vec![P::unlabeled("text", Ty::Str)],
             "Button" => vec![P::unlabeled("label", Ty::Str), P::new("action", Ty::func(vec![], Ty::Void))],
-            "TextField" => vec![P::unlabeled("placeholder", Ty::Str), P::new("text", Ty::Str).bind()],
+            "TextField" => vec![
+                P::unlabeled("placeholder", Ty::Str),
+                P::new("text", Ty::Str).bind(),
+                P::new("secure", Ty::Bool).default(),
+            ],
             "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
             "CodeEditor" => vec![
                 P::new("text", Ty::Str).bind(),
@@ -665,7 +669,7 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
         (Ty::Str, "urlDecoded") => Ty::opt(Ty::Str),
         (Ty::Int, "isEven" | "isOdd") => Ty::Bool,
         (Ty::Float, "isNaN" | "isFinite") => Ty::Bool,
-        (Ty::Data, "base64") => Ty::Str,
+        (Ty::Data, "base64" | "hex") => Ty::Str,
         (Ty::Data, "count") => Ty::Int,
         (Ty::Data, "isEmpty") => Ty::Bool,
         (Ty::Data, "bytes") => Ty::list(Ty::Int),
@@ -745,6 +749,7 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
         Ty::Int => match name {
             "clamped" => method(vec![P::new("min", Ty::Int), P::new("max", Ty::Int)], Ty::Int),
             "bytes" => method(vec![P::new("count", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::list(Ty::Int)),
+            "wrappingAdd" | "wrappingSubtract" | "wrappingMultiply" => method(vec![P::unlabeled("other", Ty::Int)], Ty::Int),
             _ => return None,
         },
         Ty::Float => match name {
@@ -761,6 +766,7 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "append" => mutating(vec![P::unlabeled("data", Ty::Data)], Ty::Void),
             "slice" => method(vec![P::new("from", Ty::Int), P::new("to", Ty::Int)], Ty::Data),
             "compressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::Data),
+            "hash" => method(vec![P::unlabeled("algorithm", Ty::Str).default()], Ty::Data),
             "decompressed" => method(vec![P::unlabeled("format", Ty::Str).default()], Ty::opt(Ty::Data)),
             "int8" | "int16" | "uint16" | "int32" | "uint32" | "int64" => {
                 method(vec![P::new("at", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::Int)
@@ -929,7 +935,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "repeated", "padStart", "padEnd", "character", "words", "occurrences", "characters", "urlEncoded",
             "urlDecoded", "fileName", "fileExtension", "folder",
         ],
-        Ty::Int => &["isEven", "isOdd", "clamped", "bytes"],
+        Ty::Int => &["isEven", "isOdd", "clamped", "bytes", "wrappingAdd", "wrappingSubtract", "wrappingMultiply"],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::Set(_) => &[
             "count", "isEmpty", "values", "contains", "insert", "remove", "union", "intersection", "subtracting",
@@ -937,7 +943,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         ],
         Ty::Float => &["formatted", "clamped", "isNaN", "isFinite", "bytes"],
         Ty::Data => &[
-            "count", "isEmpty", "bytes", "text", "base64", "latin1", "slice", "int8", "int16", "uint16", "int32", "uint32",
+            "count", "isEmpty", "bytes", "text", "base64", "hex", "latin1", "slice", "hash", "int8", "int16", "uint16", "int32", "uint32",
             "int64", "float32", "float64", "compressed", "decompressed", "append",
         ],
         t if *t == GRAPHICS => &[
@@ -1100,6 +1106,9 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Str, "words") => rt("tsl_str_words"),
         (Ty::Str, "occurrences") => rt("tsl_str_occurrences"),
         (Ty::Int, "clamped") => rt("tsl_int_clamped"),
+        (Ty::Int, "wrappingAdd") => rt("tsl_int_wrapping_add"),
+        (Ty::Int, "wrappingSubtract") => rt("tsl_int_wrapping_sub"),
+        (Ty::Int, "wrappingMultiply") => rt("tsl_int_wrapping_mul"),
         (Ty::Set(_), "union") => rt("tsl_set_union"),
         (Ty::Set(_), "intersection") => rt("tsl_set_intersection"),
         (Ty::Set(_), "subtracting") => rt("tsl_set_subtracting"),
@@ -1111,6 +1120,8 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Float, "bytes") => rt_d("tsl_float_bytes", &[Dflt::Int(8), Dflt::Bool(false)]),
         (Ty::Data, "slice") => rt("tsl_data_slice"),
         (Ty::Data, "compressed") => rt_d("tsl_data_compressed", &[Dflt::Str("zlib")]),
+        // (An algorithm it doesn't know stops the program.)
+        (Ty::Data, "hash") => RtCall { rt: "tsl_data_hash", defaults: &[Dflt::Str("sha256")], located: true, no_receiver: false },
         (Ty::Data, "decompressed") => rt_d("tsl_data_decompressed", &[Dflt::Str("zlib")]),
         (Ty::Data, "int8") => rt_number("tsl_data_int8"),
         (Ty::Data, "int16") => rt_number("tsl_data_int16"),
@@ -1199,6 +1210,7 @@ pub fn runtime_property(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Float, "isNaN") => rt("tsl_float_is_nan"),
         (Ty::Float, "isFinite") => rt("tsl_float_is_finite"),
         (Ty::Data, "base64") => rt("tsl_data_base64"),
+        (Ty::Data, "hex") => rt("tsl_data_hex"),
         (Ty::Data, "count") => rt("tsl_data_len"),
         (Ty::Data, "isEmpty") => rt("tsl_data_is_empty"),
         (Ty::Data, "bytes") => rt("tsl_data_ints"),
