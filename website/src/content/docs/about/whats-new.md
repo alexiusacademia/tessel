@@ -7,6 +7,9 @@ What each release of Tessel brought, newest first. To get the latest, run
 `tessel update` (or take the update the IDE offers). See
 [Installation](/start/installation/) if you don't have Tessel yet.
 
+Tessel's first releases came quickly, several on some days: it's written
+with an AI coding assistant. See [How Tessel is made](/about/roadmap/#how-tessel-is-made).
+
 ## 0.1.35
 
 *October 5, 2026*
