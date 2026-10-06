@@ -1,0 +1,29 @@
+// Font families and italic: `.font(italic:family:)`, `g.text(italic:family:)`,
+// `g.textWidth(italic:family:)` and `fontFamilies()`.
+
+app Fonts(width: 360, height: 240) {
+    VStack(spacing: 6, alignment: .leading) {
+        Text("System, italic").font(italic: true)
+        Text("Courier New").font(family: "Courier New")
+        Text("Monospaced").font(family: "monospaced")
+        VStack(alignment: .leading) {
+            Text("Inherited")
+            Text("Upright again").font(italic: false)
+        }.font(size: 16, italic: true, family: "Georgia")
+        Canvas { g in
+            g.text("Drawn", x: 0, y: 0, size: 16, italic: true, family: "Georgia")
+            // In a monospaced family, every letter is as wide.
+            let mono = g.textWidth("iiii", family: "monospaced") == g.textWidth("MMMM", family: "monospaced")
+            let courier = g.textWidth("iiii", family: "Courier New") == g.textWidth("MMMM", family: "Courier New")
+            let system = g.textWidth("iiii") == g.textWidth("MMMM")
+            // A family that isn't installed is drawn in the system's.
+            let missing = g.textWidth("Hello", family: "No Such Font") == g.textWidth("Hello")
+            let named = g.textWidth("Hello", family: "Georgia") != g.textWidth("Hello")
+            print("monospaced {mono}, Courier New {courier}, system {system}, missing {missing}, named {named}")
+            let families = fontFamilies()
+            let sorted = families.sorted(by: { a, b in a.lowercase() < b.lowercase() })
+            print("families: {families.count > 10}, sorted: {families == sorted}")
+            print("Georgia: {families.contains("Georgia")}, hidden: {families.any(where: { f in f.hasPrefix(".") })}")
+        }.frame(height: 30)
+    }
+}

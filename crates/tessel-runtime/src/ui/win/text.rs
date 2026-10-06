@@ -15,13 +15,13 @@ use windows_numerics::Vector2;
 use super::factories;
 use crate::ui::image::Picture;
 use crate::ui::pdf;
-use crate::ui::text::{Line, TextLayout, CODE_LINE};
+use crate::ui::text::{Face, Family, Line, TextLayout, CODE_LINE};
 use crate::ui::theme::{self, theme};
 use crate::ui::Rgba;
 
 #[derive(Clone, Copy, PartialEq)]
 struct Font {
-    mono: bool,
+    family: Family,
     size: f64,
     weight: f32,
     italic: bool,
@@ -49,33 +49,62 @@ pub struct Shaped {
 }
 
 pub struct TextEngine {
-    formats: HashMap<(bool, u64, u32, bool), IDWriteTextFormat>,
+    formats: HashMap<(Family, u64, u32, bool), IDWriteTextFormat>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// The fonts installed.
+fn system_fonts() -> Option<IDWriteFontCollection> {
+    let mut collection = None;
+    unsafe { factories().dwrite.GetSystemFontCollection(&mut collection, false).ok()? };
+    collection
+}
+
+/// Whether a family of fonts is installed.
+fn installed(family: &str) -> bool {
+    let Some(c) = system_fonts() else { return false };
+    let name = wide(family);
+    let (mut index, mut exists) = (0u32, windows::core::BOOL(0));
+    unsafe { c.FindFamilyName(PCWSTR(name.as_ptr()), &mut index, &mut exists).is_ok() && exists.as_bool() }
+}
+
 /// The monospaced font: Cascadia Mono where there is one (Windows 11), else Consolas.
 fn mono_family() -> &'static str {
     static FAMILY: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-    FAMILY.get_or_init(|| unsafe {
-        let mut collection = None;
-        if factories().dwrite.GetSystemFontCollection(&mut collection, false).is_ok() {
-            if let Some(c) = collection {
-                let name = wide("Cascadia Mono");
-                let (mut index, mut exists) = (0u32, windows::core::BOOL(0));
-                if c.FindFamilyName(PCWSTR(name.as_ptr()), &mut index, &mut exists).is_ok() && exists.as_bool() {
-                    return "Cascadia Mono";
-                }
-            }
-        }
-        "Consolas"
-    })
+    FAMILY.get_or_init(|| if installed("Cascadia Mono") { "Cascadia Mono" } else { "Consolas" })
 }
 
-fn family(f: Font) -> &'static str {
-    if f.mono { mono_family() } else { "Segoe UI" }
+/// A font's family: Segoe UI unless another's asked for (and installed).
+fn family(f: Font) -> String {
+    match f.family {
+        Family::Mono => mono_family().to_string(),
+        named => named.name().filter(|n| installed(n)).unwrap_or_else(|| "Segoe UI".to_string()),
+    }
+}
+
+/// The font families installed: each one's English name, or its first.
+pub fn families() -> Vec<String> {
+    let Some(c) = system_fonts() else { return Vec::new() };
+    let mut out = Vec::new();
+    unsafe {
+        for i in 0..c.GetFontFamilyCount() {
+            let Ok(names) = c.GetFontFamily(i).and_then(|f| f.GetFamilyNames()) else { continue };
+            let locale = wide("en-us");
+            let (mut at, mut exists) = (0u32, windows::core::BOOL(0));
+            if names.FindLocaleName(PCWSTR(locale.as_ptr()), &mut at, &mut exists).is_err() || !exists.as_bool() {
+                at = 0;
+            }
+            let Ok(len) = names.GetStringLength(at) else { continue };
+            let mut buf = vec![0u16; len as usize + 1];
+            if names.GetString(at, &mut buf).is_ok() {
+                out.push(String::from_utf16_lossy(&buf[..len as usize]));
+            }
+        }
+    }
+    out
 }
 
 impl TextEngine {
@@ -84,11 +113,11 @@ impl TextEngine {
     }
 
     fn format(&mut self, f: Font) -> Option<IDWriteTextFormat> {
-        let key = (f.mono, f.size.to_bits(), f.weight.to_bits(), f.italic);
+        let key = (f.family, f.size.to_bits(), f.weight.to_bits(), f.italic);
         if let Some(x) = self.formats.get(&key) {
             return Some(x.clone());
         }
-        let name = wide(family(f));
+        let name = wide(&family(f));
         let locale = wide("en-us");
         let format = unsafe {
             factories()
@@ -151,8 +180,8 @@ impl TextEngine {
                     continue;
                 }
                 if let Some(f) = span.font {
-                    if f.mono != font.mono {
-                        let n = wide(family(f));
+                    if f.family != font.family {
+                        let n = wide(&family(f));
                         let _ = layout.SetFontFamilyName(PCWSTR(n.as_ptr()), r);
                     }
                     let _ = layout.SetFontWeight(DWRITE_FONT_WEIGHT(f.weight as i32), r);
@@ -252,21 +281,29 @@ impl TextEngine {
         }
     }
 
+    /// Text in a family and style of its own (`g.text`, a `Text` with
+    /// `.font(family:italic:)`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn styled(&mut self, text: &str, size: f64, weight: f32, face: Face, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
+        let font = Font { family: face.family, size, weight, italic: face.italic };
+        self.build(text, font, color, &[], LineHeight::Natural, max_w, align)
+    }
+
     /// Code: monospaced, not wrapped, with syntax colors.
     pub fn code_layout(&mut self, text: &str, size: f64) -> TextLayout {
         let spans = colors(crate::ui::highlight::highlight(text));
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         self.build(text, font, theme().colors[theme::PRIMARY], &spans, LineHeight::Absolute(CODE_LINE as f64), None, 0)
     }
 
     /// Monospaced text, left-aligned, in one color.
     pub fn mono_line(&mut self, text: &str, size: f64, weight: f32, color: Rgba) -> TextLayout {
-        self.build(text, Font { mono: true, size, weight, italic: false }, color, &[], LineHeight::Natural, None, 0)
+        self.build(text, Font { family: Family::Mono, size, weight, italic: false }, color, &[], LineHeight::Natural, None, 0)
     }
 
     /// Monospaced gray text (line numbers), on the lines of the code, right-aligned.
     pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> TextLayout {
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         self.build(text, font, color, &[], LineHeight::Absolute(CODE_LINE as f64), None, 2)
     }
 
@@ -281,7 +318,7 @@ impl TextEngine {
         spans: &[(Range<usize>, crate::ui::markdown::Inline)],
         max_w: Option<f64>,
     ) -> TextLayout {
-        let base = Font { mono: false, size, weight, italic: false };
+        let base = Font { family: Family::System, size, weight, italic: false };
         let spans: Vec<Span> = spans
             .iter()
             .map(|(range, style)| {
@@ -293,7 +330,7 @@ impl TextEngine {
                     font.italic = true;
                 }
                 if style.code {
-                    font.mono = true;
+                    font.family = Family::Mono;
                     font.size = size * 0.92;
                 }
                 let color = if style.code {
@@ -313,7 +350,7 @@ impl TextEngine {
     /// with syntax colors if it's Tessel.
     pub fn code_block(&mut self, text: &str, size: f64, tessel: bool, width: f64) -> TextLayout {
         let spans = if tessel { colors(crate::ui::highlight::highlight(text)) } else { Vec::new() };
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         self.build(text, font, theme().colors[theme::PRIMARY], &spans, LineHeight::Relative(1.45), Some(width), 0)
     }
 
@@ -324,7 +361,7 @@ impl TextEngine {
     /// Like `layout`, with the lines lined up (0 leading, 1 center, 2
     /// trailing) inside the width of the widest.
     pub fn aligned(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
-        self.build(text, Font { mono: false, size, weight, italic: false }, color, &[], LineHeight::Natural, max_w, align)
+        self.build(text, Font { family: Family::System, size, weight, italic: false }, color, &[], LineHeight::Natural, max_w, align)
     }
 }
 
@@ -514,6 +551,9 @@ impl IDWriteTextRenderer_Impl for GlyphCollector_Impl {
             }
         }
         let rtl = run.bidiLevel & 1 == 1;
+        // DirectWrite slants a font that has no italic as about 20 degrees.
+        let oblique = unsafe { face.GetSimulations() }.0 & DWRITE_FONT_SIMULATIONS_OBLIQUE.0 != 0;
+        let slant = if oblique { 0.35 } else { 0.0 };
         let mut pen = x;
         let mut out = self.out.borrow_mut();
         for i in 0..n {
@@ -532,6 +572,7 @@ impl IDWriteTextRenderer_Impl for GlyphCollector_Impl {
                 advance,
                 text: String::from_utf16_lossy(&chars[i]),
                 color: first[i].map_or(self.color, |p| self.color_at(p)),
+                slant,
             });
             if !rtl {
                 pen += advance;

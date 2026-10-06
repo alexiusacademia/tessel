@@ -129,6 +129,9 @@ unsafe extern "C" {
         encoding: u32,
         external: bool,
     ) -> CFStringRef;
+    pub fn CFStringGetLength(s: CFStringRef) -> CFIndex;
+    pub fn CFStringGetMaximumSizeForEncoding(len: CFIndex, encoding: u32) -> CFIndex;
+    pub fn CFStringGetCString(s: CFStringRef, buf: *mut u8, size: CFIndex, encoding: u32) -> bool;
     pub fn CFAttributedStringCreateMutable(alloc: *const c_void, max: CFIndex) -> CFMutableAttributedStringRef;
     pub fn CFAttributedStringReplaceString(s: CFMutableAttributedStringRef, range: CFRange, with: CFStringRef);
     pub fn CFAttributedStringSetAttribute(s: CFMutableAttributedStringRef, range: CFRange, name: CFStringRef, value: CFTypeRef);
@@ -268,6 +271,7 @@ unsafe extern "C" {
     pub static kCTForegroundColorFromContextAttributeName: CFStringRef;
     pub static kCTFontTraitsAttribute: CFStringRef;
     pub static kCTFontWeightTrait: CFStringRef;
+    pub static kCTFontFamilyNameAttribute: CFStringRef;
 
     pub fn CTFontCreateUIFontForLanguage(kind: u32, size: f64, language: CFStringRef) -> CTFontRef;
     pub fn CTFontCopyFontDescriptor(font: CTFontRef) -> CTFontDescriptorRef;
@@ -280,6 +284,13 @@ unsafe extern "C" {
         value: u32,
         mask: u32,
     ) -> CTFontRef;
+    pub fn CTFontDescriptorCreateWithAttributes(attrs: CFDictionaryRef) -> CTFontDescriptorRef;
+    pub fn CTFontDescriptorCreateMatchingFontDescriptor(d: CTFontDescriptorRef, mandatory: CFTypeRef) -> CTFontDescriptorRef;
+    pub fn CTFontManagerCopyAvailableFontFamilyNames() -> CFArrayRef;
+    pub fn CTFontCreateCopyWithAttributes(font: CTFontRef, size: f64, matrix: *const CGAffineTransform, attrs: CTFontDescriptorRef) -> CTFontRef;
+    pub fn CTFontGetMatrix(font: CTFontRef) -> CGAffineTransform;
+    pub fn CTFontCopyFamilyName(font: CTFontRef) -> CFStringRef;
+    pub fn CTFontGetSymbolicTraits(font: CTFontRef) -> u32;
     pub fn CTFontGetAscent(font: CTFontRef) -> f64;
     pub fn CTFontGetDescent(font: CTFontRef) -> f64;
     pub fn CTFontGetLeading(font: CTFontRef) -> f64;
@@ -343,6 +354,22 @@ impl Drop for Owned {
 
 pub fn cfstring(s: &str) -> Owned {
     Owned(unsafe { CFStringCreateWithBytes(std::ptr::null(), s.as_ptr(), s.len() as CFIndex, kCFStringEncodingUTF8, false) })
+}
+
+/// A `CFString`'s text.
+pub fn string_of(s: CFStringRef) -> String {
+    if s.is_null() {
+        return String::new();
+    }
+    unsafe {
+        let size = CFStringGetMaximumSizeForEncoding(CFStringGetLength(s), kCFStringEncodingUTF8) + 1;
+        let mut buf = vec![0u8; size as usize];
+        if !CFStringGetCString(s, buf.as_mut_ptr(), size, kCFStringEncodingUTF8) {
+            return String::new();
+        }
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        String::from_utf8_lossy(&buf[..end]).into_owned()
+    }
 }
 
 pub fn cfnumber_f64(v: f64) -> Owned {

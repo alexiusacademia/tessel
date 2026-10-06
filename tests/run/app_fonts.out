@@ -1,0 +1,13 @@
+monospaced true, Courier New true, system false, missing true, named true
+families: true, sorted: true
+Georgia: true, hidden: false
+Root
+  View
+    VStack
+      Text "System, italic"
+      Text "Courier New"
+      Text "Monospaced"
+      VStack
+        Text "Inherited"
+        Text "Upright again"
+      Canvas (1 text)

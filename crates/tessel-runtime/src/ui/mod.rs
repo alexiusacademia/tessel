@@ -314,6 +314,9 @@ pub struct Mods {
     pub frame_align: Option<u8>,
     pub font_size: Option<f64>,
     pub weight: Option<f32>,
+    /// `.font(italic:family:)`; inherited.
+    pub italic: Option<bool>,
+    pub family: Option<text::Family>,
     pub color: Option<Rgba>,
     pub background: Option<(Rgba, f64)>,
     pub border: Option<(Rgba, f64, f64)>,
@@ -1127,8 +1130,16 @@ pub extern "C" fn tsl_ui_padding(top: f64, leading: f64, bottom: f64, trailing: 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_font(size: f64, has_size: u8, weight: i32, has_weight: u8) {
+pub unsafe extern "C" fn tsl_ui_font(size: f64, has_size: u8, weight: i32, has_weight: u8, italic: u8, has_italic: u8, family: *const Str) {
+    // (No family given comes as null.)
+    let family = (!family.is_null()).then(|| text::Family::named(unsafe { crate::str_text(family) }));
     modify(|m| {
+        if has_italic != 0 {
+            m.italic = Some(italic != 0);
+        }
+        if family.is_some() {
+            m.family = family;
+        }
         if has_size != 0 {
             m.font_size = Some(size);
         }
@@ -1375,7 +1386,7 @@ mod tests {
         unsafe {
             tsl_ui_begin(0, 12.0, 1);
             tsl_ui_text(str_new("Count: 3"));
-            tsl_ui_font(32.0, 1, 3, 1);
+            tsl_ui_font(32.0, 1, 3, 1, 0, 0, std::ptr::null());
             tsl_ui_begin(1, 8.0, 1);
             tsl_ui_button(str_new("-"), f, std::ptr::null_mut());
             tsl_ui_button(str_new("+"), f, std::ptr::null_mut());

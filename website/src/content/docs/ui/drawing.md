@@ -163,6 +163,17 @@ readable on top of a busy drawing. `angle:` turns the text around its point
 (in radians). `g.textWidth(text, size:, weight:)` tells how wide a text will
 be, for placing things next to it.
 
+`italic:` and `family:` choose the font, as
+[`.font`](/reference/modifiers/#font) does for views: any family installed
+(see [`fontFamilies`](/reference/stdlib/#fontfamilies)), or `"monospaced"`.
+Pass the same ones to `g.textWidth`.
+
+```tessel
+g.text("Total", x: 10, y: 10, size: 13, weight: .bold, italic: true, family: "Georgia")
+let w = g.textWidth("Total", size: 13, weight: .bold, italic: true, family: "Georgia")
+g.text("=SUM(B2:B9)", x: 20 + w, y: 10, size: 13, family: "monospaced")
+```
+
 `g.image(path, x:, y:, width:, height:)` draws a PNG or JPEG file into a
 rectangle, and `opacity:` makes it see-through. It returns `false` if the
 file isn't there (or isn't a picture), so you can draw something else

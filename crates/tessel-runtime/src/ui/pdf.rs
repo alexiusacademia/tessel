@@ -49,6 +49,9 @@ pub struct PlacedGlyph {
     /// The text it shows (empty for a glyph that shows part of another's).
     pub text: String,
     pub color: Rgba,
+    /// How far it leans (a font with no italic, slanted for one): across
+    /// for each unit up.
+    pub slant: f32,
 }
 
 /// What only the renderer knows.
@@ -645,7 +648,7 @@ impl PageWriter<'_, '_> {
                     current = Some((font.clone(), g.size, color));
                 }
                 // (Up is down here: the text is flipped back.)
-                c.set_text_matrix([g.size, 0.0, 0.0, -g.size, g.x, g.y]);
+                c.set_text_matrix([g.size, 0.0, g.slant * g.size, -g.size, g.x, g.y]);
                 c.show(Str(&cid.to_be_bytes()));
             }
             c.end_text();
@@ -798,6 +801,7 @@ mod tests {
                         advance,
                         text: ch.to_string(),
                         color: Rgba([20, 20, 20, 255]),
+                        slant: 0.0,
                     };
                     x += advance;
                     g

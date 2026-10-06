@@ -163,6 +163,8 @@ pub const RIBBON_LARGE: f64 = RIBBON_BODY - RIBBON_TITLE - 2.0 * RIBBON_PAD;
 pub struct Style {
     pub size: f64,
     pub weight: f32,
+    /// `.font(family:italic:)`.
+    pub face: super::text::Face,
     pub color: Rgba,
     pub disabled: bool,
     /// How lines of text line up: 0 leading, 1 center, 2 trailing.
@@ -173,7 +175,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Style {
-        Style { size: 14.0, weight: 400.0, color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0 }
+        Style { size: 14.0, weight: 400.0, face: Default::default(), color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0 }
     }
 }
 
@@ -246,6 +248,10 @@ impl Layouter<'_> {
         Style {
             size: n.mods.font_size.unwrap_or(parent.size),
             weight: n.mods.weight.unwrap_or(parent.weight),
+            face: super::text::Face {
+                family: n.mods.family.unwrap_or(parent.face.family),
+                italic: n.mods.italic.unwrap_or(parent.face.italic),
+            },
             color: n.mods.color.unwrap_or(parent.color),
             disabled: parent.disabled || n.mods.disabled,
             text_align: n.mods.text_align.unwrap_or(parent.text_align),
@@ -265,12 +271,12 @@ impl Layouter<'_> {
     }
 
     fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
-        std::rc::Rc::new(self.text.layout(s, style.size, style.weight, style.color, max_w))
+        std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, 0))
     }
 
     /// A `Text`'s layout: like `text_layout`, with its lines aligned.
     fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
-        std::rc::Rc::new(self.text.aligned(s, style.size, style.weight, style.color, max_w, style.text_align))
+        std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, style.text_align))
     }
 
     fn measure(&mut self, n: &mut Node, avail: Size, parent: &Style) -> Size {

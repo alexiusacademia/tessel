@@ -837,8 +837,11 @@ pub unsafe extern "C" fn tsl_canvas_text(
     halo_tag: i32,
     halo_payload: *const Header,
     halo_width: f64,
+    italic: u8,
+    family: *const Str,
 ) {
     let text = unsafe { crate::str_text(text) };
+    let face = unsafe { face(italic, family) };
     let ink = unsafe { theme::color(tag, payload) };
     let halo = unsafe { theme::color(halo_tag, halo_payload) };
     if text.is_empty() || size <= 0.0 {
@@ -847,7 +850,7 @@ pub unsafe extern "C" fn tsl_canvas_text(
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
     with(|c| {
         let (size, halo_width) = (size * c.zoom, halo_width * c.zoom);
-        let layout = Rc::new(with_text(|t| t.layout(text, size, weight, ink, None)));
+        let layout = Rc::new(with_text(|t| t.styled(text, size, weight, face, ink, None, 0)));
         let (h, v) = super::align_2d(align.clamp(0, 8) as u8);
         let (w, ht) = (layout.width(), layout.height());
         let anchor = c.transform * Point::new(x, y);
@@ -863,13 +866,20 @@ pub unsafe extern "C" fn tsl_canvas_text(
 
 /// `g.textWidth(…)`: how wide `g.text` would draw the text, in points.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weight: i32) -> f64 {
+pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weight: i32, italic: u8, family: *const Str) -> f64 {
     let text = unsafe { crate::str_text(text) };
     if text.is_empty() || size <= 0.0 {
         return 0.0;
     }
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
-    with_text(|t| t.layout(text, size, weight, Rgba([0, 0, 0, 255]), None).width())
+    let face = unsafe { face(italic, family) };
+    with_text(|t| t.styled(text, size, weight, face, Rgba([0, 0, 0, 255]), None, 0).width())
+}
+
+/// `italic:` and `family:` of `g.text` and `g.textWidth`.
+unsafe fn face(italic: u8, family: *const Str) -> super::text::Face {
+    let family = if family.is_null() { "" } else { unsafe { crate::str_text(family) } };
+    super::text::Face { family: super::text::Family::named(family), italic: italic != 0 }
 }
 
 /// `g.image(path, …)`: a PNG or JPEG file, in the rectangle given. Returns

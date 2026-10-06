@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use parley::{FontContext, GenericFamily, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty};
 
-use crate::ui::text::{Line, TextLayout, CODE_LINE};
+use crate::ui::text::{Face, Family, Line, TextLayout, CODE_LINE};
 use crate::ui::theme::{self, theme};
 use crate::ui::Rgba;
 
@@ -128,13 +128,37 @@ impl TextEngine {
     /// Like `layout`, with the lines lined up (0 leading, 1 center, 2
     /// trailing) inside the width of the widest.
     pub fn aligned(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
+        self.styled(text, size, weight, Face::default(), color, max_w, align)
+    }
+
+    /// Text in a family and style of its own (`g.text`, a `Text` with
+    /// `.font(family:italic:)`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn styled(&mut self, text: &str, size: f64, weight: f32, face: Face, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
         let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        b.push_default(StyleProperty::from(GenericFamily::SystemUi));
+        match face.family {
+            Family::System => b.push_default(StyleProperty::from(GenericFamily::SystemUi)),
+            Family::Mono => b.push_default(StyleProperty::from(GenericFamily::Monospace)),
+            named => {
+                // (The system's font when the family isn't installed.)
+                let name = named.name().unwrap_or_default().replace('"', "");
+                b.push_default(StyleProperty::FontFamily(parley::FontFamily::Source(format!("\"{name}\", system-ui").into())));
+            }
+        }
+        if face.italic {
+            b.push_default(StyleProperty::FontStyle(parley::FontStyle::Italic));
+        }
         b.push_default(StyleProperty::FontSize(size as f32));
         b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(weight)));
         b.push_default(StyleProperty::Brush(Paint(color.0)));
         finish(b.build(text), text, max_w, align)
     }
+}
+
+/// The font families installed.
+pub fn families() -> Vec<String> {
+    let mut fonts = FontContext::new();
+    fonts.collection.family_names().map(str::to_string).collect()
 }
 
 /// Breaks a parley layout into lines (at `max_w`), aligns them, and finds

@@ -330,7 +330,12 @@ impl Builtins {
                     edge("trailing"),
                 ]
             }
-            "font" => vec![P::new("size", Ty::Float).default(), P::new("weight", self.weight.clone()).default()],
+            "font" => vec![
+                P::new("size", Ty::Float).default(),
+                P::new("weight", self.weight.clone()).default(),
+                P::new("italic", Ty::Bool).default(),
+                P::new("family", Ty::Str).default(),
+            ],
             "color" => vec![P::unlabeled("color", self.color.clone())],
             "background" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
             "border" => vec![
@@ -471,6 +476,7 @@ impl Builtins {
             },
             "localTimeZone" => FnSig { params: vec![], ret: Ty::Str },
             "timeZones" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
+            "fontFamilies" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             // For the prelude's `dateParts`.
             "__dateParts" => FnSig {
                 params: vec![P::unlabeled("time", Ty::Float), P::unlabeled("timeZone", Ty::Str)],
@@ -623,7 +629,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
-    "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "__dateParts",
+    "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "__dateParts",
     "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "__dbOpen", "__dbClose", "__dbLastInsertId", "__dbExecute", "__dbQuery",
     "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
@@ -831,12 +837,21 @@ fn graphics_method(name: &str) -> Option<Method> {
                 f("angle").default(),
                 P::new("halo", COLOR).default(),
                 f("haloWidth").default(),
+                P::new("italic", Ty::Bool).default(),
+                P::new("family", Ty::Str).default(),
             ],
             Ty::Void,
         ),
-        "textWidth" => {
-            method(vec![P::unlabeled("text", Ty::Str), f("size").default(), P::new("weight", WEIGHT).default()], Ty::Float)
-        }
+        "textWidth" => method(
+            vec![
+                P::unlabeled("text", Ty::Str),
+                f("size").default(),
+                P::new("weight", WEIGHT).default(),
+                P::new("italic", Ty::Bool).default(),
+                P::new("family", Ty::Str).default(),
+            ],
+            Ty::Float,
+        ),
         "image" => method(
             vec![P::unlabeled("path", Ty::Str), f("x"), f("y"), f("width"), f("height"), f("opacity").default()],
             Ty::Bool,
@@ -1020,6 +1035,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "timeZoneOffset" => rt_d("tsl_time_zone_offset", &[Dflt::Req, Dflt::Str("")]),
         "localTimeZone" => rt("tsl_local_time_zone"),
         "timeZones" => rt("tsl_time_zones"),
+        "fontFamilies" => rt("tsl_font_families"),
         "__dateParts" => rt("tsl_date_parts"),
         "cancelRequest" => rt("tsl_cancel_request"),
         "sendWebSocketData" => rt("tsl_send_web_socket_data"),
@@ -1149,9 +1165,9 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "strokeCircle" => rt_g("tsl_canvas_stroke_circle", &[Req, Req, Req, Req, Float(1.0)]),
         "text" => rt_g(
             "tsl_canvas_text",
-            &[Req, Req, Req, Float(14.0), PRIMARY, REGULAR, TOP_LEADING, Float(0.0), CLEAR, Float(0.0)],
+            &[Req, Req, Req, Float(14.0), PRIMARY, REGULAR, TOP_LEADING, Float(0.0), CLEAR, Float(0.0), Bool(false), Dflt::Str("")],
         ),
-        "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR]),
+        "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR, Bool(false), Dflt::Str("")]),
         "image" => rt_g("tsl_canvas_image", &[Req, Req, Req, Req, Req, Float(1.0)]),
         "image(pixels:)" => rt_g("tsl_canvas_image_pixels", &[Req, Req, Req, Req, Req, Req, Req, Float(1.0)]),
         "svg" => rt_g("tsl_canvas_svg", &[Req, Req, Req, Req, Req, PRIMARY, Float(1.0)]),

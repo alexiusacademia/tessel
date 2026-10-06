@@ -1514,6 +1514,29 @@ let card: Color = if isDarkMode() { .rgb(44, 44, 46) } else { .rgb(250, 246, 240
 In a program without an `app`, it's `false`. See
 [Light and dark](/ui/styling/#light-and-dark).
 
+### fontFamilies
+
+```text
+fontFamilies() -> [String]
+```
+
+The font families installed on the computer, sorted by name: what
+[`.font(family:)`](/reference/modifiers/#font) and `g.text(family:)` can
+use. Each in its own font:
+
+```tessel
+Scroll {
+    VStack(alignment: .leading) {
+        for family in fontFamilies() {
+            Text(family).font(family: family)
+        }
+    }
+}
+```
+
+A family that isn't installed (a document from another computer may ask for
+one) is drawn in the system's font.
+
 ### setWindowTitle
 
 ```text

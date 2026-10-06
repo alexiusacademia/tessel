@@ -7,22 +7,22 @@ use std::ffi::c_void;
 use std::ops::Range;
 
 use super::ffi::*;
-use crate::ui::text::{Line, TextLayout, CODE_LINE};
+use crate::ui::text::{Face, Family, Line, TextLayout, CODE_LINE};
 use crate::ui::theme::{self, theme};
 use crate::ui::Rgba;
 
-/// A font: the system's, or its monospaced one.
+/// A font: the system's, its monospaced one, or one of a family by name.
 #[derive(Clone, Copy, PartialEq)]
 struct Font {
-    mono: bool,
+    family: Family,
     size: f64,
     weight: f32,
     italic: bool,
 }
 
 impl Font {
-    fn key(&self) -> (bool, u64, u32, bool) {
-        (self.mono, self.size.to_bits(), self.weight.to_bits(), self.italic)
+    fn key(&self) -> (Family, u64, u32, bool) {
+        (self.family, self.size.to_bits(), self.weight.to_bits(), self.italic)
     }
 }
 
@@ -57,7 +57,7 @@ pub struct Shaped {
 }
 
 pub struct TextEngine {
-    fonts: HashMap<(bool, u64, u32, bool), Owned>,
+    fonts: HashMap<(Family, u64, u32, bool), Owned>,
     /// The attribute that holds each stretch's color (Core Text is told to
     /// take the color from the context, so it can be drawn in another one).
     color_key: Owned,
@@ -87,7 +87,12 @@ impl TextEngine {
             return font.get();
         }
         let font = unsafe {
-            let kind = if f.mono { kCTFontUIFontUserFixedPitch } else { kCTFontUIFontSystem };
+            if let Some(font) = f.family.name().and_then(|name| named(&name, f)) {
+                let r = font.get();
+                self.fonts.insert(f.key(), font);
+                return r;
+            }
+            let kind = if f.family == Family::Mono { kCTFontUIFontUserFixedPitch } else { kCTFontUIFontSystem };
             let mut font = Owned(CTFontCreateUIFontForLanguage(kind, f.size, std::ptr::null()));
             if f.weight != 400.0 {
                 let w = cfnumber_f64(weight_trait(f.weight));
@@ -100,16 +105,21 @@ impl TextEngine {
                 }
             }
             if f.italic {
-                let slanted = CTFontCreateCopyWithSymbolicTraits(font.get(), f.size, std::ptr::null(), kCTFontItalicTrait, kCTFontItalicTrait);
-                if let Some(slanted) = Owned::new(slanted) {
-                    font = slanted;
-                }
+                font = italic(font, f.size);
             }
             font
         };
         let r = font.get();
         self.fonts.insert(f.key(), font);
         r
+    }
+
+    /// Text in a family and style of its own (`g.text`, a `Text` with
+    /// `.font(family:italic:)`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn styled(&mut self, text: &str, size: f64, weight: f32, face: Face, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
+        let font = Font { family: face.family, size, weight, italic: face.italic };
+        self.build(text, font, color, &[], LineHeight::Natural, max_w, align)
     }
 
     /// Lays `text` out in `font` and `color`, with `spans` in others.
@@ -252,19 +262,19 @@ impl TextEngine {
     /// Code: monospaced, not wrapped, with syntax colors.
     pub fn code_layout(&mut self, text: &str, size: f64) -> TextLayout {
         let spans = colors(crate::ui::highlight::highlight(text));
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         let color = theme().colors[theme::PRIMARY];
         self.build(text, font, color, &spans, LineHeight::Absolute(CODE_LINE as f64), None, 0)
     }
 
     /// Monospaced text, left-aligned, in one color.
     pub fn mono_line(&mut self, text: &str, size: f64, weight: f32, color: Rgba) -> TextLayout {
-        self.build(text, Font { mono: true, size, weight, italic: false }, color, &[], LineHeight::Natural, None, 0)
+        self.build(text, Font { family: Family::Mono, size, weight, italic: false }, color, &[], LineHeight::Natural, None, 0)
     }
 
     /// Monospaced gray text (line numbers), on the lines of the code, right-aligned.
     pub fn mono_layout(&mut self, text: &str, size: f64, color: Rgba) -> TextLayout {
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         self.build(text, font, color, &[], LineHeight::Absolute(CODE_LINE as f64), None, 2)
     }
 
@@ -279,7 +289,7 @@ impl TextEngine {
         spans: &[(Range<usize>, crate::ui::markdown::Inline)],
         max_w: Option<f64>,
     ) -> TextLayout {
-        let base = Font { mono: false, size, weight, italic: false };
+        let base = Font { family: Family::System, size, weight, italic: false };
         let spans: Vec<Span> = spans
             .iter()
             .map(|(range, style)| {
@@ -291,7 +301,7 @@ impl TextEngine {
                     font.italic = true;
                 }
                 if style.code {
-                    font.mono = true;
+                    font.family = Family::Mono;
                     font.size = size * 0.92;
                 }
                 let color = if style.code {
@@ -311,7 +321,7 @@ impl TextEngine {
     /// with syntax colors if it's Tessel.
     pub fn code_block(&mut self, text: &str, size: f64, tessel: bool, width: f64) -> TextLayout {
         let spans = if tessel { colors(crate::ui::highlight::highlight(text)) } else { Vec::new() };
-        let font = Font { mono: true, size, weight: 400.0, italic: false };
+        let font = Font { family: Family::Mono, size, weight: 400.0, italic: false };
         let color = theme().colors[theme::PRIMARY];
         self.build(text, font, color, &spans, LineHeight::Relative(1.45), Some(width), 0)
     }
@@ -323,7 +333,55 @@ impl TextEngine {
     /// Like `layout`, with the lines lined up (0 leading, 1 center, 2
     /// trailing) inside the width of the widest.
     pub fn aligned(&mut self, text: &str, size: f64, weight: f32, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
-        self.build(text, Font { mono: false, size, weight, italic: false }, color, &[], LineHeight::Natural, max_w, align)
+        self.build(text, Font { family: Family::System, size, weight, italic: false }, color, &[], LineHeight::Natural, max_w, align)
+    }
+}
+
+/// A font of the family `name`, in `f`'s size and weight, or none when no
+/// such family is installed.
+unsafe fn named(name: &str, f: Font) -> Option<Owned> {
+    unsafe {
+        let family = cfstring(name);
+        let w = cfnumber_f64(weight_trait(f.weight));
+        let traits = cfdict(&[(kCTFontWeightTrait, w.get())]);
+        let attrs = cfdict(&[(kCTFontFamilyNameAttribute, family.get()), (kCTFontTraitsAttribute, traits.get())]);
+        let d = Owned::new(CTFontDescriptorCreateWithAttributes(attrs.get()))?;
+        let matched = Owned::new(CTFontDescriptorCreateMatchingFontDescriptor(d.get(), std::ptr::null()))?;
+        let font = Owned::new(CTFontCreateWithFontDescriptor(matched.get(), f.size, std::ptr::null()))?;
+        // (Core Text may offer another family in its place.)
+        let got = Owned::new(CTFontCopyFamilyName(font.get()));
+        if !got.is_some_and(|g| string_of(g.get()).eq_ignore_ascii_case(name.trim())) {
+            return None;
+        }
+        Some(if f.italic { italic(font, f.size) } else { font })
+    }
+}
+
+/// `font` in italic: its family's italic, or the font slanted when the
+/// family has none.
+unsafe fn italic(font: Owned, size: f64) -> Owned {
+    unsafe {
+        if CTFontGetSymbolicTraits(font.get()) & kCTFontItalicTrait != 0 {
+            return font;
+        }
+        let slanted = CTFontCreateCopyWithSymbolicTraits(font.get(), size, std::ptr::null(), kCTFontItalicTrait, kCTFontItalicTrait);
+        if let Some(slanted) = Owned::new(slanted) {
+            if CTFontGetSymbolicTraits(slanted.get()) & kCTFontItalicTrait != 0 {
+                return slanted;
+            }
+        }
+        // About 12 degrees, as fonts' obliques lean.
+        let skew = CGAffineTransform { a: 1.0, b: 0.0, c: 0.21, d: 1.0, tx: 0.0, ty: 0.0 };
+        // (Drawn slanted by `draw`, which turns glyphs by their font's matrix.)
+        Owned::new(CTFontCreateCopyWithAttributes(font.get(), size, &skew, std::ptr::null())).unwrap_or(font)
+    }
+}
+
+/// The font families installed.
+pub fn families() -> Vec<String> {
+    unsafe {
+        let Some(names) = Owned::new(CTFontManagerCopyAvailableFontFamilyNames()) else { return Vec::new() };
+        (0..CFArrayGetCount(names.get())).map(|i| string_of(CFArrayGetValueAtIndex(names.get(), i))).collect()
     }
 }
 
@@ -336,7 +394,8 @@ fn colors(ranges: Vec<(Range<usize>, Rgba)>) -> Vec<Span> {
 pub fn draw(ctx: CGContextRef, layout: &TextLayout, tint: Option<Rgba>, color_key: CFStringRef, halo: Option<(Rgba, f64)>) {
     unsafe {
         // Glyphs are drawn y-up: flip them back.
-        CGContextSetTextMatrix(ctx, CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: -1.0, tx: 0.0, ty: 0.0 });
+        let flipped = CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: -1.0, tx: 0.0, ty: 0.0 };
+        CGContextSetTextMatrix(ctx, flipped);
         for pass in [true, false] {
             let outline = pass;
             if outline && halo.is_none() {
@@ -357,6 +416,15 @@ pub fn draw(ctx: CGContextRef, layout: &TextLayout, tint: Option<Rgba>, color_ke
                 let runs = CTLineGetGlyphRuns(line.get());
                 for i in 0..CFArrayGetCount(runs) {
                     let run = CFArrayGetValueAtIndex(runs, i);
+                    // A font slanted for italic (see `italic`): its glyphs
+                    // are turned by its matrix, which drawing leaves out.
+                    let font = CFDictionaryGetValue(CTRunGetAttributes(run), kCTFontAttributeName);
+                    let m = if font.is_null() { None } else { Some(CTFontGetMatrix(font)) };
+                    let slant = m.filter(|m| m.c != 0.0 || m.b != 0.0);
+                    if let Some(m) = slant {
+                        CGContextSetTextMatrix(ctx, CGAffineTransform { a: m.a, b: -m.b, c: m.c, d: -m.d, tx: 0.0, ty: 0.0 });
+                        CGContextSetTextPosition(ctx, l.x, l.baseline);
+                    }
                     if !outline {
                         let c = tint.unwrap_or_else(|| {
                             let value = CFDictionaryGetValue(CTRunGetAttributes(run), color_key);
@@ -370,6 +438,10 @@ pub fn draw(ctx: CGContextRef, layout: &TextLayout, tint: Option<Rgba>, color_ke
                         CGContextSetRGBFillColor(ctx, r, g, b, a);
                     }
                     CTRunDraw(run, ctx, CFRange::new(0, 0));
+                    if slant.is_some() {
+                        CGContextSetTextMatrix(ctx, flipped);
+                        CGContextSetTextPosition(ctx, l.x, l.baseline);
+                    }
                 }
             }
         }

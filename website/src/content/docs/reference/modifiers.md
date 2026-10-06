@@ -94,20 +94,30 @@ Text("8, but 20 below").padding(8, bottom: 20)
 ## font
 
 ```text
-.font(size: Float = inherited, weight: Weight = inherited)
+.font(size: Float = inherited, weight: Weight = inherited, italic: Bool = inherited,
+      family: String = inherited)
 ```
 
-Sets the text size (in points) and weight.
+Sets the text size (in points), weight, slant and font family.
 
 ```tessel
 Text("Title").font(size: 24, weight: .bold)
 Text("Note").font(size: 11)
+Text("Chapter One").font(size: 20, italic: true, family: "Georgia")
+Text("=SUM(A1:A9)").font(family: "monospaced")
 ```
 
 - Only the parts you pass change; the rest come from the view's container.
   In a window, text starts at **14 points**, `.regular`.
 - `weight` is one of `.regular`, `.medium`, `.semibold`, `.bold` (see
   [Weight](/reference/colors/#weight)).
+- `family` is the name of a font family installed on the computer (see
+  [`fontFamilies`](/reference/stdlib/#fontfamilies)), or `"system"` for the
+  system's font (the one text starts with) or `"monospaced"` for the
+  system's monospaced font. A family that isn't installed is drawn in the
+  system's font, so a program never fails over a missing font.
+- `italic: true` uses the family's italic, or slants its letters when it has
+  none.
 - Inherited: set it on a stack to change all the text inside.
 - Icons are sized by the font size too. A `CodeEditor` always uses its own
   13-point monospaced font.

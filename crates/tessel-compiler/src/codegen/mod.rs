@@ -1227,7 +1227,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" | "tsl_ui_animation" => (vec![f64t], None),
             "tsl_ui_padding" => (vec![f64t, f64t, f64t, f64t], None),
-            "tsl_ui_font" => (vec![f64t, i8t, i32t, i8t], None),
+            "tsl_ui_font" => (vec![f64t, i8t, i32t, i8t, i8t, i8t, p], None),
             "tsl_ui_text_alignment" => (vec![i32t], None),
             "tsl_math" => (vec![i32t, f64t, f64t], Some(f64t)),
             "tsl_float_format" => (vec![f64t, i], Some(p)),

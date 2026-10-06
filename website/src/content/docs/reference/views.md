@@ -703,8 +703,8 @@ points are in the current coordinates, and turn and scale with the transform.
 
 | Method | |
 |---|---|
-| `text(_ text, x:, y:, size: = 14, color: = .primary, weight: = .regular, align: = .topLeading, angle: = 0, halo: = .clear, haloWidth: = 0)` | Text at a point. `align` (an [`Alignment`](/reference/colors/#alignment)) says which part of the text sits on the point; `angle` turns it around the point; a halo is an outline of `haloWidth` points in another color, under the text. |
-| `textWidth(_ text, size: = 14, weight: = .regular) -> Float` | How wide `text` would be drawn. |
+| `text(_ text, x:, y:, size: = 14, color: = .primary, weight: = .regular, align: = .topLeading, angle: = 0, halo: = .clear, haloWidth: = 0, italic: = false, family: = "system")` | Text at a point. `align` (an [`Alignment`](/reference/colors/#alignment)) says which part of the text sits on the point; `angle` turns it around the point; a halo is an outline of `haloWidth` points in another color, under the text. `family` is a font family, as for [`.font`](/reference/modifiers/#font). |
+| `textWidth(_ text, size: = 14, weight: = .regular, italic: = false, family: = "system") -> Float` | How wide `text` would be drawn. |
 | `image(_ path, x:, y:, width:, height:, opacity: = 1) -> Bool` | A PNG or JPEG file, stretched to the rectangle. `false` if there's no such picture. |
 | `image(pixels: [Int], pixelWidth: Int, pixelHeight: Int, x:, y:, width:, height:, opacity: = 1) -> Bool` | A picture from pixels in memory, row by row from the top left, each as [`writeImage`](/reference/stdlib/#writeimage) takes them, stretched to the rectangle. Kept between frames while the pixels stay the same. `false` if the size isn't from 1 to 8192 or there are fewer pixels than it needs. |
 | `svg(_ path, x:, y:, width:, height:, color: = .primary, opacity: = 1) -> Bool` | An SVG file, scaled to fit the rectangle and centered in it; `currentColor` in it is `color`. `false` if it can't be read. |

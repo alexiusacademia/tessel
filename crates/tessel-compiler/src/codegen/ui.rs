@@ -926,7 +926,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     None => self.ctx.i32_type().const_zero().into(),
                 };
                 let has_weight = self.i8().const_int(a(1).is_some() as u64, false);
-                self.call_rt("tsl_ui_font", &[size, has_size.into(), weight, has_weight.into()]);
+                let italic = match a(2) {
+                    Some(x) => {
+                        let v = self.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(v)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                let has_italic = self.i8().const_int(a(2).is_some() as u64, false);
+                // (No family is a null string.)
+                let family = a(3).map(|x| self.expr_as(x, &Ty::Str).unwrap());
+                let null = self.ptr_ty().const_null().into();
+                self.call_rt("tsl_ui_font", &[size, has_size.into(), weight, has_weight.into(), italic, has_italic.into(), family.unwrap_or(null)]);
+                if let Some(f) = family {
+                    self.release(f, &Ty::Str);
+                }
             }
             "color" => {
                 colored(self, "tsl_ui_color", a(0).unwrap(), &[]);

@@ -14,6 +14,70 @@ pub use super::backend::text::TextEngine;
 /// The height of a line of code (its text is 13 points): room to read.
 pub const CODE_LINE: f32 = 20.0;
 
+/// A font family: the system's, its monospaced one, or one by name (an
+/// index into `FAMILIES`, so that styles stay small and copyable).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Family {
+    #[default]
+    System,
+    Mono,
+    Named(u32),
+}
+
+/// What text looks like besides its size and weight: `.font(italic:family:)`,
+/// `g.text(italic:family:)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Face {
+    pub family: Family,
+    pub italic: bool,
+}
+
+thread_local! {
+    /// The families asked for by name, in the order they were first asked for.
+    static FAMILIES: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+impl Family {
+    /// The family a program names: `""` or `"system"` for the system's,
+    /// `"monospaced"` for its monospaced one, or any installed family (a
+    /// family that isn't installed is drawn in the system's).
+    pub fn named(name: &str) -> Family {
+        let name = name.trim();
+        if name.is_empty() || name.eq_ignore_ascii_case("system") {
+            return Family::System;
+        }
+        if name.eq_ignore_ascii_case("monospaced") {
+            return Family::Mono;
+        }
+        FAMILIES.with(|f| {
+            let mut f = f.borrow_mut();
+            let i = f.iter().position(|n| n == name).unwrap_or_else(|| {
+                f.push(name.to_string());
+                f.len() - 1
+            });
+            Family::Named(i as u32)
+        })
+    }
+
+    /// The name of a family asked for by name.
+    pub fn name(&self) -> Option<String> {
+        match self {
+            Family::Named(i) => FAMILIES.with(|f| f.borrow().get(*i as usize).cloned()),
+            _ => None,
+        }
+    }
+}
+
+/// `fontFamilies()`: the families installed, sorted, without the system's
+/// hidden ones (whose names start with a dot).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_font_families() -> *mut crate::List {
+    let mut names: Vec<String> = super::backend::text::families().into_iter().filter(|n| !n.starts_with('.') && !n.is_empty()).collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names.dedup();
+    unsafe { crate::str_list(names.iter().map(String::as_str)) }
+}
+
 /// A rectangle in a layout's coordinates: from (x0, y0) to (x1, y1).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
