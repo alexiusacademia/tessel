@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.1.36
+
+*October 6, 2026*
+
+- **Databases.** `openDatabase` opens (or creates) an SQLite database file,
+  and `execute` and `query` run SQL on it, with values filled in for `?`s.
+  SQLite is built into Tessel, so it works the same on macOS and Windows
+  with nothing to install. See
+  [Saving data in a database](/guides/database/).
+- **Font families and italic.** `.font(italic:family:)`, and the same on
+  `g.text` and `g.textWidth`: any installed font by name, or
+  `"monospaced"`. A font that isn't installed falls back to the system's.
+  `fontFamilies()` lists the fonts installed. See
+  [font](/reference/modifiers/#font).
+- **Password fields:** `TextField(secure: true)` shows a dot for each
+  character, and its text can't be copied. See
+  [TextField](/reference/views/#textfield).
+- **Hashes:** `data.hash()` gives SHA-256, SHA-1, SHA-512, MD5 and other
+  digests, and `data.hex` shows bytes as hexadecimal. See
+  [hash and hex](/reference/stdlib/#hash-and-hex).
+- `wrappingAdd`, `wrappingSubtract` and `wrappingMultiply` on `Int`, for
+  hashes and checksums written in Tessel.
+- **Fixed:** `==` between two cases of an enum whose cases hold different
+  values crashed.
+
 ## 0.1.35
 
 *October 5, 2026*
