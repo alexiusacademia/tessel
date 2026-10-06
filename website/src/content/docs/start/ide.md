@@ -29,7 +29,9 @@ The first time you open the IDE, `tessel` compiles it, which takes a moment
 until you update `tessel`.
 
 When it opens, the IDE shows the first `.tsl` file of the project and
-checks the program.
+checks the program. A folder with no Tessel files yet offers to start a
+project in it: a **To-do app**, a **Blank app** or a **Command line**
+program, as [`tessel new`](/start/cli/#tessel-new) makes them.
 
 ## The explorer
 

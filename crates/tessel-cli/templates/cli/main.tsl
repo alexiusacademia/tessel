@@ -1,0 +1,18 @@
+// A command-line program: it starts at `fn main` and prints its results.
+// Run it with `tessel run . Ana Ben` (or Run in the IDE), or build it with
+// `tessel build .` and run the executable.
+
+fn main() {
+    let names = arguments()
+    if names.isEmpty {
+        print("Hello! Who are you? (Give names after the command.)")
+        return
+    }
+    for name in names {
+        print(greeting(name))
+    }
+}
+
+fn greeting(_ name: String) -> String {
+    "Hello, {name}!"
+}

@@ -1,0 +1,12 @@
+
+# What the app says about itself: its bundle on macOS, its .exe's details on
+# Windows, its About panel, and appInfo(). See
+# https://tessel-lang.netlify.app/start/project/
+[app]
+name = "{{title}}"
+id = "{{id}}"
+version = "0.1.0"
+# description = "What the app does, in a sentence"
+# author = "Your name"
+# copyright = "© {{year}} Your name"
+category = "{{category}}"

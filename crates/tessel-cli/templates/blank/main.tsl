@@ -1,0 +1,13 @@
+// The app: one window, with what it shows and what its controls do.
+// Run it with `tessel run .` (or Run in the IDE).
+
+app {{Name}}(width: 400, height: 300) {
+    state count = 0
+
+    VStack(spacing: 12) {
+        Text("{{title}}").font(size: 24, weight: .bold)
+        Text("Clicked {count} times").color(.secondary)
+        Button("Click me") { count += 1 }
+    }
+    .padding(24)
+}

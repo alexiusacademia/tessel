@@ -1,0 +1,6 @@
+wait 0
+tree
+click "To-do app"
+wait 0
+wait 0
+tree

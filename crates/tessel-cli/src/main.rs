@@ -2,6 +2,7 @@ mod icon;
 mod hot;
 mod lsp;
 mod manifest;
+mod new;
 mod pin;
 mod preview;
 mod repl;
@@ -21,6 +22,10 @@ With no command, opens the Tessel IDE on the current folder.
 
 commands:
   ide [folder]   open the Tessel IDE on a folder (default: the current one)
+  new <folder> [--template app|blank|cli]
+                 start a project in a new folder: a program to build on, its
+                 tessel.toml, a README and a .gitignore. Templates: app (the
+                 default; a to-do list app), blank (one window) and cli
   check <path> [--format lines]
                  check a program for errors; <path> is a .tsl file or a folder.
                  With --format lines, prints one error per line for tools:
@@ -168,6 +173,7 @@ fn main() -> ExitCode {
         }
         (Some("update"), _) => update::run(&args[1..]),
         (Some("pin"), _) => pin::run(&args[1..]),
+        (Some("new"), _) => new::run(&args[1..]),
         (Some("lsp"), _) => match lsp::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {

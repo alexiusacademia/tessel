@@ -1,0 +1,36 @@
+// The data: a task, which tasks to show, and keeping them between runs.
+
+struct Task {
+    title: String
+    done: Bool = false
+}
+
+enum Filter {
+    all, open, done
+
+    fn shows(_ task: Task) -> Bool {
+        match self {
+            .all -> true
+            .open -> !task.done
+            .done -> task.done
+        }
+    }
+}
+
+// The tasks are saved as JSON in the app's own folder: Application Support
+// on macOS, AppData on Windows.
+fn tasksFile() -> String {
+    joinPath(appDataFolder(appInfo().id), "tasks.json")
+}
+
+fn loadTasks() -> [Task] {
+    if let text = readFile(path: tasksFile()) {
+        let tasks: [Task]? = fromJson(text)
+        return tasks ?? []
+    }
+    []
+}
+
+fn saveTasks(_ tasks: [Task]) {
+    writeFile(path: tasksFile(), text: toJson(tasks, pretty: true))
+}

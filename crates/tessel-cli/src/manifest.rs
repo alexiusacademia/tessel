@@ -162,14 +162,20 @@ pub fn icon_path(found: Option<&Found>) -> Option<PathBuf> {
     Some(found.file.parent().unwrap_or(Path::new(".")).join(icon))
 }
 
+/// Reads a manifest's text as a build does, for tests.
+#[cfg(test)]
+pub fn parse_for_test(text: &str) -> Result<Manifest, String> {
+    let m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
+    let problems = check(&m.app);
+    if problems.is_empty() { Ok(m) } else { Err(problems.join("; ")) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn read(text: &str) -> Result<Manifest, String> {
-        let m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
-        let problems = check(&m.app);
-        if problems.is_empty() { Ok(m) } else { Err(problems.join("; ")) }
+        parse_for_test(text)
     }
 
     #[test]

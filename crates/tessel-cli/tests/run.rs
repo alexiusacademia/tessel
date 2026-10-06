@@ -311,7 +311,10 @@ fn ide_session() {
     // Each session: a script, run on a copy of a project. `session` edits
     // files; `design` uses the Design panel (and shows the code it wrote).
     let mut failed = Vec::new();
-    for (name, folder, show) in [("session", "project", None), ("design", "design", Some("main.tsl"))] {
+    // `new` starts a project from a template in an empty folder.
+    for (name, folder, show) in
+        [("session", "project", None), ("design", "design", Some("main.tsl")), ("new", "empty", Some("README.md"))]
+    {
         let base = std::env::temp_dir().join(format!("tessel-ide-test-{}-{name}", std::process::id()));
         let project = base.join("project");
         let _ = std::fs::remove_dir_all(&base);

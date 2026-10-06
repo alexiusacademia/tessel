@@ -1,0 +1,5 @@
+# What `tessel build` makes (and the IDE's Build and Package buttons).
+/{{folder}}
+/{{folder}}.exe
+*.app/
+.DS_Store

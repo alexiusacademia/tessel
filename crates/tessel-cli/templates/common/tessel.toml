@@ -1,0 +1,5 @@
+# The version of Tessel this project uses: Tessel's commands, editors and
+# the IDE run it with this version, whatever version is installed (and
+# install it the first time). `tessel pin` changes it.
+tessel = "{{tessel}}"
+{{app}}

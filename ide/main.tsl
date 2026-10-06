@@ -164,8 +164,15 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                             if hasTesselFiles() {
                                 Text("Open a file from the explorer").color(.secondary)
                             } else {
-                                Text("This folder has no Tessel files yet").color(.secondary)
-                                Button("Create main.tsl") { createStarter() }
+                                Text("This folder has no Tessel files yet. Start a project:").color(.secondary)
+                                HStack(spacing: 8) {
+                                    Button("To-do app") { createProject(template: "app") }
+                                        .tooltip("A small app in a few files: a window, a menu, a view of its own, and saving")
+                                    Button("Blank app") { createProject(template: "blank") }
+                                        .tooltip("An app with one window and a button")
+                                    Button("Command line") { createProject(template: "cli") }
+                                        .tooltip("A program that runs in a terminal")
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -465,13 +472,20 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         (listFolder(project) ?? []).first(where: { n in n.hasSuffix(".tsl") }) != nil
     }
 
-    // A small app to start from, in a new folder.
-    fn createStarter() {
-        let path = join(folder: project, name: "main.tsl")
-        let starter = "app Hello(width: 400, height: 300) \{\n    state count = 0\n\n    VStack(spacing: 12) \{\n        Text(\"Count: \{count}\").font(size: 24, weight: .bold)\n        Button(\"Add one\") \{ count += 1 }\n    }\n}\n"
-        if writeFile(path: path, text: starter) {
+    // A project to start from, in the open folder: `tessel new` writes its
+    // files (a program, tessel.toml, a README and a .gitignore).
+    fn createProject(template: String) {
+        console = []
+        status = "Creating…"
+        runCommand(path: tesselCommand(), args: ["new", project, "--template", template], onOutput: { text in console.append(text) }) { code in
+            if code != 0 {
+                panel = Panel.console
+                status = "Couldn't create the project"
+                return
+            }
+            status = "Ready"
             refreshTree(showing: project)
-            open(path: path)
+            open(path: join(folder: project, name: "main.tsl"))
             check()
         }
     }

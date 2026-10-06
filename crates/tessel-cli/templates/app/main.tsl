@@ -1,0 +1,82 @@
+// The app: its window, its menus, and what the buttons do.
+// Run it with `tessel run .` (or Run in the IDE).
+
+app {{Name}}(width: 420, height: 520) {
+    state tasks: [Task] = loadTasks()
+    state draft = ""
+    state filter = Filter.all
+
+    VStack(spacing: 12, alignment: .leading) {
+        Text("{{title}}").font(size: 22, weight: .bold)
+
+        HStack(spacing: 8) {
+            TextField("What needs doing?", text: draft)
+                .onSubmit { add() }
+                .autofocus()
+            Button("Add") { add() }
+                .disabled(draft.trim() == "")
+        }
+
+        Picker(selection: filter) {
+            Text("All").tag(Filter.all)
+            Text("To do").tag(Filter.open)
+            Text("Done").tag(Filter.done)
+        }
+
+        Scroll {
+            VStack(spacing: 2, alignment: .leading) {
+                for i in tasks.indices {
+                    if filter.shows(tasks[i]) {
+                        TaskRow(task: tasks[i], onToggle: { toggle(i) }, onDelete: { remove(i) })
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: .infinity)
+
+        Text(summary()).color(.secondary)
+    }
+    .padding(16)
+    .menuBar {
+        Menu("List") {
+            MenuItem("Clear Done", shortcut: "cmd+shift+k") { clearDone() }
+                .disabled(!tasks.any(where: { t in t.done }))
+        }
+    }
+
+    fn add() {
+        let title = draft.trim()
+        if title != "" {
+            tasks.append(Task(title: title))
+            draft = ""
+            save()
+        }
+    }
+
+    fn toggle(_ i: Int) {
+        tasks[i].done = !tasks[i].done
+        save()
+    }
+
+    fn remove(_ i: Int) {
+        tasks.remove(at: i)
+        save()
+    }
+
+    fn clearDone() {
+        tasks = tasks.filter { t in !t.done }
+        save()
+    }
+
+    fn save() {
+        saveTasks(tasks)
+    }
+
+    fn summary() -> String {
+        let left = tasks.count(where: { t in !t.done })
+        if tasks.isEmpty { "Nothing yet: add a task above." }
+        else if left == 0 { "All done!" }
+        else if left == 1 { "1 task to do" }
+        else { "{left} tasks to do" }
+    }
+}

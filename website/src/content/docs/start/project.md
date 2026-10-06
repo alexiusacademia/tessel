@@ -34,6 +34,7 @@ role = "viewer"
 ```
 
 Every part is optional; a project without a `tessel.toml` works as before.
+[`tessel new`](/start/cli/#tessel-new) starts a project with one.
 Tessel looks for the file next to the program, then in the folders above
 it, so a project's subfolders share it. Commit it with the code.
 

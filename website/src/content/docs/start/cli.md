@@ -13,6 +13,10 @@ With no command, opens the Tessel IDE on the current folder.
 
 commands:
   ide [folder]   open the Tessel IDE on a folder (default: the current one)
+  new <folder> [--template app|blank|cli]
+                 start a project in a new folder: a program to build on, its
+                 tessel.toml, a README and a .gitignore. Templates: app (the
+                 default; a to-do list app), blank (one window) and cli
   check <path> [--format lines]
                  check a program for errors; <path> is a .tsl file or a folder.
                  With --format lines, prints one error per line for tools:
@@ -39,6 +43,43 @@ so there are no imports (see [Programs and files](/language/programs/)).
 
 A program has exactly one entry point: an `app` (a program with a window)
 or a `fn main()` (a program that runs in the terminal).
+
+## `tessel new`
+
+```sh
+tessel new my-tasks                      # a to-do list app to build on
+tessel new my-app --template blank       # an app with one window
+tessel new tool --template cli           # a command-line program
+```
+
+Starts a project in a new folder (or in a folder without a program yet, like
+`tessel new .` in an empty one), from a template:
+
+| Template | What you get |
+|---|---|
+| `app` (the default) | A small to-do list app, split the way a bigger app is: `main.tsl` (the window, a menu, what the buttons do), `task.tsl` (the data, and saving it as JSON between runs) and `views.tsl` (a view of its own). |
+| `blank` | An app with one window, a text and a button, in `main.tsl`. |
+| `cli` | A program with `fn main` that greets the names it's given: `tessel run . Ana Ben`. |
+
+Each also gets:
+
+- a `tessel.toml` that [pins the project](#tessel-pin) to the version of
+  Tessel that made it, and for apps an `[app]` table with the app's name,
+  identifier and version (see [The project file](/start/project/)). The
+  folder gives the names: `my-tasks` makes the app `My Tasks`, with the
+  identifier `com.example.my-tasks`. Change them before you share the app.
+- a `README.md` that says how to run and build it, and what's in each file;
+- a `.gitignore` that leaves out what `tessel build` makes.
+
+Files already in the folder are kept, not replaced. Then run it:
+
+```sh
+cd my-tasks
+tessel run .
+```
+
+In the [IDE](/start/ide/), a folder with no Tessel files offers the same
+templates.
 
 ## `tessel check`
 

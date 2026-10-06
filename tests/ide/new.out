@@ -1,0 +1,208 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No Tessel files yet"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+            Spacer
+            VStack
+              Icon fileCode
+              Text "This folder has no Tessel files yet. Start a project:"
+              HStack
+                Button "To-do app"
+                Button "Blank app"
+                Button "Command line"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon file
+                    Text "README.md"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "task.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon file
+                    Text "tessel.toml"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "views.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] = "// The app: its window, its menus, and what the buttons do.\n// Run it with `tessel run .` (or Run in the IDE).\n\napp Project(width: 420, height: 520) {\n    state tasks: [Task] = loadTasks()\n    state draft = \"\"\n    state filter = Filter.all\n\n    VStack(spacing: 12, alignment: .leading) {\n        Text(\"Project\").font(size: 22, weight: .bold)\n\n        HStack(spacing: 8) {\n            TextField(\"What needs doing?\", text: draft)\n                .onSubmit { add() }\n                .autofocus()\n            Button(\"Add\") { add() }\n                .disabled(draft.trim() == \"\")\n        }\n\n        Picker(selection: filter) {\n            Text(\"All\").tag(Filter.all)\n            Text(\"To do\").tag(Filter.open)\n            Text(\"Done\").tag(Filter.done)\n        }\n\n        Scroll {\n            VStack(spacing: 2, alignment: .leading) {\n                for i in tasks.indices {\n                    if filter.shows(tasks[i]) {\n                        TaskRow(task: tasks[i], onToggle: { toggle(i) }, onDelete: { remove(i) })\n                    }\n                }\n            }\n        }\n        .frame(maxHeight: .infinity)\n\n        Text(summary()).color(.secondary)\n    }\n    .padding(16)\n    .menuBar {\n        Menu(\"List\") {\n            MenuItem(\"Clear Done\", shortcut: \"cmd+shift+k\") { clearDone() }\n                .disabled(!tasks.any(where: { t in t.done }))\n        }\n    }\n\n    fn add() {\n        let title = draft.trim()\n        if title != \"\" {\n            tasks.append(Task(title: title))\n            draft = \"\"\n            save()\n        }\n    }\n\n    fn toggle(_ i: Int) {\n        tasks[i].done = !tasks[i].done\n        save()\n    }\n\n    fn remove(_ i: Int) {\n        tasks.remove(at: i)\n        save()\n    }\n\n    fn clearDone() {\n        tasks = tasks.filter { t in !t.done }\n        save()\n    }\n\n    fn save() {\n        saveTasks(tasks)\n    }\n\n    fn summary() -> String {\n        let left = tasks.count(where: { t in !t.done })\n        if tasks.isEmpty { \"Nothing yet: add a task above.\" }\n        else if left == 0 { \"All done!\" }\n        else if left == 1 { \"1 task to do\" }\n        else { \"{left} tasks to do\" }\n    }\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+--- files: .gitignore, .gitkeep, README.md, main.tsl, task.tsl, tessel.toml, views.tsl
+--- README.md
+# Project
+
+A to-do list app made with [Tessel](https://tessel-lang.netlify.app): add
+tasks, tick them off, and they're still there the next time it opens.
+
+## Running it
+
+```sh
+tessel run .          # build and run it
+tessel run . --hot    # and take changes to the code as you save
+tessel ide            # or work on it in the Tessel IDE
+```
+
+## Making the app
+
+```sh
+tessel build . --bundle
+```
+
+makes `Project.app` on macOS and `project.exe` on Windows, which run
+on computers without Tessel. (The IDE's Package button does the same.)
+
+## What's where
+
+| File | |
+|---|---|
+| `main.tsl` | The app: its window, its menus, and what the buttons do. |
+| `task.tsl` | The data: a task, the filter, and saving the tasks as JSON. |
+| `views.tsl` | `TaskRow`, a view of its own for showing one task. |
+| `tessel.toml` | The version of Tessel the project uses, and the app's name, identifier and version. |
+
+Every `.tsl` file in the folder is part of the program: names declared in
+one are seen in the others. To give the app an icon, put an `icon.png`
+(1024 × 1024) next to `main.tsl`.
+
+See the [Tessel documentation](https://tessel-lang.netlify.app) to learn
+more.

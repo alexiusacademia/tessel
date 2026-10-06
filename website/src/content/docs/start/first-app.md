@@ -18,7 +18,9 @@ The finished program is also in the Tessel repository as `examples/todos`.
 ## Set up
 
 A Tessel program is a folder of `.tsl` files. Make a folder called `todos`
-with an empty file `main.tsl` in it. You can edit it in any text editor, in
+with an empty file `main.tsl` in it. (This tutorial builds the app from
+nothing, to show each part. To start a project of your own with a working
+app already in it, use [`tessel new`](/start/cli/#tessel-new).) You can edit it in any text editor, in
 the [Tessel IDE](/start/ide/) (run `tessel ide todos`), or in
 [VS Code](/start/editors/).
 

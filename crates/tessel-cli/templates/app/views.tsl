@@ -1,0 +1,20 @@
+// A view of its own, used by the app for each task: it shows the task, and
+// tells the app when it's ticked or deleted.
+
+view TaskRow(task: Task, onToggle: fn(), onDelete: fn()) {
+    HStack(spacing: 10) {
+        Icon(if task.done { .circleCheck } else { .check })
+            .color(if task.done { .green } else { .gray })
+            .onTap { onToggle() }
+            .tooltip(if task.done { "Mark as to do" } else { "Mark as done" })
+        Text(task.title)
+            .color(if task.done { .secondary } else { .primary })
+        Spacer()
+        Icon(.trash)
+            .color(.secondary)
+            .onTap { onDelete() }
+            .tooltip("Delete")
+    }
+    .padding(horizontal: 8, vertical: 6)
+    .hoverBackground(.separator)
+}
