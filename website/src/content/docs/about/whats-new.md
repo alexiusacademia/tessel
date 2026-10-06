@@ -7,8 +7,9 @@ What each release of Tessel brought, newest first. To get the latest, run
 `tessel update` (or take the update the IDE offers). See
 [Installation](/start/installation/) if you don't have Tessel yet.
 
-Tessel's first releases came quickly, several on some days: it's written
-with an AI coding assistant. See [How Tessel is made](/about/roadmap/#how-tessel-is-made).
+Tessel's first releases came quickly, several on some days, so each day's
+are listed together under its last version: it's written with an AI coding
+assistant. See [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
 ## 0.1.35
 
@@ -38,46 +39,26 @@ with an AI coding assistant. See [How Tessel is made](/about/roadmap/#how-tessel
 
 ## 0.1.34
 
-*October 4, 2026*
+*October 4, 2026 · 0.1.30 to 0.1.34*
 
 - **PDF documents.** `writePDF` draws pages with the same `Graphics` as a
   `Canvas`, and `g.newPage()` starts the next one. Text stays text that can
   be selected and searched, with its fonts in the file; shapes stay sharp
   at any zoom. See [Making a PDF](/ui/drawing/#making-a-pdf) and
   [`writePDF`](/reference/stdlib/#writepdf).
-
-## 0.1.33
-
-*October 4, 2026*
-
 - **Much smaller apps on Windows.** Apps draw, lay out text and read
   pictures with what comes with Windows (Direct2D, DirectWrite and WIC), as
   they do on macOS: a one-`Text` app is about 1.3 MB instead of 7.5 MB. See
   [How big an app is](/start/cli/#how-big-an-app-is).
-- **Blend modes on Windows:** layers drawn with
-  `g.beginLayer(blend:)` blend as they do on macOS.
 - **A project chooses its version of Tessel.** `tessel pin` writes the
   version into the project's `tessel.toml`, and from then on Tessel's
   commands, editors and the IDE use that version for the project,
   installing it the first time. See [`tessel pin`](/start/cli/#tessel-pin).
-- **Fixed on Windows:** appending many bytes to a `Data` could damage it.
-
-## 0.1.32
-
-*October 4, 2026*
-
 - **Functions can change the caller's value.** A parameter declared `bind`
   is the caller's variable, field or list item itself, not a copy, as it
   already was for views: `fn addBonus(scores: bind [Int])`. Methods can have
   them too. See
   [Changing the caller's value](/language/values/#changing-the-callers-value).
-- **Fixed:** changing a loop's variable through a closure (or a `bind`
-  argument) changed a copy of the list, not the list.
-
-## 0.1.31
-
-*October 4, 2026*
-
 - **New controls:** `Slider`, `Stepper`, `ColorPicker`, `DisclosureGroup`
   (for trees) and `LazyVStack` (for long lists). See
   [Controls](/ui/controls/#slider-stepper-and-colorpicker).
@@ -86,208 +67,103 @@ with an AI coding assistant. See [How Tessel is made](/about/roadmap/#how-tessel
   Alt: `.shortcut("shift+z")`.
 - **Background jobs** report their progress and can be cancelled.
 - **Drawing:** pictures made from pixels, gradients, layers that blend with
-  what's under them, and SVGs on a `Canvas`. See [Drawing](/ui/drawing/).
+  what's under them (on Windows too), and SVGs on a `Canvas`. See
+  [Drawing](/ui/drawing/).
 - **Menus and windows:** context menus, popovers, the menu bar (the
   system's on macOS), more than one window, asking before a window closes,
   and files opened with the app. See
   [Menus, windows and documents](/ui/menus-windows/).
-
-## 0.1.30
-
-*October 4, 2026*
-
 - **Language:** bit operations, hex and binary number literals, `match` arms
   with several patterns, tuples in `if let`, and functions declared inside
-  functions. See [Basics](/language/basics/) and
-  [Functions](/language/functions/).
-- `Data` can have bytes appended to it.
+  functions. `Data` can have bytes appended to it. See
+  [Basics](/language/basics/) and [Functions](/language/functions/).
+- **Fixed:**
+  - Changing a loop's variable through a closure (or a `bind` argument)
+    changed a copy of the list, not the list.
+  - Appending many bytes to a `Data` could damage it.
 
 ## 0.1.29
 
-*October 3, 2026*
+*October 3, 2026 · 0.1.23 to 0.1.29*
 
-- **Fixed on Windows:** the REPL, hot reload and previews could crash.
-- **Fixed on Windows:** endless recursion is reported as a Tessel error, as
-  on macOS, instead of ending the program.
-
-## 0.1.28
-
-*October 3, 2026*
-
-- **Much smaller apps on macOS.** Apps draw, lay out text and read pictures
-  with what comes with macOS, so a one-`Text` app is about 1 MB instead of
-  8.3 MB.
-- Apps carry SVG, pictures and Markdown only when they use them, which
-  makes Windows apps smaller too. See
-  [How big an app is](/start/cli/#how-big-an-app-is).
-
-## 0.1.27
-
-*October 3, 2026*
-
-- **Fixed:** Windows apps carried all of Tessel (a one-`Text` app was
-  24 MB). The parts an app doesn't use are left out now.
-
-## 0.1.26
-
-*October 3, 2026*
-
-- **IDE:** copy, cut, paste and duplicate views in the Design panel, and an
-  outline of the views.
-- A click inside a view with `.onKey` gives it the keyboard.
-
-## 0.1.25
-
-*October 3, 2026*
-
-- **IDE:** the Design panel has an inspector, undo and redo, and more views
-  to add (`TextField`, `Toggle`, `Picker`). See
+- **Much smaller apps.** On macOS, apps draw, lay out text and read
+  pictures with what comes with macOS, so a one-`Text` app is about 1 MB
+  instead of 8.3 MB. Apps carry SVG, pictures and Markdown only when they
+  use them, and Windows apps no longer carry all of Tessel (a one-`Text`
+  app was 24 MB). See [How big an app is](/start/cli/#how-big-an-app-is).
+- **IDE:** the Design panel has an inspector, undo and redo, copy, cut,
+  paste and duplicate, an outline of the views, and more views to add
+  (`TextField`, `Toggle`, `Picker`). A Preview panel shows Markdown files as
+  they'll look, next to their text. See
   [The Design panel](/start/ide/#the-design-panel).
 - A code editor's undo history includes the changes the program makes to
   its text. New: `undoTextEdit()` and `redoTextEdit()`.
+- A click inside a view with `.onKey` gives it the keyboard.
 - `tessel preview --dark`.
-
-## 0.1.24
-
-*October 3, 2026*
-
-- **Fixed:** `pow(10, x)` failed to build on macOS.
-
-## 0.1.23
-
-*October 3, 2026*
-
-- **IDE:** a Preview panel shows Markdown files as they'll look, next to
-  their text.
+- **Fixed:**
+  - On Windows, the REPL, hot reload and previews could crash, and endless
+    recursion ended the program instead of being reported as a Tessel
+    error, as on macOS.
+  - `pow(10, x)` failed to build on macOS.
 
 ## 0.1.22
 
-*October 2, 2026*
+*October 2, 2026 · 0.1.14 to 0.1.22*
 
 - **IDE: the Design panel.** A picture of your app next to its code, where
   views can be selected, changed, added, moved and deleted. Every change is
   written into the code. See [The Design panel](/start/ide/#the-design-panel).
-- `tessel preview` makes a picture of an app's window for editors. See
-  [`tessel preview`](/start/cli/#tessel-preview).
-- `appendData` adds bytes to the end of a file.
-
-## 0.1.21
-
-*October 2, 2026*
-
-- **IDE:** drag the edges of the explorer and the bottom panel to resize
-  them.
-- `readImage` gives a picture file's size and pixels.
-
-## 0.1.20
-
-*October 2, 2026*
-
 - **Canvas:** draw views of your own with paths, shapes, text and pictures,
   and save drawings as pictures. See [Drawing and the mouse](/ui/drawing/).
-- **The mouse and keys:** `.onPointer`, `.onKey`, `.cursor`, `.onDrop`,
-  `.onResize`, `.tooltip`, `.offset` and `.clipped`.
-- `Data` reads numbers, slices and Latin-1 text, and compresses.
-  `list += other` appends in place.
-- **Fixed:** stopping `tessel run` left the program it started running.
-
-## 0.1.19
-
-*October 2, 2026*
-
-- **Scroll bars** in scroll views and code editors, which show when there's
-  more than fits and can be dragged.
-- Releases are for macOS and Windows together from now on.
-
-## 0.1.18
-
-*October 2, 2026*
-
-- **Fixed:** a double click in a code editor or text field could select
-  only part of a word.
-
-## 0.1.17
-
-*October 2, 2026*
-
-- `.onDrag`: views that respond to being dragged with the mouse.
-- **IDE:** drag the edge of the Docs panel to resize it.
-
-## 0.1.16
-
-*October 2, 2026*
-
-- **IDE:** search in the Docs panel.
-
-## 0.1.15
-
-*October 2, 2026*
-
+- **The mouse and keys:** `.onPointer`, `.onKey`, `.onDrag`, `.cursor`,
+  `.onDrop`, `.onResize`, `.tooltip`, `.offset` and `.clipped`.
 - **A `Markdown` view:** text with headings, lists, code, tables, pictures
   and links.
-- **IDE:** the documentation comes with it. The Docs button opens it next
-  to the editor, without a network.
-
-## 0.1.14
-
-*October 2, 2026*
-
-- `CodeEditor`: taller lines, and more room around the line numbers and
-  the code.
+- **Scroll bars** in scroll views and code editors, which show when there's
+  more than fits and can be dragged.
+- **IDE:** the documentation comes with it: the Docs button opens it next to
+  the editor, without a network, with search. The explorer, the bottom
+  panel and the Docs panel can be resized by dragging their edges.
+- `tessel preview` makes a picture of an app's window for editors. See
+  [`tessel preview`](/start/cli/#tessel-preview).
+- `Data` reads numbers, slices and Latin-1 text, and compresses.
+  `list += other` appends in place. `readImage` gives a picture file's size
+  and pixels, and `appendData` adds bytes to the end of a file.
+- `CodeEditor`: taller lines, and more room around the line numbers and the
+  code.
+- Releases are for macOS and Windows together from now on.
+- **Fixed:**
+  - Stopping `tessel run` left the program it started running.
+  - A double click in a code editor or text field could select only part of
+    a word.
 
 ## 0.1.13
 
-*October 1, 2026*
+*October 1, 2026 · 0.1.8 to 0.1.13*
 
-- **REPL:** an `import` stays for the rest of the session, so a project's
-  modules can be tried out at the prompt. `:keywords` lists the keywords.
-
-## 0.1.12
-
-*October 1, 2026*
-
-- **Time zones** for `date`, `formatDate` and `parseDate`, and calendar
-  dates: `dateParts`, `addToDate`, `daysBetween` and more.
-- `cancelRequest` gives up a `request` or `download`. WebSockets can send
-  and receive bytes.
-
-## 0.1.11
-
-*October 1, 2026*
-
-- **REPL:** errors point at the right column, and every entry has its own
-  number. The REPL has [its own page](/start/repl/).
-
-## 0.1.10
-
-*October 1, 2026*
-
-- **`tessel repl`:** type code and see what it does, a line at a time. See
-  [The REPL](/start/repl/).
+- **`tessel repl`:** type code and see what it does, a line at a time. An
+  `import` stays for the rest of the session, so a project's modules can be
+  tried out at the prompt. See [The REPL](/start/repl/).
 - **Hot reload:** `tessel run --hot` gives a running app its new code when
   you save, and keeps its state. In the IDE, "Reload on save".
-
-## 0.1.9
-
-*October 1, 2026*
-
-- `Image` shows PNG and JPEG files.
 - **Light and dark:** apps follow the system, or choose one with
   `app Name(appearance: .dark)`. Colors of your own with `.rgb` and
   `.rgba`.
 - `.animation()`: views move, resize and fade to their new state.
+- `Image` shows PNG and JPEG files.
 - Tab and Shift+Tab move between text fields, and input methods (Chinese,
   Japanese, Korean, accents) work in them.
-
-## 0.1.8
-
-*October 1, 2026*
-
+- **Time zones** for `date`, `formatDate` and `parseDate`, and calendar
+  dates: `dateParts`, `addToDate`, `daysBetween` and more.
+- `cancelRequest` gives up a `request` or `download`. WebSockets can send
+  and receive bytes.
 - `print` shows lists, dictionaries, sets and tuples. `enumerated()`, `zip`,
   and `for (key, value) in dictionary`.
 - Code completion in any editor through `tessel lsp`. See
   [Editor support](/start/editors/).
 - **App icons:** an `icon.png` next to a program is its app's icon.
+- **Fixed:** REPL errors point at the right column, and every entry has its
+  own number.
 
 ## 0.1.7
 
@@ -308,50 +184,29 @@ with an AI coding assistant. See [How Tessel is made](/about/roadmap/#how-tessel
 
 ## 0.1.5
 
-*September 28, 2026*
-
-- **Generics:** generic functions, structs and enums, with interface
-  constraints. See [Generics](/language/generics/).
-- Faster lists, dictionaries, math and text.
-
-## 0.1.4
-
-*September 28, 2026*
+*September 28, 2026 · 0.1.4 and 0.1.5*
 
 - **Interfaces.** See [Interfaces](/language/interfaces/).
+- **Generics:** generic functions, structs and enums, with interface
+  constraints. See [Generics](/language/generics/).
 - `while`, `while let`, `break` and `continue`, and reading input from the
   command line.
+- Faster lists, dictionaries, math and text.
 
 ## 0.1.3
 
-*September 27, 2026*
+*September 27, 2026 · 0.1.0 to 0.1.3*
 
-- `tessel update`, and updates offered in the IDE.
-- Code completion in the IDE. JSON and binary saving. Work on another
-  thread with `background`.
+- The first release: the language, the UI toolkit, the compiler, and the
+  IDE.
 - A much larger [standard library](/reference/stdlib/): text, lists,
-  numbers, dates, files, the clipboard, and the network (requests,
-  downloads, WebSockets).
-
-## 0.1.2
-
-*September 27, 2026*
-
-- Math functions, and number formatting with `formatted(decimals:)`.
-- Open and Save dialogs. Apps about a third smaller.
-
-## 0.1.1
-
-*September 27, 2026*
-
-- Fixes for four compiler crashes and several wrong results.
-- Callbacks (timers, requests) work in `fn main` programs, and
-  `.hoverBackground` works on any view.
-- **IDE:** an empty folder offers to create `main.tsl`.
-
-## 0.1.0
-
-*September 27, 2026*
-
-- The first release: the language, the UI toolkit, the compiler,
-  and the IDE.
+  numbers, math, dates, files, the clipboard, and the network (requests,
+  downloads, WebSockets). JSON and binary saving. Work on another thread
+  with `background`.
+- Open and Save dialogs, and number formatting with `formatted(decimals:)`.
+- `tessel update`, and updates offered in the IDE. Code completion in the
+  IDE, which offers to create `main.tsl` in an empty folder.
+- Apps about a third smaller.
+- **Fixed:** four compiler crashes and several wrong results. Callbacks
+  (timers, requests) work in `fn main` programs, and `.hoverBackground` works
+  on any view.
