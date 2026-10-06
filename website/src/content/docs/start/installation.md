@@ -117,7 +117,3 @@ curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | TESSEL_VE
 Delete `~/.tessel` (macOS) or `%LOCALAPPDATA%\Tessel` (Windows), and remove
 the `PATH` line the installer added to `~/.zshrc` (macOS) or your user
 `Path` variable (Windows).
-
-## Building from source
-
-To work on Tessel itself, see [Building from source](/about/source/).

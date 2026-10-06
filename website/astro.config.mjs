@@ -147,7 +147,6 @@ export default defineConfig({
 						{ label: "What's new", slug: 'about/whats-new' },
 						{ label: 'Design decisions', slug: 'about/design' },
 						{ label: 'Roadmap', slug: 'about/roadmap' },
-						{ label: 'Building from source', slug: 'about/source' },
 					],
 				},
 			],

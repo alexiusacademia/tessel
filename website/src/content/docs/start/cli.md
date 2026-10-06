@@ -260,9 +260,8 @@ built Todos.app
 ```
 
 `tessel build` links your program with the Tessel runtime library that
-sits next to the `tessel` executable, using its own built-in linker. (A
-`tessel` built from source without the `bundled-linker` feature uses the
-system linker instead; set `TESSEL_LINKER=system` to force that.)
+sits next to the `tessel` executable, using its own built-in linker. Set
+`TESSEL_LINKER=system` to use the system's linker instead.
 
 ## `tessel` and `tessel ide`
 
