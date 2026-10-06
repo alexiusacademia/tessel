@@ -11,6 +11,20 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.1.38
+
+*October 7, 2026*
+
+- **Ribbons in several files.** A view of your own can make a ribbon's tab,
+  a group, or some of a group's buttons, and the ribbon uses them as if
+  they were written in it. See
+  [A ribbon in several files](/ui/ribbons/#a-ribbon-in-several-files).
+- **Fixed:**
+  - `g.textWidth` left out the spaces at the end of a text, so a space
+    alone was 0 wide.
+  - Padding on a `Divider` made the line thicker instead of leaving room
+    around it.
+
 ## 0.1.37
 
 *October 6, 2026 · 0.1.36 and 0.1.37*
