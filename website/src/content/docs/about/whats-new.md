@@ -8,8 +8,8 @@ What each release of Tessel brought, newest first. To get the latest, run
 [Installation](/start/installation/) if you don't have Tessel yet.
 
 Tessel's first releases came quickly, several on some days, so each day's
-are listed together under its last version: it's written with an AI coding
-assistant. See [How Tessel is made](/about/roadmap/#how-tessel-is-made).
+are listed together under its last version. See
+[How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
 ## 0.1.35
 

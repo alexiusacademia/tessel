@@ -10,29 +10,9 @@ language may still change. This page is an honest list of where things stand.
 
 ## How Tessel is made
 
-Tessel is written by one developer working with an AI coding assistant: the
-developer decides what Tessel should be and how it should behave, and
-directs and reviews the work; the assistant writes much of the code, the
-tests and the documentation. That's why it moved so fast at first: from
-the first commit to version 0.1.35 took nine days, with several releases on
-some of them. The dates on [What's new](/about/whats-new/) are the real
-ones.
-
-Speed is only worth something if what's built works, so every change is
-checked before it's released:
-
-- About 120 test programs run before every release on macOS, and on Windows
-  in continuous integration: their output is compared with what it should
-  be, and on macOS they're checked for memory leaks. Apps are driven by test
-  scripts that click, type and compare what's on screen.
-- 24 tests check the compiler's error messages, and more than 60 test parts
-  of the compiler and runtime on their own.
-- Each release is built from scratch on both systems, and the packages are
-  run before they're published.
-
-A bug that gets through is fixed with a test that would have caught it
-(see the closed [issues](https://github.com/alexiusacademia/tessel/issues?q=is%3Aissue)).
-Releases will come less often from here on, gathering more into each.
+Tessel is developed with the help of an AI coding assistant, which is why
+its first releases came so quickly. The dates on
+[What's new](/about/whats-new/) are the real ones.
 
 ## What works today
 
