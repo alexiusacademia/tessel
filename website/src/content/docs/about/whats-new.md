@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.1.40
+
+*October 8, 2026*
+
+- `tessel --version` says which version a project uses, when the project
+  is [pinned](/start/cli/#tessel-pin) to another one than is installed:
+  `tessel 0.1.36 (this project uses 0.1.38)`.
+- **Fixed:** an index that's a call changing the list it indexes, through
+  a `bind` parameter (`list[grow(list)]`), read the list as it was before
+  the call, and could stop the program.
+
 ## 0.1.39
 
 *October 7, 2026 · 0.1.38 and 0.1.39*

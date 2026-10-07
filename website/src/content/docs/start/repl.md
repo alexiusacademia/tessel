@@ -13,7 +13,7 @@ tessel repl
 ```
 
 ```text
-Tessel 0.1.39 (:help for help, :quit to leave)
+Tessel 0.1.40 (:help for help, :quit to leave)
 >
 ```
 
