@@ -105,7 +105,8 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         (Some("version" | "--version" | "-V"), _) => {
-            println!("tessel {}", tessel_compiler::VERSION);
+            // (With what the project here uses, if that's another version.)
+            println!("tessel {}{}", tessel_compiler::VERSION, pin::version_note());
             ExitCode::SUCCESS
         }
         (Some("check"), Some(path)) => {

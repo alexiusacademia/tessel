@@ -58,6 +58,21 @@ pub fn find(path: &Path) -> Option<PathBuf> {
     start.ancestors().map(|d| d.join(FILE)).find(|f| f.is_file())
 }
 
+/// For `tessel --version`: what to add when the folder it's run in belongs
+/// to a project that uses another version than this one, like
+/// ` (this project uses 0.1.38)`. The project's commands run with that
+/// version; `version` itself isn't handed on, so it says so.
+pub fn version_note() -> String {
+    let Some(file) = find(Path::new(".")) else { return String::new() };
+    let Ok(Some(wanted)) = read(&file) else { return String::new() };
+    let number = wanted.trim_start_matches('v');
+    if number == tessel_compiler::VERSION {
+        return String::new();
+    }
+    let waiting = if update::is_installed(&wanted) { "" } else { ", not installed yet" };
+    format!(" (this project uses {number}{waiting})")
+}
+
 /// Where a command's project is: the program it's given, or for `repl` and
 /// `lsp` the folder it's run in. `None` for commands that aren't about a
 /// project (`update`, `version`, `help`, `ide`, `pin`).

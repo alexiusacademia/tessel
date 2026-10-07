@@ -150,6 +150,12 @@ fn exe_name() -> String {
     format!("tessel{}", std::env::consts::EXE_SUFFIX)
 }
 
+/// Whether release `target` (like `v0.1.3`) is installed next to this one
+/// (see `installed`, which installs it if not).
+pub fn is_installed(target: &str) -> bool {
+    home().is_ok_and(|h| h.join("versions").join(target).join(exe_name()).is_file())
+}
+
 /// `v0.1.3` for `0.1.3` or `v0.1.3`; an error for what isn't a version.
 pub fn normalize(v: &str) -> Result<String, String> {
     let v = v.trim();

@@ -351,6 +351,10 @@ installed next to yours, in the `versions` folder of Tessel's folder
 (`~/.tessel` on macOS, `%LOCALAPPDATA%\Tessel` on Windows). Editors and the
 IDE use the project's version too, since they run these commands.
 
+`tessel version` isn't handed over: it prints the version installed, and
+adds which one the project uses, like `tessel 0.1.36 (this project uses
+0.1.38)`.
+
 Commit `tessel.toml` with your code, so everyone working on the project
 builds it with the same Tessel. To move the project to a newer version, run
 `tessel pin` again with that version.
@@ -447,6 +451,18 @@ page. `tessel version` (also `--version` or `-V`) prints the version:
 ```
 tessel 0.1.0
 ```
+
+That's the version installed. In a project that [uses another
+version](#tessel-pin), the line says so too, since the project's commands
+run with that one:
+
+```
+tessel 0.1.36 (this project uses 0.1.38)
+tessel 0.1.36 (this project uses 0.1.38, not installed yet)
+```
+
+The line always starts with `tessel` and the installed version, so tools
+that read it aren't affected.
 
 An unknown command, or a command missing its `<path>`, prints the usage
 summary and exits with status 1.

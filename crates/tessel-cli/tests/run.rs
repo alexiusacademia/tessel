@@ -354,6 +354,36 @@ fn ide_session() {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
+/// `tessel --version` says which version a pinned project uses (issue #13).
+#[test]
+fn version_in_a_pinned_project() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-version-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    std::fs::create_dir_all(dir.join("home/versions/v0.0.2")).unwrap();
+    std::fs::write(dir.join("home/versions/v0.0.2").join(format!("tessel{}", std::env::consts::EXE_SUFFIX)), "").unwrap();
+    let version = |pinned: Option<&str>| {
+        match pinned {
+            Some(v) => std::fs::write(dir.join("tessel.toml"), format!("tessel = \"{v}\"\n")).unwrap(),
+            None => drop(std::fs::remove_file(dir.join("tessel.toml"))),
+        }
+        let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+            .arg("--version")
+            .current_dir(dir.join("sub"))
+            .env("TESSEL_HOME", dir.join("home"))
+            .env_remove("TESSEL_VERSION")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let own = format!("tessel {}", env!("CARGO_PKG_VERSION"));
+    assert_eq!(version(None), own);
+    assert_eq!(version(Some(env!("CARGO_PKG_VERSION"))), own);
+    assert_eq!(version(Some("0.0.1")), format!("{own} (this project uses 0.0.1, not installed yet)"));
+    assert_eq!(version(Some("v0.0.2")), format!("{own} (this project uses 0.0.2)"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// An app bundle says what its tessel.toml does (macOS).
 #[cfg(target_os = "macos")]
 #[test]
