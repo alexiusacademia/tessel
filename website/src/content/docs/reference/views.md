@@ -279,6 +279,54 @@ ColorPicker(color: layer.fill) { redraw() }
 - The swatch is 44 × 24 points. The palette goes below it, or above it when
   there's no room below.
 
+## DatePicker
+
+```text
+DatePicker(date: bind Float, format: String = "d MMM yyyy", firstWeekday: Int = 1,
+           onChange: fn() = …)
+```
+
+A field that shows a date, and opens a calendar under it to pick another.
+`date` is a time as the [date functions](/reference/stdlib/#dates-and-time)
+use it: seconds since 1970.
+
+```tessel
+state due = now()
+
+DatePicker(date: due)
+DatePicker(date: due, format: "EEEE, d MMMM yyyy", firstWeekday: 7) { save() }
+```
+
+![A field showing 7 Oct 2026 with a calendar icon, and under it a card with October 2026 between two arrows, the days of the month under Mo to Su with the 7th highlighted, and a Today button](../../../assets/screens/ui-date-picker.png)
+
+- Clicking a day sets `date` to that day and closes the calendar. The time
+  of day of `date` stays as it was, so a date picker can sit next to
+  controls for the hour and minute.
+- The arrows show the month before and after. **Today** picks today's date.
+  A click outside the calendar, or Escape, closes it without a change.
+- `format` is how the field shows the date, as
+  [`formatDate`](/reference/stdlib/#formatdate) takes it.
+- `firstWeekday` is the day weeks start on: 1 for Monday (the default) to 7
+  for Sunday.
+- `onChange` runs after a day is picked.
+- Dates are in the computer's time zone.
+
+## Calendar
+
+```text
+Calendar(date: bind Float, firstWeekday: Int = 1, onChange: fn() = …)
+```
+
+The calendar of a [`DatePicker`](#datepicker) by itself, always showing: a
+month of days, with `date`'s highlighted and today's in blue. Clicking a day
+sets `date`, keeping its time of day.
+
+```tessel
+Calendar(date: selected) { loadEvents() }
+```
+
+It's 222 points wide.
+
 ## VStack
 
 ```text

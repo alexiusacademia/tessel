@@ -1,0 +1,16 @@
+// `DatePicker` and `Calendar`: picking a day keeps the time of day, and
+// tells `onChange`.
+
+app Dates(width: 360, height: 460) {
+    state due = date(year: 2026, month: 10, day: 7, hour: 9, minute: 30)
+    state start = date(year: 2024, month: 2, day: 10)
+    state changes = 0
+
+    VStack(spacing: 12, alignment: .leading) {
+        Text("Due {formatDate(due)}, {changes} changes")
+        DatePicker(date: due, onChange: { changes += 1 })
+        Text("Start {formatDate(start, format: "EEEE d MMMM yyyy")}")
+        Calendar(date: start, firstWeekday: 7)
+    }
+    .padding(16)
+}

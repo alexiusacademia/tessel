@@ -1,0 +1,150 @@
+Root
+  View
+    VStack
+      Text "Due 2026-10-07 09:30, 0 changes"
+      View
+        HStack
+          Text "7 Oct 2026"
+          Icon calendar
+      Text "Start Saturday 10 February 2024"
+      View
+        View
+          VStack
+            HStack
+              Icon chevronLeft
+              Spacer
+              Text "February 2024"
+              Spacer
+              Icon chevronRight
+            HStack
+              Text "Su"
+              Text "Mo"
+              Text "Tu"
+              Text "We"
+              Text "Th"
+              Text "Fr"
+              Text "Sa"
+            VStack
+              HStack
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Text "1"
+                Text "2"
+                Text "3"
+              HStack
+                Text "4"
+                Text "5"
+                Text "6"
+                Text "7"
+                Text "8"
+                Text "9"
+                Text "10"
+              HStack
+                Text "11"
+                Text "12"
+                Text "13"
+                Text "14"
+                Text "15"
+                Text "16"
+                Text "17"
+              HStack
+                Text "18"
+                Text "19"
+                Text "20"
+                Text "21"
+                Text "22"
+                Text "23"
+                Text "24"
+              HStack
+                Text "25"
+                Text "26"
+                Text "27"
+                Text "28"
+                Text "29"
+                Spacer
+                Spacer
+              HStack
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+Root
+  View
+    VStack
+      Text "Due 2026-12-25 09:30, 1 changes"
+      View
+        HStack
+          Text "25 Dec 2026"
+          Icon calendar
+      Text "Start Wednesday 31 January 2024"
+      View
+        View
+          VStack
+            HStack
+              Icon chevronLeft
+              Spacer
+              Text "January 2024"
+              Spacer
+              Icon chevronRight
+            HStack
+              Text "Su"
+              Text "Mo"
+              Text "Tu"
+              Text "We"
+              Text "Th"
+              Text "Fr"
+              Text "Sa"
+            VStack
+              HStack
+                Spacer
+                Text "1"
+                Text "2"
+                Text "3"
+                Text "4"
+                Text "5"
+                Text "6"
+              HStack
+                Text "7"
+                Text "8"
+                Text "9"
+                Text "10"
+                Text "11"
+                Text "12"
+                Text "13"
+              HStack
+                Text "14"
+                Text "15"
+                Text "16"
+                Text "17"
+                Text "18"
+                Text "19"
+                Text "20"
+              HStack
+                Text "21"
+                Text "22"
+                Text "23"
+                Text "24"
+                Text "25"
+                Text "26"
+                Text "27"
+              HStack
+                Text "28"
+                Text "29"
+                Text "30"
+                Text "31"
+                Spacer
+                Spacer
+                Spacer
+              HStack
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer
+                Spacer

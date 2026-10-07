@@ -197,6 +197,25 @@ recompute something.
 
 ![The color picker's palette open: rows of colors from light to dark, and a hex field](../../../assets/screens/ui-color-picker.png)
 
+## Dates
+
+A `DatePicker` shows a date and opens a calendar to pick another; a
+`Calendar` is that calendar by itself. Both change a time kept as a `Float`,
+as [`now()` and `date(…)`](/reference/stdlib/#dates-and-time) give it:
+
+```tessel
+state due = now()
+
+HStack {
+    Text("Due")
+    DatePicker(date: due)
+}
+Text("{daysBetween(now(), due)} days left")
+```
+
+See [DatePicker](/reference/views/#datepicker) and
+[Calendar](/reference/views/#calendar).
+
 ## The keyboard and controls
 
 Besides text fields, Tab and Shift+Tab also go to sliders, steppers, color

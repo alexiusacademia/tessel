@@ -377,3 +377,113 @@ fn __sqlOptData(_ v: Data?) -> SqlValue {
     }
     SqlValue.null
 }
+
+// ---- Dates in views ----
+
+// `Calendar(date:)`: a month of days to pick one from. The time of day of
+// `date` stays as it is. `firstWeekday` is 1 for Monday to 7 for Sunday.
+view Calendar(date: bind Float, firstWeekday: Int = 1, onChange: fn() = {}) {
+    __MonthGrid(date: date, firstWeekday: firstWeekday, onChange: onChange)
+}
+
+view __MonthGrid(date: bind Float, firstWeekday: Int = 1, onChange: fn() = {}) {
+    // The first day of the month that's shown: the date's, until the arrows move it.
+    state shown = 0.0
+
+    let first = if shown == 0.0 { __dateMonthStart(date) } else { shown }
+    let month = dateParts(first)
+    let picked = dateParts(date)
+    let today = dateParts(now())
+    let blanks = (month.weekday - firstWeekday + 7) % 7
+    let days = dateParts(addToDate(first, months: 1, days: -1)).day
+
+    VStack(spacing: 6) {
+        HStack(spacing: 4) {
+            Icon(.chevronLeft).padding(6).hoverBackground(.separator, radius: 6)
+                .onTap { shown = addToDate(first, months: -1) }
+            Spacer()
+            Text(formatDate(first, format: "MMMM yyyy")).font(weight: .semibold)
+            Spacer()
+            Icon(.chevronRight).padding(6).hoverBackground(.separator, radius: 6)
+                .onTap { shown = addToDate(first, months: 1) }
+        }
+        HStack(spacing: 2) {
+            for i in 0..7 {
+                // (5 January 2026 was a Monday.)
+                Text(formatDate(__dateAt(2026, 1, 4 + firstWeekday + i, 12, 0, 0), format: "EEE").characters.prefix(2).joined())
+                    .font(size: 11).color(.secondary)
+                    .frame(width: 30)
+            }
+        }
+        VStack(spacing: 2) {
+            for week in 0..6 {
+                HStack(spacing: 2) {
+                    for column in 0..7 {
+                        let day = week * 7 + column - blanks + 1
+                        if day >= 1 && day <= days {
+                            let isPicked = day == picked.day && month.month == picked.month && month.year == picked.year
+                            let isToday = day == today.day && month.month == today.month && month.year == today.year
+                            Text("{day}")
+                                .font(weight: if isToday { .bold } else { .regular })
+                                .color(if isPicked { .white } else if isToday { .blue } else { .primary })
+                                .frame(width: 30, height: 26)
+                                .background(if isPicked { .blue } else { .clear }, radius: 6)
+                                .hoverBackground(if isPicked { .blue } else { .separator }, radius: 6)
+                                .onTap {
+                                    date = __dateAt(month.year, month.month, day, picked.hour, picked.minute, picked.second)
+                                    shown = 0.0
+                                    onChange()
+                                }
+                        } else {
+                            Spacer().frame(width: 30, height: 26)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    .frame(width: 222)
+}
+
+fn __dateMonthStart(_ time: Float) -> Float {
+    let p = dateParts(time)
+    date(year: p.year, month: p.month, day: 1, hour: 12)
+}
+
+// (`date`, for views whose own `date` hides it.)
+fn __dateAt(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int, _ second: Int) -> Float {
+    date(year: year, month: month, day: day, hour: hour, minute: minute, second: second)
+}
+
+view DatePicker(date: bind Float, format: String = "d MMM yyyy", firstWeekday: Int = 1, onChange: fn() = {}) {
+    state open = false
+
+    HStack(spacing: 6) {
+        Text(formatDate(date, format: format))
+        Icon(.calendar).color(.secondary)
+    }
+    .padding(horizontal: 8, vertical: 6)
+    .background(.background, radius: 6)
+    .border(.separator, radius: 6)
+    .onTap { open = !open }
+    .popover(isPresented: open) {
+        VStack(spacing: 8) {
+            __MonthGrid(date: date, firstWeekday: firstWeekday, onChange: {
+                open = false
+                onChange()
+            })
+            Divider()
+            HStack {
+                Button("Today") {
+                    let t = dateParts(now())
+                    let p = dateParts(date)
+                    date = __dateAt(t.year, t.month, t.day, p.hour, p.minute, p.second)
+                    open = false
+                    onChange()
+                }
+                Spacer()
+            }
+        }
+        .frame(width: 222)
+    }
+}

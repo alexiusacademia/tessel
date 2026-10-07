@@ -4678,8 +4678,9 @@ impl Checker<'_> {
         globals.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, g) in globals {
             // Not tuple structs or specialized copies, which can't be written by name.
-            // (Nor other modules' declarations, which are written `module.name`.)
-            if name.starts_with('(') || name.contains(['<', '.']) || !seen.insert(name.clone()) {
+            // (Nor other modules' declarations, which are written `module.name`,
+            // nor the standard library's own helpers, `__…`.)
+            if name.starts_with('(') || name.starts_with("__") || name.contains(['<', '.']) || !seen.insert(name.clone()) {
                 continue;
             }
             let (detail, kind) = match g {
