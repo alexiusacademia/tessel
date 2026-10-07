@@ -1,0 +1,53 @@
+// An index that's a call changing the list it indexes, through `bind`
+// (issue #14): the call runs first, then the list is indexed.
+
+struct Layout { name: String = "" }
+struct Master { layouts: [Layout] = [] }
+struct Deck { masters: [Master] = [] }
+
+fn addLayout(_ d: bind Deck, name: String) -> Int {
+    var m = d.masters[0]
+    m.layouts.append(Layout(name: name))
+    d.masters[0] = m
+    d.masters[0].layouts.count - 1
+}
+
+fn addMaster(_ d: bind Deck) -> Int {
+    d.masters.append(Master(layouts: [Layout(name: "first of {d.masters.count}")]))
+    d.masters.count - 1
+}
+
+fn grow(_ l: bind [Int]) -> Int {
+    l.append(l.count * 10)
+    l.count - 1
+}
+
+fn say(_ what: String, _ i: Int) -> Int {
+    print("index {what}")
+    i
+}
+
+fn main() {
+    var xs = [0]
+    print(xs[grow(xs)])
+    print(xs[grow(xs)] + xs[grow(xs)])
+    // Written to, and changed in place.
+    xs[grow(xs)] = 7
+    xs[grow(xs)] += 1
+    print(xs)
+
+    var d = Deck(masters: [Master(layouts: [Layout(name: "a")])])
+    print(d.masters[0].layouts[addLayout(d, name: "b")].name)
+    print(d.masters[0].layouts[addLayout(d, name: "c")].name.count)
+    print(d.masters[addMaster(d)].layouts[0].name)
+    d.masters[addMaster(d)].layouts[0].name = "renamed"
+    print(d.masters[2].layouts[0].name)
+    d.masters[0].layouts[addLayout(d, name: "d")].name += "!"
+    print(d.masters[0].layouts.map { l in l.name })
+
+    // Indexes are worked out in the order they're written.
+    var grid = [[1, 2], [3, 4]]
+    print(grid[say("row", 1)][say("column", 0)])
+    grid[say("row", 0)][say("column", 1)] = 9
+    print(grid)
+}

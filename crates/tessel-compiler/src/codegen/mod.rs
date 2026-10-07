@@ -388,6 +388,9 @@ struct Gen<'ctx, 'a> {
     /// expression is evaluated (`f(a(), if c { return 1 } else { 2 })`): an
     /// early `return`, `break` or `continue` in between releases them.
     held: Vec<Held<'ctx>>,
+    /// The indexes of a place being reached (`a.b[i].c[j]`), worked out
+    /// before the place is (see `place_indexes`): by the index's expression.
+    pre_index: HashMap<crate::ast::ExprId, Val<'ctx>>,
     stack: Vec<FnCtx<'ctx>>,
 
     /// Views by name (the `app` included), and what's compiled for them.
@@ -450,6 +453,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             closures: 0,
             loops: Vec::new(),
             held: Vec::new(),
+            pre_index: HashMap::new(),
             stack: Vec::new(),
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
@@ -1983,6 +1987,53 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// A pointer to the value of `e` for reading, if `e` names storage
     /// (a variable, field or list element). Doesn't copy anything.
     fn read_ptr(&mut self, e: &Expr) -> Option<PointerValue<'ctx>> {
+        if self.readable_place(e) {
+            self.place_indexes(e);
+        }
+        self.read_ptr_of(e)
+    }
+
+    /// Whether `read_ptr` gives a pointer for `e`.
+    fn readable_place(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Name(n) => self.lookup(n).is_some(),
+            ExprKind::Member { object, optional: false, .. } => {
+                matches!(self.ty(object), Ty::Struct(_) | Ty::Iface(_)) && self.readable_place(object)
+            }
+            ExprKind::Index(object, _) => matches!(self.ty(object), Ty::List(_)) && self.readable_place(object),
+            _ => false,
+        }
+    }
+
+    /// Works out the indexes on the way to a place (`a.b[i].c[j]`: `i`, then
+    /// `j`) before any of the place is reached. An index can be a call that
+    /// changes what it indexes (`list[grow(list)]`, with a `bind`
+    /// parameter): reached first, the list's storage would be the one from
+    /// before the call.
+    fn place_indexes(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::Member { object, .. } => self.place_indexes(object),
+            ExprKind::Index(object, index) if matches!(self.ty(object), Ty::List(_)) => {
+                self.place_indexes(object);
+                // (Numbers and names can't change anything: they're read in place.)
+                if !matches!(index.kind, ExprKind::Int(_) | ExprKind::Name(_)) && !self.pre_index.contains_key(&index.id) {
+                    let i = self.expr(index).unwrap();
+                    self.pre_index.insert(index.id, i);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// An index of a place: worked out before (`place_indexes`), or now.
+    fn place_index(&mut self, index: &Expr) -> Val<'ctx> {
+        match self.pre_index.remove(&index.id) {
+            Some(i) => i,
+            None => self.expr(index).unwrap(),
+        }
+    }
+
+    fn read_ptr_of(&mut self, e: &Expr) -> Option<PointerValue<'ctx>> {
         match &e.kind {
             ExprKind::Name(n) => {
                 let v = self.lookup(n)?;
@@ -2008,7 +2059,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ExprKind::Index(object, index) if matches!(self.ty(object), Ty::List(_)) => {
                 let base = self.read_ptr(object)?;
                 let list = self.b.build_load(self.ptr_ty(), base, "").unwrap();
-                let i = self.expr(index).unwrap();
+                let i = self.place_index(index);
                 let l = self.loc(e.span);
                 Some(self.call_rt("tsl_list_get", &[list, i, l.into()]).unwrap().into_pointer_value())
             }
@@ -2018,6 +2069,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// A pointer to the storage of `e`, for writing (makes lists unique).
     fn write_ptr(&mut self, e: &Expr) -> PointerValue<'ctx> {
+        self.place_indexes(e);
+        self.write_ptr_of(e)
+    }
+
+    fn write_ptr_of(&mut self, e: &Expr) -> PointerValue<'ctx> {
         match &e.kind {
             ExprKind::Name(n) => {
                 let v = self.lookup(n).expect("assignable name");
@@ -2038,7 +2094,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             ExprKind::Index(object, index) => {
                 let slot = self.write_ptr(object);
-                let i = self.expr(index).unwrap();
+                let i = self.place_index(index);
                 let l = self.loc(e.span);
                 self.call_rt("tsl_list_elem_mut", &[slot.into(), i, l.into()]).unwrap().into_pointer_value()
             }
