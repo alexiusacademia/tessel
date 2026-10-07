@@ -119,6 +119,7 @@ export default defineConfig({
 						{ label: 'Files, commands and the network', slug: 'ui/async' },
 						{ label: 'Keyboard shortcuts', slug: 'ui/shortcuts' },
 						{ label: 'Menus, windows and documents', slug: 'ui/menus-windows' },
+						{ label: 'Dialogs and sheets', slug: 'ui/dialogs' },
 						{ label: 'Ribbons', slug: 'ui/ribbons' },
 						{ label: 'Testing apps', slug: 'ui/testing' },
 					],

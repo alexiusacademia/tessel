@@ -1116,6 +1116,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let shown = self.call_rt("tsl_ui_begin_popover", &[f, env, edge]).unwrap();
                 self.content_if(shown, a(2).unwrap(), "tsl_ui_end_popover");
             }
+            "sheet" => {
+                let loc = self.locator(a(0).unwrap()).into_struct_value();
+                let f = self.b.build_extract_value(loc, 0, "").unwrap();
+                let env = self.b.build_extract_value(loc, 1, "").unwrap();
+                // (A popover whose edge says it's a sheet: see the runtime's `SHEET`.)
+                let edge = self.ctx.i32_type().const_int(4, false).into();
+                let shown = self.call_rt("tsl_ui_begin_popover", &[f, env, edge]).unwrap();
+                self.content_if(shown, a(1).unwrap(), "tsl_ui_end_popover");
+            }
             "onOpenFile" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_open_file", &[], action);

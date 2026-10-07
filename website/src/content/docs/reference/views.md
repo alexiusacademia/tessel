@@ -327,6 +327,93 @@ Calendar(date: selected) { loadEvents() }
 
 It's 222 points wide.
 
+## TimePicker
+
+```text
+TimePicker(date: bind Float, minuteStep: Int = 5, use24Hour: Bool = true, onChange: fn() = …)
+```
+
+The hour and minute of a time, each with arrows to change it. It works on
+the same `Float` as a [`DatePicker`](#datepicker), and leaves the day as it
+is, so the two go side by side:
+
+```tessel
+HStack {
+    DatePicker(date: start)
+    TimePicker(date: start)
+}
+```
+
+- The minute's arrows go to the next and the last multiple of `minuteStep`;
+  past the end of the hour, the hour changes too (9:58 goes to 10:00).
+- With `use24Hour: false`, the hour is shown from 1 to 12 with AM or PM,
+  which a click changes.
+
+## FontPicker
+
+```text
+FontPicker(family: bind String, onChange: fn() = …)
+```
+
+A field that shows a font family, in that font, and opens the list of the
+families installed, each in its own font, with a field to search it.
+
+```tessel
+state font = "Georgia"
+
+FontPicker(family: font)
+Text("Sample").font(family: font)
+```
+
+`family` is what [`.font(family:)`](/reference/modifiers/#font) takes: a
+family's name, `"monospaced"`, or `""` for the system's font (shown as
+"System").
+
+## ProgressBar
+
+```text
+ProgressBar(value: Float, total: Float = 1.0)
+```
+
+A bar that shows how far something is: `value` of `total`. It takes the
+width it's offered.
+
+```tessel
+ProgressBar(value: fraction)
+ProgressBar(value: Float(done), total: Float(files.count))
+```
+
+## ProgressPanel
+
+```text
+ProgressPanel(_ title: String, value: Float, total: Float = 1.0, note: String = "",
+              cancelLabel: String = "Cancel", onCancel: fn() = …)
+```
+
+A title, a [`ProgressBar`](#progressbar), a note and a Cancel button: the
+content of a [sheet](/ui/dialogs/#showing-progress) that shows while work
+goes on. With `cancelLabel: ""` there's no button.
+
+## TextPrompt
+
+```text
+TextPrompt(_ title: String, text: bind String, message: String = "", placeholder: String = "",
+           confirmLabel: String = "OK", cancelLabel: String = "Cancel", onConfirm: fn() = …)
+```
+
+A question with a text field and two buttons: the content of a
+[sheet](/ui/dialogs/#asking-for-a-text) that asks for one text.
+
+```tessel
+.sheet(isPresented: renaming) {
+    TextPrompt("Rename", text: name) { saveName() }
+}
+```
+
+The confirm button (or Enter) sets `text` to what was typed, closes the
+sheet and runs `onConfirm`. The cancel button (or Escape) closes it and
+leaves `text` as it was.
+
 ## VStack
 
 ```text

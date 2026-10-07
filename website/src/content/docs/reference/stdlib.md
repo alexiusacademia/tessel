@@ -623,6 +623,79 @@ In a [headless test run](/ui/testing/) no dialog opens. The script's
 returns; without one, it returns `nil`, as if the user cancelled.
 :::
 
+### openFiles
+
+```text
+openFiles(title: String = "", types: [String] = []) -> [String]
+```
+
+Like [`openFile`](#openfile), for choosing several files at once. Returns
+their paths: an empty list if the user cancels.
+
+```tessel
+for path in openFiles(types: ["png", "jpg"]) {
+    pictures.append(path)
+}
+```
+
+### chooseFolder
+
+```text
+chooseFolder(title: String = "") -> String?
+```
+
+Shows the system's dialog for choosing a folder (in which one can be made,
+too). Returns its path, or `nil` if the user cancels.
+
+```tessel
+if let folder = chooseFolder(title: "Export to") {
+    writeText(path: joinPath(folder, "report.txt"), text: report)
+}
+```
+
+## Message dialogs
+
+`alert` and `confirm` show a message or a question in the system's dialog,
+and wait for the user. Like the file dialogs, they're meant for apps. See
+[Dialogs and sheets](/ui/dialogs/) for these and for dialogs with your own
+views.
+
+### alert
+
+```text
+alert(_ title: String, message: String = "", kind: AlertKind = .info, buttonLabel: String = "OK")
+```
+
+Shows a message with one button, and waits until it's dismissed.
+
+```tessel
+alert("Couldn't save", message: error.message, kind: .error)
+```
+
+`kind` is `.info`, `.warning` or `.error`: the dialog's icon.
+
+### confirm
+
+```text
+confirm(_ title: String, message: String = "", confirmLabel: String = "OK",
+        cancelLabel: String = "Cancel", kind: AlertKind = .info) -> Bool
+```
+
+Asks a question with two buttons. Returns `true` for the confirm button, and
+`false` for Cancel (or Escape).
+
+```tessel
+if confirm("Delete 3 items?", message: "This can't be undone.", confirmLabel: "Delete") {
+    deleteSelected()
+}
+```
+
+:::note
+In a [headless test run](/ui/testing/) these are printed instead, and the
+script's `answer` command decides how a `confirm` ends. See
+[Dialogs in test scripts](/ui/dialogs/#in-test-scripts).
+:::
+
 ## Pictures
 
 [`Image`](/reference/views/#image) shows a picture file, and a
@@ -689,6 +762,29 @@ fn main() {
 - It's drawn in the light appearance, even in an app that's dark: on paper,
   `.primary` is black.
 - See [Making a PDF](/ui/drawing/#making-a-pdf).
+
+### printDocument
+
+```text
+printDocument(title: String = "", width: Float = 595.28, height: Float = 841.89,
+              draw: fn(Graphics)) -> Bool
+```
+
+Draws pages as [`writePDF`](#writepdf) does, with `g.newPage()` between
+them, and prints them through the system. Returns whether the document was
+printed (or handed over to be).
+
+```tessel
+printDocument(title: "Invoice 42") { g in
+    g.text("Invoice 42", x: 50, y: 50, size: 24, weight: .bold)
+}
+```
+
+- On macOS, the system's print dialog opens, and `false` means it was
+  cancelled.
+- On Windows, the app that opens PDF files is asked to print the document;
+  if it can't be, the document opens in it.
+- See [Printing](/ui/dialogs/#printing).
 
 ### writeImage
 
@@ -1587,6 +1683,36 @@ Button("Open…") {
 ```
 
 In a program without a window, it does nothing.
+
+### showNotice
+
+```text
+showNotice(_ text: String, seconds: Float = 2.5)
+```
+
+Shows a short message near the bottom of the window, which goes by itself
+after `seconds`. A new notice takes the place of the one that shows, and an
+empty text takes it away.
+
+```tessel
+showNotice("Link copied")
+```
+
+See [Notices](/ui/dialogs/#notices).
+
+### dismiss
+
+```text
+dismiss()
+```
+
+Closes the [sheet](/ui/dialogs/#sheets) or
+[popover](/ui/menus-windows/#popovers) that's on top, as Escape does: its
+`isPresented` becomes `false`. With none open, it does nothing.
+
+```tessel
+Button("Cancel") { dismiss() }
+```
 
 ### undoTextEdit and redoTextEdit
 

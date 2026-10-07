@@ -1,0 +1,14 @@
+click "Alert"
+click "Error"
+click "Delete"
+answer ok
+click "Delete"
+answer cancel
+click "Delete"
+answer "/tmp/out"
+click "Folder"
+click "Folder"
+answer "a.png|b.jpg"
+click "Files"
+click "Files"
+tree

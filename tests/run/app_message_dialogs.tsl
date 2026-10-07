@@ -1,0 +1,26 @@
+// The system's dialogs: `alert`, `confirm`, `chooseFolder` and `openFiles`.
+// In a scripted run they're printed, and `answer` says how they end.
+
+app Dialogs(width: 320, height: 300) {
+    state log = "nothing yet"
+
+    VStack(spacing: 8) {
+        Button("Alert") { alert("Saved", message: "Your work is safe.") }
+        Button("Error") { alert("Couldn't save", message: "The disk is full.", kind: .error, buttonLabel: "Close") }
+        Button("Delete") {
+            let yes = confirm("Delete 3 items?", message: "This can't be undone.", confirmLabel: "Delete", kind: .warning)
+            log = if yes { "deleted" } else { "kept" }
+            print(log)
+        }
+        Button("Folder") {
+            log = chooseFolder(title: "Export to") ?? "no folder"
+            print(log)
+        }
+        Button("Files") {
+            let files = openFiles(types: ["png", "jpg"])
+            log = "{files.count}: {files.joined(separator: ", ")}"
+            print(log)
+        }
+        Text(log)
+    }
+}

@@ -1,0 +1,13 @@
+// `printDocument`: pages drawn as for `writePDF`, handed to the system to
+// print. In a scripted run nothing is printed: the request is shown.
+
+fn main() {
+    let printed = printDocument(title: "Invoice 42") { g in
+        g.text("Invoice 42", x: 50, y: 50, size: 24, weight: .bold)
+        g.newPage()
+        g.text("Page 2", x: 50, y: 50)
+    }
+    print("printed: {printed}")
+    // A page that can't be: nothing is printed.
+    print(printDocument(title: "Nothing", width: 0) { g in g.text("x", x: 0, y: 0) })
+}

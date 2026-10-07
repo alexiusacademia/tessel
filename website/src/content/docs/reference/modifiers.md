@@ -842,6 +842,33 @@ Button("Style…") { showStyle = true }
 
 See [Popovers](/ui/menus-windows/#popovers).
 
+## sheet
+
+```text
+.sheet(isPresented: bind Bool, content: View)
+```
+
+Shows `content` in a card in the middle of the window while `isPresented` is
+`true`. The rest of the window is dimmed and takes no clicks until the
+sheet closes.
+
+```tessel
+Button("New…") { creating = true }
+    .sheet(isPresented: creating) {
+        VStack {
+            TextField("Name", text: name)
+            Button("Create") { dismiss() }
+        }
+        .frame(width: 280)
+    }
+```
+
+- [`dismiss()`](/reference/stdlib/#dismiss), Escape, or setting
+  `isPresented` to `false` closes it. A click outside it doesn't.
+- It's as large as its content.
+
+See [Sheets](/ui/dialogs/#sheets).
+
 ## onOpenFile
 
 ```text

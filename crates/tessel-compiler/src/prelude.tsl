@@ -378,6 +378,48 @@ fn __sqlOptData(_ v: Data?) -> SqlValue {
     SqlValue.null
 }
 
+// ---- Dialogs ----
+
+// What a message is about: its icon.
+enum AlertKind { info, warning, error }
+
+fn __alertLevel(_ kind: AlertKind) -> Int {
+    match kind {
+        .info -> 0
+        .warning -> 1
+        .error -> 2
+    }
+}
+
+// `alert("Saved")`: a message in a dialog of the system's, which the program
+// waits for.
+fn alert(_ title: String, message: String = "", kind: AlertKind = AlertKind.info, buttonLabel: String = "OK") {
+    __messageDialog(false, title, message, buttonLabel, "", __alertLevel(kind))
+}
+
+// `confirm("Delete 3 items?")`: a question in a dialog of the system's;
+// whether it was confirmed.
+fn confirm(_ title: String, message: String = "", confirmLabel: String = "OK", cancelLabel: String = "Cancel",
+           kind: AlertKind = AlertKind.info) -> Bool {
+    __messageDialog(true, title, message, confirmLabel, cancelLabel, __alertLevel(kind))
+}
+
+// `openFiles(types: ["png"])`: like `openFile`, for several files at once.
+fn openFiles(title: String = "", types: [String] = []) -> [String] {
+    __openFiles(title, types)
+}
+
+// `printDocument(title: "Invoice") { g in … }`: draws pages as `writePDF`
+// does, and prints them through the system's print dialog. Whether it was
+// printed (not, when the dialog is cancelled).
+fn printDocument(title: String = "", width: Float = 595.28, height: Float = 841.89, draw: fn(Graphics)) -> Bool {
+    let path = joinPath(tempFolder(), "tessel-print-{Int(now() * 1000.0)}.pdf")
+    if !writePDF(path: path, title: title, width: width, height: height, draw: draw) {
+        return false
+    }
+    __printFile(path, title)
+}
+
 // ---- Dates in views ----
 
 // `Calendar(date:)`: a month of days to pick one from. The time of day of
@@ -486,4 +528,183 @@ view DatePicker(date: bind Float, format: String = "d MMM yyyy", firstWeekday: I
         }
         .frame(width: 222)
     }
+}
+
+// ---- Views for sheets and forms ----
+
+// `TextPrompt("Rename", text: name)`: a question with a text field, for a
+// sheet. OK (or Enter) puts what was typed in `text`, closes the sheet and
+// runs `onConfirm`; Cancel (or Escape) leaves `text` as it was.
+view TextPrompt(_ title: String, text: bind String, message: String = "", placeholder: String = "",
+                confirmLabel: String = "OK", cancelLabel: String = "Cancel", onConfirm: fn() = {}) {
+    state draft = text
+
+    VStack(spacing: 12, alignment: .leading) {
+        Text(title).font(size: 15, weight: .semibold)
+        if message != "" {
+            Text(message).color(.secondary)
+        }
+        TextField(placeholder, text: draft)
+            .autofocus()
+            .onSubmit {
+                text = draft
+                dismiss()
+                onConfirm()
+            }
+        HStack(spacing: 8) {
+            Spacer()
+            Button(cancelLabel) { dismiss() }
+            Button(confirmLabel) {
+                text = draft
+                dismiss()
+                onConfirm()
+            }
+        }
+    }
+    .frame(width: 300)
+}
+
+// `ProgressBar(value: 0.4)`: how far something is, from 0 to `total`.
+view ProgressBar(value: Float, total: Float = 1.0) {
+    Canvas { g in
+        let part = if total > 0.0 { (value / total).clamped(min: 0.0, max: 1.0) } else { 0.0 }
+        g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .separator, radius: g.height / 2)
+        if part > 0.0 {
+            g.fillRect(x: 0, y: 0, width: max(g.height, g.width * part), height: g.height, color: .blue, radius: g.height / 2)
+        }
+    }
+    .frame(height: 6)
+}
+
+// `ProgressPanel("Exporting…", value: done)`: a title, a progress bar, a
+// note and a Cancel button, for a sheet that shows while work goes on.
+view ProgressPanel(_ title: String, value: Float, total: Float = 1.0, note: String = "",
+                   cancelLabel: String = "Cancel", onCancel: fn() = {}) {
+    VStack(spacing: 10, alignment: .leading) {
+        Text(title).font(size: 15, weight: .semibold)
+        ProgressBar(value: value, total: total)
+        HStack(spacing: 8) {
+            Text(note).font(size: 12).color(.secondary)
+            Spacer()
+            if cancelLabel != "" {
+                Button(cancelLabel) { onCancel() }
+            }
+        }
+    }
+    .frame(width: 300)
+}
+
+// `TimePicker(date: due)`: the hour and minute of a time, with arrows to
+// change each. The day stays as it is.
+view TimePicker(date: bind Float, minuteStep: Int = 5, use24Hour: Bool = true, onChange: fn() = {}) {
+    let p = dateParts(date)
+    let hour = if use24Hour { p.hour } else if p.hour % 12 == 0 { 12 } else { p.hour % 12 }
+
+    HStack(spacing: 4) {
+        __TimePart(text: __twoDigits(hour), onUp: {
+            date = date + 3600.0
+            onChange()
+        }, onDown: {
+            date = date - 3600.0
+            onChange()
+        })
+        Text(":").font(weight: .semibold)
+        __TimePart(text: __twoDigits(p.minute), onUp: {
+            // To the next step: 9:58 goes to 10:00.
+            date = __timeMinute(date, p.minute - p.minute % minuteStep + minuteStep)
+            onChange()
+        }, onDown: {
+            let part = p.minute % minuteStep
+            date = __timeMinute(date, if part == 0 { p.minute - minuteStep } else { p.minute - part })
+            onChange()
+        })
+        if !use24Hour {
+            Text(if p.hour < 12 { "AM" } else { "PM" })
+                .padding(horizontal: 6, vertical: 4)
+                .hoverBackground(.separator, radius: 6)
+                .onTap {
+                    date = date + (if p.hour < 12 { 43200.0 } else { -43200.0 })
+                    onChange()
+                }
+        }
+    }
+    .padding(horizontal: 6, vertical: 2)
+    .background(.background, radius: 6)
+    .border(.separator, radius: 6)
+}
+
+view __TimePart(text: String, onUp: fn(), onDown: fn()) {
+    HStack(spacing: 2) {
+        Text(text).font(family: "monospaced")
+        VStack(spacing: 0) {
+            Icon(.chevronUp).font(size: 9).padding(horizontal: 2, vertical: 1).hoverBackground(.separator, radius: 3).onTap { onUp() }
+            Icon(.chevronDown).font(size: 9).padding(horizontal: 2, vertical: 1).hoverBackground(.separator, radius: 3).onTap { onDown() }
+        }
+    }
+}
+
+fn __twoDigits(_ n: Int) -> String {
+    if n < 10 { "0{n}" } else { "{n}" }
+}
+
+// `time` with its minute set (the seconds dropped); a minute past the hour's
+// end or before its start moves the hour.
+fn __timeMinute(_ time: Float, _ minute: Int) -> Float {
+    let p = dateParts(time)
+    let start = date(year: p.year, month: p.month, day: p.day, hour: p.hour)
+    start + Float(minute) * 60.0
+}
+
+// `FontPicker(family: font)`: a field that shows a font family in itself,
+// and opens the list of the families installed, with a field to search it.
+view FontPicker(family: bind String, onChange: fn() = {}) {
+    state open = false
+    state search = ""
+
+    HStack(spacing: 6) {
+        Text(if family == "" { "System" } else { family }).font(family: family)
+        Spacer()
+        Icon(.chevronDown).font(size: 11).color(.secondary)
+    }
+    .padding(horizontal: 8, vertical: 6)
+    .frame(width: 180)
+    .background(.background, radius: 6)
+    .border(.separator, radius: 6)
+    .onTap {
+        search = ""
+        open = !open
+    }
+    .popover(isPresented: open) {
+        let all = ["System", "Monospaced"] + fontFamilies()
+        let found = if search.trim() == "" { all } else { all.filter { f in f.lowercase().contains(search.trim().lowercase()) } }
+        VStack(spacing: 6, alignment: .leading) {
+            TextField("Search", text: search).autofocus()
+            Scroll {
+                LazyVStack(count: found.count, rowHeight: 26) { i in
+                    HStack {
+                        Text(found[i]).font(family: __fontFamilyOf(found[i]))
+                        Spacer()
+                        if __fontFamilyOf(found[i]) == family {
+                            Icon(.check).font(size: 11).color(.blue)
+                        }
+                    }
+                    .padding(horizontal: 6)
+                    .frame(height: 26)
+                    .hoverBackground(.separator, radius: 4)
+                    .onTap {
+                        family = __fontFamilyOf(found[i])
+                        open = false
+                        onChange()
+                    }
+                }
+            }
+            .frame(height: 220)
+        }
+        .frame(width: 220)
+    }
+}
+
+// (The first two of a font picker's list are the system's own.)
+fn __fontFamilyOf(_ name: String) -> String {
+    if name == "System" { "" } else if name == "Monospaced" { "monospaced" } else { name }
 }

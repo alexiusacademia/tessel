@@ -383,6 +383,7 @@ impl Builtins {
                 P::new("edge", EDGE).default(),
                 P::unlabeled("content", Ty::View),
             ],
+            "sheet" => vec![P::new("isPresented", Ty::Bool).bind(), P::unlabeled("content", Ty::View)],
             "onOpenFile" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
             "onCloseRequest" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "id" | "tag" => vec![P::unlabeled("value", Ty::Any)],
@@ -481,6 +482,22 @@ impl Builtins {
             "localTimeZone" => FnSig { params: vec![], ret: Ty::Str },
             "timeZones" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             "fontFamilies" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
+            "chooseFolder" => FnSig { params: vec![P::new("title", Ty::Str).default()], ret: Ty::opt(Ty::Str) },
+            "__openFiles" => {
+                FnSig { params: vec![P::unlabeled("title", Ty::Str), P::unlabeled("types", Ty::list(Ty::Str))], ret: Ty::list(Ty::Str) }
+            }
+            "__printFile" => FnSig { params: vec![P::unlabeled("path", Ty::Str), P::unlabeled("title", Ty::Str)], ret: Ty::Bool },
+            "__messageDialog" => FnSig {
+                params: vec![
+                    P::unlabeled("confirm", Ty::Bool),
+                    P::unlabeled("title", Ty::Str),
+                    P::unlabeled("message", Ty::Str),
+                    P::unlabeled("confirmLabel", Ty::Str),
+                    P::unlabeled("cancelLabel", Ty::Str),
+                    P::unlabeled("level", Ty::Int),
+                ],
+                ret: Ty::Bool,
+            },
             // For the prelude's `dateParts`.
             "__dateParts" => FnSig {
                 params: vec![P::unlabeled("time", Ty::Float), P::unlabeled("timeZone", Ty::Str)],
@@ -603,7 +620,8 @@ impl Builtins {
             },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
             "undoTextEdit" | "redoTextEdit" => FnSig { params: vec![], ret: Ty::Void },
-            "quit" | "closeWindow" => FnSig { params: vec![], ret: Ty::Void },
+            "quit" | "closeWindow" | "dismiss" => FnSig { params: vec![], ret: Ty::Void },
+            "showNotice" => FnSig { params: vec![P::unlabeled("text", Ty::Str), P::new("seconds", Ty::Float).default()], ret: Ty::Void },
             "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "appendData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
@@ -633,11 +651,11 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
-    "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "__dateParts",
+    "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "chooseFolder", "__openFiles", "__messageDialog", "__printFile", "__dateParts",
     "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "__dbOpen", "__dbClose", "__dbLastInsertId", "__dbExecute", "__dbQuery",
     "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
-    "quit", "closeWindow",
+    "quit", "closeWindow", "dismiss", "showNotice",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -957,7 +975,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
-            "tooltip", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "onOpenFile",
+            "tooltip", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
             "onCloseRequest",
         ],
         _ => &[],
@@ -1042,6 +1060,10 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "localTimeZone" => rt("tsl_local_time_zone"),
         "timeZones" => rt("tsl_time_zones"),
         "fontFamilies" => rt("tsl_font_families"),
+        "chooseFolder" => rt_d("tsl_choose_folder", &[Dflt::Str("")]),
+        "__openFiles" => rt("tsl_open_files"),
+        "__messageDialog" => rt("tsl_message_dialog"),
+        "__printFile" => rt("tsl_print_file"),
         "__dateParts" => rt("tsl_date_parts"),
         "cancelRequest" => rt("tsl_cancel_request"),
         "sendWebSocketData" => rt("tsl_send_web_socket_data"),
@@ -1084,6 +1106,8 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "redoTextEdit" => rt("tsl_redo_text_edit"),
         "quit" => rt("tsl_quit"),
         "closeWindow" => rt("tsl_close_window"),
+        "dismiss" => rt("tsl_ui_dismiss"),
+        "showNotice" => rt_d("tsl_ui_notice", &[Dflt::Req, Dflt::Float(2.5)]),
         "writeData" => rt("tsl_write_data"),
         "appendData" => rt("tsl_append_data"),
         _ => return None,

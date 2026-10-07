@@ -211,6 +211,13 @@ thread_local! {
 pub const POPOVER_PAD: f64 = 12.0;
 /// The most room a popover's content is offered (it can be larger with a `.frame`).
 const POPOVER_MAX: Size = Size { w: 280.0, h: 480.0 };
+/// Between a sheet and the window's edges, at least.
+const SHEET_MARGIN: f64 = 24.0;
+
+/// The window's size, as it was last laid out.
+pub fn window_size() -> Size {
+    WINDOW.with(|w| w.get())
+}
 /// Between a popover and its view.
 const POPOVER_GAP: f64 = 6.0;
 
@@ -237,6 +244,14 @@ impl Layouter<'_> {
             let Some(at) = root.find(anchor).map(|n| n.layout.rect) else { continue };
             let style = root.layout.style;
             let c = &mut root.children[i];
+            if edge == super::SHEET {
+                // A sheet: as large as its content, in the middle of the window.
+                let room = Size { w: (w - 2.0 * SHEET_MARGIN).max(0.0), h: (h - 2.0 * SHEET_MARGIN).max(0.0) };
+                let size = self.measure(c, room, &style);
+                let size = Size { w: size.w.min(room.w), h: size.h.min(room.h) };
+                self.place(c, Rect { x: ((w - size.w) / 2.0).round(), y: ((h - size.h) / 2.0).round(), w: size.w, h: size.h });
+                continue;
+            }
             let room = Size { w: (w - 16.0).clamp(0.0, POPOVER_MAX.w), h: (h - 16.0).clamp(0.0, POPOVER_MAX.h) };
             let size = self.measure(c, room, &style);
             let r = popover_rect(at, Size { w: size.w.min(w - 8.0), h: size.h.min(h - 8.0) }, edge, window);

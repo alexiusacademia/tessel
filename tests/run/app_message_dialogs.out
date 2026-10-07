@@ -1,0 +1,21 @@
+Alert "Saved" "Your work is safe."
+Alert "Couldn't save" "The disk is full."
+Confirm "Delete 3 items?" "This can't be undone." [Cancel] [Delete]
+kept
+Confirm "Delete 3 items?" "This can't be undone." [Cancel] [Delete]
+deleted
+Confirm "Delete 3 items?" "This can't be undone." [Cancel] [Delete]
+kept
+/tmp/out
+no folder
+2: a.png, b.jpg
+0: 
+Root
+  View
+    VStack
+      Button "Alert"
+      Button "Error"
+      Button "Delete"
+      Button "Folder"
+      Button "Files"
+      Text "0: "

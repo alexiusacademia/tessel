@@ -1,0 +1,22 @@
+click "Rename…"
+tree
+click "Work"
+key cmd+a
+type "Final"
+key enter
+click "Rename…"
+type "X"
+click "Cancel"
+click "chevronUp"
+click "chevronUp"
+click "Georgia"
+type "courier new"
+tree
+click "Courier New"
+click "Work"
+tree
+click "Cancel"
+click "Notice"
+tree
+wait 3
+tree

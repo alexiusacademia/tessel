@@ -21,6 +21,7 @@ mod menu;
 mod native;
 mod render;
 mod svg;
+mod print;
 mod text;
 
 // The renderer: what draws, lays text out and reads pictures. With the
@@ -263,6 +264,8 @@ pub enum Kind {
     /// `.popover(isPresented:edge:) { … }`: content shown next to the view
     /// `anchor`, above everything else. Popovers are the last children of
     /// their window's root.
+    /// With `edge` `SHEET`, it's a sheet (`.sheet`): in the middle of the
+    /// window, over a dimmed rest that takes no clicks.
     Popover { anchor: u64, edge: u8, presented: Callback },
     /// `Window("Title", isOpen:width:height:) { … }`: another window. It's
     /// the root of its own tree (see `build`).
@@ -932,7 +935,11 @@ pub extern "C" fn tsl_ui_end_attached(which: i32) {
     });
 }
 
-/// `.popover(isPresented:edge:) { … }` on the last view. Returns whether
+/// The `edge` of a popover that's a sheet.
+pub const SHEET: u8 = 4;
+
+/// `.popover(isPresented:edge:) { … }` on the last view (and `.sheet`, with
+/// the edge `SHEET`). Returns whether
 /// it's presented: only then is its content built, and closed with
 /// `tsl_ui_end_popover`. (The locator is taken either way.)
 #[unsafe(no_mangle)]
@@ -946,7 +953,7 @@ pub unsafe extern "C" fn tsl_ui_begin_popover(f: *const c_void, env: *mut Header
         let Some(anchor) = b.last().map(|n| n.key) else { return };
         let at = b.overlays.last().map_or(0, Vec::len);
         b.overlay_at.push(at);
-        b.begin_keyed(Kind::Popover { anchor, edge: edge.clamp(0, 3) as u8, presented }, hash_key((anchor, "popover")));
+        b.begin_keyed(Kind::Popover { anchor, edge: edge.clamp(0, SHEET as i32) as u8, presented }, hash_key((anchor, "popover", edge == SHEET as i32)));
         shown = 1;
     });
     shown

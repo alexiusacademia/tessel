@@ -1,0 +1,287 @@
+Root
+  View
+    VStack
+      Text "Name: Draft"
+      Button "Rename…"
+      HStack
+        View
+          HStack
+            Text "7 Oct 2026"
+            Icon calendar
+        View
+          HStack
+            View
+              HStack
+                Text "09"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+        View
+          HStack
+            View
+              HStack
+                Text "09"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text "AM"
+      Text "2026-10-07 09:58"
+      View
+        HStack
+          Text "Georgia"
+          Spacer
+          Icon chevronDown
+      View
+        Canvas (2 fills)
+      Button "Work"
+      Button "Notice"
+  Sheet
+    View
+      VStack
+        Text "Rename"
+        Text "The file's new name."
+        TextField "" = "Draft"
+        HStack
+          Spacer
+          Button "Cancel"
+          Button "OK"
+Root
+  View
+    VStack
+      Text "Name: Final"
+      Button "Rename…"
+      HStack
+        View
+          HStack
+            Text "7 Oct 2026"
+            Icon calendar
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text "AM"
+      Text "2026-10-07 11:58"
+      View
+        HStack
+          Text "Georgia"
+          Spacer
+          Icon chevronDown
+      View
+        Canvas (2 fills)
+      Button "Work"
+      Button "Notice"
+  Popover
+    VStack
+      TextField "Search" = "courier new"
+      Scroll
+        LazyVStack 1 rows, built 0..1
+          VStack
+            HStack
+              Text "Courier New"
+              Spacer
+Notice "Renamed"
+Root
+  View
+    VStack
+      Text "Name: Final"
+      Button "Rename…"
+      HStack
+        View
+          HStack
+            Text "7 Oct 2026"
+            Icon calendar
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text "AM"
+      Text "2026-10-07 11:58"
+      View
+        HStack
+          Text "Courier New"
+          Spacer
+          Icon chevronDown
+      View
+        Canvas (2 fills)
+      Button "Work"
+      Button "Notice"
+  Sheet
+    View
+      VStack
+        Text "Exporting…"
+        View
+          Canvas (2 fills)
+        HStack
+          Text "2 of 5 pages"
+          Spacer
+          Button "Cancel"
+Notice "Renamed"
+Root
+  View
+    VStack
+      Text "Name: Final"
+      Button "Rename…"
+      HStack
+        View
+          HStack
+            Text "7 Oct 2026"
+            Icon calendar
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text "AM"
+      Text "2026-10-07 11:58"
+      View
+        HStack
+          Text "Courier New"
+          Spacer
+          Icon chevronDown
+      View
+        Canvas (2 fills)
+      Button "Work"
+      Button "Notice"
+Notice "Saved Final"
+Root
+  View
+    VStack
+      Text "Name: Final"
+      Button "Rename…"
+      HStack
+        View
+          HStack
+            Text "7 Oct 2026"
+            Icon calendar
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+        View
+          HStack
+            View
+              HStack
+                Text "11"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text ":"
+            View
+              HStack
+                Text "58"
+                VStack
+                  Icon chevronUp
+                  Icon chevronDown
+            Text "AM"
+      Text "2026-10-07 11:58"
+      View
+        HStack
+          Text "Courier New"
+          Spacer
+          Icon chevronDown
+      View
+        Canvas (2 fills)
+      Button "Work"
+      Button "Notice"

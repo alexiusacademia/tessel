@@ -575,6 +575,107 @@ pub unsafe extern "C" fn tsl_file_dialog(
     }
 }
 
+/// The next scripted answer, if one waits: `Some(None)` for `answer cancel`.
+pub fn scripted_answer() -> Option<Option<String>> {
+    DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front())
+}
+
+/// `chooseFolder(title:)`: a native dialog for picking a folder; its path,
+/// or null if cancelled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_choose_folder(title: *const Str) -> *mut Str {
+    let title = unsafe { crate::str_text(title) }.to_string();
+    let chosen = if std::env::var_os("TESSEL_SCRIPT").is_some() {
+        DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten()
+    } else {
+        let mut dialog = rfd::FileDialog::new();
+        if !title.is_empty() {
+            dialog = dialog.set_title(&title);
+        }
+        dialog.pick_folder().map(|p| p.to_string_lossy().into_owned())
+    };
+    match chosen {
+        Some(p) => crate::str_new(&p),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// `openFiles(title:types:)`: like `openFile`, for several files at once;
+/// the chosen paths (none if cancelled). A scripted answer names them with
+/// `|` between.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_open_files(title: *const Str, types: *const crate::List) -> *mut crate::List {
+    let title = unsafe { crate::str_text(title) }.to_string();
+    let n = unsafe { crate::tsl_list_len(types) };
+    let types: Vec<String> = (0..n)
+        .map(|i| unsafe {
+            let p = crate::tsl_list_get(types, i, std::ptr::null()) as *const *const Str;
+            crate::str_text(*p).trim_start_matches('.').to_string()
+        })
+        .collect();
+    let chosen: Vec<String> = if std::env::var_os("TESSEL_SCRIPT").is_some() {
+        let answer = DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten();
+        answer.map_or(Vec::new(), |a| a.split('|').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
+    } else {
+        let mut dialog = rfd::FileDialog::new();
+        if !title.is_empty() {
+            dialog = dialog.set_title(&title);
+        }
+        if !types.is_empty() {
+            let label = types.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(", ");
+            dialog = dialog.add_filter(label, &types);
+        }
+        dialog.pick_files().unwrap_or_default().iter().map(|p| p.to_string_lossy().into_owned()).collect()
+    };
+    unsafe { crate::str_list(chosen.iter().map(String::as_str)) }
+}
+
+/// `alert(title, message:)` (`confirm` = 0) and `confirm(title, message:,
+/// confirmLabel:, cancelLabel:)` (`confirm` = 1): a native message dialog,
+/// which the program waits for. Whether it was confirmed (always, for an
+/// alert). `level` is 0 for a note, 1 for a warning, 2 for an error.
+///
+/// In a scripted run the dialog is printed instead, and `answer` says how
+/// a `confirm` ends: `answer ok` (or any text) confirms the next one,
+/// `answer cancel` cancels it; with no answer waiting, it's cancelled.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_message_dialog(
+    confirm: u8,
+    title: *const Str,
+    message: *const Str,
+    confirm_label: *const Str,
+    cancel_label: *const Str,
+    level: i64,
+) -> u8 {
+    let text = |s: *const Str| unsafe { crate::str_text(s) }.to_string();
+    let (title, message, ok, cancel) = (text(title), text(message), text(confirm_label), text(cancel_label));
+    if std::env::var_os("TESSEL_SCRIPT").is_some() {
+        let kind = if confirm != 0 { "Confirm" } else { "Alert" };
+        let detail = if message.is_empty() { String::new() } else { format!(" {message:?}") };
+        let buttons = if confirm != 0 { format!(" [{cancel}] [{ok}]") } else { String::new() };
+        println!("{kind} {title:?}{detail}{buttons}");
+        if confirm == 0 {
+            return 1;
+        }
+        return DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten().is_some() as u8;
+    }
+    let mut dialog = rfd::MessageDialog::new().set_title(&title).set_description(&message).set_level(match level {
+        1 => rfd::MessageLevel::Warning,
+        2 => rfd::MessageLevel::Error,
+        _ => rfd::MessageLevel::Info,
+    });
+    dialog = if confirm != 0 {
+        dialog.set_buttons(rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel))
+    } else {
+        dialog.set_buttons(rfd::MessageButtons::OkCustom(ok.clone()))
+    };
+    match dialog.show() {
+        rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => 1,
+        rfd::MessageDialogResult::Custom(label) => (label == ok) as u8,
+        _ => 0,
+    }
+}
+
 /// For programs without an `app` (only `fn main`): after `main` returns,
 /// runs `after` timers and the blocks of `fetch` and `runCommand` until none
 /// are left, as an app's event loop would.
@@ -750,6 +851,34 @@ thread_local! {
 pub extern "C" fn tsl_close_window() {
     let key = CURRENT_WINDOW.with(Cell::get);
     CLOSING.with(|c| c.borrow_mut().push(key));
+}
+
+thread_local! {
+    static DISMISSING: Cell<bool> = const { Cell::new(false) };
+    /// `showNotice`: the text that shows, and until when (on the app's clock).
+    static NOTICE: RefCell<Option<(String, f64)>> = const { RefCell::new(None) };
+}
+
+/// `showNotice(text, seconds:)`: a short message near the bottom of the
+/// window, which goes by itself after a moment. A new one takes the place
+/// of the one that shows; no text takes it away.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_notice(text: *const Str, seconds: f64) {
+    let text = unsafe { crate::str_text(text) }.to_string();
+    let seconds = if seconds.is_finite() { seconds.max(0.0) } else { 2.5 };
+    NOTICE.with(|n| *n.borrow_mut() = (!text.is_empty()).then(|| (text, now() + seconds)));
+}
+
+/// When the notice that shows is to go, if one shows.
+fn notice_time() -> Option<f64> {
+    NOTICE.with(|n| n.borrow().as_ref().map(|(_, until)| *until))
+}
+
+/// `dismiss()`: closes the sheet or popover that's on top (its
+/// `isPresented` becomes false), as Escape does.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_dismiss() {
+    DISMISSING.with(|d| d.set(true));
 }
 
 /// `quit()`: ends the app, without asking `.onCloseRequest`.
@@ -1139,6 +1268,10 @@ impl App {
 
     /// Carries out `closeWindow()` and `quit()`.
     fn take_requests(&mut self) {
+        // `dismiss()`: the topmost sheet or popover closes.
+        if DISMISSING.with(|d| d.replace(false)) {
+            self.close_top_popover();
+        }
         if QUITTING.with(|q| q.replace(false)) {
             self.quit = true;
         }
@@ -1513,7 +1646,7 @@ impl App {
             }
             n.mods.on_pointer.is_some().then_some((n.key, false))
         }
-        visit(self.tree.as_ref()?, x, y)
+        visit(self.point_root(x, y)?, x, y)
     }
 
     /// The popovers that are open, the topmost last.
@@ -1522,18 +1655,40 @@ impl App {
         tree.children.iter().filter(|c| matches!(c.kind, Kind::Popover { .. })).collect()
     }
 
-    /// Closes popovers (from the topmost) down to the one containing the
+    /// Where to look for what's at a point: the topmost popover it's in,
+    /// or the sheet on top (which keeps everything under it out of reach),
+    /// or else the whole window.
+    fn point_root(&self, x: f64, y: f64) -> Option<&Node> {
+        for p in self.popovers().into_iter().rev() {
+            let sheet = matches!(p.kind, Kind::Popover { edge, .. } if edge == super::SHEET);
+            if sheet || p.layout.rect.contains(x, y) {
+                return Some(p);
+            }
+        }
+        self.tree.as_ref()
+    }
+
+
     /// point (all of them, for a point outside). Returns whether any closed.
     fn close_popovers_outside(&mut self, x: f64, y: f64) -> bool {
         let mut closed = false;
+        // (A click outside a sheet does nothing: it's taken, and the sheet stays.)
+        let mut blocked = false;
         for p in self.popovers().into_iter().rev() {
             if p.layout.rect.contains(x, y) {
                 break;
             }
-            if let Kind::Popover { presented, .. } = &p.kind {
+            if let Kind::Popover { presented, edge, .. } = &p.kind {
+                if *edge == super::SHEET {
+                    blocked = true;
+                    break;
+                }
                 unsafe { *presented.locate() = 0 };
                 closed = true;
             }
+        }
+        if blocked && !closed {
+            return true;
         }
         if closed {
             self.ui.editing = None;
@@ -2212,6 +2367,7 @@ impl App {
     /// The window's drawing, in pixels (`scale` to the point).
     fn scene(&mut self, scale: f64) -> super::draw::DrawList {
         self.update();
+        self.notice_sync();
         let mut list = super::draw::DrawList::new();
         let tree = self.tree.as_ref().unwrap();
         let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
@@ -2221,6 +2377,7 @@ impl App {
         painter.paint_popup();
         painter.paint_menu_bar();
         painter.paint_menus();
+        painter.paint_notice();
         painter.paint_tooltip();
         list
     }
@@ -2314,7 +2471,7 @@ impl App {
                 return Some(visit(palette, x, y).unwrap_or(Hit::Palette(palette.key)));
             }
         }
-        visit(self.tree.as_ref()?, x, y)
+        visit(self.point_root(x, y)?, x, y)
     }
 
     /// The open color picker's palette, if one is open.
@@ -2346,7 +2503,7 @@ impl App {
             }
             (n.mods.hover_background.is_some() && n.layout.rect.contains(x, y)).then_some(n.key)
         }
-        visit(self.tree.as_ref()?, x, y)
+        visit(self.point_root(x, y)?, x, y)
     }
 
     fn node(&self, key: u64) -> Option<&Node> {
@@ -2480,7 +2637,7 @@ impl App {
             CursorIcon::ZoomIn,
             CursorIcon::ZoomOut,
         ];
-        let style = visit(self.tree.as_ref()?, x, y)?;
+        let style = visit(self.point_root(x, y)?, x, y)?;
         STYLES.get(style as usize).copied()
     }
 
@@ -2493,7 +2650,7 @@ impl App {
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
             inner.or_else(|| n.mods.tooltip.clone().filter(|_| n.layout.rect.contains(x, y)).map(|t| (n.key, t)))
         }
-        visit(self.tree.as_ref()?, x, y)
+        visit(self.point_root(x, y)?, x, y)
     }
 
     /// The mouse moved to a point: a tooltip starts waiting when it comes
@@ -2518,6 +2675,31 @@ impl App {
     /// When the waiting tooltip is to show (on the app's clock), if one waits.
     fn tip_time(&self) -> Option<f64> {
         self.tip.as_ref().filter(|t| !t.done).map(|t| t.since + TIP_DELAY)
+    }
+
+    /// Brings the notice that shows in line with `showNotice`: a new one
+    /// comes up, one whose time is over goes. Returns whether that changed
+    /// what shows.
+    fn notice_sync(&mut self) -> bool {
+        let wanted = NOTICE.with(|n| {
+            let mut n = n.borrow_mut();
+            if n.as_ref().is_some_and(|(_, until)| now() >= *until) {
+                *n = None;
+            }
+            n.as_ref().map(|(text, _)| text.clone())
+        });
+        let shown = self.ui.notice.as_ref().map(|n| n.text.clone());
+        let Some(text) = wanted else {
+            self.ui.notice = None;
+            return shown.is_some();
+        };
+        let layout = Rc::new(self.text.layout(&text, 13.0, 500.0, Rgba([255, 255, 255, 255]), Some((self.width - 80.0).max(80.0))));
+        let (w, h) = (layout.width() + 32.0, layout.height() + 16.0);
+        // In the middle, near the bottom of the window.
+        let rect = Rect { x: ((self.width - w) / 2.0).round(), y: (self.height - h - 24.0).max(4.0).round(), w, h };
+        let changed = shown.as_deref() != Some(text.as_str());
+        self.ui.notice = Some(render::Tooltip { rect, text, layout });
+        changed
     }
 
     /// Shows the tooltip if the mouse has rested long enough. Returns
@@ -2575,7 +2757,7 @@ impl App {
         if self.palette().is_some_and(|p| p.layout.rect.contains(x, y)) {
             return None;
         }
-        visit(self.tree.as_ref()?, x, y, target)
+        visit(self.point_root(x, y)?, x, y, target)
     }
 
     /// Starts dragging view `key` (which has `.draggable`), held at (x, y).
@@ -3294,7 +3476,7 @@ impl App {
             let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
             inner.or(matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some(n.key))
         }
-        self.tree.as_ref().and_then(|t| find(t, x, y))
+        self.point_root(x, y).and_then(|t| find(t, x, y))
     }
 
     /// What the wheel turns at a point: the innermost scroll view or code
@@ -3313,7 +3495,7 @@ impl App {
                 }
             })
         }
-        self.tree.as_ref().and_then(|t| find(t, x, y))
+        self.point_root(x, y).and_then(|t| find(t, x, y))
     }
 
     /// Scrolls the view under (x, y) by (dx, dy): as far as its content
@@ -3561,7 +3743,7 @@ impl App {
                 Kind::MenuDivider => "MenuDivider".to_string(),
                 Kind::Menu { title } => format!("Menu {title:?}"),
                 Kind::MenuList => "MenuList".to_string(),
-                Kind::Popover { .. } => "Popover".to_string(),
+                Kind::Popover { edge, .. } => if *edge == super::SHEET { "Sheet" } else { "Popover" }.to_string(),
                 Kind::Window { title, .. } => format!("Window {title:?}"),
                 Kind::Ribbon { .. } => {
                     let titles: Vec<&str> = n.children.iter().filter_map(|c| match &c.kind {
@@ -4251,6 +4433,10 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
                 if let Some(tip) = &app.ui.tooltip {
                     println!("Tooltip {:?}", tip.text);
+                }
+                app.notice_sync();
+                if let Some(notice) = &app.ui.notice {
+                    println!("Notice {:?}", notice.text);
                 }
                 // The completion list, with the selected suggestion marked.
                 if let Some(m) = app.matches() {
@@ -5010,12 +5196,13 @@ impl ApplicationHandler for WindowApp {
         if fire_timers() {
             self.app.dirty = true;
         }
-        if self.app.tip_due() {
+        if self.app.tip_due() | self.app.notice_sync() {
             self.request_redraw();
         }
         self.after_app(event_loop);
-        // Wake for the next timer, or for a tooltip that's waiting to show.
-        let next = [next_timer(), self.app.tip_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
+        // Wake for the next timer, for a tooltip that's waiting to show, or
+        // for a notice that's to go.
+        let next = [next_timer(), self.app.tip_time(), notice_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
         match next {
             Some(t) => {
                 let wait = Duration::from_secs_f64((t - now()).max(0.0));

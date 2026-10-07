@@ -58,6 +58,8 @@ pub struct Interaction {
     pub anim: super::anim::Animations,
     /// The `.tooltip` that shows, laid out.
     pub tooltip: Option<Tooltip>,
+    /// The notice (`showNotice`) that shows, laid out.
+    pub notice: Option<Tooltip>,
     /// The control the keyboard is on (a slider, stepper, color picker or
     /// disclosure group), when no text is edited.
     pub focused: Option<u64>,
@@ -413,6 +415,16 @@ impl Painter<'_> {
         }
     }
 
+    /// Draws the notice (`showNotice`), if one shows: a dark pill near the
+    /// bottom of the window.
+    pub fn paint_notice(&mut self) {
+        let Some(n) = self.ui.notice.as_ref() else { return };
+        let r = n.rect;
+        self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.0), r.h / 2.0 + 1.0, Rgba([0, 0, 0, 30]));
+        self.fill(r, r.h / 2.0, Rgba([44, 44, 46, 240]));
+        self.text(&n.layout, r.x + 16.0, r.y + 8.0, None);
+    }
+
     /// Draws the tooltip, if one shows (last, so it's on top of everything).
     pub fn paint_tooltip(&mut self) {
         let Some(tip) = self.ui.tooltip.as_ref() else { return };
@@ -457,7 +469,12 @@ impl Painter<'_> {
         self.offset = (r.x - placed.x, r.y - placed.y);
         let content = placed.inset_by(n.mods.padding);
         // A popover: a card, with a shadow, that its content is drawn on.
-        if let Kind::Popover { .. } = n.kind {
+        if let Kind::Popover { edge, .. } = n.kind {
+            if edge == super::SHEET {
+                // A sheet dims the rest of the window.
+                let window = super::layout::window_size();
+                self.fill(Rect { x: 0.0, y: 0.0, w: window.w, h: window.h }, 0.0, Rgba([0, 0, 0, 70]));
+            }
             self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.0), 10.0, Rgba([0, 0, 0, 20]));
             self.fill(r, 8.0, theme().popup);
             self.stroke(r, 8.0, 1.0, theme().field_border);

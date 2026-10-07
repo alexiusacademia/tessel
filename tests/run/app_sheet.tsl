@@ -1,0 +1,33 @@
+// Sheets (`.sheet`, `dismiss()`), the views made for them (`TextPrompt`,
+// `ProgressPanel`), `TimePicker`, `FontPicker`, `ProgressBar` and `showNotice`.
+
+app Kit(width: 440, height: 420) {
+    state name = "Draft"
+    state renaming = false
+    state when = date(year: 2026, month: 10, day: 7, hour: 9, minute: 58)
+    state font = "Georgia"
+    state done = 0.4
+    state working = false
+
+    VStack(spacing: 12, alignment: .leading) {
+        Text("Name: {name}").font(family: font)
+        Button("Rename…") { renaming = true }
+        HStack {
+            DatePicker(date: when)
+            TimePicker(date: when)
+            TimePicker(date: when, use24Hour: false)
+        }
+        Text(formatDate(when))
+        FontPicker(family: font)
+        ProgressBar(value: done)
+        Button("Work") { working = true }
+        Button("Notice") { showNotice("Saved {name}") }
+    }
+    .padding(16)
+    .sheet(isPresented: renaming) {
+        TextPrompt("Rename", text: name, message: "The file's new name.") { showNotice("Renamed") }
+    }
+    .sheet(isPresented: working) {
+        ProgressPanel("Exporting…", value: done, note: "2 of 5 pages", onCancel: { working = false })
+    }
+}

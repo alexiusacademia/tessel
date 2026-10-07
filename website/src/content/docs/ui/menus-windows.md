@@ -120,6 +120,9 @@ app Style(width: 360, height: 260) {
 - A popover can open another one from a view inside it; a click in the first
   one closes the second.
 
+For views that must be answered before going on, in the middle of the
+window, see [Sheets](/ui/dialogs/#sheets).
+
 ## The menu bar
 
 `.menuBar { … }` declares the app's menus, each a `Menu` of items. Put it on
