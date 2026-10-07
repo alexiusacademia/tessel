@@ -11,10 +11,25 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.1.38
+## 0.1.39
 
-*October 7, 2026*
+*October 7, 2026 · 0.1.38 and 0.1.39*
 
+- **Dialogs.** `alert` and `confirm` show the system's message dialogs,
+  `chooseFolder` asks for a folder, and `openFiles` for several files. See
+  [Dialogs and sheets](/ui/dialogs/).
+- **Sheets.** `.sheet(isPresented:)` shows your own views in a card over the
+  dimmed window, and `dismiss()` closes it. `TextPrompt` asks for a text and
+  `ProgressPanel` shows work going on, ready-made for a sheet. See
+  [Sheets](/ui/dialogs/#sheets).
+- **Pickers:** `DatePicker` and `Calendar` for dates, `TimePicker` for the
+  hour and minute, and `FontPicker` for a font family. See
+  [DatePicker](/reference/views/#datepicker).
+- **Notices:** `showNotice("Saved")` shows a short message that goes by
+  itself. `ProgressBar` shows how far something is.
+- **Printing:** `printDocument` draws pages as `writePDF` does and prints
+  them: through the system's print dialog on macOS, and the PDF app on
+  Windows. See [Printing](/ui/dialogs/#printing).
 - **Ribbons in several files.** A view of your own can make a ribbon's tab,
   a group, or some of a group's buttons, and the ribbon uses them as if
   they were written in it. See
