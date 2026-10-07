@@ -343,7 +343,9 @@ jobs:
     name: Publish to Google Cloud Storage
     needs: package
     if: github.ref_type == 'tag' || inputs.publish
-    runs-on: ubuntu-latest
+    # On the self-hosted Mac (which has gcloud), so that publishing doesn't
+    # depend on GitHub's hosted runners.
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: read
       id-token: write # to sign in to Google Cloud without a stored key
@@ -355,16 +357,15 @@ jobs:
           workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
           service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
 
-      - uses: google-github-actions/setup-gcloud@v2
-
       - name: Upload
         run: |
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           # The packages the package jobs staged.
+          rm -rf dist
           mkdir -p dist
           gcloud storage cp "gs://tessel-releases/staging/$version/*" dist/
           ls -la dist
-          (cd dist && sha256sum tessel-* > SHA256SUMS)
+          (cd dist && shasum -a 256 tessel-* > SHA256SUMS)
           gcloud storage cp dist/* "gs://tessel-releases/$version/"
           # The newest version for each platform built this time, and the
           # install scripts. They change with releases: no long caching.
