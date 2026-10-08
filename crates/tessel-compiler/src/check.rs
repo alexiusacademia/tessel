@@ -2917,7 +2917,7 @@ impl Checker<'_> {
                 Ty::Error
             }
             ExprKind::Member { object, name, optional } => {
-                self.method_call(object, name, *optional, args, trailing, span, expected)
+                self.method_call(callee.id, object, name, *optional, args, trailing, span, expected)
             }
             ExprKind::GenericName(n, targs) => match self.generic_name_ty(n, targs, callee.span) {
                 Ty::Set(t) if n == "Set" => self.set_init(Some(*t), args, trailing, span, expected),
@@ -3434,8 +3434,10 @@ impl Checker<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn method_call(
         &mut self,
+        callee: crate::ast::ExprId,
         object: &Expr,
         name: &Ident,
         optional: bool,
@@ -3540,6 +3542,17 @@ impl Checker<'_> {
                 }
             },
             Ty::Struct(_) | Ty::Enum(_) => {
+                // A field that holds a function is called like a method:
+                // `box.host(5)` calls the function in `box.host`.
+                let held = match &recv {
+                    Ty::Struct(id) => self.structs[*id].fields.iter().find(|f| f.name == n).map(|f| f.ty.clone()),
+                    _ => None,
+                };
+                if let (Some(ft @ Ty::Fn(..)), false) = (held, optional) {
+                    self.types.insert(callee, ft.clone());
+                    self.set_callee(Callee::Value);
+                    return self.call_value(&ft, &what, args, trailing, span);
+                }
                 let (methods, owner, fields) = match &recv {
                     Ty::Struct(id) => {
                         let d = &self.structs[*id];

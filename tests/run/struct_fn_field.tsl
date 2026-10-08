@@ -1,0 +1,49 @@
+// A struct with a field that holds a function: passed to `bind`
+// parameters, kept in lists and in other structs (issue #16).
+
+struct Box {
+    host: fn(Int) -> Int = { x in x }
+    n: Int = 0
+}
+
+struct Shelf {
+    boxes: [Box] = []
+    best: Box? = nil
+    name: String = ""
+}
+
+fn poke(_ b: bind Box) {
+    b.n += 1
+}
+
+fn swap(_ b: bind Box, _ f: fn(Int) -> Int) {
+    b.host = f
+}
+
+fn fill(_ s: bind Shelf) {
+    s.boxes.append(Box(host: { x in x * 10 }, n: s.boxes.count))
+    s.best = s.boxes.last
+}
+
+fn main() {
+    var b = Box()
+    poke(b)
+    poke(b)
+    print("{b.n} {b.host(5)}")
+    swap(b, { x in x + 100 })
+    print(b.host(5))
+
+    var shelf = Shelf(name: "top")
+    fill(shelf)
+    fill(shelf)
+    poke(shelf.boxes[1])
+    print("{shelf.boxes.count} {shelf.boxes[1].n} {shelf.boxes[0].host(7)}")
+    if let best = shelf.best {
+        print(best.host(best.n))
+    }
+    var boxes = [b, Box(n: 9)]
+    for i in boxes.indices {
+        poke(boxes[i])
+    }
+    print(boxes.map { x in x.n })
+}

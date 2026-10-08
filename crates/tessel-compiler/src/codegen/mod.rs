@@ -1753,6 +1753,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let r = self.call_rt("tsl_iface_eq", &parts);
                 self.truthy(r)
             }
+            // Functions (in a struct that's compared as a whole, or that
+            // needs its type's description): the very same one, with the
+            // same variables around it.
+            Ty::Fn(..) => {
+                let (sa, sb) = (a.into_struct_value(), b.into_struct_value());
+                let mut same = self.ctx.bool_type().const_int(1, false);
+                for i in 0..2 {
+                    let x = self.b.build_extract_value(sa, i, "").unwrap().into_pointer_value();
+                    let y = self.b.build_extract_value(sb, i, "").unwrap().into_pointer_value();
+                    let (x, y) = (
+                        self.b.build_ptr_to_int(x, self.i64(), "").unwrap(),
+                        self.b.build_ptr_to_int(y, self.i64(), "").unwrap(),
+                    );
+                    let eq = self.b.build_int_compare(IntPredicate::EQ, x, y, "").unwrap();
+                    same = self.b.build_and(same, eq, "").unwrap();
+                }
+                same
+            }
             _ => unreachable!("values of this type can't be compared"),
         }
     }

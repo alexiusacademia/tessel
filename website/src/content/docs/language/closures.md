@@ -126,6 +126,18 @@ if let finish = onFinish {
 To only check whether one was given, compare it with `nil`:
 `onFinish == nil` or `onFinish != nil`.
 
+A struct's field can hold a function too, and it's called like a method:
+
+```tessel
+struct Rule {
+    name: String
+    applies: fn(Int) -> Bool
+}
+
+let even = Rule(name: "even", applies: { n in n % 2 == 0 })
+print(even.applies(4))      // true
+```
+
 ## Passing closures to functions
 
 A parameter with a function type accepts a closure:
