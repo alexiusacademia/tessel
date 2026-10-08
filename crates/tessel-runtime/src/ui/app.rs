@@ -2900,6 +2900,11 @@ impl App {
         // Shortcuts first, then the control the keyboard is on, then
         // `.onKeyEvent` (while no text is edited).
         if self.ui.editing.is_none() {
+            // Escape closes the popover or sheet on top, before the app's
+            // own `.onKeyEvent` could take the key.
+            if name == "escape" && !mods.primary && self.close_top_popover() {
+                return;
+            }
             if mods.primary && self.run_shortcut(name, mods) {
                 return;
             }

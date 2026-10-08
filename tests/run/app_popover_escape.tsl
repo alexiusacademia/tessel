@@ -1,0 +1,23 @@
+// Escape closes an open popover (and a sheet) even when the app takes key
+// events with `.onKeyEvent` (issue #15); with none open, the app gets it.
+
+app PopoverEscape(title: "Popover", width: 320, height: 220) {
+    state open = false
+    state asking = false
+    state keys = 0
+
+    VStack(spacing: 12) {
+        Text("Open")
+            .onTap { open = true }
+            .popover(isPresented: open) {
+                Text("Inside the popover").padding(12)
+            }
+        Button("Ask") { asking = true }
+        Text("popover {open}, sheet {asking}, keys seen {keys}")
+    }
+    .padding(24)
+    .onKeyEvent { e in keys += 1 }
+    .sheet(isPresented: asking) {
+        Text("Inside the sheet")
+    }
+}

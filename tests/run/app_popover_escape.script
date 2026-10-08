@@ -1,0 +1,8 @@
+click "Open"
+key escape
+tree
+key escape
+click "Ask"
+key a
+key escape
+tree

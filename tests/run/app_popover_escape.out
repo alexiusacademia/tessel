@@ -1,0 +1,12 @@
+Root
+  View
+    VStack
+      Text "Open"
+      Button "Ask"
+      Text "popover false, sheet false, keys seen 0"
+Root
+  View
+    VStack
+      Text "Open"
+      Button "Ask"
+      Text "popover false, sheet false, keys seen 2"
