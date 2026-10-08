@@ -1,0 +1,261 @@
+// Large structs are moved as blocks of memory (issue #17). They must still
+// behave as values: a copy is independent, and nothing is lost or kept
+// twice on the way through calls, returns, optionals, lists and closures.
+
+struct Part {
+    name: String = ""
+    items: [Int] = []
+}
+
+struct Big {
+    id: Int = 0
+    label: String = "none"
+    a: Part = Part()
+    b: Part = Part(name: "b")
+    c: Part = Part()
+    d: Part = Part()
+    e: Part = Part()
+    f: Part = Part()
+    g: Part = Part()
+    h: Part = Part(name: "h", items: [1, 2, 3])
+    i: Part = Part()
+    j: Part = Part()
+    k: Part = Part()
+    tags: [String] = []
+    score: Float = 0.0
+
+    fn describe() -> String {
+        "{id}:{label}:{a.name}/{a.items.count}:{h.items.count}:{tags.count}:{score}"
+    }
+
+    fn renamed(_ to: String) -> Big {
+        var copy = self
+        copy.label = to
+        copy
+    }
+
+    fn grow() {
+        a.items.append(id)
+        tags.append("t{tags.count}")
+    }
+}
+
+interface Shape {
+    fn merged(_ other: Big) -> Big
+    fn pick(_ first: Big, _ second: Big) -> Big?
+}
+
+struct Holder: Shape {
+    kept: Big = Big()
+
+    fn merged(_ other: Big) -> Big {
+        var out = kept
+        out.id = kept.id + other.id
+        out.tags = kept.tags + other.tags
+        out
+    }
+
+    fn pick(_ first: Big, _ second: Big) -> Big? {
+        if first.id > second.id { first } else if second.id > first.id { second } else { nil }
+    }
+}
+
+enum Wrapped {
+    one(value: Big)
+    pair(left: Big, right: Big)
+    empty
+}
+
+struct Stack<T> {
+    items: [T] = []
+
+    fn push(_ item: T) {
+        items.append(item)
+    }
+
+    fn pop() -> T? {
+        if items.isEmpty { nil } else { items.removeLast() }
+    }
+}
+
+fn make(_ id: Int) -> Big {
+    Big(id: id, label: "made {id}", a: Part(name: "a{id}", items: [id]))
+}
+
+fn find(_ list: [Big], _ id: Int) -> Big? {
+    for b in list {
+        if b.id == id {
+            return b
+        }
+    }
+    nil
+}
+
+fn takeTwo(_ x: Big, _ y: Big) -> String {
+    "{x.describe()} + {y.describe()}"
+}
+
+fn change(_ b: bind Big, _ label: String) -> Int {
+    b.label = label
+    b.grow()
+    b.tags.count
+}
+
+// Changes the caller's value, and gives it back as it is then.
+fn relabel(_ b: bind Big) -> Big {
+    b.label = "changed"
+    return b
+}
+
+fn depth(_ b: Big, _ n: Int) -> Big {
+    if n == 0 {
+        return b
+    }
+    var next = b
+    next.id += 1
+    next.a.items.append(n)
+    depth(next, n - 1)
+}
+
+fn swapped(_ pair: (Big, Big)) -> (Big, Big) {
+    (pair.1, pair.0)
+}
+
+fn main() {
+    // Copies are independent.
+    var first = make(1)
+    var second = first
+    second.label = "second"
+    second.a.items.append(99)
+    second.grow()
+    print(first.describe())
+    print(second.describe())
+
+    // Through calls and returns, with the same value passed twice.
+    print(takeTwo(first, first))
+    print(takeTwo(make(2), make(3).renamed("three")))
+    print(first.renamed("again").renamed("and again").describe())
+
+    // An argument that's changed while the others are worked out.
+    var counted = make(4)
+    print(takeTwo(counted, relabel(counted)))
+    print(takeTwo(counted, if counted.id > 0 {
+        counted.id = -4
+        counted
+    } else {
+        make(0)
+    }))
+    print("{change(counted, "bound")} {counted.describe()}")
+
+    // In lists: read, written, appended, changed in place.
+    var list = [make(10), make(11)]
+    list.append(first)
+    list[0] = second
+    list[1].grow()
+    list[1].label = "in place"
+    let taken = list[1]
+    list[1].tags.append("after")
+    for b in list {
+        print(b.describe())
+    }
+    print("{taken.describe()} {list.count}")
+    var total = 0
+    for (i, b) in list.enumerated() {
+        total += i * b.id
+    }
+    print(total)
+    print(list.map { b in b.id }.sum())
+    print(list.filter { b in b.id > 1 }.count)
+    print(list.sorted(by: { x, y in x.id > y.id }).map { b in b.label })
+    if let last = list.last {
+        print(last.describe())
+    }
+    print(list.first(where: { b in b.label == "in place" })?.describe() ?? "none")
+    print(list.removeLast().describe())
+
+    // Optionals.
+    if let found = find(list, 11) {
+        print(found.describe())
+    }
+    print(find(list, 500)?.label ?? "not there")
+    print((find(list, 500) ?? make(7)).describe())
+    print((find(list, 1) ?? make(7)).describe())
+    var maybe: Big? = nil
+    print(maybe == nil)
+    maybe = make(8)
+    if let m = maybe {
+        print(m.describe())
+    }
+    if let inner = maybe {
+        maybe = inner.renamed("optional")
+    }
+    print(maybe?.label ?? "?")
+    var found = 0
+    while let next = find(list, found + 11) {
+        found += 1
+        print("while let {next.id}")
+        if found > 3 {
+            break
+        }
+    }
+
+    // `if` and `match` as values.
+    let chosen = if list.count > 1 { list[0] } else { make(0) }
+    print(chosen.describe())
+    let matched = match list.count {
+        0 -> make(100)
+        2 -> list[1].renamed("matched")
+        _ -> make(101)
+    }
+    print(matched.describe())
+
+    // Recursion, where every call has its own copy.
+    let deep = depth(make(20), 50)
+    print("{deep.id} {deep.a.items.count} {deep.a.items.last ?? -1}")
+
+    // Closures keep copies of what they use.
+    var captured = make(30)
+    let later = { captured.describe() }
+    captured.label = "after the closure"
+    print(later())
+    print(captured.describe())
+    let transform: fn(Big) -> Big = { b in b.renamed("via closure") }
+    print(transform(captured).describe())
+    let pairUp: fn(Big, Big) -> Big? = { x, y in if x.id == y.id { x } else { nil } }
+    print(pairUp(captured, captured)?.label ?? "nil")
+    print(pairUp(captured, make(31))?.label ?? "nil")
+
+    // Interfaces, generics, enums, tuples and dictionaries.
+    let shape: Shape = Holder(kept: make(40))
+    print(shape.merged(make(2)).describe())
+    print(shape.pick(make(5), make(6))?.id ?? -1)
+    print(shape.pick(make(5), make(5))?.id ?? -1)
+    var stack = Stack<Big>()
+    stack.push(make(50))
+    stack.push(make(51))
+    print(stack.pop()?.describe() ?? "empty")
+    print(stack.pop()?.id ?? -1)
+    print(stack.pop()?.id ?? -1)
+    let wrapped = [Wrapped.one(value: make(60)), .pair(left: make(61), right: make(62)), .empty]
+    for w in wrapped {
+        match w {
+            .one(v) -> print("one {v.id}")
+            .pair(l, r) -> print("pair {l.id} {r.label}")
+            .empty -> print("empty")
+        }
+    }
+    let (x, y) = swapped((make(70), make(71)))
+    print("{x.id} {y.id}")
+    var byName: [String: Big] = [:]
+    byName["a"] = make(80)
+    byName["b"] = byName["a"] ?? make(0)
+    if let old = byName["a"] {
+        byName["a"] = old.renamed("changed in the dictionary")
+    }
+    print("{byName["a"]?.label ?? "?"} / {byName["b"]?.label ?? "?"}")
+
+    // Equality looks at every field.
+    print(make(90) == make(90))
+    print(make(90) == make(90).renamed("other"))
+    print(list.contains(second))
+}

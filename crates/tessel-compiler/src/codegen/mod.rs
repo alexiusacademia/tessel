@@ -46,6 +46,13 @@ mod ui;
 /// Byte offset of a box's data (matches the runtime's `BOX_DATA`).
 const BOX_DATA: u64 = 32;
 
+/// Values of structs larger than this many bytes (16 fields that are
+/// numbers, strings or lists) are moved as blocks of memory, and kept whole
+/// in their variables (see `Gen::big` and `Gen::alloca`). Smaller ones are
+/// left to the optimizer, which keeps their fields in registers: that's
+/// faster, and costs little while they're small.
+const BIG_VALUE: u64 = 128;
+
 /// Compiles a checked program with a `fn main()` to a native object file.
 /// The triple for this computer. On macOS, for the oldest supported version
 /// rather than this machine's.
@@ -224,8 +231,14 @@ fn generate<R>(
     if !g.errors.is_empty() {
         return Err(g.errors);
     }
+    g.drop_unused_copies();
     if let Err(e) = g.module.verify() {
         return Err(vec![internal(format!("generated code failed to verify: {}", e.to_string()))]);
+    }
+    // For working on the compiler: the LLVM code as it was written, before
+    // it's optimized.
+    if let Some(path) = std::env::var_os("TESSEL_EMIT_LLVM_RAW") {
+        let _ = g.module.print_to_file(path);
     }
     if optimize {
         g.module
@@ -379,6 +392,17 @@ struct Gen<'ctx, 'a> {
     struct_types: HashMap<usize, StructType<'ctx>>,
     type_infos: HashMap<String, PointerValue<'ctx>>,
     helpers: HashMap<String, FunctionValue<'ctx>>,
+    /// Big values (see `big`) that were just copied out of memory: where
+    /// their copy is, and the statement it was made in (`era`). What only
+    /// needs the value in memory (passing it on, storing it) uses the copy,
+    /// and never touches the value field by field.
+    origin: HashMap<Val<'ctx>, (PointerValue<'ctx>, u64)>,
+    /// The copies' places, by function and type, with the statement each
+    /// was last used in: a place is used again once that statement is over.
+    copies: HashMap<(FunctionValue<'ctx>, String), Vec<(PointerValue<'ctx>, u64)>>,
+    /// Counts statements: a copy is only trusted within the statement that
+    /// made it.
+    era: u64,
     strings: HashMap<String, PointerValue<'ctx>>,
     locs: HashMap<(u32, u32), PointerValue<'ctx>>,
     closures: usize,
@@ -448,6 +472,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             struct_types: HashMap::new(),
             type_infos: HashMap::new(),
             helpers: HashMap::new(),
+            origin: HashMap::new(),
+            copies: HashMap::new(),
+            era: 0,
             strings: HashMap::new(),
             locs: HashMap::new(),
             closures: 0,
@@ -793,7 +820,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let boxed = self.boxed_vars(body);
         self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None });
         for (i, (name, ty, bind)) in params.iter().enumerate() {
-            let value = func.get_nth_param(first_param + i as u32).unwrap();
+            let raw = func.get_nth_param(first_param + i as u32).unwrap();
+            let value = raw;
             if *bind {
                 // A `bind` parameter: a locator for the caller's storage.
                 let lt = self.llty(&Ty::View).unwrap();
@@ -801,7 +829,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_store(slot, value).unwrap();
                 self.push_var(Var { name: name.name.clone(), ty: ty.clone(), store: Store::Binding { slot, owned: true } });
             } else {
-                self.declare_value(&name.name, ty, Some(value));
+                self.declare_param(&name.name, ty, value);
             }
         }
         let value = self.block(body, Some(ret));
@@ -826,10 +854,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             return;
         }
         self.release_all_scopes();
-        match value {
-            Some(v) => self.b.build_return(Some(&v)).unwrap(),
-            None => self.b.build_return(None).unwrap(),
-        };
+        self.emit_return(value);
     }
 
     // ===== types =====
@@ -906,7 +931,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ps.push(self.ptr_ty().into());
         }
         for p in params {
-            ps.push(self.llty(p).unwrap().into());
+            ps.push(self.abi_type(p));
+        }
+        // A big result is written where the caller says: a last parameter.
+        if self.big(ret) {
+            ps.push(self.ptr_ty().into());
+            return self.ctx.void_type().fn_type(&ps, false);
         }
         match self.llty(ret) {
             Some(r) => r.fn_type(&ps, false),
@@ -973,26 +1003,219 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     /// An alloca in the entry block (so it's allocated once per call).
-    fn alloca(&self, t: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
+    fn alloca(&mut self, t: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let entry = self.func().get_first_basic_block().unwrap();
         let tmp = self.ctx.create_builder();
         match entry.get_first_instruction() {
             Some(first) => tmp.position_before(&first),
             None => tmp.position_at_end(entry),
         }
-        tmp.build_alloca(t, name).unwrap()
+        let p = tmp.build_alloca(t, name).unwrap();
+        // A large struct stays in memory, where it's copied as a block. Left
+        // to itself the optimizer takes such a variable apart into its
+        // fields, and every copy of it becomes a store for each field (see
+        // `big`). Handing its address to a function the optimizer doesn't
+        // look into (`pin_helper`) keeps it whole.
+        if t.is_struct_type() && self.td.get_store_size(&t) > BIG_VALUE {
+            let pin = self.pin_helper();
+            match p.as_instruction().and_then(|i| i.get_next_instruction()) {
+                Some(next) => tmp.position_before(&next),
+                None => tmp.position_at_end(entry),
+            }
+            tmp.build_call(pin, &[p.into()], "").unwrap();
+        }
+        p
+    }
+
+    /// `void pin(ptr)`: does nothing (see `alloca`).
+    fn pin_helper(&mut self) -> FunctionValue<'ctx> {
+        let name = "tsl_h_pin";
+        if let Some(f) = self.helpers.get(name) {
+            return *f;
+        }
+        let f = self.module.add_function(
+            name,
+            self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false),
+            Some(Linkage::Internal),
+        );
+        self.helpers.insert(name.to_string(), f);
+        for attribute in ["noinline", "optnone"] {
+            let kind = inkwell::attributes::Attribute::get_named_enum_kind_id(attribute);
+            f.add_attribute(inkwell::attributes::AttributeLoc::Function, self.ctx.create_enum_attribute(kind, 0));
+        }
+        let body = self.ctx.append_basic_block(f, "entry");
+        let b = self.ctx.create_builder();
+        b.position_at_end(body);
+        b.build_return(None).unwrap();
+        f
+    }
+
+    /// Whether values of a type are moved as a block of memory: structs
+    /// (and optional ones) of more than a few fields. Taken apart into their
+    /// fields, each use of one would cost an instruction per field, and a
+    /// program's size would grow with the size of its structs.
+    fn big(&mut self, t: &Ty) -> bool {
+        match t {
+            Ty::Struct(_) | Ty::Opt(_) => {
+                let lt = self.llty(t).unwrap();
+                self.td.get_store_size(&lt) > BIG_VALUE
+            }
+            _ => false,
+        }
+    }
+
+    /// Copies a value of LLVM type `lt` from `from` to `to`.
+    fn copy_bytes(&mut self, lt: BasicTypeEnum<'ctx>, to: PointerValue<'ctx>, from: PointerValue<'ctx>) {
+        let size = self.i64().const_int(self.td.get_store_size(&lt), false);
+        let align = self.td.get_abi_alignment(&lt);
+        self.b.build_memcpy(to, align, from, align, size).unwrap();
+    }
+
+    /// Takes out the reads of big values that nothing used: most of them,
+    /// since what uses a big value usually goes by its copy in memory (see
+    /// `origin`). Left in, each would be followed field by field through
+    /// the optimizer's first passes, which costs a large program gigabytes
+    /// of memory.
+    fn drop_unused_copies(&mut self) {
+        for v in self.origin.keys() {
+            let Some(read) = inkwell::values::BasicValue::as_instruction_value(v) else { continue };
+            if read.get_first_use().is_none() && read.get_parent().is_some() {
+                read.erase_from_basic_block();
+            }
+        }
+        self.origin.clear();
+    }
+
+    /// Where a big value's copy in memory is, if it was made in this statement.
+    fn origin_of(&self, v: Val<'ctx>) -> Option<PointerValue<'ctx>> {
+        match self.origin.get(&v) {
+            Some((p, era)) if *era == self.era => Some(*p),
+            _ => None,
+        }
+    }
+
+    /// A place for a copy of a big value, in this function: one that no
+    /// value of this statement is in.
+    fn copy_slot(&mut self, t: &Ty, lt: BasicTypeEnum<'ctx>) -> PointerValue<'ctx> {
+        let key = (self.func(), self.key(t));
+        let era = self.era;
+        if let Some(slots) = self.copies.get_mut(&key) {
+            if let Some(slot) = slots.iter_mut().find(|s| s.1 != era) {
+                slot.1 = era;
+                return slot.0;
+            }
+        }
+        let p = self.alloca(lt, "copy");
+        self.copies.entry(key).or_default().push((p, era));
+        p
     }
 
     fn load(&mut self, t: &Ty, p: PointerValue<'ctx>) -> Val<'ctx> {
         let lt = self.llty(t).unwrap();
+        if self.big(t) {
+            // A copy of the whole value at once; what uses it as a whole
+            // (see `origin`) never loads its fields.
+            let copy = self.copy_slot(t, lt);
+            self.copy_bytes(lt, copy, p);
+            let v = self.b.build_load(lt, copy, "").unwrap();
+            self.origin.insert(v, (copy, self.era));
+            return v;
+        }
         self.b.build_load(lt, p, "").unwrap()
     }
 
+    /// A value in memory, to read it from there.
     fn spill(&mut self, t: &Ty, v: Val<'ctx>) -> PointerValue<'ctx> {
+        if let Some(p) = self.origin_of(v) {
+            return p;
+        }
         let lt = self.llty(t).unwrap();
         let p = self.alloca(lt, "tmp");
         self.b.build_store(p, v).unwrap();
         p
+    }
+
+    /// Stores a value: a big one that's in memory already is copied from there.
+    fn store(&mut self, t: &Ty, to: PointerValue<'ctx>, v: Val<'ctx>) {
+        if let Some(from) = self.origin_of(v) {
+            let lt = self.llty(t).unwrap();
+            self.copy_bytes(lt, to, from);
+        } else {
+            self.b.build_store(to, v).unwrap();
+        }
+    }
+
+    /// A function's parameter types, as they're passed: big values by a
+    /// pointer to them (the caller's copy, which the function takes over).
+    fn abi_type(&mut self, t: &Ty) -> BasicMetadataTypeEnum<'ctx> {
+        if self.big(t) { self.ptr_ty().into() } else { self.llty(t).unwrap().into() }
+    }
+
+    /// An argument as it's passed (see `abi_type`).
+    fn abi_arg(&mut self, v: Val<'ctx>, t: &Ty) -> BasicMetadataValueEnum<'ctx> {
+        if self.big(t) { self.spill(t, v).into() } else { v.into() }
+    }
+
+    fn abi_args(&mut self, vals: &[Val<'ctx>], tys: &[Ty]) -> Vec<BasicMetadataValueEnum<'ctx>> {
+        vals.iter().zip(tys).map(|(v, t)| self.abi_arg(*v, t)).collect()
+    }
+
+    /// A parameter as a value, from how it was passed (see `abi_type`).
+    fn abi_param(&mut self, raw: Val<'ctx>, t: &Ty) -> Val<'ctx> {
+        if !self.big(t) {
+            return raw;
+        }
+        let lt = self.llty(t).unwrap();
+        let p = raw.into_pointer_value();
+        let v = self.b.build_load(lt, p, "").unwrap();
+        self.origin.insert(v, (p, self.era));
+        v
+    }
+
+    /// The value in a copy's place, known to be there (see `origin`).
+    fn value_at(&mut self, t: &Ty, p: PointerValue<'ctx>) -> Val<'ctx> {
+        let lt = self.llty(t).unwrap();
+        let v = self.b.build_load(lt, p, "").unwrap();
+        self.origin.insert(v, (p, self.era));
+        v
+    }
+
+    /// For a call of a function whose result is big: the place for it,
+    /// added to the arguments (see `fn_type`).
+    fn result_place(&mut self, ret: &Ty, args: &mut Vec<BasicMetadataValueEnum<'ctx>>) -> Option<PointerValue<'ctx>> {
+        if !self.big(ret) {
+            return None;
+        }
+        let lt = self.llty(ret).unwrap();
+        let place = self.copy_slot(ret, lt);
+        args.push(place.into());
+        Some(place)
+    }
+
+    /// What a call gave: its result, or the value in the place it was given.
+    fn call_result(&mut self, ret: &Ty, place: Option<PointerValue<'ctx>>, result: Option<Val<'ctx>>) -> Option<Val<'ctx>> {
+        match place {
+            Some(p) => Some(self.value_at(ret, p)),
+            None => result,
+        }
+    }
+
+    /// Returns from the function being written: a big value goes to the
+    /// place the caller gave (see `fn_type`).
+    fn emit_return(&mut self, v: Option<Val<'ctx>>) {
+        let ret = self.stack.last().unwrap().ret.clone();
+        if self.big(&ret) {
+            if let Some(v) = v {
+                let out = self.func().get_last_param().unwrap().into_pointer_value();
+                self.store(&ret, out, v);
+            }
+            self.b.build_return(None).unwrap();
+            return;
+        }
+        match v {
+            Some(v) => self.b.build_return(Some(&v)).unwrap(),
+            None => self.b.build_return(None).unwrap(),
+        };
     }
 
     fn undef(&mut self, t: &Ty) -> Option<Val<'ctx>> {
@@ -1088,7 +1311,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let data = self.list_field(l, 40, p).into_pointer_value();
         let lt = self.llty(elem).unwrap();
         let dst = unsafe { self.b.build_gep(lt, data, &[len], "").unwrap() };
-        self.b.build_store(dst, v).unwrap();
+        self.store(elem, dst, v);
         let new_len = self.b.build_int_add(len, self.i64().const_int(1, false), "").unwrap();
         let len_p = unsafe { self.b.build_gep(self.i8(), l, &[self.i64().const_int(16, false)], "").unwrap() };
         self.b.build_store(len_p, new_len).unwrap();
@@ -1370,6 +1593,74 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
     }
 
+    /// Keeps a big struct's routine a function of its own. Written into
+    /// each place that calls it, it would take the struct apart field by
+    /// field there, and the optimizer would then do the same to every copy
+    /// of the struct around it: the size this is all meant to avoid.
+    fn keep_out_of_line(&self, f: FunctionValue<'ctx>) {
+        let kind = inkwell::attributes::Attribute::get_named_enum_kind_id("noinline");
+        f.add_attribute(inkwell::attributes::AttributeLoc::Function, self.ctx.create_enum_attribute(kind, 0));
+    }
+
+    /// `void helper(ptr)`: gives the fields `which` of the struct at `ptr`
+    /// their default values. One for each set of fields a program leaves
+    /// to their defaults (`Big()` and `Big(x: 1)` are two).
+    fn defaults_helper(&mut self, id: usize, which: &[usize]) -> FunctionValue<'ctx> {
+        let t = Ty::Struct(id);
+        let all = which.len() == self.checked.structs[id].fields.len();
+        let set = if all { "all".to_string() } else { which.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("_") };
+        let name = format!("tsl_h_defaults_{}_{set}", self.key(&t));
+        if let Some(f) = self.helpers.get(&name) {
+            return *f;
+        }
+        let f = self.module.add_function(
+            &name,
+            self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false),
+            Some(Linkage::Internal),
+        );
+        self.helpers.insert(name, f);
+        self.keep_out_of_line(f);
+        let st = self.struct_ty(id);
+        let fields = self.checked.structs[id].fields.clone();
+        let decl = self.struct_decls.get(&id).copied().expect("a struct with defaults has a declaration");
+        let which = which.to_vec();
+        self.in_helper(f, |g| {
+            let p = f.get_nth_param(0).unwrap().into_pointer_value();
+            for i in which {
+                let default = decl.fields[i].default.as_ref().expect("checked: a field left out has a default");
+                let v = g.expr_as(default, &fields[i].ty).unwrap();
+                let fp = g.b.build_struct_gep(st, p, i as u32, "").unwrap();
+                g.store(&fields[i].ty, fp, v);
+            }
+            g.b.build_return(None).unwrap();
+        });
+        f
+    }
+
+    /// Releases the value at `p`: a big one where it is, without a copy.
+    fn release_at(&mut self, t: &Ty, p: PointerValue<'ctx>) {
+        if self.big(t) {
+            let helper = self.rc_helper(t, false);
+            self.b.build_call(helper, &[p.into()], "").unwrap();
+        } else {
+            let v = self.load(t, p);
+            self.release(v, t);
+        }
+    }
+
+    /// A parameter as a variable. A big one stays where the caller put it
+    /// (see `abi_type`): the place is this function's now, and parameters
+    /// don't change.
+    fn declare_param(&mut self, name: &str, ty: &Ty, raw: Val<'ctx>) {
+        let boxed = self.stack.last().unwrap().boxed.contains(name);
+        if self.big(ty) && !boxed && name != "_" {
+            self.push_var(Var { name: name.to_string(), ty: ty.clone(), store: Store::Slot(raw.into_pointer_value()) });
+            return;
+        }
+        let v = self.abi_param(raw, ty);
+        self.declare_value(name, ty, Some(v));
+    }
+
     /// `void helper(ptr)`: retains or releases the value at `ptr`.
     fn rc_helper(&mut self, t: &Ty, retain: bool) -> FunctionValue<'ctx> {
         let name = format!("tsl_h_{}_{}", if retain { "retain" } else { "release" }, self.key(t));
@@ -1382,6 +1673,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Some(Linkage::Internal),
         );
         self.helpers.insert(name, f);
+        if self.big(t) {
+            self.keep_out_of_line(f);
+        }
         self.in_helper(f, |g| {
             let p = f.get_nth_param(0).unwrap().into_pointer_value();
             match t {
@@ -1820,14 +2114,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let info = self.type_info(ty);
             let bx = self.call_rt("tsl_box_new", &[info.into()]).unwrap().into_pointer_value();
             let data = self.box_data(bx);
-            self.b.build_store(data, value).unwrap();
+            self.store(ty, data, value);
             let slot = self.alloca(self.ptr_ty().into(), name);
             self.b.build_store(slot, bx).unwrap();
             Store::Boxed(slot)
         } else {
             let lt = self.llty(ty).unwrap();
             let slot = self.alloca(lt, name);
-            self.b.build_store(slot, value).unwrap();
+            self.store(ty, slot, value);
             Store::Slot(slot)
         };
         self.ctx_mut().scopes.last_mut().unwrap().push(Var { name: name.to_string(), ty: ty.clone(), store });
@@ -1899,8 +2193,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         match v.store {
             Store::Slot(p) => {
                 if self.needs_rc(&v.ty) {
-                    let val = self.load(&v.ty, p);
-                    self.release(val, &v.ty);
+                    self.release_at(&v.ty, p);
                 }
             }
             Store::Boxed(slot) => {
@@ -2162,6 +2455,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn stmt(&mut self, s: &Stmt) {
+        // (Copies of big values made for the statement before are done with.)
+        self.era += 1;
         match s {
             Stmt::Let(d) | Stmt::Var(d) => {
                 let ty = self.checked.locals.get(&d.name.span).cloned().unwrap_or_else(|| self.ty(&d.value));
@@ -2182,10 +2477,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let v = value.as_ref().and_then(|v| self.expr_as(v, &ret));
                 self.release_held(0);
                 self.release_all_scopes();
-                match v {
-                    Some(v) => self.b.build_return(Some(&v)).unwrap(),
-                    None => self.b.build_return(None).unwrap(),
-                };
+                self.emit_return(v);
                 self.continue_dead();
             }
             Stmt::For { var, iter, body, .. } => self.for_loop(var, iter, body),
@@ -2298,8 +2590,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
         }
         let p = self.write_ptr(target);
+        if self.big(&tt) {
+            // (The new value is its own already, so what was there can go first.)
+            if self.needs_rc(&tt) {
+                self.release_at(&tt, p);
+            }
+            self.store(&tt, p, v);
+            return;
+        }
         let old = self.load(&tt, p);
-        self.b.build_store(p, v).unwrap();
+        self.store(&tt, p, v);
         self.release(old, &tt);
     }
 
@@ -2318,12 +2618,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.position_at_end(body_bb);
             }
             Cond::Let(name, _, value) => {
-                let Ty::Opt(inner) = self.ty(value) else { unreachable!() };
-                let ov = self.expr(value).unwrap().into_struct_value();
+                let vt = self.ty(value);
+                let Ty::Opt(inner) = vt.clone() else { unreachable!() };
+                let whole = self.expr(value).unwrap();
+                let ov = whole.into_struct_value();
                 let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
                 self.b.build_conditional_branch(flag, body_bb, done).unwrap();
                 self.b.position_at_end(body_bb);
-                let v = self.b.build_extract_value(ov, 1, "").unwrap();
+                let v = self.opt_inner(&vt, whole);
                 let ty = self.checked.locals.get(&name.span).cloned().unwrap_or(*inner);
                 self.declare_value(&name.name, &ty, Some(v));
             }
@@ -2588,9 +2890,35 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn some(&mut self, opt_ty: &Ty, v: Val<'ctx>) -> Val<'ctx> {
         let st = self.llty(opt_ty).unwrap().into_struct_type();
+        if let (true, Ty::Opt(inner)) = (self.big(opt_ty), opt_ty) {
+            // A big value, wrapped where it is in memory.
+            let place = self.copy_slot(opt_ty, st.into());
+            let flag = self.b.build_struct_gep(st, place, 0, "").unwrap();
+            self.b.build_store(flag, self.ctx.bool_type().const_int(1, false)).unwrap();
+            let value = self.b.build_struct_gep(st, place, 1, "").unwrap();
+            self.store(inner, value, v);
+            return self.value_at(opt_ty, place);
+        }
         let s = st.get_undef();
         let s = self.b.build_insert_value(s, self.ctx.bool_type().const_int(1, false), 0, "").unwrap();
         self.b.build_insert_value(s, v, 1, "").unwrap().into_struct_value().into()
+    }
+
+    /// The value in an optional that has one (`ov` is the optional).
+    fn opt_inner(&mut self, opt_ty: &Ty, ov: Val<'ctx>) -> Val<'ctx> {
+        if let (Some(p), Ty::Opt(inner)) = (self.origin_of(ov), opt_ty) {
+            // (From where the optional is in memory, not field by field.)
+            let st = self.llty(opt_ty).unwrap().into_struct_type();
+            let value = self.b.build_struct_gep(st, p, 1, "").unwrap();
+            let inner = (**inner).clone();
+            return if self.big(&inner) {
+                self.value_at(&inner, value)
+            } else {
+                let lt = self.llty(&inner).unwrap();
+                self.b.build_load(lt, value, "").unwrap()
+            };
+        }
+        self.b.build_extract_value(ov.into_struct_value(), 1, "").unwrap()
     }
 
     fn none(&mut self, opt_ty: &Ty) -> Val<'ctx> {
@@ -3071,7 +3399,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             BinOp::Coalesce => {
                 let lt = self.ty(l);
-                let lv = self.expr(l).unwrap().into_struct_value();
+                let whole = self.expr(l).unwrap();
+                let lv = whole.into_struct_value();
                 let flag = self.b.build_extract_value(lv, 0, "").unwrap().into_int_value();
                 let lt_ = self.llty(t).unwrap();
                 let slot = self.alloca(lt_, "coalesce");
@@ -3079,13 +3408,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_conditional_branch(flag, some_bb, none_bb).unwrap();
                 self.b.position_at_end(some_bb);
                 let Ty::Opt(inner) = &lt else { unreachable!() };
-                let inner_v = self.b.build_extract_value(lv, 1, "").unwrap();
+                let inner_v = self.opt_inner(&lt, whole);
                 let v = self.coerce(inner_v, inner, t);
-                self.b.build_store(slot, v).unwrap();
+                self.store(t, slot, v);
                 self.br(done);
                 self.b.position_at_end(none_bb);
                 if let Some(rv) = self.expr_as(r, t) {
-                    self.b.build_store(slot, rv).unwrap();
+                    self.store(t, slot, rv);
                 }
                 self.br(done);
                 self.b.position_at_end(done);
@@ -3504,12 +3833,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Cond::Let(name, _, value) => {
                 let vt = self.ty(value);
-                let Ty::Opt(inner) = vt else { unreachable!() };
-                let ov = self.expr(value).unwrap().into_struct_value();
+                let Ty::Opt(inner) = vt.clone() else { unreachable!() };
+                let whole = self.expr(value).unwrap();
+                let ov = whole.into_struct_value();
                 let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
                 self.b.build_conditional_branch(flag, then_bb, else_bb).unwrap();
                 self.b.position_at_end(then_bb);
-                let inner_v = self.b.build_extract_value(ov, 1, "").unwrap();
+                let inner_v = self.opt_inner(&vt, whole);
                 let ty = self.checked.locals.get(&name.span).cloned().unwrap_or(*inner);
                 self.declare_value(&name.name, &ty, Some(inner_v));
             }
@@ -3517,7 +3847,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let v = self.block(then, Some(t));
         if let (Some(slot), Some(v)) = (slot, v) {
             if !self.terminated() {
-                self.b.build_store(slot, v).unwrap();
+                self.store(t, slot, v);
             }
         }
         self.pop_scope();
@@ -3530,7 +3860,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         if let (Some(slot), Some(v)) = (slot, v) {
             if !self.terminated() {
-                self.b.build_store(slot, v).unwrap();
+                self.store(t, slot, v);
             }
         }
         self.br(done);
@@ -3849,8 +4179,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         match body {
             Body::Fn(params, b) => {
                 for (i, (p, pt)) in params.iter().zip(&ptys).enumerate() {
-                    let v = f.get_nth_param(1 + i as u32).unwrap();
-                    self.declare_value(&p.name, pt, Some(v));
+                    let raw = f.get_nth_param(1 + i as u32).unwrap();
+                    self.declare_param(&p.name, pt, raw);
                 }
                 let v = self.block(b, Some(&ret));
                 self.finish_function(v);
@@ -3864,8 +4194,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_store(slot, me).unwrap();
                 self.push_var(Var { name: d.name.name.clone(), ty: t.clone(), store: Store::EnvValue(slot) });
                 for (i, (p, pt)) in d.params.iter().zip(&ptys).enumerate() {
-                    let v = f.get_nth_param(1 + i as u32).unwrap();
-                    self.declare_value(&p.name.name, pt, Some(v));
+                    let raw = f.get_nth_param(1 + i as u32).unwrap();
+                    self.declare_param(&p.name.name, pt, raw);
                 }
                 let v = self.block(&d.body, Some(&ret));
                 self.finish_function(v);
@@ -3895,6 +4225,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), r.data.into()];
                 for i in 0..ptys.len() {
                     all.push(f.get_nth_param(1 + i as u32).unwrap().into());
+                }
+                // (And the place for a big result, which it's given too.)
+                if self.big(&ret) {
+                    all.push(f.get_last_param().unwrap().into());
                 }
                 let v = self.b.build_call(target, &all, "").unwrap().try_as_basic_value().basic();
                 self.finish_function(v);
@@ -4007,8 +4341,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let fp = self.b.build_extract_value(s, 0, "").unwrap().into_pointer_value();
         let env = self.b.build_extract_value(s, 1, "").unwrap();
         let mut all: Vec<BasicMetadataValueEnum> = vec![env.into()];
-        all.extend(args.iter().map(|a| BasicMetadataValueEnum::from(*a)));
-        self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic()
+        all.extend(self.abi_args(args, ptys));
+        let place = self.result_place(ret, &mut all);
+        let r = self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic();
+        self.call_result(ret, place, r)
     }
 
     // ===== calls =====
@@ -4027,8 +4363,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let vals = self.call_args(&info, &sig, &decl.params, &arg);
                 let f = self.fns[name];
                 let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into()];
-                all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
-                self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic()
+                all.extend(self.abi_args(&vals, &param_lltys(&sig.params)));
+                let place = self.result_place(&sig.ret, &mut all);
+                let r = self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic();
+                self.call_result(&sig.ret, place, r)
             }
             Callee::Method { owner, name } | Callee::SelfMethod { owner, name } => {
                 let optional = match &callee.kind {
@@ -4156,6 +4494,35 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let fields = self.checked.structs[id].fields.clone();
                 // (Built-in structs have no declaration, and no defaults.)
                 let decl = self.struct_decls.get(&id).copied();
+                let t = Ty::Struct(id);
+                if self.big(&t) {
+                    // A big struct is put together in memory: the values
+                    // given, then the rest by a routine the struct's uses
+                    // share (see `defaults_helper`).
+                    let mut given: Vec<(usize, Val<'ctx>)> = Vec::new();
+                    let mut defaulted: Vec<usize> = Vec::new();
+                    for (i, f) in fields.iter().enumerate() {
+                        match info.args[i] {
+                            Some(r) => {
+                                let v = self.expr_as(arg(r), &f.ty).unwrap();
+                                self.hold(v, &f.ty);
+                                given.push((i, v));
+                            }
+                            None => defaulted.push(i),
+                        }
+                    }
+                    self.unhold(given.len());
+                    let place = self.copy_slot(&t, st.into());
+                    if !defaulted.is_empty() {
+                        let helper = self.defaults_helper(id, &defaulted);
+                        self.b.build_call(helper, &[place.into()], "").unwrap();
+                    }
+                    for (i, v) in given {
+                        let fp = self.b.build_struct_gep(st, place, i as u32, "").unwrap();
+                        self.store(&fields[i].ty, fp, v);
+                    }
+                    return Some(self.value_at(&t, place));
+                }
                 let mut s = st.get_undef();
                 for (i, f) in fields.iter().enumerate() {
                     let v = match info.args[i] {
@@ -4182,7 +4549,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         None => unreachable!("enum case values have no defaults"),
                     };
                     let fp = self.b.build_struct_gep(pt, data, i as u32, "").unwrap();
-                    self.b.build_store(fp, v).unwrap();
+                    self.store(&f.ty, fp, v);
                 }
                 let st = self.llty(&Ty::Enum(id)).unwrap().into_struct_type();
                 let tag = self.ctx.i32_type().const_int(case as u64, false);
@@ -4262,8 +4629,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let vals = self.call_args(&info, &sig, &decl.params, &arg);
                 let f = self.view_fns[&(r.view.clone(), name.clone())];
                 let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), r.data.into()];
-                all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
-                self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic()
+                // (As the view's functions are declared: see `declare_views`.)
+                let tys: Vec<Ty> = sig.params.iter().map(|p| p.ty.clone()).collect();
+                all.extend(self.abi_args(&vals, &tys));
+                let place = self.result_place(&sig.ret, &mut all);
+                let r = self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic();
+                self.call_result(&sig.ret, place, r)
             }
         }
     }
@@ -4334,8 +4705,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let vals = self.call_args(info, &sig, &decl.params, arg);
         let f = self.methods[&key];
         let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), recv.into()];
-        all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
-        self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic()
+        all.extend(self.abi_args(&vals, &param_lltys(&sig.params)));
+        let place = self.result_place(&sig.ret, &mut all);
+        let r = self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic();
+        self.call_result(&sig.ret, place, r)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -5084,10 +5457,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn early_return(&mut self, v: Option<Val<'ctx>>) {
         self.release_held(0);
         self.release_all_scopes();
-        match v {
-            Some(v) => self.b.build_return(Some(&v)).unwrap(),
-            None => self.b.build_return(None).unwrap(),
-        };
+        self.emit_return(v);
         self.continue_dead();
     }
 
@@ -5262,8 +5632,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let fn_ty = self.fn_type(&ptys, &sig.ret, true);
         let fp = self.table_entry(vt, index);
         let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), recv.into()];
-        all.extend(vals.iter().map(|v| BasicMetadataValueEnum::from(*v)));
-        self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic()
+        all.extend(self.abi_args(&vals, &ptys));
+        let place = self.result_place(&sig.ret, &mut all);
+        let r = self.b.build_indirect_call(fn_ty, fp, &all, "").unwrap().try_as_basic_value().basic();
+        self.call_result(&sig.ret, place, r)
     }
 
     /// Entry `index` of a method table.

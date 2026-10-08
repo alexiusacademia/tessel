@@ -257,8 +257,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.push_var(Var { name: p.name.name.clone(), ty: psig.ty.clone(), store });
         }
         for (i, (p, ps)) in fd.params.iter().zip(&sig.params).enumerate() {
-            let v = f.get_nth_param(2 + i as u32).unwrap();
-            self.declare_value(&p.name.name, &ps.ty, Some(v));
+            let raw = f.get_nth_param(2 + i as u32).unwrap();
+            self.declare_param(&p.name.name, &ps.ty, raw);
         }
         let v = self.block(&fd.body, Some(&sig.ret));
         self.finish_function(v);
