@@ -11,10 +11,24 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.1.40
+## 0.1.41
 
-*October 8, 2026*
+*October 8, 2026 · 0.1.40 and 0.1.41*
 
+- **Smaller apps and faster builds for programs with large structs.** A
+  struct of more than about 16 fields is now moved as one block of memory,
+  where each use of it used to cost code for every field. An app of
+  98,000 lines built around one large struct went from 73 MB of code and
+  12 minutes to build, to 13.6 MB and under a minute. Smaller structs are
+  as before.
+- **A function kept in a struct's field is called like a method:**
+  `rule.applies(4)`. See
+  [Function types](/language/closures/#function-types).
+- **Fixed:**
+  - A struct with a field holding a function crashed the compiler when it
+    was passed to a `bind` parameter.
+  - Escape didn't close a popover (or a sheet) in an app with
+    `.onKeyEvent`: the app got the key.
 - `tessel --version` says which version a project uses, when the project
   is [pinned](/start/cli/#tessel-pin) to another one than is installed:
   `tessel 0.1.36 (this project uses 0.1.38)`.
