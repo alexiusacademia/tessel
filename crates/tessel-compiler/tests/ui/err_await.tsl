@@ -1,0 +1,47 @@
+// `async` and `await`: where they can't be used.
+
+async fn load(key: String) -> String { key }
+async fn save(text: String) { }
+async fn change(count: bind Int) { // error: an `async` function can't have `bind` parameters
+    count += 1
+}
+
+fn later(done: fn(Int)) {
+    done(1)
+}
+
+struct Counter {
+    count: Int
+    async fn grow() { // error: `grow` is `async`, so it can't change the value it's called on
+        count += 1
+    }
+    fn start() {
+        after(seconds: 1) { // error: a block that waits (`await`) can't change the value its method was called on
+            await save(text: "x")
+            count += 1
+        }
+    }
+    async fn total() -> Int {
+        await later()
+    }
+}
+
+fn plain() -> String {
+    await load("a") // error: `await` can only be used in an `async` function
+}
+
+async fn main() {
+    load("a") // error: `load` is `async`: wait for it with `await`
+    save(text: "a") // error: `save` is `async`: wait for it with `await`
+    let n: Int = await load("a") // error: expected `Int`, found `String`
+    let nothing = await save(text: "a") // error: `nothing` can't be set to this, because it produces no value
+    let lengths = ["a"].map { key in await load(key) } // error: this block must produce `String` right away, so it can't `await`
+    await print("x") // error: `print` can't be awaited: it has no block that gets its result
+    let c: Counter? = nil
+    await c?.total() // error: `await` can't be used with `?.`
+    print(await load(key: "a", then: "b")) // error: `load` has no parameter `then:`
+    await later(done: { n in }) // error: `done:` gets what `await` is waiting for
+    load("a") { text in print(text) }
+    let one = await later()
+    print(one + (await Counter(count: 1).total()))
+}

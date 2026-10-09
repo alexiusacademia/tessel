@@ -199,7 +199,10 @@ Button("Refresh") {
 Slow work, such as network requests, timers and running other programs,
 is done by built-in functions that take a completion block. The block always
 runs on the UI thread, so it can change `state` directly, and the view
-updates. There are no threads, locks or `async` keywords to learn.
+updates. There are no threads or locks to learn. Steps that follow one
+another can be written in order with [`await`](/language/async/), which is
+built on the same completion blocks: anything that ends with one can be
+awaited, so the library has one form of each function, not two.
 
 Heavy computations use the same shape: `background(work: { … }) { result in … }`
 runs the work on another thread and hands the result to a block on the UI

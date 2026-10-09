@@ -52,6 +52,11 @@ pub struct Checked {
     pub instances: Vec<Rc<Item>>,
     /// For a REPL entry: what its statements declare and produce.
     pub repl: Option<ReplChecked>,
+    /// The functions (of `fns`) that are constants: `let limit = 100` at the
+    /// top of a file, and `static let` members.
+    pub consts: HashSet<String>,
+    /// The expressions that read a constant (`limit`, `Rect.zero`), and which.
+    pub const_refs: HashMap<ExprId, String>,
 }
 
 /// What the statements of a REPL entry leave behind.
@@ -124,7 +129,7 @@ impl SuggestionKind {
 
 const KEYWORDS: &[&str] = &[
     "let", "var", "state", "bind", "if", "else", "for", "in", "match", "return", "try", "while", "break", "continue", "fn", "struct", "enum", "interface", "view",
-    "app", "true", "false", "nil",
+    "app", "true", "false", "nil", "async", "await", "static",
 ];
 
 impl Checked {
@@ -298,6 +303,10 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         public: program.public.clone(),
         repl_mutable: repl,
         repl: None,
+        const_decls: HashMap::new(),
+        const_state: HashMap::new(),
+        const_refs: HashMap::new(),
+        waits: Vec::new(),
     };
     c.next_id = program.next_id;
     let ids = c.collect(&program.items, require_entry);
@@ -311,7 +320,10 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
     c.check_recursive_structs();
     c.check_conformance();
     let fns = c.fn_items.iter().map(|(name, id)| (name.clone(), c.fns[*id].clone())).collect();
+    let consts = c.fn_items.iter().filter(|(_, id)| c.const_decls.contains_key(id)).map(|(name, _)| name.clone()).collect();
     Checked {
+        consts,
+        const_refs: c.const_refs,
         types: c.types,
         calls: c.calls,
         structs: c.structs,
@@ -379,8 +391,29 @@ enum Global {
     GenericStruct(usize),
     GenericEnum(usize),
     Fn(usize),
+    /// A constant (`let limit = 100` at the top of a file, a `static let`):
+    /// the index of the function that works it out.
+    Const(usize),
     View(usize),
     App,
+}
+
+/// Whether a constant's value has been checked (which gives its type).
+#[derive(Clone, Copy, PartialEq)]
+enum ConstState {
+    Checking,
+    Done,
+}
+
+/// Whether the code being checked can `await`.
+#[derive(Clone, Copy, PartialEq)]
+enum Wait {
+    No,
+    /// The body of an `async fn`.
+    Yes,
+    /// A block (`{ … }`): it can, if it doesn't produce a value. Whether it
+    /// did `await`.
+    Block(bool),
 }
 
 #[derive(Clone, Debug)]
@@ -397,6 +430,8 @@ enum Kind {
     Field,
     SelfValue,
     Fn(FnSig, FnOrigin),
+    /// A computed property of the type whose method is being checked.
+    Prop(Ty),
 }
 
 #[derive(Clone, Debug)]
@@ -495,6 +530,13 @@ struct Checker<'a> {
     private: HashSet<Span>,
     /// Name spans of declarations marked `public`.
     public: HashSet<Span>,
+    /// The program's constants, by function index.
+    const_decls: HashMap<usize, Rc<FnDecl>>,
+    const_state: HashMap<usize, ConstState>,
+    const_refs: HashMap<ExprId, String>,
+    /// For each function and block around the code being checked,
+    /// innermost last.
+    waits: Vec<Wait>,
 }
 
 impl Checker<'_> {
@@ -696,10 +738,16 @@ impl Checker<'_> {
                 }
                 Item::Fn(f) => {
                     self.fns.push(FnSig { params: vec![], ret: Ty::Void });
+                    let id = self.fns.len() - 1;
                     if !self.template_copy {
-                        self.fn_items.push((f.name.name.clone(), self.fns.len() - 1));
+                        self.fn_items.push((f.name.name.clone(), id));
                     }
-                    (Global::Fn(self.fns.len() - 1), Some(self.fns.len() - 1))
+                    if f.constant {
+                        self.const_decls.insert(id, Rc::new(f.clone()));
+                        (Global::Const(id), Some(id))
+                    } else {
+                        (Global::Fn(id), Some(id))
+                    }
                 }
                 Item::View(_) => {
                     self.views.push(Vec::new());
@@ -796,6 +844,11 @@ impl Checker<'_> {
                     }
                 };
                 match field {
+                    None if methods.iter().any(|m| m.prop && m.name == pname) => {
+                        let at = methods.iter().find(|m| m.name == pname).unwrap().span;
+                        self.error(at, format!("`{iname}` requires `{pname}` to be a field, and this is a computed property"))
+                            .help(format!("store it in a field (`{wanted}`), or require a method in `{iname}` instead: `fn {pname}() -> …`"));
+                    }
                     None => {
                         self.error(span, format!("`{tname}` says it's a `{iname}`, but has no field `{pname}`"))
                             .help(format!("add it to `{tname}`: `{wanted}`"));
@@ -868,7 +921,7 @@ impl Checker<'_> {
                             .help("use `View` for a parameter that accepts any view");
                         Ty::Error
                     }
-                    Some(Global::Fn(_) | Global::App) => {
+                    Some(Global::Fn(_) | Global::Const(_) | Global::App) => {
                         self.error(id.span, format!("`{name}` is not a type"));
                         Ty::Error
                     }
@@ -946,8 +999,19 @@ impl Checker<'_> {
 
     /// `allow_bind`: it's a top-level function or a method, which can
     /// change the caller's values (see `ParamSig::bind`).
+    ///
+    /// An `async fn` is, to its callers, a function that gives its result
+    /// to a block: its last parameter (`DONE_PARAM`), which `await` fills in.
     fn fn_sig(&mut self, f: &FnDecl, allow_bind: bool) -> FnSig {
         let params = self.params_sig(&f.params, allow_bind);
+        if f.is_async {
+            if let Some(p) = f.params.iter().find(|p| p.bind) {
+                self.error(p.span, "an `async` function can't have `bind` parameters")
+                    .label("the caller's variable may be gone when the function goes on")
+                    .help("take the value, and return the new one");
+            }
+            return FnSig { params, ret: Ty::Void };
+        }
         let ret = f.ret.as_ref().map_or(Ty::Void, |t| self.resolve(t));
         FnSig { params, ret }
     }
@@ -962,11 +1026,21 @@ impl Checker<'_> {
             let sig = self.fn_sig(m, true);
             let mut roots = fields.clone();
             roots.insert("self".into());
+            let mutating = block_mutates(&m.body, &roots);
+            if mutating && m.prop {
+                self.error(m.name.span, format!("the property `{}` changes the value it belongs to", m.name.name))
+                    .help(format!("reading a property changes nothing; make it a method: `fn {}() {{ … }}`", m.name.name));
+            } else if mutating && m.is_async {
+                self.error(m.name.span, format!("`{}` is `async`, so it can't change the value it's called on", m.name.name))
+                    .label("it works on a copy: the caller's value may be gone when it goes on")
+                    .help("return the new value, and let the caller store it");
+            }
             out.push(MethodDef {
                 name: m.name.name.clone(),
                 sig,
-                mutating: block_mutates(&m.body, &roots),
+                mutating: mutating && !m.prop && !m.is_async,
                 span: m.name.span,
+                prop: m.prop,
             });
         }
         out
@@ -1144,7 +1218,7 @@ impl Checker<'_> {
         }
         for item in items {
             if let Item::Fn(f) = item {
-                if f.name.name == "main" && (!f.params.is_empty() || f.ret.is_some()) {
+                if f.name.name == "main" && (!f.own_params().is_empty() || f.ret.is_some() || f.constant) {
                     self.error(f.name.span, "`main` can't take parameters or return a value")
                         .help("declare it as `fn main() { … }`");
                 }
@@ -1224,6 +1298,9 @@ impl Checker<'_> {
                     let sig = self.fns[id.unwrap()].clone();
                     self.repl_body(f, &sig);
                 }
+                Item::Fn(f) if f.constant => {
+                    self.const_type(id.unwrap(), f.name.span);
+                }
                 Item::Fn(f) => {
                     let sig = self.fns[id.unwrap()].clone();
                     self.in_main = f.name.name == "main";
@@ -1245,12 +1322,11 @@ impl Checker<'_> {
             let scope = self.scopes.last_mut().unwrap();
             scope.push(Local { name: "self".into(), ty: self_ty.clone(), kind: Kind::SelfValue, span: decl.name.span });
             for other in methods {
-                scope.push(Local {
-                    name: other.name.clone(),
-                    ty: fn_type(&other.sig),
-                    kind: Kind::Fn(other.sig.clone(), FnOrigin::Method(self_ty.clone())),
-                    span: other.span,
-                });
+                let (ty, kind) = match other.prop {
+                    true => (other.sig.ret.clone(), Kind::Prop(self_ty.clone())),
+                    false => (fn_type(&other.sig), Kind::Fn(other.sig.clone(), FnOrigin::Method(self_ty.clone()))),
+                };
+                scope.push(Local { name: other.name.clone(), ty, kind, span: other.span });
             }
             self.fn_body(decl, &m.sig);
             self.scopes.pop();
@@ -1258,6 +1334,11 @@ impl Checker<'_> {
     }
 
     fn fn_body(&mut self, f: &FnDecl, sig: &FnSig) {
+        // What an `async fn` returns goes to its completion block.
+        let ret = match (f.is_async, sig.params.last().map(|p| &p.ty)) {
+            (true, Some(Ty::Fn(ps, _))) => ps.first().cloned().unwrap_or(Ty::Void),
+            _ => sig.ret.clone(),
+        };
         self.with_scope(|c| {
             for (p, ps) in f.params.iter().zip(&sig.params) {
                 if let Some(default) = &p.default {
@@ -1266,12 +1347,66 @@ impl Checker<'_> {
                 let kind = if ps.bind { Kind::Bind } else { Kind::Param };
                 c.declare(&p.name, ps.ty.clone(), kind);
             }
-            c.returns.push(sig.ret.clone());
+            c.returns.push(ret.clone());
+            c.waits.push(if f.is_async { Wait::Yes } else { Wait::No });
             let loops = std::mem::take(&mut c.loops);
-            c.block(&f.body, Some(&sig.ret));
+            c.block(&f.body, Some(&ret));
             c.loops = loops;
+            c.waits.pop();
             c.returns.pop();
         });
+    }
+
+    /// The type of constant `i` (a function index). The first time, its
+    /// value is checked: on its own, whatever is being checked around the
+    /// place that uses it.
+    fn const_type(&mut self, i: usize, used_at: Span) -> Ty {
+        match self.const_state.get(&i) {
+            Some(ConstState::Done) => return self.fns[i].ret.clone(),
+            Some(ConstState::Checking) => {
+                let name = self.const_decls[&i].name.name.clone();
+                self.error(used_at, format!("the constant `{name}` is defined in terms of itself"))
+                    .help("give it a value that doesn't use it");
+                return Ty::Error;
+            }
+            None => {}
+        }
+        self.const_state.insert(i, ConstState::Checking);
+        let decl = self.const_decls[&i].clone();
+        let scopes = std::mem::replace(&mut self.scopes, vec![Vec::new()]);
+        let returns = std::mem::take(&mut self.returns);
+        let waits = std::mem::replace(&mut self.waits, vec![Wait::No]);
+        let (loops, outer_loops, in_main) =
+            (std::mem::take(&mut self.loops), std::mem::take(&mut self.outer_loops), std::mem::take(&mut self.in_main));
+        let (content, tag_ty) = (std::mem::replace(&mut self.content, Content::View), self.tag_ty.take());
+        let frames = std::mem::take(&mut self.frames);
+        if let Some(Stmt::Expr(value)) = decl.body.stmts.first() {
+            if decl.ret.is_some() {
+                let declared = self.fns[i].ret.clone();
+                self.expect(value, &declared);
+            } else {
+                let t = self.expr(value, None);
+                self.fns[i].ret = if t == Ty::Void {
+                    self.error(value.span, format!("`{}` can't be set to this, because it produces no value", decl.name.name))
+                        .label("produces no value");
+                    Ty::Error
+                } else {
+                    t
+                };
+            }
+            if self.fns[i].ret == Ty::View {
+                self.error(decl.name.span, "a constant can't hold a view").help("declare a `view` instead");
+                self.fns[i].ret = Ty::Error;
+            }
+        }
+        self.scopes = scopes;
+        self.returns = returns;
+        self.waits = waits;
+        (self.loops, self.outer_loops, self.in_main) = (loops, outer_loops, in_main);
+        (self.content, self.tag_ty) = (content, tag_ty);
+        self.frames = frames;
+        self.const_state.insert(i, ConstState::Done);
+        self.fns[i].ret.clone()
     }
 
     /// The statements of a REPL entry. The session's variables are in scope
@@ -1313,7 +1448,9 @@ impl Checker<'_> {
     fn default_value(&mut self, e: &Expr, ty: &Ty) {
         let saved = std::mem::take(&mut self.scopes);
         self.scopes.push(Vec::new());
+        self.waits.push(Wait::No);
         self.expect(e, ty);
+        self.waits.pop();
         self.scopes = saved;
     }
 
@@ -1699,9 +1836,29 @@ impl Checker<'_> {
                         help: "loop over a `var` or `state` list to be able to change its items (a list made by `filter` or `sorted` is a new copy)",
                     }),
                     Kind::Fn(..) => Err(PlaceErr::NotPlace),
+                    Kind::Prop(_) => Err(PlaceErr::Const {
+                        what: format!("`{n}`, which is a computed property"),
+                        decl: l.span,
+                        help: "its value is worked out each time it's read; change what it's worked out from",
+                    }),
                 },
-                None => Err(PlaceErr::NotPlace),
+                None => match (self.globals.get(n), self.user_spans.get(n)) {
+                    (Some(Global::Const(_)), Some(decl)) => Err(PlaceErr::Const {
+                        what: format!("`{n}`, which is a constant"),
+                        decl: *decl,
+                        help: "a constant keeps its value; values that change go in `state` (in a view or app) or in a `var` (in a function)",
+                    }),
+                    _ => Err(PlaceErr::NotPlace),
+                },
             },
+            // (A computed property, or a `static let`.)
+            ExprKind::Member { name, .. } if self.calls.contains_key(&e.id) || self.const_refs.contains_key(&e.id) => {
+                Err(PlaceErr::Const {
+                    what: format!("`{}`, which is {}", name.name, if self.calls.contains_key(&e.id) { "a computed property" } else { "a constant" }),
+                    decl: name.span,
+                    help: "its value can't be set",
+                })
+            }
             ExprKind::Member { object, optional: false, .. } => self.place(object),
             ExprKind::Index(object, _) => self.place(object),
             _ => Err(PlaceErr::NotPlace),
@@ -1975,7 +2132,7 @@ impl Checker<'_> {
                 }
                 Ty::Str
             }
-            ExprKind::Name(n) => self.name_expr(n, e.span),
+            ExprKind::Name(n) => self.name_expr(n, e.id, e.span),
             ExprKind::DotName(n) => self.dot_name(n, e.span, expected, false),
             // `let seen: Set<Int> = [1, 2]`: a set, written like a list.
             ExprKind::List(items) if matches!(expected.map(strip_opt), Some(Ty::Set(_))) => {
@@ -2066,6 +2223,9 @@ impl Checker<'_> {
                 Ty::Dict(Box::new(k), Box::new(v))
             }
             ExprKind::Try(inner) => self.try_expr(e, inner, expected),
+            ExprKind::Await(call) => self.await_expr(e, call),
+            // (Its type is the block the call it's given to expects.)
+            ExprKind::Continuation => expected.cloned().unwrap_or(Ty::Error),
             ExprKind::Cast { value, ty, test } => {
                 let vt = self.expr(value, None);
                 let target = self.resolve(ty);
@@ -2129,7 +2289,7 @@ impl Checker<'_> {
                 }
                 t
             }
-            ExprKind::Member { object, name, optional } => self.member(object, name, *optional),
+            ExprKind::Member { object, name, optional } => self.member(e.id, object, name, *optional),
             ExprKind::Index(object, index) => {
                 let t = self.expr(object, None);
                 match t {
@@ -2243,7 +2403,42 @@ impl Checker<'_> {
         Ty::Error
     }
 
-    fn name_expr(&mut self, n: &str, span: Span) -> Ty {
+    /// `await call(…)`: the value the call gives its completion block.
+    fn await_expr(&mut self, e: &Expr, call: &Expr) -> Ty {
+        match self.waits.last_mut() {
+            Some(Wait::Yes) => {}
+            Some(Wait::Block(waited)) => *waited = true,
+            _ => {
+                self.error(e.span, "`await` can only be used in an `async` function, or in a block that doesn't produce a value")
+                    .help("mark the function: `async fn …`");
+            }
+        }
+        if call.in_optional_chain() {
+            self.error(call.span, "`await` can't be used with `?.`: the call may not happen, and then nothing would go on")
+                .help("unwrap the value first with `if let`");
+        }
+        let before = self.diags.list.len();
+        let ct = self.expr(call, None);
+        let done = call.continuation().and_then(|c| self.types.get(&c.id).cloned());
+        match done {
+            Some(Ty::Fn(ps, _)) => ps.first().cloned().unwrap_or(Ty::Void),
+            Some(_) => Ty::Error,
+            None => {
+                if !ct.has_error() && self.diags.list.len() == before {
+                    self.not_awaitable(call.span, "this");
+                }
+                Ty::Error
+            }
+        }
+    }
+
+    fn not_awaitable(&mut self, span: Span, what: &str) {
+        self.error(span, format!("{what} can't be awaited: it has no block that gets its result"))
+            .label("finishes right away")
+            .help("`await` is for `async` functions, and for functions that end with a completion block, like `fetch`; remove `await` here");
+    }
+
+    fn name_expr(&mut self, n: &str, id: ExprId, span: Span) -> Ty {
         if n == COMPLETION_MARK {
             self.complete_names();
             return Ty::Error;
@@ -2258,9 +2453,20 @@ impl Checker<'_> {
                     return self.bind_fn_value(n, span);
                 }
             }
+            // A property of the same type, by its bare name.
+            if let Kind::Prop(owner) = &l.kind {
+                let callee = Callee::SelfMethod { owner: owner.clone(), name: n.to_string() };
+                let t = l.ty.clone();
+                self.calls.insert(id, CallInfo { callee, args: Vec::new() });
+                return t;
+            }
             return l.ty.clone();
         }
         match self.globals.get(n).copied() {
+            Some(Global::Const(i)) => {
+                self.const_refs.insert(id, n.to_string());
+                self.const_type(i, span)
+            }
             Some(Global::Fn(i)) if self.fns[i].params.iter().any(|p| p.bind) => self.bind_fn_value(n, span),
             Some(Global::Fn(i)) => fn_type(&self.fns[i]),
             Some(Global::GenericFn(_)) => {
@@ -2703,6 +2909,7 @@ impl Checker<'_> {
         let loops = std::mem::take(&mut self.loops);
         let in_main = std::mem::take(&mut self.in_main);
         self.outer_loops += loops;
+        self.waits.push(Wait::Block(false));
         let t = self.with_scope(|c| {
             for (i, p) in params.iter().enumerate() {
                 c.declare(p, ptys.get(i).cloned().unwrap_or(Ty::Error), Kind::Let);
@@ -2722,16 +2929,73 @@ impl Checker<'_> {
             c.returns.pop();
             Ty::Fn(ptys.clone(), Box::new(ret))
         });
+        if let (Some(Wait::Block(true)), Ty::Fn(_, ret)) = (self.waits.pop(), &t) {
+            // A block that waits has nothing to give the code that called
+            // it: that code went on long before.
+            if **ret != Ty::Void && !ret.has_error() {
+                let what = self.a(ret);
+                self.error(span, format!("this block must produce {what} right away, so it can't `await`"))
+                    .help("do the waiting in an `async fn` that returns the value, and `await` that");
+            }
+            // In a method, it works on a copy of the value (whose owner may
+            // be gone when the block goes on): changes would be lost.
+            let own: HashSet<String> = self
+                .scopes
+                .iter()
+                .flatten()
+                .filter(|l| matches!(l.kind, Kind::Field | Kind::SelfValue))
+                .map(|l| l.name.clone())
+                .collect();
+            if !own.is_empty() && block_mutates(body, &own) {
+                self.error(span, "a block that waits (`await`) can't change the value its method was called on")
+                    .label("it works on a copy: the value may be gone when the block goes on")
+                    .help("keep what changes in the app's `state`, or return the new value from an `async fn`");
+            }
+        }
         self.outer_loops -= loops;
         self.loops = loops;
         self.in_main = in_main;
         t
     }
 
-    fn member(&mut self, object: &Expr, name: &Ident, optional: bool) -> Ty {
+    /// The `static` member `name` of the type `object` names, if it names
+    /// one that has it: the member's function, and whether it's a constant.
+    fn static_member(&mut self, object: &Expr, name: &Ident) -> Option<(String, Global)> {
+        let ExprKind::Name(tn) = &object.kind else { return None };
+        if self.lookup(tn).is_some() {
+            return None;
+        }
+        match self.globals.get(tn) {
+            Some(Global::Struct(_)) => {}
+            // (A case of that name comes first.)
+            Some(Global::Enum(id)) if self.enums[*id].case(&name.name).is_none() => {}
+            _ => return None,
+        }
+        let full = static_name(tn, &name.name);
+        let global = self.globals.get(&full).copied()?;
+        if let Some(decl) = self.user_spans.get(&full).copied() {
+            self.check_private_member(&format!("`{}`", name.name), tn, decl, name.span);
+        }
+        Some((full, global))
+    }
+
+    fn member(&mut self, id: ExprId, object: &Expr, name: &Ident, optional: bool) -> Ty {
         if name.name == COMPLETION_MARK {
             self.complete_member(object);
             return Ty::Error;
+        }
+        // `Rect.zero`: a `static let` of a type.
+        match self.static_member(object, name) {
+            Some((full, Global::Const(i))) => {
+                self.const_refs.insert(id, full);
+                return self.const_type(i, name.span);
+            }
+            Some(_) => {
+                let ExprKind::Name(tn) = &object.kind else { unreachable!() };
+                self.error(name.span, format!("`{}` is a function; call it: `{tn}.{}(…)`", name.name, name.name));
+                return Ty::Error;
+            }
+            None => {}
         }
         // `Result<Int>.none`
         if let ExprKind::GenericName(tn, targs) = &object.kind {
@@ -2765,7 +3029,8 @@ impl Checker<'_> {
                         return Ty::Enum(id);
                     }
                     Some(Global::Struct(_)) => {
-                        self.error(object.span, format!("`{tn}` is a type; create a value with `{tn}(…)` first"));
+                        self.error(object.span, format!("`{tn}` is a type; create a value with `{tn}(…)` first"))
+                            .help(format!("only its `static` members are used through the type's name, and it has no `static` member `{}`", name.name));
                         return Ty::Error;
                     }
                     _ => {}
@@ -2775,6 +3040,23 @@ impl Checker<'_> {
         let optional = optional || object.in_optional_chain();
         let Some((recv, wrap)) = self.receiver(ot, object.span, optional, &name.name) else { return Ty::Error };
         let n = name.name.as_str();
+        // A computed property: its method, called without parentheses.
+        let prop = match &recv {
+            Ty::Struct(sid) => {
+                let d = &self.structs[*sid];
+                d.methods.iter().find(|m| m.prop && m.name == n).map(|m| (m.sig.ret.clone(), m.span, d.name.clone()))
+            }
+            Ty::Enum(eid) => {
+                let d = &self.enums[*eid];
+                d.methods.iter().find(|m| m.prop && m.name == n).map(|m| (m.sig.ret.clone(), m.span, d.name.clone()))
+            }
+            _ => None,
+        };
+        if let Some((t, decl, owner)) = prop {
+            self.check_private_member(&format!("property `{n}`"), &owner, decl, name.span);
+            self.calls.insert(id, CallInfo { callee: Callee::Method { owner: recv.clone(), name: n.to_string() }, args: Vec::new() });
+            return if wrap { Ty::opt(t) } else { t };
+        }
         if recv == Ty::Void {
             self.leading_dot(name);
             return Ty::Error;
@@ -2984,6 +3266,19 @@ impl Checker<'_> {
             }
         }
         let what = format!("`{n}`");
+        // A constant that holds a function.
+        if self.lookup(n).is_none()
+            && let Some(Global::Const(i)) = self.globals.get(n).copied()
+        {
+            let t = self.const_type(i, name_span);
+            if !matches!(t, Ty::Fn(..)) && !t.has_error() {
+                self.args_unchecked(args, trailing);
+                self.error(name_span, format!("`{n}` is a constant, not a function")).help("remove the parentheses");
+                return Ty::Error;
+            }
+            self.set_callee(Callee::Value);
+            return self.call_value(&t, &what, args, trailing, span);
+        }
         if let Some(l) = self.lookup(n).cloned() {
             return match l.kind {
                 Kind::Fn(sig, origin) => {
@@ -3002,7 +3297,7 @@ impl Checker<'_> {
             };
         }
         match self.globals.get(n).copied() {
-            Some(Global::GenericFn(_) | Global::GenericStruct(_) | Global::GenericEnum(_)) => {
+            Some(Global::GenericFn(_) | Global::GenericStruct(_) | Global::GenericEnum(_) | Global::Const(_)) => {
                 unreachable!("handled above")
             }
             Some(Global::Fn(i)) => {
@@ -3128,10 +3423,18 @@ impl Checker<'_> {
     /// (`job.progress(0.5)`, to the `progress:` block) and see whether it was
     /// cancelled (`job.isCancelled()`). `background` returns the job.
     fn background(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        // `await background(work: { … })`: the result goes on from the `await`.
+        let awaited = args.last().map(|a| &a.value).filter(|v| matches!(v.kind, ExprKind::Continuation));
+        let args = &args[..args.len() - awaited.is_some() as usize];
+        let (work_block, trailing) = match (awaited, trailing) {
+            // (`await background { … }`: the block is the work.)
+            (Some(_), Some(t)) if !args.iter().any(|a| a.label.as_ref().is_some_and(|x| x.name == "work")) => (Some(t), None),
+            _ => (None, trailing),
+        };
         let labeled = |l: &str| args.iter().find(|a| a.label.as_ref().is_some_and(|x| x.name == l));
-        let work = labeled("work");
+        let work = labeled("work").map(|a| &a.value).or(work_block);
         let progress = labeled("progress");
-        let done = trailing.or_else(|| labeled("done").map(|a| &a.value));
+        let done = awaited.or(trailing).or_else(|| labeled("done").map(|a| &a.value));
         let (Some(work), Some(done)) = (work, done) else {
             self.error(span, "write it as `background(work: { … }) { result in … }`");
             return builtins::JOB;
@@ -3152,27 +3455,27 @@ impl Checker<'_> {
         if let Some(p) = progress {
             self.expect(&p.value, &Ty::func(vec![Ty::Float, Ty::Str], Ty::Void));
         }
-        let ExprKind::Closure { params, body } = &work.value.kind else {
-            self.error(work.value.span, "`work:` must be a block, like `work: { compute(input) }`");
+        let ExprKind::Closure { params, body } = &work.kind else {
+            self.error(work.span, "`work:` must be a block, like `work: { compute(input) }`");
             return builtins::JOB;
         };
         if params.len() > 1 {
-            self.error(work.value.span, "the `work:` block takes at most one value: the job")
+            self.error(work.span, "the `work:` block takes at most one value: the job")
                 .help("it uses the values around it: `let input = x` then `background(work: { job in compute(input) }) { … }`");
             return builtins::JOB;
         }
         let expected = (!params.is_empty()).then(|| Ty::func(vec![builtins::JOB], Ty::Any));
-        let wt = self.expr(&work.value, expected.as_ref());
+        let wt = self.expr(work, expected.as_ref());
         let result = match wt {
             Ty::Fn(_, r) => *r,
             _ => Ty::Error,
         };
         if result == Ty::Void {
-            self.error(work.value.span, "the `work:` block must end with the value it computes")
+            self.error(work.span, "the `work:` block must end with the value it computes")
                 .help("the result goes to the block after it: `background(work: { total(items) }) { sum in … }`");
         } else if let Err(why) = self.saveable(&result) {
             let what = self.a(&result);
-            self.error(work.value.span, format!("background work can't return {what}")).help(why);
+            self.error(work.span, format!("background work can't return {what}")).help(why);
         }
         // What the work uses from outside: copied in, so it must be plain values.
         let mut free = std::collections::BTreeSet::new();
@@ -3195,10 +3498,10 @@ impl Checker<'_> {
                 } else {
                     format!("copy what it needs first, like `let input = {name}`, and use that")
                 };
-                self.error(work.value.span, format!("background work can't use `{name}`: {problem}")).help(help);
+                self.error(work.span, format!("background work can't use `{name}`: {problem}")).help(help);
             } else if let Err(why) = self.saveable(&local.ty) {
                 let what = self.a(&local.ty);
-                self.error(work.value.span, format!("background work can't use `{name}`, which is {what}")).help(why);
+                self.error(work.span, format!("background work can't use `{name}`, which is {what}")).help(why);
             }
         }
         if result != Ty::Void && !result.has_error() {
@@ -3405,13 +3708,20 @@ impl Checker<'_> {
             }
             return Ty::Error;
         };
-        let values: Vec<&Expr> = args.iter().map(|a| &a.value).chain(trailing).collect();
+        // (An awaited call's completion block is the last value.)
+        let done = args.last().map(|a| &a.value).filter(|v| matches!(v.kind, ExprKind::Continuation));
+        if let (Some(_), false) = (done, ps.last().is_some_and(awaitable)) {
+            self.not_awaitable(span, what);
+        }
+        let given = &args[..args.len() - done.is_some() as usize];
+        let values: Vec<&Expr> = given.iter().map(|a| &a.value).chain(trailing).chain(done).collect();
         if let Some(label) = args.iter().find_map(|a| a.label.as_ref()) {
             self.error(label.span, "function values take their arguments without labels")
                 .help(format!("remove `{}:`", label.name));
         }
         if values.len() != ps.len() {
-            self.error(span, format!("{what} takes {} argument(s), but {} were given", ps.len(), values.len()));
+            let (want, got) = (ps.len() - done.is_some() as usize, values.len() - done.is_some() as usize);
+            self.error(span, format!("{what} takes {want} argument(s), but {got} were given"));
         }
         for (v, p) in values.iter().zip(ps) {
             self.expect(v, p);
@@ -3447,6 +3757,19 @@ impl Checker<'_> {
         expected: Option<&Ty>,
     ) -> Ty {
         let n = name.name.as_str();
+        // `Rect.square(side: 2)`: a `static fn` of a type.
+        match self.static_member(object, name) {
+            Some((full, Global::Fn(_))) => return self.call_name(&full, name.span, args, trailing, span, expected),
+            Some((full, _)) => {
+                // (A constant that holds a function: read it, then call that.)
+                let t = self.member(callee, object, name, optional);
+                self.types.insert(callee, t.clone());
+                let _ = full;
+                self.set_callee(Callee::Value);
+                return self.call_value(&t, &format!("`{n}`"), args, trailing, span);
+            }
+            None => {}
+        }
         // `Shape.circle(radius: 1)`
         if let ExprKind::Name(tn) = &object.kind
             && self.lookup(tn).is_none()
@@ -3565,6 +3888,11 @@ impl Checker<'_> {
                     _ => unreachable!(),
                 };
                 match methods.iter().find(|m| m.name == n) {
+                    Some(m) if m.prop => {
+                        self.args_unchecked(args, trailing);
+                        self.error(name.span, format!("`{n}` is a property, not a method")).help("remove the parentheses");
+                        Ty::Error
+                    }
                     Some(m) => {
                         self.check_private_member(&format!("method `{n}`"), &owner, m.span, name.span);
                         self.set_callee(Callee::Method { owner: recv.clone(), name: n.to_string() });
@@ -3857,11 +4185,28 @@ impl Checker<'_> {
         let n = params.len();
         let mut assigned: Vec<Option<&Expr>> = vec![None; n];
         let mut positional_end = n;
+        // An awaited call: its completion block (which `await` makes) is the
+        // last parameter's, and the other arguments are matched as usual.
+        let done = args.last().filter(|a| matches!(a.value.kind, ExprKind::Continuation));
+        let args = &args[..args.len() - done.is_some() as usize];
+        if let Some(done) = done {
+            let call = !matches!(
+                self.frames.last().and_then(|f| f.callee.as_ref()),
+                Some(Callee::Builtin { .. } | Callee::StructInit(_) | Callee::EnumCase(..) | Callee::View(_) | Callee::BuiltinView(_) | Callee::Modifier(_))
+            );
+            if call && params.last().is_some_and(|p| awaitable(&p.ty)) {
+                assigned[n - 1] = Some(&done.value);
+                positional_end = n - 1;
+            } else {
+                self.not_awaitable(span, what);
+            }
+        }
+        let params_end = positional_end;
         if let Some(tr) = trailing {
-            match params.last() {
+            match params[..params_end].last() {
                 Some(p) if matches!(p.ty, Ty::Fn(..) | Ty::View) => {
-                    assigned[n - 1] = Some(tr);
-                    positional_end = n - 1;
+                    assigned[params_end - 1] = Some(tr);
+                    positional_end = params_end - 1;
                 }
                 _ => {
                     let open = Span { hi: tr.span.lo + 1, ..tr.span };
@@ -3891,6 +4236,12 @@ impl Checker<'_> {
                                 self.expr(&arg.value, None);
                             }
                         }
+                        Some(j) if j >= params_end => {
+                            self.error(l.span, format!("`{}:` gets what `await` is waiting for", l.name))
+                                .help("leave it out; or remove `await`, to get the result in this block instead");
+                            let t = params[j].ty.clone();
+                            self.expr(&arg.value, Some(&t));
+                        }
                         Some(j) if j >= positional_end => {
                             self.error(l.span, format!("`{}:` is already given by the block after the call", l.name));
                             self.expr(&arg.value, None);
@@ -3900,14 +4251,18 @@ impl Checker<'_> {
                             self.expr(&arg.value, None);
                         }
                         Some(j) => {
-                            let order: Vec<String> =
-                                params.iter().filter(|p| !p.unlabeled).map(|p| format!("`{}:`", p.label)).collect();
+                            let order: Vec<String> = params
+                                .iter()
+                                .filter(|p| !p.unlabeled && p.label != DONE_PARAM)
+                                .map(|p| format!("`{}:`", p.label))
+                                .collect();
                             self.error(l.span, format!("`{}:` is in the wrong position", l.name))
                                 .help(format!("arguments go in this order: {}", order.join(", ")));
                             assigned[j] = Some(&arg.value);
                         }
                         None => {
-                            let labels: Vec<&str> = params.iter().filter(|p| !p.unlabeled).map(|p| p.label.as_str()).collect();
+                            let labels: Vec<&str> =
+                                params.iter().filter(|p| !p.unlabeled && p.label != DONE_PARAM).map(|p| p.label.as_str()).collect();
                             let guess = suggest(&l.name, labels.iter().copied());
                             // Treat a likely typo as the label it resembles, so the
                             // value is still checked and no "missing" error follows.
@@ -3936,7 +4291,9 @@ impl Checker<'_> {
                 None => {
                     if pi < positional_end {
                         let p = &params[pi];
-                        if !(p.unlabeled || (n == 1 && pi == 0)) {
+                        // (An `async` function's completion block isn't one it declares.)
+                        let own = n - params.last().is_some_and(|p| p.label == DONE_PARAM) as usize;
+                        if !(p.unlabeled || (own == 1 && pi == 0)) {
                             self.error(arg.value.span, format!("this argument needs its label `{}:`", p.label))
                                 .help(format!("write `{}: …`", p.label));
                         }
@@ -3954,10 +4311,17 @@ impl Checker<'_> {
                 }
             }
         }
+        // An `async` function called without `await` (and without a block).
+        let not_awaited = params.iter().zip(&assigned).any(|(p, a)| a.is_none() && p.label == DONE_PARAM);
+        if not_awaited {
+            self.error(span, format!("{what} is `async`: wait for it with `await`"))
+                .label("its result comes later")
+                .help("write `await` before the call (in an `async fn` or a block), or give the call a block that gets the result: `… { result in … }`");
+        }
         let missing: Vec<String> = params
             .iter()
             .zip(&assigned)
-            .filter(|(p, a)| a.is_none() && !p.has_default)
+            .filter(|(p, a)| a.is_none() && !p.has_default && p.label != DONE_PARAM)
             .map(|(p, _)| if p.unlabeled { format!("the {} value", p.label) } else { format!("`{}:`", p.label) })
             .collect();
         if !missing.is_empty() {
@@ -3970,6 +4334,8 @@ impl Checker<'_> {
             .map(|a| {
                 a.map(|v| match args.iter().position(|arg| std::ptr::eq(&arg.value, v)) {
                     Some(i) => ArgRef::Arg(i),
+                    // (The completion block comes after the other arguments.)
+                    None if matches!(v.kind, ExprKind::Continuation) => ArgRef::Arg(args.len()),
                     None => ArgRef::Trailing,
                 })
             })
@@ -4651,8 +5017,16 @@ impl Checker<'_> {
         }
     }
 
-    /// `(label: Type, …) -> Result`.
+    /// `(label: Type, …) -> Result`. (An `async` function's as it's
+    /// declared: what its completion block gets is its result.)
     fn sig_text(&self, params: &[ParamSig], ret: &Ty) -> String {
+        let (params, ret) = match params.split_last() {
+            Some((done, rest)) if done.label == DONE_PARAM => match &done.ty {
+                Ty::Fn(ps, _) => (rest, ps.first().unwrap_or(&Ty::Void)),
+                _ => (rest, ret),
+            },
+            _ => (params, ret),
+        };
         let ps: Vec<String> = params
             .iter()
             .map(|p| {
@@ -4681,6 +5055,7 @@ impl Checker<'_> {
             }
             let (detail, kind) = match &l.kind {
                 Kind::Fn(sig, _) => (self.sig_text(&sig.params, &sig.ret), K::Function),
+                Kind::Prop(_) => (self.show(&l.ty), K::Field),
                 Kind::State => (format!("state {}", self.show(&l.ty)), K::Variable),
                 Kind::Field => (format!("field {}", self.show(&l.ty)), K::Field),
                 _ => (self.show(&l.ty), K::Variable),
@@ -4698,6 +5073,7 @@ impl Checker<'_> {
             }
             let (detail, kind) = match g {
                 Global::Fn(i) => (self.sig_text(&self.fns[i].params, &self.fns[i].ret), K::Function),
+                Global::Const(i) => (self.show(&self.fns[i].ret), K::Variable),
                 Global::View(i) => (format!("view {}", self.sig_text(&self.views[i], &Ty::Void)), K::View),
                 Global::Struct(_) => ("struct".to_string(), K::Type),
                 Global::Enum(_) => ("enum".to_string(), K::Type),
@@ -4752,6 +5128,7 @@ impl Checker<'_> {
                 let label = &n[prefix.len()..];
                 let (detail, kind) = match g {
                     Global::Fn(i) => (self.sig_text(&self.fns[i].params, &self.fns[i].ret), K::Function),
+                    Global::Const(i) => (self.show(&self.fns[i].ret), K::Variable),
                     Global::View(i) => (format!("view {}", self.sig_text(&self.views[i], &Ty::Void)), K::View),
                     Global::Struct(_) | Global::GenericStruct(_) => ("struct".to_string(), K::Type),
                     Global::Enum(_) | Global::GenericEnum(_) => ("enum".to_string(), K::Type),
@@ -4810,7 +5187,12 @@ impl Checker<'_> {
     fn members(&self, t: &Ty) -> Vec<Suggestion> {
         use SuggestionKind as K;
         let methods = |c: &Self, ms: &[MethodDef]| -> Vec<Suggestion> {
-            ms.iter().map(|m| Self::item(&m.name, c.sig_text(&m.sig.params, &m.sig.ret), K::Method)).collect()
+            ms.iter()
+                .map(|m| match m.prop {
+                    true => Self::item(&m.name, c.show(&m.sig.ret), K::Field),
+                    false => Self::item(&m.name, c.sig_text(&m.sig.params, &m.sig.ret), K::Method),
+                })
+                .collect()
         };
         match t {
             Ty::Struct(id) => {
@@ -4844,6 +5226,12 @@ impl Checker<'_> {
                 .collect(),
         }
     }
+}
+
+/// Can a call be awaited whose last parameter has this type? It must be a
+/// block that gets the result (or nothing), and gives nothing back.
+fn awaitable(t: &Ty) -> bool {
+    matches!(t, Ty::Fn(ps, ret) if ps.len() <= 1 && **ret == Ty::Void)
 }
 
 /// Does `b` always leave early (its last statement is `return`, `break` or `continue`)?

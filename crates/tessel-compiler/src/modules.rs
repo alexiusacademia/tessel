@@ -91,6 +91,7 @@ pub fn resolve(sources: &mut SourceMap, root: Vec<(u32, Program)>, diags: &mut D
             root: &root_decls,
             scopes: Vec::new(),
             types: Vec::new(),
+            statics: None,
             diags,
             sources,
         };
@@ -223,6 +224,9 @@ struct Resolver<'a> {
     scopes: Vec<Vec<String>>,
     /// Type parameters of the generic declarations being resolved.
     types: Vec<Vec<String>>,
+    /// Inside a struct or enum: its name, and its `static` members, which
+    /// its own code uses by their bare names (`zero` for `Rect.zero`).
+    statics: Option<(String, Vec<String>)>,
     diags: &'a mut Diagnostics,
     sources: &'a SourceMap,
 }
@@ -406,9 +410,12 @@ impl Resolver<'_> {
                 let mut members: Vec<String> = d.fields.iter().map(|f| f.name.name.clone()).collect();
                 members.extend(d.methods.iter().map(|m| m.name.name.clone()));
                 members.push("self".into());
+                self.statics = Some((d.name.name.clone(), d.statics.iter().map(|m| m.name.name.clone()).collect()));
                 for m in &mut d.methods {
                     self.scoped(members.clone(), |r| r.func(m));
                 }
+                d.statics.iter_mut().for_each(|m| self.func(m));
+                self.statics = None;
                 self.types.pop();
             }
             Item::Enum(d) => {
@@ -426,9 +433,12 @@ impl Resolver<'_> {
                 }
                 let mut members: Vec<String> = d.methods.iter().map(|m| m.name.name.clone()).collect();
                 members.push("self".into());
+                self.statics = Some((d.name.name.clone(), d.statics.iter().map(|m| m.name.name.clone()).collect()));
                 for m in &mut d.methods {
                     self.scoped(members.clone(), |r| r.func(m));
                 }
+                d.statics.iter_mut().for_each(|m| self.func(m));
+                self.statics = None;
                 self.types.pop();
             }
             Item::Interface(d) => {
@@ -568,9 +578,20 @@ impl Resolver<'_> {
 
     fn expr(&mut self, e: &mut Expr) {
         match &mut e.kind {
-            ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::Nil | ExprKind::DotName(_) | ExprKind::Error => {}
+            ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Nil
+            | ExprKind::DotName(_)
+            | ExprKind::Continuation
+            | ExprKind::Error => {}
             ExprKind::Name(n) => {
                 if !self.is_local(n) {
+                    // A `static` member of the type this code is in.
+                    if let Some((owner, _)) = self.statics.as_ref().filter(|(_, names)| names.contains(n)) {
+                        *n = static_name(owner, n);
+                        return;
+                    }
                     if let Some(full) = self.global(&n.clone(), e.span) {
                         *n = full;
                     } else if self.module_named(n) {
@@ -620,7 +641,7 @@ impl Resolver<'_> {
                     self.expr(v);
                 }
             }
-            ExprKind::Unary(_, x) | ExprKind::Try(x) => self.expr(x),
+            ExprKind::Unary(_, x) | ExprKind::Try(x) | ExprKind::Await(x) => self.expr(x),
             ExprKind::Cast { value, ty, .. } => {
                 self.expr(value);
                 self.ty(ty);

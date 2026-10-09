@@ -38,9 +38,9 @@ A function declaration has:
 The parentheses are required even when there are no parameters:
 `fn reset() { … }`.
 
-Functions are declared at the top level of a file (or directly inside a
-`view`, see [Apps and views](/ui/apps-views/)). You can't declare a function
-inside another function; use a [closure](/language/closures/) for that.
+Functions are declared at the top level of a file, directly inside a
+`view` (see [Apps and views](/ui/apps-views/)), or
+[inside another function](#functions-inside-functions).
 
 A function can be used before it is declared, and from any file in the same
 program. Each function needs a name that is unique in the whole program:
@@ -384,3 +384,17 @@ be used as a value, as in `numbers.map(grade)`.
 A function inside a function can't be generic (it can use the type
 parameters of the function around it), and it isn't visible before its
 declaration, so two of them can't call each other.
+
+## Functions that wait
+
+A function that waits for something slow (a download, a timer, work in the
+background) is declared with `async fn`, and called with `await`:
+
+```tessel
+async fn loadTitle(url: String) -> String {
+    let text = await fetch(url: url)
+    return (text ?? "").lines().first ?? "untitled"
+}
+```
+
+See [Waiting with async and await](/language/async/).

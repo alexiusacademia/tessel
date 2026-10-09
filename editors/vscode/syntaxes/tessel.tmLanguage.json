@@ -109,7 +109,7 @@
       "patterns": [
         {
           "name": "keyword.control.tessel",
-          "match": "\\b(if|else|for|while|in|match|return|try|break|continue)\\b"
+          "match": "\\b(if|else|for|while|in|match|return|try|break|continue)\\b|\\bawait(?=\\s+[A-Za-z_])"
         },
         {
           "name": "keyword.other.import.tessel",
@@ -117,7 +117,7 @@
         },
         {
           "name": "storage.modifier.tessel",
-          "match": "\\b(bind)\\b|^\\s*(public|private)\\b"
+          "match": "\\b(bind)\\b|^\\s*(public|private)\\b|\\b(async|static)(?=\\s+(fn|let|async)\\b)"
         },
         {
           "name": "storage.type.tessel",

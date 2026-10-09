@@ -90,6 +90,74 @@ pub unsafe extern "C" fn tsl_release(obj: *mut Header) {
     }
 }
 
+// ===== constants and waiting functions =====
+
+/// Makes an object immortal: a constant's value, which is never freed, and
+/// which every thread may then read (reference counts aren't atomic, and an
+/// immortal object's is never written).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_immortal(obj: *mut Header) {
+    // (What's immortal already may be in read-only memory: a literal.)
+    if !obj.is_null() && unsafe { (*obj).rc } >= 0 {
+        unsafe { (*obj).rc = -1 };
+    }
+}
+
+/// Makes a list immortal, and (with `each`, which is given each item's
+/// address) what its items hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_immortal(l: *mut List, each: Option<unsafe extern "C" fn(*mut u8)>) {
+    unsafe {
+        if l.is_null() || (*l).h.rc < 0 {
+            return;
+        }
+        (*l).h.rc = -1;
+        if let Some(each) = each {
+            for i in 0..(*l).len {
+                each(elem_at(l, i));
+            }
+        }
+    }
+}
+
+/// Makes a dictionary (or set) immortal, and what its keys and values hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_dict_immortal(
+    d: *mut Dict,
+    key: Option<unsafe extern "C" fn(*mut u8)>,
+    value: Option<unsafe extern "C" fn(*mut u8)>,
+) {
+    unsafe {
+        if d.is_null() || (*d).h.rc < 0 {
+            return;
+        }
+        (*d).h.rc = -1;
+        let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
+        let inner = &mut *(*d).inner;
+        for i in (0..inner.used()).filter(|&i| inner.live[i]).collect::<Vec<_>>() {
+            if let Some(key) = key {
+                key(inner.keys.as_mut_ptr().add(i * ks));
+            }
+            if let Some(value) = value {
+                value(inner.values.as_mut_ptr().add(i * vs));
+            }
+        }
+    }
+}
+
+/// Memory for what a function that waits (`await`) keeps while it does.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_frame_new(size: i64) -> *mut u8 {
+    unsafe { alloc(size as usize) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_frame_free(frame: *mut u8) {
+    if !frame.is_null() {
+        unsafe { free(frame) };
+    }
+}
+
 unsafe fn elem_retain(ty: *const TslType, p: *mut u8) {
     if let Some(f) = unsafe { (*ty).retain } {
         unsafe { f(p) };

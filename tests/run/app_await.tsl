@@ -1,0 +1,68 @@
+// `await` in an app: a button's block waits for a timer and for background
+// work, and the app's own `async` functions change its state when they go on.
+
+let steps = 3
+
+fn sumTo(n: Int) -> Int {
+    var total = 0
+    for i in 0..n + 1 {
+        total += i
+    }
+    total
+}
+
+async fn slowDouble(n: Int) -> Int {
+    await after(seconds: 0.5)
+    return n * 2
+}
+
+view Counter(label: String, count: bind Int) {
+    state busy = false
+
+    HStack(spacing: 8) {
+        Text("{label}: {count}")
+        Button("Add later") {
+            busy = true
+            await after(seconds: 1.0)
+            count += 1
+            busy = false
+        }
+        .disabled(busy)
+    }
+}
+
+app Await(width: 420, height: 260) {
+    state status = "Idle"
+    state log: [String] = []
+    state clicks = 0
+
+    VStack(spacing: 10, alignment: .leading) {
+        Text(status)
+        Button("Run") {
+            status = "Running"
+            await run()
+            status = "Done after {log.count} steps"
+        }
+        Button("Compute") {
+            let n = 100
+            let total = await background { sumTo(n: n) }
+            status = "The sum is {total}"
+        }
+        Counter(label: "Clicks", count: clicks)
+        for line in log {
+            Text(line)
+        }
+    }
+    .padding(16)
+
+    async fn step(number: Int) -> String {
+        let doubled = await slowDouble(number)
+        return "step {number} gave {doubled}"
+    }
+
+    async fn run() {
+        for i in 1..steps + 1 {
+            log.append(await step(number: i))
+        }
+    }
+}

@@ -76,6 +76,7 @@ pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
     add_prelude(&mut program, &mut diags, &mut next_id);
+    lower_statics(&mut program);
     program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
     diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
@@ -187,6 +188,7 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
     add_prelude(&mut program, &mut diags, &mut next_id);
+    lower_statics(&mut program);
     program.next_id = next_id;
     let mutable = vars.iter().filter(|v| v.mutable).map(|v| v.name.clone()).collect();
     let checked = check::check_repl(&program, &mut diags, mutable);
@@ -220,6 +222,25 @@ fn add_prelude(program: &mut ast::Program, diags: &mut Diagnostics, next_id: &mu
     );
 }
 
+/// Makes the `static` members of structs and enums functions of the program,
+/// named after their type: `Rect.zero`, `Rect.square`. (After modules are
+/// resolved, so the type's name is its full one.)
+fn lower_statics(program: &mut ast::Program) {
+    let mut lowered = Vec::new();
+    for item in &mut program.items {
+        let (owner, statics) = match item {
+            ast::Item::Struct(d) => (&d.name, &mut d.statics),
+            ast::Item::Enum(d) => (&d.name, &mut d.statics),
+            _ => continue,
+        };
+        for mut f in statics.drain(..) {
+            f.name.name = ast::static_name(&owner.name, &f.name.name);
+            lowered.push(ast::Item::Fn(f));
+        }
+    }
+    program.items.extend(lowered);
+}
+
 /// The generic structs behind tuples: `(,)<A, B>` with fields `0` and `1`
 /// for pairs, and so on up to `ast::MAX_TUPLE` items.
 fn tuple_structs() -> Vec<ast::Item> {
@@ -238,6 +259,7 @@ fn tuple_structs() -> Vec<ast::Item> {
                     .map(|(i, p)| ast::FieldDecl { name: ident(i.to_string()), ty: ast::TypeExpr::Named(ident(p.clone())), default: None })
                     .collect(),
                 methods: Vec::new(),
+                statics: Vec::new(),
             })
         })
         .collect()

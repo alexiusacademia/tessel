@@ -40,6 +40,7 @@ use crate::source::{SourceMap, Span};
 use crate::types::{FnSig, Ty};
 
 mod codec;
+mod coro;
 mod stdlib;
 mod ui;
 
@@ -244,6 +245,12 @@ fn generate<R>(
         g.module
             .run_passes("default<O2>", &tm, PassBuilderOptions::create())
             .map_err(|e| vec![internal(e.to_string())])?;
+    } else if g.has_coros {
+        // Functions that `await` are written as coroutines, which only
+        // these passes turn into code a machine can run.
+        g.module
+            .run_passes("coro-early,cgscc(coro-split),coro-cleanup,globaldce", &tm, PassBuilderOptions::create())
+            .map_err(|e| vec![internal(e.to_string())])?;
     }
     // For working on the compiler: the (optimized) LLVM code, as text.
     if let Some(path) = std::env::var_os("TESSEL_EMIT_LLVM") {
@@ -339,6 +346,8 @@ struct FnCtx<'ctx> {
     boxed: HashSet<String>,
     /// Inside a view (or its functions and closures): its state record.
     record: Option<Record<'ctx>>,
+    /// A function that can `await` (see `coro`).
+    coro: Option<coro::Coro<'ctx>>,
 }
 
 /// Where `continue` and `break` jump in a loop of function `func`; `depth`
@@ -416,6 +425,10 @@ struct Gen<'ctx, 'a> {
     /// before the place is (see `place_indexes`): by the index's expression.
     pre_index: HashMap<crate::ast::ExprId, Val<'ctx>>,
     stack: Vec<FnCtx<'ctx>>,
+    /// The awaited calls being evaluated, innermost last (see `coro`).
+    awaits: Vec<coro::Awaited<'ctx>>,
+    /// Whether any function compiled can `await`.
+    has_coros: bool,
 
     /// Views by name (the `app` included), and what's compiled for them.
     view_decls: HashMap<String, ViewSource<'a>>,
@@ -482,6 +495,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             held: Vec::new(),
             pre_index: HashMap::new(),
             stack: Vec::new(),
+            awaits: Vec::new(),
+            has_coros: false,
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
             view_fns: HashMap::new(),
@@ -576,9 +591,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for (name, decl) in self.fn_decls.clone() {
             let f = self.fns[&name];
             let sig = self.checked.fns[&name].clone();
+            if decl.constant {
+                self.constant_body(f, decl, &sig.ret);
+                continue;
+            }
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
-            self.function_body(f, &params, &decl.body, &sig.ret, None, 1);
+            self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async);
         }
         for (key, (decl, owner)) in self.method_decls.clone() {
             let f = self.methods[&key];
@@ -586,7 +605,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             let self_ptr = f.get_nth_param(1).unwrap().into_pointer_value();
-            self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2);
+            self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2, decl.is_async);
         }
 
         self.compile_views();
@@ -604,11 +623,38 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let entry = self.module.add_function(&entry_name, self.ctx.void_type().fn_type(&[], false), None);
         self.b.position_at_end(self.ctx.append_basic_block(entry, "entry"));
         self.set_app_info();
+        // The program's constants, worked out before anything else runs, in
+        // the order they're declared.
+        self.stack.push(FnCtx {
+            func: entry,
+            scopes: vec![Vec::new()],
+            ret: Ty::Void,
+            self_ptr: None,
+            boxed: HashSet::new(),
+            record: None,
+            coro: None,
+        });
+        for &item in &items {
+            let Item::Fn(f) = item else { continue };
+            if f.constant {
+                let t = self.checked.fns[&f.name.name].ret.clone();
+                if let Some(v) = self.constant(&f.name.name) {
+                    self.release(v, &t);
+                }
+            }
+        }
+        let main_done = self.fn_decls.get("main").is_some_and(|d| d.is_async).then(|| self.nothing_block());
+        self.stack.pop();
         match self.app {
             Some(app) => self.run_app(app, entry),
             None => {
                 let null = self.ptr_ty().const_null();
-                self.b.build_call(self.fns["main"], &[null.into()], "").unwrap();
+                let mut args: Vec<BasicMetadataValueEnum> = vec![null.into()];
+                // An `async fn main()`: nothing waits for it to finish.
+                if let Some(done) = main_done {
+                    args.push(done.into());
+                }
+                self.b.build_call(self.fns["main"], &args, "").unwrap();
                 self.b.build_return(None).unwrap();
             }
         }
@@ -662,7 +708,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let declared = self.checked.repl.clone().unwrap_or_default().vars;
         let mut boxed = self.boxed_vars(&decl.body);
         boxed.extend(declared.iter().map(|(name, ..)| name.clone()));
-        self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None });
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None, coro: None });
         self.push_scope();
         for s in &decl.body.stmts {
             if self.terminated() {
@@ -810,6 +856,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         ret: &Ty,
         self_info: Option<(PointerValue<'ctx>, Ty)>,
         first_param: u32,
+        is_async: bool,
     ) {
         let entry = self.ctx.append_basic_block(func, "entry");
         self.b.position_at_end(entry);
@@ -818,7 +865,16 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             scope.extend(self.receiver_vars(owner));
         }
         let boxed = self.boxed_vars(body);
-        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None });
+        // (What an `async` function returns goes to its completion block.)
+        let ret = &match (is_async, params.last()) {
+            (true, Some((_, Ty::Fn(ps, _), _))) => ps.first().cloned().unwrap_or(Ty::Void),
+            _ => ret.clone(),
+        };
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None, coro: None });
+        if is_async {
+            self.begin_coro(&[]);
+            self.own_receiver();
+        }
         for (i, (name, ty, bind)) in params.iter().enumerate() {
             let raw = func.get_nth_param(first_param + i as u32).unwrap();
             let value = raw;
@@ -831,6 +887,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             } else {
                 self.declare_param(&name.name, ty, value);
             }
+        }
+        if is_async {
+            self.take_done();
         }
         let value = self.block(body, Some(ret));
         self.finish_function(value);
@@ -1203,6 +1262,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Returns from the function being written: a big value goes to the
     /// place the caller gave (see `fn_type`).
     fn emit_return(&mut self, v: Option<Val<'ctx>>) {
+        if let Some(c) = self.stack.last().unwrap().coro.clone() {
+            return self.finish_coro(&c, v);
+        }
         let ret = self.stack.last().unwrap().ret.clone();
         if self.big(&ret) {
             if let Some(v) = v {
@@ -1653,7 +1715,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// don't change.
     fn declare_param(&mut self, name: &str, ty: &Ty, raw: Val<'ctx>) {
         let boxed = self.stack.last().unwrap().boxed.contains(name);
-        if self.big(ty) && !boxed && name != "_" {
+        // (A function that can `await` outlives the caller's place: it
+        // keeps a copy of its own.)
+        let waits = self.stack.last().unwrap().coro.is_some();
+        if self.big(ty) && !boxed && !waits && name != "_" {
             self.push_var(Var { name: name.to_string(), ty: ty.clone(), store: Store::Slot(raw.into_pointer_value()) });
             return;
         }
@@ -1724,6 +1789,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self_ptr: None,
             boxed: HashSet::new(),
             record: None,
+            coro: None,
         });
         let entry = self.ctx.append_basic_block(f, "entry");
         self.b.position_at_end(entry);
@@ -2308,6 +2374,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn readable_place(&self, e: &Expr) -> bool {
         match &e.kind {
             ExprKind::Name(n) => self.lookup(n).is_some(),
+            // (A computed property is a call.)
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
             ExprKind::Member { object, optional: false, .. } => {
                 matches!(self.ty(object), Ty::Struct(_) | Ty::Iface(_)) && self.readable_place(object)
             }
@@ -2350,6 +2418,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let v = self.lookup(n)?;
                 Some(self.var_read_ptr(&v, e.span))
             }
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => None,
             ExprKind::Member { object, name, optional: false } if matches!(self.ty(object), Ty::Iface(_)) => {
                 let Ty::Iface(i) = self.ty(object) else { unreachable!() };
                 let base = self.read_ptr(object)?;
@@ -2417,6 +2486,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     fn is_place(&self, e: &Expr) -> bool {
         match &e.kind {
             ExprKind::Name(n) => self.lookup(n).is_some_and(|v| !matches!(v.store, Store::EnvValue(_) | Store::ViewFn)),
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
             ExprKind::Member { object, optional: false, .. } => {
                 matches!(self.ty(object), Ty::Struct(_) | Ty::Iface(_)) && self.is_place(object)
             }
@@ -2928,9 +2998,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Evaluates `e` to an owned value (`None` if it produces no value).
     fn expr(&mut self, e: &Expr) -> Option<Val<'ctx>> {
         let t = self.ty(e);
+        // A constant (`limit`, `Rect.zero`): the function that keeps it.
+        if let Some(name) = self.checked.const_refs.get(&e.id) {
+            return self.constant(&name.clone());
+        }
+        // A computed property (`rect.area`, or `area` in the type's own
+        // methods): its method, called.
+        if matches!(e.kind, ExprKind::Name(_) | ExprKind::Member { .. }) && self.checked.calls.contains_key(&e.id) {
+            return self.call(e, e, &[], None);
+        }
         match &e.kind {
             ExprKind::GenericName(..) => unreachable!("checked: a generic type isn't a value"),
             ExprKind::Try(inner) => self.try_expr(e, inner),
+            ExprKind::Await(call) => self.await_expr(e, call),
+            ExprKind::Continuation => Some(self.continuation(&t)),
             ExprKind::Int(n) => Some(if t == Ty::Float {
                 self.ctx.f64_type().const_float(*n as f64).into()
             } else {
@@ -4013,7 +4094,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let mut needs_self = false;
         let mut needs_record = false;
         for name in &free {
-            let Some(v) = self.lookup(name) else { continue };
+            let Some(v) = self.lookup(name) else {
+                // (A method or property of the receiver, by its bare name.)
+                if let Some((_, owner)) = &self.stack.last().unwrap().self_ptr {
+                    let methods = match owner {
+                        Ty::Struct(id) => &self.checked.structs[*id].methods,
+                        Ty::Enum(id) => &self.checked.enums[*id].methods,
+                        _ => continue,
+                    };
+                    needs_self |= methods.iter().any(|m| m.name == *name) && !self.fns.contains_key(name);
+                }
+                continue;
+            };
             let kind = match v.store {
                 Store::Field(_) | Store::SelfRef => {
                     needs_self = true;
@@ -4175,7 +4267,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Body::LocalFn(d) => self.boxed_vars(&d.body),
             _ => HashSet::new(),
         };
-        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record });
+        // A block that waits, or an `async fn` declared in a function: it
+        // keeps its environment for as long as it goes on.
+        let (waits, is_async) = match &body {
+            Body::Fn(_, b) => (coro::awaits(b), false),
+            Body::LocalFn(d) => (d.is_async, d.is_async),
+            _ => (false, false),
+        };
+        let ret = match (is_async, ptys.last()) {
+            (true, Some(Ty::Fn(ps, _))) => ps.first().cloned().unwrap_or(Ty::Void),
+            _ => ret,
+        };
+        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record, coro: None });
+        if waits {
+            let keep: Vec<PointerValue> = (!env_fields.is_empty()).then_some(env_param).into_iter().collect();
+            self.begin_coro(&keep);
+            self.own_receiver();
+        }
         match body {
             Body::Fn(params, b) => {
                 for (i, (p, pt)) in params.iter().zip(&ptys).enumerate() {
@@ -4196,6 +4304,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 for (i, (p, pt)) in d.params.iter().zip(&ptys).enumerate() {
                     let raw = f.get_nth_param(1 + i as u32).unwrap();
                     self.declare_param(&p.name.name, pt, raw);
+                }
+                if is_async {
+                    self.take_done();
                 }
                 let v = self.block(&d.body, Some(&ret));
                 self.finish_function(v);
@@ -4600,11 +4711,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 };
                 let Ty::Fn(ptys, _) = &ft else { unreachable!() };
                 let fv = self.expr(callee).unwrap();
-                let exprs: Vec<&Expr> = args.iter().map(|a| &a.value).chain(trailing).collect();
+                // (An awaited call's completion block comes after a trailing block.)
+                let done = e.continuation();
+                let given = &args[..args.len() - done.is_some() as usize];
+                let exprs: Vec<&Expr> = given.iter().map(|a| &a.value).chain(trailing).chain(done).collect();
                 let mut vals = Vec::new();
                 for (x, pt) in exprs.into_iter().zip(ptys.clone().iter()) {
-                    vals.push(self.expr_as(x, pt).unwrap());
+                    let v = self.expr_as(x, pt).unwrap();
+                    self.hold(v, pt);
+                    vals.push(v);
                 }
+                self.unhold(vals.len());
                 let r = self.call_fn_value(fv, &ft, &vals);
                 self.release(fv, &ft);
                 r
@@ -5340,10 +5457,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// and the job (a `BackgroundJob`) is the value of the call.
     fn background<'e>(&mut self, args: &'e [Arg], arg: &dyn Fn(ArgRef) -> &'e Expr, span: Span) -> Val<'ctx> {
         let label = |a: &&Arg, l: &str| a.label.as_ref().is_some_and(|x| x.name == l);
-        let work = &args.iter().find(|a| label(a, "work")).unwrap().value;
-        let done = match args.iter().find(|a| label(a, "done")) {
+        // (Awaited: the result goes on from the `await`, and a block after
+        // the call is the work.)
+        let awaited = args.last().map(|a| &a.value).filter(|v| matches!(v.kind, ExprKind::Continuation));
+        let work = match args.iter().find(|a| label(a, "work")) {
             Some(a) => &a.value,
             None => arg(ArgRef::Trailing),
+        };
+        let done = match (awaited, args.iter().find(|a| label(a, "done"))) {
+            (Some(done), _) => done,
+            (None, Some(a)) => &a.value,
+            (None, None) => arg(ArgRef::Trailing),
         };
         let progress = args.iter().find(|a| label(a, "progress")).map(|a| &a.value);
         let ExprKind::Closure { body, params } = &work.kind else { unreachable!("checked: `work` is a block") };
@@ -6789,7 +6913,7 @@ fn for_each_child<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 f(v);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => f(x),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Await(x) => f(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             f(l);
             f(r);

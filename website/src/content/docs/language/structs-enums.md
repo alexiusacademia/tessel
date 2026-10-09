@@ -10,7 +10,7 @@ Tessel has two ways to declare your own types:
 - An **enum** is a value that is exactly one of a fixed set of cases, like a
   direction that is north, east, south or west.
 
-Both can have methods.
+Both can have methods, computed properties and static members.
 
 ## Structs
 
@@ -150,6 +150,119 @@ a `state`, a `bind` parameter, or a field or item of one. Calling it on a
 error: can't call `increment` on `counter`, which is a constant, because `increment` changes it
   = help: declare it with `var` to be able to change it
 ```
+
+### Computed properties
+
+A **computed property** looks like a field from outside, but its value is
+worked out from the other fields each time it's read. Write its type, then
+a block that gives the value:
+
+```tessel
+struct Rect {
+    width: Float
+    height: Float
+
+    area: Float { width * height }
+    isSquare: Bool { width == height }
+
+    fn scaled(by: Float) -> Rect {
+        Rect(width: width * by, height: height * by)
+    }
+}
+
+fn main() {
+    let r = Rect(width: 3, height: 2)
+    print(r.area)
+    print(r.isSquare)
+    print(r.scaled(by: 2).area)
+}
+```
+
+```text
+6.0
+false
+24.0
+```
+
+It's read without parentheses, `r.area`, like a field. Since it isn't
+stored, it's never out of date:
+
+```tessel
+struct Temperature {
+    celsius: Float
+    fahrenheit: Float { celsius * 9 / 5 + 32 }
+}
+
+fn main() {
+    var t = Temperature(celsius: 20)
+    print(t.fahrenheit)
+    t.celsius = 30
+    print(t.fahrenheit)
+}
+```
+
+```text
+68.0
+86.0
+```
+
+A computed property isn't part of creating the struct
+(`Temperature(celsius: 20)` has no `fahrenheit:`), isn't saved by `toJson`,
+and can't be set:
+
+```text
+error: can't change `fahrenheit`, which is a computed property
+```
+
+Its block is a function body, so it can have several lines and use `return`.
+It can't change the struct's fields; something that does is a method. Use a
+property for what a value *is* (`area`, `isEmpty`, `fullName`), and a method
+for what it *does*, or when it needs parameters.
+
+### Static members
+
+A **static** member belongs to the type itself rather than to one value. It's
+used through the type's name. `static let` is a constant, and `static fn` is
+a function, often one that makes a value of the type:
+
+```tessel
+struct Rgb {
+    red: Int
+    green: Int
+    blue: Int
+
+    static let black = Rgb(red: 0, green: 0, blue: 0)
+    static let white = gray(level: 255)
+
+    static fn gray(level: Int) -> Rgb {
+        Rgb(red: level, green: level, blue: level)
+    }
+
+    brightness: Int { (red + green + blue) / 3 }
+    isDark: Bool { brightness < white.brightness / 2 }
+}
+
+fn main() {
+    print(Rgb.white.brightness)
+    print(Rgb.gray(level: 100).isDark)
+    print(Rgb.black == Rgb.gray(level: 0))
+}
+```
+
+```text
+255
+true
+true
+```
+
+Outside the type you write `Rgb.white` and `Rgb.gray(level: 100)`. Inside
+it, the bare names work, as `white` and `gray` do above.
+
+A static function has no `self` and can't use the fields: there's no value
+it was called on. A `static let` is worked out once, when the program
+starts, like a [constant](/language/basics/#constants) at the top of a file.
+
+Generic types (`Stack<T>`) can't have static members yet.
 
 ### Comparing structs
 
@@ -301,6 +414,41 @@ yellow
 
 `advance` assigns to `self`, so like a changing struct method it can only be
 called on a variable.
+
+Enums can have [computed properties](#computed-properties) and
+[static members](#static-members) as well. A property is a good fit for a
+value that depends on the case:
+
+```tessel
+enum Planet {
+    mercury, venus, earth
+
+    name: String {
+        match self {
+            .mercury -> "Mercury"
+            .venus -> "Venus"
+            .earth -> "Earth"
+        }
+    }
+
+    static let all = [Planet.mercury, Planet.venus, Planet.earth]
+}
+
+fn main() {
+    for p in Planet.all {
+        print(p.name)
+    }
+}
+```
+
+```text
+Mercury
+Venus
+Earth
+```
+
+An enum can't *store* anything outside its cases, so `name: String` without
+a block is an error there.
 
 ### Enums as dictionary keys
 

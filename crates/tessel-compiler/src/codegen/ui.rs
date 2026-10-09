@@ -148,6 +148,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self_ptr: None,
             boxed: self.boxed_vars(src.body),
             record: None,
+            coro: None,
         });
         let mut args = Vec::new();
         for (i, (p, sig)) in src.params.iter().zip(&sigs).enumerate() {
@@ -235,14 +236,25 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.b.position_at_end(entry);
         let data = f.get_nth_param(1).unwrap().into_pointer_value();
         let vars = self.view_vars(view);
+        // (What an `async` function returns goes to its completion block.)
+        let ret = match (fd.is_async, sig.params.last().map(|p| &p.ty)) {
+            (true, Some(Ty::Fn(ps, _))) => ps.first().cloned().unwrap_or(Ty::Void),
+            _ => sig.ret.clone(),
+        };
         self.stack.push(FnCtx {
             func: f,
             scopes: vec![vars],
-            ret: sig.ret.clone(),
+            ret: ret.clone(),
             self_ptr: None,
             boxed: self.boxed_vars(&fd.body),
             record: Some(Record { data, ty: st, view: view.to_string() }),
+            coro: None,
         });
+        // While it waits, it keeps the view's state.
+        if fd.is_async {
+            let record = self.record_box(data);
+            self.begin_coro(&[record]);
+        }
         // The view's parameters, as kept in the record by its last build.
         let states = self.state_count(view);
         let view_params = self.view_decls[view].params.iter().zip(self.checked.views.get(view).cloned().unwrap_or_default());
@@ -260,7 +272,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let raw = f.get_nth_param(2 + i as u32).unwrap();
             self.declare_param(&p.name.name, &ps.ty, raw);
         }
-        let v = self.block(&fd.body, Some(&sig.ret));
+        if fd.is_async {
+            self.take_done();
+        }
+        let v = self.block(&fd.body, Some(&ret));
         self.finish_function(v);
         self.stack.pop();
     }
@@ -311,6 +326,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self_ptr: None,
             boxed: Default::default(),
             record: None,
+            coro: None,
         });
         let arg = |label: &str| app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == label));
         // `title:`, or the manifest's name for the app, or its own.

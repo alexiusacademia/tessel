@@ -171,7 +171,10 @@ Ada, Max
 
 Properties can be read and, on a `var`, changed through the interface. Only
 structs have fields, so an enum can't conform to an interface that requires a
-property.
+property. For the same reason a
+[computed property](/language/structs-enums/#computed-properties) doesn't
+satisfy the requirement: it must be a stored field. To let each type work
+the value out its own way, require a method instead (`fn name() -> String`).
 
 ## Methods that change the value
 
@@ -293,5 +296,8 @@ interface values can be passed to it and returned from it.
 - A conforming method must match the requirement exactly: the same name,
   the same parameter labels and types, and the same result.
 - Interface methods can't have default values for their parameters.
+- A requirement can be `async` (`async fn load(key: String) -> String`); the
+  conforming method must be `async` too. See
+  [Waiting with async and await](/language/async/#methods-and-interfaces).
 - An interface value is created by converting a value of a conforming type;
   the interface itself can't be called to create one.

@@ -10,7 +10,8 @@ use super::Rgba;
 
 const KEYWORDS: &[&str] = &[
     "app", "view", "struct", "enum", "interface", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
-    "return", "try", "while", "break", "continue", "true", "false", "nil", "import", "public", "private",
+    "return", "try", "while", "break", "continue", "true", "false", "nil", "import", "public", "private", "async",
+    "await", "static",
 ];
 
 /// Colored ranges (byte offsets) for `text`. Text not covered is plain.

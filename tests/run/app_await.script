@@ -1,0 +1,13 @@
+click "Run"
+tree
+wait 0.6
+tree
+wait 2
+tree
+click "Compute"
+wait 0
+tree
+click "Add later"
+tree
+wait 1.1
+tree

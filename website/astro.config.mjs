@@ -98,6 +98,7 @@ export default defineConfig({
 						{ label: 'Errors', slug: 'language/errors' },
 						{ label: 'Collections', slug: 'language/collections' },
 						{ label: 'Closures', slug: 'language/closures' },
+						{ label: 'Waiting: async and await', slug: 'language/async' },
 						{ label: 'Values and copying', slug: 'language/values' },
 						{ label: 'Programs and files', slug: 'language/programs' },
 					],

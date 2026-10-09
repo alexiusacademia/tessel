@@ -139,6 +139,8 @@ pub struct MethodDef {
     pub sig: FnSig,
     pub mutating: bool,
     pub span: Span,
+    /// A computed property: used without parentheses.
+    pub prop: bool,
 }
 
 #[derive(Debug)]

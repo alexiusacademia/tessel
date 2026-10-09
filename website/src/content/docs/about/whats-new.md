@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.1.42
+
+*October 10, 2026*
+
+- **`async` and `await`.** Steps that wait for something (a download, a
+  timer, work in the background) can be written one after another, where
+  they used to nest in blocks:
+  `let text = await fetch(url: address)`. `await` works on every function
+  that ends with a completion block, so `fetch`, `after`, `request`,
+  `download`, `runCommand`, `background` and your own such functions can be
+  awaited as they are. Functions that wait are declared with `async fn`, and
+  a button's action (or any block that gives no value) can `await` directly.
+  See [Waiting with async and await](/language/async/).
+- **Constants.** A `let` at the top of a file is a constant the whole
+  program can use: `let maxPlayers = 4`. See
+  [Constants](/language/basics/#constants).
+- **Computed properties.** `area: Float { width * height }` in a struct or
+  enum is read like a field, `rect.area`, and worked out each time. See
+  [Computed properties](/language/structs-enums/#computed-properties).
+- **Static members.** `static let` and `static fn` belong to a type and are
+  used through its name: `Rect.zero`, `Rect.square(side: 2)`. See
+  [Static members](/language/structs-enums/#static-members).
+- `async`, `await` and `static` are only keywords where they're used this
+  way, so programs that use them as names still build.
+
 ## 0.1.41
 
 *October 8, 2026 · 0.1.40 and 0.1.41*

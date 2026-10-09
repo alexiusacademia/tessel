@@ -1,0 +1,57 @@
+// Completion blocks that are never called, called late, or called twice.
+fn never(done: fn(Int)) {
+}
+fn dropsLater(done: fn(Int)) {
+    after(seconds: 0.01) {
+        let kept = done
+        print("dropping the block")
+    }
+}
+fn twice(done: fn(String)) {
+    done("first")
+    done("second")
+}
+fn twiceLater(done: fn(String)) {
+    after(seconds: 0.01) {
+        done("first later")
+        done("second later")
+    }
+}
+
+async fn inner(tag: String) -> Int {
+    let held = [tag, tag + tag]
+    print("inner {tag} waits")
+    let n = await dropsLater()
+    print("inner {tag} went on {n} {held.count}")
+    return n
+}
+
+async fn outer(tag: String) {
+    let mine = "outer's " + tag
+    let n = await inner(tag: tag)
+    print("outer went on {n} {mine}")
+}
+
+async fn spin() {
+    var i = 0
+    while i < 3000 {
+        await after(seconds: 0.0)
+        i += 1
+    }
+    print("spun {i}")
+}
+
+async fn main() {
+    print(await twice())
+    print(await twiceLater())
+    after(seconds: 0.0) {
+        await outer(tag: "x")
+        print("never printed")
+    }
+    await after(seconds: 0.05)
+    print("after the dropped one")
+    await spin()
+    let text = "kept " + "text"
+    let n = await never()
+    print("not reached {n} {text}")
+}

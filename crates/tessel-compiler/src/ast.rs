@@ -82,7 +82,12 @@ pub struct StructDecl {
     /// Interfaces it conforms to (`struct Circle: Shape`).
     pub conforms: Vec<Ident>,
     pub fields: Vec<FieldDecl>,
+    /// Methods, and computed properties (`FnDecl::prop`).
     pub methods: Vec<FnDecl>,
+    /// `static fn` and `static let` members: reached through the type's
+    /// name (`Rect.zero`). They become functions of the program (see
+    /// `lower_statics`), named like that.
+    pub statics: Vec<FnDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +104,7 @@ pub struct EnumDecl {
     pub conforms: Vec<Ident>,
     pub cases: Vec<CaseDecl>,
     pub methods: Vec<FnDecl>,
+    pub statics: Vec<FnDecl>,
 }
 
 /// `interface Shape { fn area() -> Float }`: methods a type must have.
@@ -132,6 +138,36 @@ pub struct FnDecl {
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub body: Block,
+    /// A constant (`let limit = 100` at the top of a file, or `static let`
+    /// in a type): a function without parameters whose value is worked out
+    /// once. Its type is `ret`, or that of its value.
+    pub constant: bool,
+    /// A computed property (`area: Float { width * height }`): a method
+    /// without parameters, used without parentheses.
+    pub prop: bool,
+    /// `async fn`: it can `await`. Its last parameter (`DONE_PARAM`, added
+    /// by the parser) is the block that gets its result, of type `ret`.
+    pub is_async: bool,
+}
+
+/// The name of the function behind a `static` member of a type.
+pub fn static_name(owner: &str, member: &str) -> String {
+    format!("{owner}.{member}")
+}
+
+/// The name of the parameter an `async fn` gets its completion block in.
+/// (No program can spell it: the block is given after the call, or by
+/// `await`.)
+pub const DONE_PARAM: &str = "$done";
+
+impl FnDecl {
+    /// The parameters as written (without an `async fn`'s completion block).
+    pub fn own_params(&self) -> &[Param] {
+        match self.is_async {
+            true => &self.params[..self.params.len() - 1],
+            false => &self.params,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +295,12 @@ pub enum ExprKind {
     /// `try result`: the value of a `Result` (or nothing, for an `Error?`), or
     /// else the enclosing function returns the failure.
     Try(Box<Expr>),
+    /// `await call(…)`: the call gets a completion block that goes on from
+    /// here (a `Continuation`, the call's last argument), and the value is
+    /// what that block is given.
+    Await(Box<Expr>),
+    /// The completion block of an awaited call (made by the parser).
+    Continuation,
     /// `shape is Circle` (`test` true) and `shape as? Circle`.
     Cast { value: Box<Expr>, ty: TypeExpr, test: bool },
     Binary(BinOp, Box<Expr>, Box<Expr>),
@@ -300,11 +342,11 @@ fn item_exprs<'a>(item: &'a Item, f: &mut dyn FnMut(&'a Expr)) {
                     expr_tree(e, f);
                 }
             }
-            for m in &d.methods {
+            for m in d.methods.iter().chain(&d.statics) {
                 block(&m.body, f);
             }
         }
-        Item::Enum(d) => d.methods.iter().for_each(|m| block(&m.body, f)),
+        Item::Enum(d) => d.methods.iter().chain(&d.statics).for_each(|m| block(&m.body, f)),
         Item::Interface(_) => {}
         Item::Fn(d) => block(&d.body, f),
         Item::View(d) => block(&d.body, f),
@@ -366,7 +408,7 @@ fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 expr_tree(v, f);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => expr_tree(x, f),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Await(x) => expr_tree(x, f),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             expr_tree(l, f);
             expr_tree(r, f);
@@ -412,6 +454,16 @@ impl Expr {
             ExprKind::Member { object, optional, .. } => *optional || object.in_optional_chain(),
             ExprKind::Call { callee, .. } => callee.in_optional_chain(),
             _ => false,
+        }
+    }
+
+    /// The completion block of an awaited call, if this is one.
+    pub fn continuation(&self) -> Option<&Expr> {
+        match &self.kind {
+            ExprKind::Call { args, .. } => {
+                args.last().map(|a| &a.value).filter(|v| matches!(v.kind, ExprKind::Continuation))
+            }
+            _ => None,
         }
     }
 }

@@ -191,8 +191,10 @@ other.
 
 ### How data moves between files
 
-There are no global variables in Tessel, so files don't share data by
-reaching into each other. Data moves the same way it does inside one file:
+There are no global variables in Tessel, so files don't share data that
+changes by reaching into each other. (They can share
+[constants](/language/basics/#constants), which never change.) Data moves
+the same way it does inside one file:
 
 - **Down, as values.** The app owns the data (in `state`) and passes it to
   functions and views as arguments: `summary(notes: notes)`,
@@ -253,15 +255,16 @@ A file contains only declarations:
 | Declaration | For |
 |---|---|
 | `fn` | a function, see [Functions](/language/functions/) |
+| `let` | a constant, see [Constants](/language/basics/#constants) |
 | `struct` | a struct type, see [Structs and enums](/language/structs-enums/) |
 | `enum` | an enum type, see [Structs and enums](/language/structs-enums/) |
 | `interface` | methods and properties that several types share, see [Interfaces](/language/interfaces/) |
 | `view` | a piece of user interface, see [Apps and views](/ui/apps-views/) |
 | `app` | the entry point of a program with a window |
 
-Statements and variables live inside these. A `let` or `var` at the top
-level of a file is an error; for a value the whole program needs, write a
-function that returns it.
+Statements and variables live inside these. A `var` at the top level of a
+file is an error: values that change belong to the app's `state`, or to a
+function.
 
 ## Names are shared
 

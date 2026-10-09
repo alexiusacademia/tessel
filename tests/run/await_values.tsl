@@ -1,0 +1,125 @@
+// What goes through an `await`: big structs, results and failures, early
+// returns, methods, and the built-in functions that end with a block.
+
+struct Big {
+    a: String = "a"
+    b: String = "b"
+    c: [Int] = [1, 2, 3]
+    n1: Int = 1
+    n2: Int = 2
+    n3: Int = 3
+    n4: Int = 4
+    n5: Int = 5
+    n6: Int = 6
+    n7: Int = 7
+    n8: Int = 8
+    n9: Int = 9
+    n10: Int = 10
+    n11: Int = 11
+    n12: Int = 12
+    n13: Int = 13
+    n14: Int = 14
+    n15: Int = 15
+    n16: Int = 16
+    n17: Int = 17
+}
+
+struct Api {
+    base: String
+    async fn get(path: String) -> String? {
+        await fetch(url: "{base}/{path}")
+    }
+    label: String { "api at {base}" }
+}
+
+async fn tick() {
+    await after(seconds: 0.001)
+}
+
+// Finishes right away: never suspends.
+async fn immediate(x: Int) -> Int {
+    x + 1
+}
+
+async fn big(tag: String) -> Big {
+    await tick()
+    var b = Big()
+    b.a = tag
+    return b
+}
+
+async fn takesBig(b: Big, extra: [String]) -> String {
+    await tick()
+    "{b.a}{b.b}{b.c.count}{b.n17}{extra.count}"
+}
+
+async fn parse(text: String) -> Result<Int> {
+    await tick()
+    let n = try parseInt(text)
+    await tick()
+    return .ok(value: n * 2)
+}
+
+async fn early(items: [String]) -> String {
+    for item in items {
+        let copy = item + "!"
+        await tick()
+        if copy == "b!" {
+            return copy
+        }
+    }
+    "none"
+}
+
+// A function that takes a completion block: awaitable as it is.
+fn later(value: String, done: fn(String)) {
+    after(seconds: 0.001) { done(value + " later") }
+}
+fn sync(value: Int, done: fn(Int)) {
+    done(value * 10)
+}
+
+async fn main() {
+    print(await immediate(1))
+    var sum = 0
+    for i in 0..1000 {
+        sum += await immediate(i)
+    }
+    print(sum)
+    let b = await big(tag: "T")
+    print(b.a, terminator: " ")
+    print(b.n17)
+    print(await takesBig(b: b, extra: ["x", "y"]))
+    match await parse(text: "21") {
+        .ok(value) -> print("ok {value}")
+        .failure(error) -> print("failed {error.message}")
+    }
+    match await parse(text: "zz") {
+        .ok(value) -> print("ok {value}")
+        .failure(error) -> print("failed")
+    }
+    print(await early(items: ["a", "b", "c"]))
+    print(await early(items: ["x"]))
+    print(await later(value: "see you"))
+    print(await sync(value: 4))
+    let api = Api(base: "file://{currentFolder()}/tests/fixtures")
+    print(api.label.count > 0)
+    print((await api.get(path: "typo.tsl") ?? "nil").hasPrefix("app Typo"))
+    print(await api.get(path: "missing.txt") ?? "nil")
+    let text = await fetch(url: "file://{currentFolder()}/tests/fixtures/typo.tsl")
+    print((text ?? "").lines().count > 1)
+    let n = await background(work: { 6 * 7 })
+    print(n)
+    let words = ["x", "yy"]
+    let m = await background { words.map { w in w.count } }
+    print(m)
+    // Nested blocks that wait on their own.
+    after(seconds: 0.01) {
+        let v = await immediate(41)
+        print("in block {v}")
+        await tick()
+        print("block done {words.count}")
+    }
+    await after(seconds: 0.05)
+    print("done")
+}

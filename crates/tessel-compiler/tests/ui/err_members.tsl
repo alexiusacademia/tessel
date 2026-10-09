@@ -1,0 +1,55 @@
+// Constants, computed properties and static members: what they don't allow.
+
+let limit = 10
+let first = second + 1
+let second = first + 1 // error: the constant `first` is defined in terms of itself
+let nothing = print("x") // error: `nothing` can't be set to this, because it produces no value
+let label: String = 5 // error: expected `String`, found `Int`
+
+struct Box {
+    n: Int
+    twice: Int { n * 2 }
+    bump: Int { // error: the property `bump` changes the value it belongs to
+        n += 1
+        return n
+    }
+    wrong: String { n } // error: expected `String`, found `Int`
+    static let empty = Box(n: 0)
+    static fn make(n: Int) -> Box { Box(n: n) }
+}
+
+struct Stack<T> {
+    items: [T]
+    static fn empty() -> Int { 0 } // error: a generic type can't have `static` members yet
+}
+
+enum Light {
+    red
+    green
+    name: String // error: an enum can't store `name`
+    isRed: Bool { self == Light.red }
+    static let start = Light.red
+}
+
+interface Named {
+    name: String
+}
+
+struct Pet: Named {
+    kind: String
+    name: String { "a {kind}" } // error: `Named` requires `name` to be a field, and this is a computed property
+}
+
+fn main() {
+    limit = 3 // error: can't change `limit`, which is a constant
+    print(limit()) // error: `limit` is a constant, not a function
+    var box = Box(n: 1)
+    box.twice = 4 // error: can't change `twice`, which is a computed property
+    print(box.twice()) // error: `twice` is a property, not a method
+    Box.empty = box // error: can't change `empty`, which is a constant
+    print(Box.nothing) // error: it has no `static` member `nothing`
+    let f = Box.make // error: `make` is a function; call it: `Box.make(…)`
+    print(box.empty) // error: `Box` has no field `empty`
+    print(Light.start.isRed)
+    print(Box.make(n: 2).twice + Box.empty.n)
+}

@@ -101,7 +101,7 @@ struct Reported;
 
 type PResult<T> = Result<T, Reported>;
 
-const ITEM_START: &str = "a declaration (`app`, `view`, `struct`, `enum`, `interface` or `fn`)";
+const ITEM_START: &str = "a declaration (`app`, `view`, `struct`, `enum`, `interface`, `fn` or `let`)";
 
 impl<'a> Parser<'a> {
     // ----- token helpers -----
@@ -186,6 +186,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Is the word `word` here, as a keyword? (`async`, `static` and
+    /// `await` are only keywords where they're followed by what they apply
+    /// to, so programs can still use them as names.)
+    fn at_word(&self, word: &str) -> bool {
+        matches!(self.peek(), Tok::Ident(w) if w == word)
+    }
+
+    /// `fn`, or `async fn`.
+    fn at_fn(&self) -> bool {
+        self.at(&Tok::Fn) || (self.at_word("async") && *self.peek_at(1) == Tok::Fn)
+    }
+
+    /// `static fn`, `static async fn` or `static let`.
+    fn at_static(&self) -> bool {
+        self.at_word("static")
+            && (matches!(self.peek_at(1), Tok::Fn | Tok::Let)
+                || (matches!(self.peek_at(1), Tok::Ident(w) if w == "async") && *self.peek_at(2) == Tok::Fn))
+    }
+
     fn new_expr(&mut self, kind: ExprKind, span: Span) -> Expr {
         let id = *self.next_id;
         *self.next_id += 1;
@@ -226,7 +245,7 @@ impl<'a> Parser<'a> {
                 Tok::RBrace => depth = depth.saturating_sub(1),
                 Tok::Newline if depth == 0 => {
                     self.bump();
-                    if matches!(self.peek(), Tok::App | Tok::View | Tok::Struct | Tok::Enum | Tok::Fn) {
+                    if matches!(self.peek(), Tok::App | Tok::View | Tok::Struct | Tok::Enum | Tok::Fn | Tok::Let) || self.at_fn() {
                         return;
                     }
                     continue;
@@ -248,7 +267,7 @@ impl<'a> Parser<'a> {
             "private" => false,
             _ => return None,
         };
-        if !matches!(self.peek_at(1), Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::Ident(_)) {
+        if !matches!(self.peek_at(1), Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::Let | Tok::Ident(_)) {
             return None;
         }
         Some((public, self.bump().span))
@@ -315,7 +334,8 @@ impl<'a> Parser<'a> {
             }
             let item_lo = self.span();
             let vis = self.visibility();
-            let declares = matches!(self.peek(), Tok::Eof | Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::App);
+            let declares = matches!(self.peek(), Tok::Eof | Tok::Struct | Tok::Enum | Tok::Interface | Tok::Fn | Tok::View | Tok::App)
+                || self.at_fn();
             if self.repl.is_some() && vis.is_none() && !declares {
                 match self.stmt() {
                     Ok(s) => {
@@ -350,12 +370,20 @@ impl<'a> Parser<'a> {
                 Tok::Enum => self.enum_decl().map(Item::Enum),
                 Tok::Interface => self.interface_decl().map(Item::Interface),
                 Tok::Fn => self.fn_decl().map(Item::Fn),
+                _ if self.at_fn() => self.fn_decl().map(Item::Fn),
                 Tok::View => self.view_decl().map(Item::View),
                 Tok::App => self.app_decl().map(Item::App),
-                Tok::Let | Tok::Var | Tok::State => {
+                Tok::Let if *self.peek_at(1) == Tok::LParen => {
                     let span = self.span();
-                    self.error(span, "variables can't be declared at the top level of a file").help(
-                        "move it into a `view` or `app` (as `state`), or into a function",
+                    self.error(span, "a constant at the top level of a file has one name")
+                        .help("declare each on its own line, like `let width = 800`");
+                    Err(Reported)
+                }
+                Tok::Let => self.constant().map(Item::Fn),
+                Tok::Var | Tok::State => {
+                    let span = self.span();
+                    self.error(span, "only constants (`let`) can be declared at the top level of a file").help(
+                        "values that change go in a `view` or `app` (as `state`), or in a function (as `var`)",
                     );
                     Err(Reported)
                 }
@@ -401,9 +429,15 @@ impl<'a> Parser<'a> {
         self.expect(Tok::LBrace)?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let mut statics = Vec::new();
+        let generic = !generics.is_empty();
         self.members(|p| {
             let vis = p.visibility();
-            if p.at(&Tok::Fn) {
+            if p.at_static() {
+                let m = p.static_member(generic)?;
+                p.mark(vis, m.name.span);
+                statics.push(m);
+            } else if p.at_fn() {
                 let m = p.fn_decl()?;
                 p.mark(vis, m.name.span);
                 methods.push(m);
@@ -418,12 +452,16 @@ impl<'a> Parser<'a> {
                 }
                 p.bump();
                 let ty = p.type_expr()?;
+                if p.at(&Tok::LBrace) {
+                    methods.push(p.computed(name, ty)?);
+                    return Ok(());
+                }
                 let default = if p.eat(&Tok::Eq) { Some(p.expr()?) } else { None };
                 fields.push(FieldDecl { name, ty, default });
             }
             Ok(())
         });
-        Ok(StructDecl { name, generics, conforms, fields, methods })
+        Ok(StructDecl { name, generics, conforms, fields, methods, statics })
     }
 
     fn enum_decl(&mut self) -> PResult<EnumDecl> {
@@ -434,12 +472,33 @@ impl<'a> Parser<'a> {
         self.expect(Tok::LBrace)?;
         let mut cases = Vec::new();
         let mut methods = Vec::new();
+        let mut statics = Vec::new();
+        let generic = !generics.is_empty();
         self.members(|p| {
             let vis = p.visibility();
-            if p.at(&Tok::Fn) {
+            if p.at_static() {
+                let m = p.static_member(generic)?;
+                p.mark(vis, m.name.span);
+                statics.push(m);
+            } else if p.at_fn() {
                 let m = p.fn_decl()?;
                 p.mark(vis, m.name.span);
                 methods.push(m);
+            } else if matches!(p.peek(), Tok::Ident(_)) && *p.peek_at(1) == Tok::Colon {
+                // A computed property: `label: String { … }`.
+                let name = p.ident("a property name")?;
+                p.mark(vis, name.span);
+                p.bump();
+                let ty = p.type_expr()?;
+                if !p.at(&Tok::LBrace) {
+                    let span = p.span();
+                    p.error(span, format!("an enum can't store `{}`; only its cases hold values", name.name)).help(format!(
+                        "work it out from the case instead: `{}: … {{ match self {{ … }} }}`",
+                        name.name
+                    ));
+                    return Err(Reported);
+                }
+                methods.push(p.computed(name, ty)?);
             } else {
                 if let Some((_, span)) = vis {
                     p.error(span, "enum cases can't be `public` or `private`").help("they're visible wherever the enum is");
@@ -450,7 +509,7 @@ impl<'a> Parser<'a> {
             }
             Ok(())
         });
-        Ok(EnumDecl { name, generics, conforms, cases, methods })
+        Ok(EnumDecl { name, generics, conforms, cases, methods, statics })
     }
 
     /// `<T, U: Shape>` after a declaration's name (none if there's no `<`).
@@ -539,7 +598,7 @@ impl<'a> Parser<'a> {
         let mut methods = Vec::new();
         let mut props = Vec::new();
         self.members(|p| {
-            if !p.at(&Tok::Fn) {
+            if !p.at_fn() {
                 // A required property: `name: String`.
                 let name = p.ident("a method (`fn …`) or a property (`name: Type`)")?;
                 if !p.eat(&Tok::Colon) {
@@ -558,7 +617,11 @@ impl<'a> Parser<'a> {
                 props.push((name, ty));
                 return Ok(());
             }
+            let is_async = p.at_word("async");
             let lo = p.bump().span;
+            if is_async {
+                p.bump(); // fn
+            }
             let name = p.ident("a method name")?;
             if !p.at(&Tok::LParen) {
                 let span = p.span();
@@ -566,8 +629,12 @@ impl<'a> Parser<'a> {
                     .help(format!("write `fn {}()` even when it takes no parameters", name.name));
                 return Err(Reported);
             }
-            let params = p.params()?;
-            let ret = if p.eat(&Tok::Arrow) { Some(p.type_expr()?) } else { None };
+            let mut params = p.params()?;
+            let close = p.prev_span();
+            let mut ret = if p.eat(&Tok::Arrow) { Some(p.type_expr()?) } else { None };
+            if is_async {
+                params.push(done_param(ret.take(), close));
+            }
             if p.at(&Tok::LBrace) {
                 let span = p.span();
                 p.error(span, "an interface only lists methods; their bodies go in the types that conform to it")
@@ -609,7 +676,53 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// A constant at the top level of a file: `let limit = 100`.
+    fn constant(&mut self) -> PResult<FnDecl> {
+        let d = self.local_decl()?;
+        let body = Block { span: d.value.span, stmts: vec![Stmt::Expr(d.value)] };
+        Ok(FnDecl {
+            name: d.name,
+            generics: Vec::new(),
+            params: Vec::new(),
+            ret: d.ty,
+            body,
+            constant: true,
+            prop: false,
+            is_async: false,
+        })
+    }
+
+    /// `static fn make() -> Rect { … }` or `static let zero = …`, in a
+    /// struct or enum (`generic`: one with type parameters).
+    fn static_member(&mut self, generic: bool) -> PResult<FnDecl> {
+        let word = self.bump().span; // static
+        if generic {
+            self.error(word, "a generic type can't have `static` members yet")
+                .help("declare it at the top level of the file instead, as a function or a constant");
+        }
+        if self.at(&Tok::Let) { self.constant() } else { self.fn_decl() }
+    }
+
+    /// The rest of a computed property, after its type: `{ width * height }`.
+    fn computed(&mut self, name: Ident, ty: TypeExpr) -> PResult<FnDecl> {
+        let body = self.block()?;
+        Ok(FnDecl {
+            name,
+            generics: Vec::new(),
+            params: Vec::new(),
+            ret: Some(ty),
+            body,
+            constant: false,
+            prop: true,
+            is_async: false,
+        })
+    }
+
     fn fn_decl(&mut self) -> PResult<FnDecl> {
+        let is_async = self.at_word("async");
+        if is_async {
+            self.bump();
+        }
         self.bump(); // fn
         let name = self.ident("a function name")?;
         let generics = self.generic_params()?;
@@ -619,10 +732,14 @@ impl<'a> Parser<'a> {
                 .help(format!("write `fn {}() {{ … }}` even when it takes no parameters", name.name));
             return Err(Reported);
         }
-        let params = self.params()?;
+        let mut params = self.params()?;
+        let close = self.prev_span();
         let ret = if self.eat(&Tok::Arrow) { Some(self.type_expr()?) } else { None };
+        if is_async {
+            params.push(done_param(ret.clone(), close));
+        }
         let body = self.block()?;
-        Ok(FnDecl { name, generics, params, ret, body })
+        Ok(FnDecl { name, generics, params, ret, body, constant: false, prop: false, is_async })
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {
@@ -799,6 +916,7 @@ impl<'a> Parser<'a> {
             Tok::Var => Ok(Stmt::Var(self.local_decl()?)),
             Tok::State => Ok(Stmt::State(self.local_decl()?)),
             Tok::Fn => Ok(Stmt::Fn(self.fn_decl()?)),
+            _ if self.at_fn() => Ok(Stmt::Fn(self.fn_decl()?)),
             Tok::Return => {
                 self.bump();
                 let value = if matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
@@ -1174,6 +1292,21 @@ impl<'a> Parser<'a> {
             let operand = self.unary_expr()?;
             let span = lo.to(operand.span);
             return Ok(self.new_expr(ExprKind::Try(Box::new(operand)), span));
+        }
+        // `await load(url)`: goes on from here when the call's done.
+        if self.at_word("await") && matches!(self.peek_at(1), Tok::Ident(_)) {
+            let lo = self.bump().span;
+            let mut operand = self.postfix_expr()?;
+            let span = lo.to(operand.span);
+            let ExprKind::Call { args, .. } = &mut operand.kind else {
+                self.error(operand.span, "`await` goes right before a call, like `await load(url)`")
+                    .help("to use the result, put the call in parentheses: `(await load(url)).count`");
+                return Err(Reported);
+            };
+            let value = Expr { id: *self.next_id, kind: ExprKind::Continuation, span: lo };
+            *self.next_id += 1;
+            args.push(Arg { label: None, value });
+            return Ok(self.new_expr(ExprKind::Await(Box::new(operand)), span));
         }
         let op = match self.peek() {
             Tok::Minus => UnaryOp::Neg,
@@ -1724,6 +1857,21 @@ impl<'a> Parser<'a> {
 
 /// Only names, members and calls can take a trailing block without parentheses
 /// (`VStack { … }`, `list.filter { … }`), so `x + y {` isn't misread.
+/// The parameter an `async fn` gets its completion block in: `fn(T)` for a
+/// function that gives a `T`, `fn()` for one that gives nothing. `span` is
+/// where it's said to be declared (the parameter list's `)`: types of
+/// variables are kept by the span of their names, so not the function's).
+fn done_param(ret: Option<TypeExpr>, span: Span) -> Param {
+    Param {
+        unlabeled: false,
+        name: Ident { name: DONE_PARAM.to_string(), span },
+        bind: false,
+        ty: TypeExpr::Fn(ret.into_iter().collect(), None, span),
+        default: None,
+        span,
+    }
+}
+
 fn is_callable_head(e: &Expr) -> bool {
     matches!(e.kind, ExprKind::Name(_) | ExprKind::Member { .. })
 }

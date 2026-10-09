@@ -1,0 +1,31 @@
+// `async` functions and `await`: in order, in loops, and with a block
+// instead of `await`.
+
+async fn pause(seconds: Float) {
+    await after(seconds: seconds)
+}
+
+async fn double(n: Int) -> Int {
+    await pause(seconds: 0.01)
+    return n * 2
+}
+
+async fn greet(name: String) -> String {
+    let n = await double(name.count)
+    "hello {name} ({n})"
+}
+
+async fn main() {
+    print("start")
+    let a = await double(21)
+    print(a)
+    print(await greet(name: "Ada"))
+    var total = 0
+    for i in 0..5 {
+        total += await double(i)
+    }
+    print(total)
+    // An async function, with a block instead of await.
+    double(5) { n in print("block got {n}") }
+    print("end of main")
+}

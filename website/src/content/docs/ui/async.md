@@ -28,6 +28,21 @@ app Weather(width: 360, height: 200) {
 
 While the download runs, the app stays responsive.
 
+Every function on this page that ends with such a block can also be used
+with [`await`](/language/async/), which reads top to bottom instead of
+nesting:
+
+```tessel
+Button("Refresh") {
+    report = "Loading…"
+    let text = await fetch(url: "https://example.com/weather.txt")
+    report = text ?? "Could not load the weather"
+}
+```
+
+The two forms do the same thing. The examples below use blocks; see
+[Waiting with async and await](/language/async/) for the other.
+
 ## Files
 
 The file functions work immediately and return a result you can check:

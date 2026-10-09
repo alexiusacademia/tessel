@@ -1,0 +1,73 @@
+Root
+  View
+    VStack
+      Text "Running"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 0"
+          Button "Add later"
+Root
+  View
+    VStack
+      Text "Running"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 0"
+          Button "Add later"
+      Text "step 1 gave 2"
+Root
+  View
+    VStack
+      Text "Done after 3 steps"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 0"
+          Button "Add later"
+      Text "step 1 gave 2"
+      Text "step 2 gave 4"
+      Text "step 3 gave 6"
+Root
+  View
+    VStack
+      Text "The sum is 5050"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 0"
+          Button "Add later"
+      Text "step 1 gave 2"
+      Text "step 2 gave 4"
+      Text "step 3 gave 6"
+Root
+  View
+    VStack
+      Text "The sum is 5050"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 0"
+          Button "Add later" disabled
+      Text "step 1 gave 2"
+      Text "step 2 gave 4"
+      Text "step 3 gave 6"
+Root
+  View
+    VStack
+      Text "The sum is 5050"
+      Button "Run"
+      Button "Compute"
+      View
+        HStack
+          Text "Clicks: 1"
+          Button "Add later"
+      Text "step 1 gave 2"
+      Text "step 2 gave 4"
+      Text "step 3 gave 6"

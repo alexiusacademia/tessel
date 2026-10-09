@@ -36,4 +36,4 @@ fn headers(values: [Int]) {
     }
 }
 
-let top = 1 // error: can't be declared at the top level
+var top = 1 // error: only constants (`let`) can be declared at the top level

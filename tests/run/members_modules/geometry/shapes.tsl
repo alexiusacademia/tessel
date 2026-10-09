@@ -1,0 +1,16 @@
+public let unitSide = 2.0
+let hidden = 5
+private let secret = "s"
+
+public struct Square {
+    side: Float
+    area: Float { side * side }
+    static let unit = Square(side: unitSide)
+    static fn make(side: Float) -> Square { Square(side: side + Float(hidden - 5)) }
+    private static fn inner() -> Int { 1 }
+}
+
+public async fn slowArea(s: Square) -> Float {
+    await after(seconds: 0.001)
+    return s.area
+}

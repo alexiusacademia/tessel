@@ -183,7 +183,13 @@ impl Copier<'_> {
         e.id = *self.next_id;
         *self.next_id += 1;
         match &mut e.kind {
-            ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::Nil | ExprKind::DotName(_) | ExprKind::Error => {}
+            ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Nil
+            | ExprKind::DotName(_)
+            | ExprKind::Continuation
+            | ExprKind::Error => {}
             ExprKind::Name(n) => {
                 if !self.own.is_empty() && *n == self.own {
                     e.kind = ExprKind::GenericName(n.clone(), self.own_args.clone());
@@ -204,7 +210,7 @@ impl Copier<'_> {
                     self.expr(v);
                 }
             }
-            ExprKind::Unary(_, x) | ExprKind::Try(x) => self.expr(x),
+            ExprKind::Unary(_, x) | ExprKind::Try(x) | ExprKind::Await(x) => self.expr(x),
             ExprKind::Cast { value, ty, .. } => {
                 self.expr(value);
                 self.ty(ty);

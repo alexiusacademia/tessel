@@ -1,0 +1,92 @@
+import geometry
+
+interface Loader {
+    async fn load(key: String) -> String
+    fn name() -> String
+}
+
+struct Fake: Loader {
+    prefix: String
+    async fn load(key: String) -> String {
+        await after(seconds: 0.001)
+        return "{prefix}:{key}"
+    }
+    fn name() -> String { "fake" }
+}
+
+struct Pair<T> {
+    first: T
+    second: T
+    both: [T] { [first, second] }
+    swapped: Pair<T> { Pair(first: second, second: first) }
+}
+
+struct Counter {
+    count: Int
+    doubled: Int { count * 2 }
+    fn report() -> [String] {
+        // A block in a method, using a property and a method by bare name.
+        [1, 2].map { i in "{i}: {doubled} {describe()}" }
+    }
+    fn describe() -> String { "count {count}" }
+}
+
+enum Level {
+    low
+    high(amount: Int)
+    score: Int {
+        match self {
+            .low -> 1
+            .high(amount) -> amount * 10
+        }
+    }
+    isHigh: Bool { score > 1 }
+}
+
+async fn firstOf<T>(items: [T], fallback: T) -> T {
+    await after(seconds: 0.001)
+    if items.count > 0 { items[0] } else { fallback }
+}
+
+async fn useLoader(l: Loader) -> String {
+    let a = await l.load(key: "a")
+    a + "/" + l.name()
+}
+
+async fn run(work: fn(Int, fn(Int)), n: Int) -> Int {
+    await work(n)
+}
+
+let table: [String: [Int]] = ["a": [1, 2], "b": [3]]
+let levels = [Level.low, Level.high(amount: 3)]
+let maybe: geometry.Square? = geometry.Square.unit
+
+async fn main() {
+    print(geometry.unitSide)
+    print(geometry.Square.unit.area)
+    print(geometry.Square.make(side: 3).area)
+    print(await geometry.slowArea(s: geometry.Square(side: 5)))
+    print(await useLoader(l: Fake(prefix: "p")))
+    let p = Pair(first: 1, second: 2)
+    print(p.both)
+    print(p.swapped.both)
+    print(Counter(count: 4).report())
+    print(levels.map { l in l.score })
+    print(levels[1].isHigh)
+    print(await firstOf(items: ["x", "y"], fallback: "none"))
+    print(await firstOf(items: [], fallback: 7))
+    async fn localTwice(n: Int) -> Int {
+        await after(seconds: 0.001)
+        return n * 2
+    }
+    print(await localTwice(8))
+    print(await run(work: localTwice, n: 5))
+    print(table["a"] ?? [])
+    print(maybe?.area ?? 0.0)
+    let none: geometry.Square? = nil
+    print(none?.area ?? -1.0)
+    print("area is {geometry.Square.unit.area} and {p.both.count}")
+    // Constants read from background work.
+    let sizes = await background { table.keys.sorted().map { k in (table[k] ?? []).count } + [levels.count] }
+    print(sizes)
+}

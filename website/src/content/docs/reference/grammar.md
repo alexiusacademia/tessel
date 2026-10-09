@@ -61,7 +61,8 @@ true  false  nil
 
 `import`, `public` and `private` are keywords only where they begin an
 import or a declaration (or a member, for `private`); elsewhere they can be
-used as names.
+used as names. So are `async` (before `fn`), `static` (before `fn` or `let`
+in a struct or enum) and `await` (before a call).
 
 `_` is also reserved: it marks an unlabeled parameter, ignores a closure
 parameter, a `for` loop variable or a value in a `match` pattern, and is the
@@ -166,8 +167,13 @@ file   = NL? (entry (NL entry)*)? NL? ;
 entry  = import | visibility? item ;
 import = "import" (IDENT | STRING) ;
 visibility = "public" | "private" ;
-item   = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl ;
+item   = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl
+       | const_decl ;
+const_decl = "let" IDENT (":" type)? "=" expr ;
 ```
+
+A `let` at the top level is a [constant](/language/basics/#constants),
+worked out once when the program starts.
 
 `import geometry` loads the module in the folder `geometry` next to the
 file; a string is a path to the folder, relative to the file. `public`
@@ -189,7 +195,7 @@ parentheses: `view Header { … }`.
 ### Functions and parameters
 
 ```text
-fn_decl = "fn" IDENT generics? params ("->" type)? block ;
+fn_decl = "async"? "fn" IDENT generics? params ("->" type)? block ;
 params  = "(" (param ("," param)* ","?)? ")" ;
 param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 ```
@@ -200,6 +206,9 @@ param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
 - `= expr` gives a default value. Defaults are evaluated where the call is
   made and can only use global names.
 - A function needs parentheses even with no parameters: `fn reset() { … }`.
+- An `async fn` can use `await`; see
+  [Waiting with async and await](/language/async/). It can't have `bind`
+  parameters.
 
 ### struct
 
@@ -209,19 +218,25 @@ generics    = "<" IDENT (":" type_name)? ("," IDENT (":" type_name)?)* ">" ;
 conforms    = ":" type_name ("," type_name)* ;
 type_name   = IDENT ("." IDENT)? ;                  a name, or `module.Name`
 field       = IDENT ":" type ("=" expr)? ;
-members     = (separator* visibility? (field | fn_decl))* separator* ;   (for structs)
+computed    = IDENT ":" type block ;
+static      = "static" (fn_decl | const_decl) ;
+members     = (separator* visibility? (field | computed | static | fn_decl))* separator* ;   (for structs)
 separator   = NL | "," ;
 ```
 
 Fields and methods are separated by line breaks or commas:
-`struct Point { x: Float, y: Float }`.
+`struct Point { x: Float, y: Float }`. A
+[computed property](/language/structs-enums/#computed-properties) is a type
+followed by a block (which starts on the same line), and a
+[static member](/language/structs-enums/#static-members) is used through the
+type's name. A generic struct or enum can't have static members.
 
 ### enum
 
 ```text
 enum_decl = "enum" IDENT generics? conforms? "{" members "}" ;
 case      = IDENT params? ;
-members   = (separator* (case | visibility? fn_decl))* separator* ;      (for enums)
+members   = (separator* (case | visibility? (computed | static | fn_decl)))* separator* ;      (for enums)
 ```
 
 A case may carry values, declared like parameters:
@@ -231,10 +246,11 @@ A case may carry values, declared like parameters:
 
 ```text
 interface_decl = "interface" IDENT "{" (separator* requirement)* separator* "}" ;
-requirement    = "fn" IDENT params ("->" type)? ;
+requirement    = "async"? "fn" IDENT params ("->" type)? | IDENT ":" type ;
 ```
 
-A requirement is a method's signature without a body. Its parameters can't
+A requirement is a method's signature without a body, or a property (a
+field every conforming struct has). Its parameters can't
 have default values. See [Interfaces](/language/interfaces/).
 
 ## Types
@@ -340,7 +356,7 @@ coalesce_expr = add_expr ("??" NL* coalesce_expr)? ;
 add_expr    = mul_expr (("+" | "-" | "|" | "^") NL* mul_expr)* ;
 mul_expr    = shift_expr (("*" | "/" | "%" | "&") NL* shift_expr)* ;
 shift_expr  = unary_expr (("<<" | ">>") NL* unary_expr)* ;
-unary_expr  = ("-" | "!" | "~" | "try") unary_expr | postfix_expr ;
+unary_expr  = ("-" | "!" | "~" | "try") unary_expr | "await" postfix_expr | postfix_expr ;
 
 postfix_expr = primary postfix* ;
 postfix      = "(" args? ")" closure?          call, optionally with a block after it

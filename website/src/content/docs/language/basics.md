@@ -86,16 +86,45 @@ error: can't change `limit`, which is a constant
   = help: declare it with `var` to be able to change it
 ```
 
-Variables live inside functions (and `state` lives inside views). There are
-no global variables: a `let` or `var` at the top level of a file is an
-error. If you need a value that the whole program shares, write a function
-that returns it:
+### Constants
+
+Variables live inside functions (and `state` lives inside views). A `let`
+can also go at the top level of a file, outside any function. That makes a
+**constant** the whole program can use:
 
 ```tessel
-fn maxPlayers() -> Int {
-    4
+let maxPlayers = 4
+let colors = ["red", "green", "blue"]
+let greeting: String = "Welcome"
+let boardCells = maxPlayers * 16
+
+fn main() {
+    print(maxPlayers)
+    print(colors.count)
+    print("{greeting}: {boardCells} cells")
 }
 ```
+
+```text
+4
+3
+Welcome: 64 cells
+```
+
+A constant's value can be any expression, including a call to one of your
+functions, and it can use other constants (in any order, as long as two
+don't need each other). Each is worked out once, when the program starts,
+before `main` or the app runs.
+
+Only `let` is allowed there. There are no global variables: a `var` at the
+top level of a file is an error, and a constant can't be changed.
+
+```text
+error: can't change `maxPlayers`, which is a constant
+  = help: a constant keeps its value; values that change go in `state` (in a view or app) or in a `var` (in a function)
+```
+
+Values that change belong to the app, as [`state`](/ui/state/).
 
 Names are made of letters, digits and `_`, and can't start with a digit. The
 usual style is `lowerCamelCase` for variables and functions, and

@@ -55,7 +55,10 @@ const KEYWORDS: &[(&str, &[&str])] = &[
 ];
 
 /// Keywords only where they begin a declaration (elsewhere they're names).
-const DECLARATION_WORDS: &[&str] = &["import", "public", "private"];
+const DECLARATION_WORDS: &[&str] = &["import", "public", "private", "async", "static"];
+
+/// Keywords only before a call (elsewhere they're names).
+const CALL_WORDS: &[&str] = &["await"];
 
 // ===== running entries =====
 
@@ -370,6 +373,7 @@ impl Session {
                     println!("  {group:<14}{}", words.join(" "));
                 }
                 println!("Only where they begin a declaration: {}", DECLARATION_WORDS.join(" "));
+                println!("Only before a call: {}", CALL_WORDS.join(" "));
                 println!("Also kept: _ (for a value or name that isn't used)");
             }
             _ => eprintln!("error: unknown command `{line}`\n = help: the commands are `:vars`, `:keywords`, `:help` and `:quit`"),
@@ -516,7 +520,7 @@ mod tests {
         for word in in_lexer {
             assert!(listed.contains(&word), "`{word}` is missing from :keywords");
         }
-        for word in DECLARATION_WORDS {
+        for word in DECLARATION_WORDS.iter().chain(CALL_WORDS) {
             assert!(keyword(word).is_none());
         }
     }

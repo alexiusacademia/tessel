@@ -1,0 +1,80 @@
+// Constants at the top of a file, computed properties, and `static` members.
+
+let limit = 100
+let greeting: String = "hello"
+let primes = [2, 3, 5, 7]
+let doubled = primes.map { p in p * 2 }
+let total = limit + doubled.count
+
+struct Rect {
+    width: Float
+    height: Float
+    area: Float { width * height }
+    isSquare: Bool { width == height }
+    static let unit = Rect(width: 1, height: 1)
+    static fn square(side: Float) -> Rect {
+        Rect(width: side, height: side)
+    }
+    // (A type's own code uses its static members by their bare names.)
+    static let big = square(side: unit.width * 10)
+    fn describe() -> String {
+        "{width} x {height} = {area}"
+    }
+    fn fitsIn() -> Bool {
+        area <= big.area && !square(side: 0).isSquare == false
+    }
+}
+
+// Worked out once, in order, before `main`; one can use another declared later.
+let report = describe(count: loads)
+let loads = load()
+
+fn load() -> Int {
+    print("loading")
+    return 3
+}
+
+fn describe(count: Int) -> String {
+    print("describing")
+    return "{count} loads"
+}
+
+enum Light {
+    red
+    green
+    label: String {
+        match self {
+            .red -> "stop"
+            .green -> "go"
+        }
+    }
+    static let first = Light.red
+    static fn all() -> [Light] { [Light.red, Light.green] }
+}
+
+fn main() {
+    print(limit)
+    print(greeting)
+    print(primes)
+    print(doubled)
+    print(total)
+    let r = Rect(width: 2, height: 3)
+    print(r.area)
+    print(r.isSquare)
+    print(r.describe())
+    print(Rect.unit.area)
+    print(Rect.square(side: 4).area)
+    print(Rect.square(side: 4).isSquare)
+    print(Rect.big.area)
+    print(r.fitsIn())
+    print(report)
+    print(report)
+    print(Light.first.label)
+    for l in Light.all() {
+        print(l.label)
+    }
+    var copy = primes
+    copy.append(11)
+    print(copy)
+    print(primes)
+}
