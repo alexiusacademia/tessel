@@ -57,6 +57,11 @@ impl Icon {
         Ok(Icon { size: info.width, rgba })
     }
 
+    /// A PNG file of this icon at `size` × `size` pixels.
+    pub fn png_at(&self, size: u32) -> Vec<u8> {
+        self.resized(size).png()
+    }
+
     /// This icon at `size` × `size` pixels: each new pixel is the average of
     /// the area it covers (weighted by alpha, so transparent pixels' colors
     /// don't show at the edges).

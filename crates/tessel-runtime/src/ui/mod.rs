@@ -31,6 +31,8 @@ mod text;
 pub(crate) mod gpu;
 #[cfg(all(feature = "gpu", not(all(feature = "native", any(target_os = "macos", windows)))))]
 pub(crate) use gpu as backend;
+#[cfg(target_os = "android")]
+pub(crate) mod android;
 #[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) mod mac;
 #[cfg(all(feature = "native", target_os = "macos"))]

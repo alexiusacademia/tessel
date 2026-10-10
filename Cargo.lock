@@ -2897,6 +2897,7 @@ dependencies = [
  "flate2",
  "iana-time-zone",
  "image",
+ "jni-sys 0.3.1",
  "kurbo",
  "libc",
  "libsqlite3-sys",

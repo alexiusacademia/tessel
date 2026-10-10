@@ -452,7 +452,13 @@ pub unsafe extern "C" fn tsl_copy_to_clipboard(s: *const Str) -> u8 {
         set_headless_clipboard(&t);
         return 1;
     }
-    arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok() as u8
+    #[cfg(target_os = "android")]
+    return {
+        set_headless_clipboard(&t);
+        1
+    };
+    #[cfg(not(target_os = "android"))]
+    return arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok() as u8;
 }
 
 // ===== standard input =====
@@ -491,7 +497,10 @@ pub extern "C" fn tsl_clipboard_text() -> *mut Str {
     if headless() {
         return opt_str(headless_clipboard());
     }
-    opt_str(arboard::Clipboard::new().and_then(|mut c| c.get_text()).ok())
+    #[cfg(target_os = "android")]
+    return opt_str(headless_clipboard());
+    #[cfg(not(target_os = "android"))]
+    return opt_str(arboard::Clipboard::new().and_then(|mut c| c.get_text()).ok());
 }
 
 // ===== encodings =====

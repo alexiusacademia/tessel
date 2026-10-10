@@ -219,6 +219,7 @@ fn generate<R>(
     module.set_data_layout(&td.get_data_layout());
 
     let mut g = Gen::new(&ctx, module, td, program, checked, sources);
+    g.android = name.contains("android");
     match mode {
         Mode::Program => {}
         Mode::Repl(entry) => g.repl = Some(entry),
@@ -429,6 +430,9 @@ struct Gen<'ctx, 'a> {
     awaits: Vec<coro::Awaited<'ctx>>,
     /// Whether any function compiled can `await`.
     has_coros: bool,
+    /// Compiling an Android app: the system starts it, through the runtime
+    /// (which calls `tsl_main`), so it has no `main`.
+    android: bool,
 
     /// Views by name (the `app` included), and what's compiled for them.
     view_decls: HashMap<String, ViewSource<'a>>,
@@ -497,6 +501,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             stack: Vec::new(),
             awaits: Vec::new(),
             has_coros: false,
+            android: false,
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
             view_fns: HashMap::new(),
@@ -658,7 +663,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_return(None).unwrap();
             }
         }
-        if self.hot.is_some() {
+        if self.hot.is_some() || self.android {
             return;
         }
         // The process starts here: the runtime does the rest.

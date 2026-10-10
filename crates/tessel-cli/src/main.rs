@@ -1,3 +1,4 @@
+mod android;
 mod icon;
 mod hot;
 mod lsp;
@@ -34,6 +35,10 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app).
                  An icon.png next to the program is the app's icon
+  build <path> --android [-o <output.apk>]
+                 an app as an Android package (needs the Android SDK and NDK)
+  android doctor
+                 check that what building for Android needs is installed
   run <path> [--hot]
                  build and run a program; with --hot, an app takes its new
                  code when its files change, and keeps its state
@@ -109,6 +114,7 @@ fn main() -> ExitCode {
             println!("tessel {}{}", tessel_compiler::VERSION, pin::version_note());
             ExitCode::SUCCESS
         }
+        (Some("android"), Some(what)) if what == "doctor" => android::doctor(),
         (Some("check"), Some(path)) => {
             let lines = args.windows(2).any(|w| w[0] == "--format" && w[1] == "lines");
             check(Path::new(path), lines)
@@ -117,6 +123,16 @@ fn main() -> ExitCode {
             let rest = &args[2..];
             let out = rest.iter().position(|a| a == "-o").and_then(|i| rest.get(i + 1)).map(PathBuf::from);
             let bundle = rest.iter().any(|a| a == "--bundle");
+            if rest.iter().any(|a| a == "--android") {
+                let out = out.unwrap_or_else(|| default_output(Path::new(path)).with_extension("apk"));
+                return match android::build(Path::new(path), &out) {
+                    Ok(()) => {
+                        println!("built {}", out.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(code) => code,
+                };
+            }
             let mut out = out.unwrap_or_else(|| default_output(Path::new(path)));
             if cfg!(windows) && out.extension().is_none() {
                 out.set_extension("exe");

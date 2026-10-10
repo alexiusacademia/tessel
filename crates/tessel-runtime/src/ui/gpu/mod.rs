@@ -214,6 +214,9 @@ pub struct Screen {
     cx: RenderContext,
     renderer: Option<Renderer>,
     surface: RenderSurface<'static>,
+    /// Where the drawing's top left corner goes, in pixels (on a phone,
+    /// below the status bar).
+    pub origin: (f64, f64),
 }
 
 impl Screen {
@@ -222,7 +225,7 @@ impl Screen {
         let mut cx = RenderContext::new();
         let surface = pollster::block_on(cx.create_surface(window, size.width.max(1), size.height.max(1), wgpu::PresentMode::AutoVsync))
             .map_err(|e| e.to_string())?;
-        Ok(Screen { cx, renderer: None, surface })
+        Ok(Screen { cx, renderer: None, surface, origin: (0.0, 0.0) })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -233,7 +236,7 @@ impl Screen {
     /// wasn't ready: draw again on the next frame.
     pub fn present(&mut self, list: &DrawList, background: Rgba) -> bool {
         let mut scene = Scene::new();
-        play(list, &mut scene, Affine::IDENTITY);
+        play(list, &mut scene, Affine::translate(self.origin));
         let surface = &self.surface;
         let dev = &self.cx.devices[surface.dev_id];
         let renderer = self.renderer.get_or_insert_with(|| renderer(&dev.device));

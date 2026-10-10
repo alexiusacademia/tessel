@@ -113,6 +113,7 @@ pub enum Edit {
 }
 
 pub enum Clipboard {
+    #[cfg(not(target_os = "android"))]
     System(arboard::Clipboard),
     /// For tests: never touches the user's clipboard.
     Memory(String),
@@ -123,6 +124,10 @@ pub enum Clipboard {
 
 impl Clipboard {
     pub fn system() -> Clipboard {
+        // (On Android, copying stays inside the app for now.)
+        #[cfg(target_os = "android")]
+        return Clipboard::Memory(String::new());
+        #[cfg(not(target_os = "android"))]
         match arboard::Clipboard::new() {
             Ok(c) => Clipboard::System(c),
             Err(_) => Clipboard::Memory(String::new()),
@@ -131,6 +136,7 @@ impl Clipboard {
 
     fn get(&mut self) -> String {
         match self {
+            #[cfg(not(target_os = "android"))]
             Clipboard::System(c) => c.get_text().unwrap_or_default(),
             Clipboard::Memory(s) => s.clone(),
             Clipboard::Headless => crate::stdlib::headless_clipboard().unwrap_or_default(),
@@ -139,6 +145,7 @@ impl Clipboard {
 
     fn set(&mut self, text: &str) {
         match self {
+            #[cfg(not(target_os = "android"))]
             Clipboard::System(c) => {
                 let _ = c.set_text(text.to_string());
             }

@@ -80,6 +80,81 @@ use super::theme::{self, theme};
 use super::{build_all, Built, Callback, Kind, Node, Rgba};
 use crate::{Header, Str};
 
+/// The system's file and message dialogs.
+#[cfg(not(target_os = "android"))]
+mod dialogs {
+    fn chooser(title: &str, types: &[String]) -> rfd::FileDialog {
+        let mut dialog = rfd::FileDialog::new();
+        if !title.is_empty() {
+            dialog = dialog.set_title(title);
+        }
+        if !types.is_empty() {
+            let label = types.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(", ");
+            dialog = dialog.add_filter(label, types);
+        }
+        dialog
+    }
+
+    /// The file chosen to open, or to save as (`name` is suggested).
+    pub fn file(save: bool, title: &str, name: &str, types: &[String]) -> Option<String> {
+        let mut dialog = chooser(title, types);
+        let path = if save {
+            if !name.is_empty() {
+                dialog = dialog.set_file_name(name);
+            }
+            dialog.save_file()
+        } else {
+            dialog.pick_file()
+        };
+        path.map(|p| p.to_string_lossy().into_owned())
+    }
+
+    pub fn folder(title: &str) -> Option<String> {
+        chooser(title, &[]).pick_folder().map(|p| p.to_string_lossy().into_owned())
+    }
+
+    pub fn files(title: &str, types: &[String]) -> Vec<String> {
+        chooser(title, types).pick_files().unwrap_or_default().iter().map(|p| p.to_string_lossy().into_owned()).collect()
+    }
+
+    /// Whether the dialog was confirmed. `level`: 0 a note, 1 a warning, 2 an error.
+    pub fn message(confirm: bool, title: &str, message: &str, ok: &str, cancel: &str, level: i64) -> bool {
+        let mut dialog = rfd::MessageDialog::new().set_title(title).set_description(message).set_level(match level {
+            1 => rfd::MessageLevel::Warning,
+            2 => rfd::MessageLevel::Error,
+            _ => rfd::MessageLevel::Info,
+        });
+        dialog = if confirm {
+            dialog.set_buttons(rfd::MessageButtons::OkCancelCustom(ok.to_string(), cancel.to_string()))
+        } else {
+            dialog.set_buttons(rfd::MessageButtons::OkCustom(ok.to_string()))
+        };
+        match dialog.show() {
+            rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => true,
+            rfd::MessageDialogResult::Custom(label) => label == ok,
+            _ => false,
+        }
+    }
+}
+
+/// Android has no dialogs a program can wait for: nothing is chosen, and
+/// nothing confirmed.
+#[cfg(target_os = "android")]
+mod dialogs {
+    pub fn file(_: bool, _: &str, _: &str, _: &[String]) -> Option<String> {
+        None
+    }
+    pub fn folder(_: &str) -> Option<String> {
+        None
+    }
+    pub fn files(_: &str, _: &[String]) -> Vec<String> {
+        Vec::new()
+    }
+    pub fn message(confirm: bool, _: &str, _: &str, _: &str, _: &str, _: i64) -> bool {
+        !confirm
+    }
+}
+
 // ===== timers =====
 
 struct Timer {
@@ -539,23 +614,7 @@ pub unsafe extern "C" fn tsl_file_dialog(
     let chosen = if std::env::var_os("TESSEL_SCRIPT").is_some() {
         DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten()
     } else {
-        let mut dialog = rfd::FileDialog::new();
-        if !title.is_empty() {
-            dialog = dialog.set_title(&title);
-        }
-        if !types.is_empty() {
-            let label = types.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(", ");
-            dialog = dialog.add_filter(label, &types);
-        }
-        let path = if save == 0 {
-            dialog.pick_file()
-        } else {
-            if !name.is_empty() {
-                dialog = dialog.set_file_name(&name);
-            }
-            dialog.save_file()
-        };
-        path.map(|p| p.to_string_lossy().into_owned())
+        dialogs::file(save != 0, &title, &name, &types)
     };
     // Saving: a name that doesn't end in one of the types gets the first
     // type's extension (for scripted answers too, so tests behave like the
@@ -588,11 +647,7 @@ pub unsafe extern "C" fn tsl_choose_folder(title: *const Str) -> *mut Str {
     let chosen = if std::env::var_os("TESSEL_SCRIPT").is_some() {
         DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten()
     } else {
-        let mut dialog = rfd::FileDialog::new();
-        if !title.is_empty() {
-            dialog = dialog.set_title(&title);
-        }
-        dialog.pick_folder().map(|p| p.to_string_lossy().into_owned())
+        dialogs::folder(&title)
     };
     match chosen {
         Some(p) => crate::str_new(&p),
@@ -617,15 +672,7 @@ pub unsafe extern "C" fn tsl_open_files(title: *const Str, types: *const crate::
         let answer = DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten();
         answer.map_or(Vec::new(), |a| a.split('|').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
     } else {
-        let mut dialog = rfd::FileDialog::new();
-        if !title.is_empty() {
-            dialog = dialog.set_title(&title);
-        }
-        if !types.is_empty() {
-            let label = types.iter().map(|t| format!(".{t}")).collect::<Vec<_>>().join(", ");
-            dialog = dialog.add_filter(label, &types);
-        }
-        dialog.pick_files().unwrap_or_default().iter().map(|p| p.to_string_lossy().into_owned()).collect()
+        dialogs::files(&title, &types)
     };
     unsafe { crate::str_list(chosen.iter().map(String::as_str)) }
 }
@@ -659,21 +706,7 @@ pub unsafe extern "C" fn tsl_message_dialog(
         }
         return DIALOG_ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten().is_some() as u8;
     }
-    let mut dialog = rfd::MessageDialog::new().set_title(&title).set_description(&message).set_level(match level {
-        1 => rfd::MessageLevel::Warning,
-        2 => rfd::MessageLevel::Error,
-        _ => rfd::MessageLevel::Info,
-    });
-    dialog = if confirm != 0 {
-        dialog.set_buttons(rfd::MessageButtons::OkCancelCustom(ok.clone(), cancel))
-    } else {
-        dialog.set_buttons(rfd::MessageButtons::OkCustom(ok.clone()))
-    };
-    match dialog.show() {
-        rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => 1,
-        rfd::MessageDialogResult::Custom(label) => (label == ok) as u8,
-        _ => 0,
-    }
+    dialogs::message(confirm != 0, &title, &message, &ok, &cancel, level) as u8
 }
 
 /// For programs without an `app` (only `fn main`): after `main` returns,
@@ -2871,6 +2904,26 @@ impl App {
     /// A key pressed, by its name (`"a"` for the A key whatever the
     /// modifiers, `"left"`, `"f5"`, `"space"`…) and the text it types
     /// (`"A"` with Shift; empty for keys that type nothing).
+    /// A phone's Back button: puts away what's on top (what's dragged, an
+    /// open palette or menu, text being edited, a popover or sheet). False
+    /// if there was nothing to put away.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    fn back(&mut self) -> bool {
+        if self.ui.dragging.is_some() {
+            self.end_drag(None);
+        } else if super::controls::OPEN_PICKER.get().is_some() {
+            self.close_picker();
+        } else if self.menu.is_some() {
+            self.menu = None;
+        } else if self.ui.editing.is_some() {
+            self.ui.editing = None;
+        } else if !self.close_top_popover() {
+            return false;
+        }
+        self.dirty = true;
+        true
+    }
+
     fn press(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) {
         use super::controls::{hex_field_text, parse_hex, HEX_FIELD, OPEN_PICKER};
         let plain = !(mods.primary || mods.alt || mods.control);
@@ -4466,9 +4519,57 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
 // ===== window =====
 
 /// An open window, and what the mouse and keyboard are doing in it.
+/// What a phone's screen adds: the system's bars to stay clear of, and a
+/// finger, which scrolls where a mouse would turn its wheel.
+#[derive(Default)]
+struct Phone {
+    /// How far the system's bars reach into the window, in pixels: left,
+    /// top, right, bottom. The app is laid out and drawn inside them.
+    insets: [f64; 4],
+    /// Whether `insets` are the window's as it is now.
+    insets_known: bool,
+    finger: Option<Finger>,
+    /// Until when to keep drawing after the screen came back: what's drawn
+    /// to a new screen before the system shows it is lost. Also while the
+    /// on-screen keyboard slides in or out, which moves the bottom inset.
+    fresh: Option<Instant>,
+    /// A scroll that goes on after the finger let go.
+    fling: Option<Fling>,
+}
+
+/// The finger on the screen.
+struct Finger {
+    id: u64,
+    start: (f64, f64),
+    last: (f64, f64),
+    moved_at: Instant,
+    /// Points per second, smoothed.
+    velocity: (f64, f64),
+    doing: Touching,
+}
+
+#[derive(PartialEq)]
+enum Touching {
+    /// On something that scrolls: a tap if it lifts, a scroll if it moves.
+    Waiting,
+    Scrolling,
+    /// Like a mouse button held down.
+    Pressing,
+}
+
+struct Fling {
+    at: (f64, f64),
+    velocity: (f64, f64),
+    stepped: Instant,
+}
+
+/// How far a finger moves before it's a scroll and not a tap, in points.
+const TOUCH_SLOP: f64 = 8.0;
+
 struct WindowApp {
     app: App,
     mods: Mods,
+    phone: Phone,
     /// The other open windows (`Window`s, or the main one), parked while
     /// another one's events are handled (see `focus`).
     parked: Vec<Win>,
@@ -4560,7 +4661,15 @@ thread_local! {
 }
 
 fn run_window(app: App) -> i32 {
-    let event_loop = match EventLoop::new() {
+    #[cfg(not(target_os = "android"))]
+    let made = EventLoop::new();
+    // (On Android the loop is the activity's.)
+    #[cfg(target_os = "android")]
+    let made = {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        EventLoop::builder().with_android_app(super::android::app()).build()
+    };
+    let event_loop = match made {
         Ok(el) => el,
         Err(e) => {
             eprintln!("error: can't open a window: {e}");
@@ -4573,6 +4682,7 @@ fn run_window(app: App) -> i32 {
     let mut w = WindowApp {
         app,
         mods: Mods::default(),
+        phone: Phone::default(),
         parked: Vec::new(),
         native_menu: (None, u64::MAX),
         key: 0,
@@ -4820,7 +4930,130 @@ impl WindowApp {
         any
     }
 
+    /// A point of the window (in pixels) as the app sees it: in points,
+    /// from the corner it's drawn from.
+    fn point(&self, at: winit::dpi::PhysicalPosition<f64>) -> (f64, f64) {
+        let scale = self.scale();
+        ((at.x - self.phone.insets[0]) / scale, (at.y - self.phone.insets[1]) / scale)
+    }
+
+    /// Moves a scroll that goes on after the finger let go, slowing down.
+    fn step_fling(&mut self) {
+        let Some(fling) = &mut self.phone.fling else { return };
+        let now = Instant::now();
+        let dt = (now - fling.stepped).as_secs_f64().min(0.05);
+        fling.stepped = now;
+        let (at, (vx, vy)) = (fling.at, fling.velocity);
+        let slower = (-4.0 * dt).exp();
+        fling.velocity = (vx * slower, vy * slower);
+        if fling.velocity.0.hypot(fling.velocity.1) < 20.0 {
+            self.phone.fling = None;
+        }
+        self.app.scroll(at.0, at.1, vx * dt, vy * dt, self.mods);
+    }
+
+    /// A finger on the screen. It's the mouse with its button held, except
+    /// on something that scrolls (and isn't itself dragged, like a slider):
+    /// there, moving it scrolls, and only lifting it where it landed is a
+    /// click.
+    fn touch(&mut self, event_loop: &ActiveEventLoop, id: WindowId, touch: &winit::event::Touch) {
+        use winit::event::TouchPhase;
+        let device_id = touch.device_id;
+        let moved = WindowEvent::CursorMoved { device_id, position: touch.location };
+        let button = |state| WindowEvent::MouseInput { device_id, state, button: MouseButton::Left };
+        // (One finger at a time: others are ignored.)
+        if self.phone.finger.as_ref().is_some_and(|f| f.id != touch.id) {
+            return;
+        }
+        let p = self.point(touch.location);
+        match touch.phase {
+            TouchPhase::Started => {
+                self.phone.fling = None;
+                self.window_event(event_loop, id, moved);
+                let dragged = matches!(self.app.hit(p.0, p.1), Some(Hit::Slider(_) | Hit::Drag(_) | Hit::Pointer(_) | Hit::Palette(_)));
+                let scrolls = self.app.wheel_target(p.0, p.1).is_some_and(|(_, pointer)| !pointer);
+                let waits = scrolls && !dragged && self.app.menu.is_none();
+                if !waits {
+                    self.window_event(event_loop, id, button(ElementState::Pressed));
+                }
+                let doing = if waits { Touching::Waiting } else { Touching::Pressing };
+                self.phone.finger =
+                    Some(Finger { id: touch.id, start: p, last: p, moved_at: Instant::now(), velocity: (0.0, 0.0), doing });
+            }
+            TouchPhase::Moved => {
+                let Some(f) = &mut self.phone.finger else { return };
+                if f.doing == Touching::Pressing {
+                    f.last = p;
+                    self.window_event(event_loop, id, moved);
+                    return;
+                }
+                if f.doing == Touching::Waiting && (p.0 - f.start.0).hypot(p.1 - f.start.1) > TOUCH_SLOP {
+                    f.doing = Touching::Scrolling;
+                }
+                let now = Instant::now();
+                let (dx, dy) = (f.last.0 - p.0, f.last.1 - p.1);
+                let dt = (now - f.moved_at).as_secs_f64().max(0.001);
+                f.velocity = (0.6 * f.velocity.0 + 0.4 * dx / dt, 0.6 * f.velocity.1 + 0.4 * dy / dt);
+                (f.last, f.moved_at) = (p, now);
+                if f.doing == Touching::Scrolling {
+                    let at = f.start;
+                    self.app.scroll(at.0, at.1, dx, dy, self.mods);
+                    self.request_redraw();
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                let Some(f) = self.phone.finger.take() else { return };
+                let lifted = touch.phase == TouchPhase::Ended;
+                match f.doing {
+                    Touching::Waiting if lifted => {
+                        self.window_event(event_loop, id, button(ElementState::Pressed));
+                        self.window_event(event_loop, id, button(ElementState::Released));
+                    }
+                    Touching::Waiting => {}
+                    Touching::Pressing => self.window_event(event_loop, id, button(ElementState::Released)),
+                    // Let go while moving: the scroll goes on by itself.
+                    Touching::Scrolling => {
+                        let moving = f.moved_at.elapsed().as_secs_f64() < 0.1 && f.velocity.0.hypot(f.velocity.1) > 60.0;
+                        if lifted && moving {
+                            self.phone.fling = Some(Fling { at: f.start, velocity: f.velocity, stepped: Instant::now() });
+                            self.request_redraw();
+                        }
+                    }
+                }
+                // (A lifted finger points at nothing: no view stays hovered.)
+                self.window_event(event_loop, id, WindowEvent::CursorLeft { device_id });
+            }
+        }
+    }
+
     fn redraw(&mut self) {
+        self.step_fling();
+        // The system's bars may have changed with the window.
+        // (While text is edited, the keyboard may come and go at any time.)
+        #[cfg(target_os = "android")]
+        if (!self.phone.insets_known || self.phone.fresh.is_some() || self.ime)
+            && let Some(insets) = super::android::insets()
+        {
+            if insets != self.phone.insets {
+                self.app.dirty = true;
+            }
+            self.phone.insets = insets;
+            self.phone.insets_known = true;
+            if let Some(screen) = self.screen.as_mut() {
+                screen.origin = (insets[0], insets[1]);
+            }
+            // The phone's theme, for an app that follows it.
+            if self.app.appearance == 0
+                && let Some(dark) = super::android::dark()
+                && theme::set_dark(dark)
+            {
+                self.app.dirty = true;
+                super::android::bar_icons(!dark);
+            }
+        }
+        let [left, top, right, bottom] = self.phone.insets;
+        self.phone.fresh = self.phone.fresh.filter(|until| Instant::now() < *until);
+        let again = self.phone.fling.is_some() || self.phone.fresh.is_some();
         let (Some(screen), Some(window)) = (self.screen.as_mut(), self.window.as_ref()) else { return };
         if self.key == 0 {
             if let Some(title) = NEW_TITLE.with(|t| t.borrow_mut().take()) {
@@ -4830,8 +5063,8 @@ impl WindowApp {
         }
         let scale = window.scale_factor();
         let size = window.inner_size();
-        self.app.width = size.width as f64 / scale;
-        self.app.height = size.height as f64 / scale;
+        self.app.width = (size.width as f64 - left - right).max(1.0) / scale;
+        self.app.height = (size.height as f64 - top - bottom).max(1.0) / scale;
         let list = self.app.scene(scale);
         if !screen.present(&list, theme().colors[theme::BACKGROUND]) {
             window.request_redraw();
@@ -4843,7 +5076,7 @@ impl WindowApp {
             window.set_ime_cursor_area(LogicalPosition::new(c.x, c.y), LogicalSize::new(c.w.max(1.0), c.h));
         }
         self.ime_caret = caret;
-        if self.app.ui.anim.running {
+        if self.app.ui.anim.running || again {
             window.request_redraw();
         }
     }
@@ -4853,6 +5086,11 @@ impl WindowApp {
         let editing = self.app.ui.editing.is_some();
         if editing != self.ime {
             self.ime = editing;
+            // (A phone's keyboard takes a moment to slide in or out.)
+            if cfg!(target_os = "android") {
+                self.phone.fresh = Some(Instant::now() + Duration::from_millis(900));
+                self.request_redraw();
+            }
             if let Some(w) = &self.window {
                 w.set_ime_allowed(editing);
             }
@@ -4882,15 +5120,30 @@ impl ApplicationHandler for WindowApp {
         self.screen = Some(screen);
         self.window = Some(window);
         self.title = title;
+        self.phone.insets_known = false;
+        self.phone.fresh = cfg!(target_os = "android").then(|| Instant::now() + Duration::from_millis(700));
         self.request_redraw();
         // (Replaces winit's menu bar, which is made at launch.)
         self.app.update();
         self.after_app(event_loop);
     }
 
+    /// A phone takes the screen away when the app goes to the background,
+    /// and gives a new one when it's back (`resumed`).
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        if cfg!(target_os = "android") && self.key == 0 {
+            self.screen = None;
+            self.window = None;
+        }
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if std::env::var_os("TESSEL_DEBUG_EVENTS").is_some() && !matches!(event, WindowEvent::RedrawRequested) {
             eprintln!("event: {event:?}");
+        }
+        if let WindowEvent::Touch(touch) = &event {
+            self.touch(event_loop, id, touch);
+            return;
         }
         // The event's window, with its surface in the app.
         let Some(key) = self.key_of(id) else { return };
@@ -4927,8 +5180,12 @@ impl ApplicationHandler for WindowApp {
         }
         match event {
             WindowEvent::CloseRequested => self.app.request_close(),
-            WindowEvent::Focused(true) => {}
+            WindowEvent::Focused(true) => {
+                self.phone.insets_known = false;
+                self.request_redraw();
+            }
             WindowEvent::Resized(size) => {
+                self.phone.insets_known = false;
                 if let Some(s) = self.screen.as_mut() {
                     s.resize(size.width, size.height);
                 }
@@ -4948,9 +5205,8 @@ impl ApplicationHandler for WindowApp {
                 self.mods = Mods { shift: m.shift_key(), alt: m.alt_key(), primary, control: m.control_key() };
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let scale = self.scale();
                 let before = self.cursor;
-                self.cursor = (position.x / scale, position.y / scale);
+                self.cursor = self.point(position);
                 // An open menu: the item under the pointer is selected.
                 if self.app.menu.is_some() {
                     self.app.ui.pointer = Some(self.cursor);
@@ -5174,6 +5430,16 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                 }
             }
+            // A phone's Back button: closes what's open on top, and with
+            // nothing open, steps out of the app.
+            #[cfg(target_os = "android")]
+            #[cfg(target_os = "android")]
+            WindowEvent::KeyboardInput { event, .. } if event.logical_key == Key::Named(NamedKey::BrowserBack) => {
+                if event.state == ElementState::Pressed && !self.app.back() {
+                    super::android::leave();
+                }
+                self.request_all();
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 let Some(name) = key_name(&event) else { return };
                 let text = event.text.as_deref().unwrap_or("").to_string();
@@ -5195,6 +5461,12 @@ impl ApplicationHandler for WindowApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // The activity is gone, and the system waits for the app to stop.
+        #[cfg(target_os = "android")]
+        if self.window.is_none() && super::android::destroyed() {
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            unsafe { libc::_exit(0) };
+        }
         if self.take_shell_events() | deliver_background() {
             self.app.dirty = true;
         }
