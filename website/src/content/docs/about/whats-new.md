@@ -11,9 +11,19 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.1.42
+## 0.1.43
 
-*October 10, 2026*
+*October 10, 2026 · 0.1.42 and 0.1.43*
+
+- **Apps for Android.** `tessel build --android` makes an app an Android
+  package from the same code: an `.apk` to install on a phone, or with
+  `--bundle` an `.aab` for Google Play, signed with your own key. On a
+  phone, a finger taps and scrolls, a long press opens context menus, the
+  app stays clear of the system's bars and the on-screen keyboard, follows
+  the dark theme, and Back closes what's on top. `tessel android doctor`
+  checks that Android's tools are installed. This is a first version: text
+  input is basic, and system dialogs aren't there yet. See
+  [Building for Android](/guides/android/).
 
 - **`async` and `await`.** Steps that wait for something (a download, a
   timer, work in the background) can be written one after another, where
