@@ -83,3 +83,59 @@
 .sl-markdown-content img {
 	border-radius: 0.6rem;
 }
+
+/* Apps built with Tessel (showcase, and its strip on the home page). */
+.showcase {
+	display: grid;
+	gap: 3rem;
+	margin-top: 2rem;
+}
+.showcase section > * + * {
+	margin-top: 1rem;
+}
+.showcase img {
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.75rem;
+	box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.18);
+}
+.showcase h2 {
+	margin-top: 1.5rem;
+}
+.showcase-strip {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1rem;
+}
+.showcase-strip a {
+	display: block;
+	text-decoration: none;
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.showcase-strip span {
+	display: block;
+	font-weight: 400;
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-2);
+}
+.showcase-strip img {
+	display: block;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 16 / 10;
+	object-fit: cover;
+	object-position: top left;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.6rem;
+	margin-bottom: 0.5rem;
+}
+.showcase-strip a:hover img {
+	border-color: var(--sl-color-accent);
+}
+@media (max-width: 50rem) {
+	.showcase-strip {
+		grid-template-columns: 1fr;
+	}
+}
