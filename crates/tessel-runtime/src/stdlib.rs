@@ -453,10 +453,7 @@ pub unsafe extern "C" fn tsl_copy_to_clipboard(s: *const Str) -> u8 {
         return 1;
     }
     #[cfg(target_os = "android")]
-    return {
-        set_headless_clipboard(&t);
-        1
-    };
+    return crate::ui::android::copy(&t) as u8;
     #[cfg(not(target_os = "android"))]
     return arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok() as u8;
 }
@@ -498,7 +495,7 @@ pub extern "C" fn tsl_clipboard_text() -> *mut Str {
         return opt_str(headless_clipboard());
     }
     #[cfg(target_os = "android")]
-    return opt_str(headless_clipboard());
+    return opt_str(crate::ui::android::pasted());
     #[cfg(not(target_os = "android"))]
     return opt_str(arboard::Clipboard::new().and_then(|mut c| c.get_text()).ok());
 }

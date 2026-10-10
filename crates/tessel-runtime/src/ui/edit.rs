@@ -115,7 +115,11 @@ pub enum Edit {
 pub enum Clipboard {
     #[cfg(not(target_os = "android"))]
     System(arboard::Clipboard),
+    /// The phone's (reached through the app's activity).
+    #[cfg(target_os = "android")]
+    Phone,
     /// For tests: never touches the user's clipboard.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     Memory(String),
     /// Headless runs: the clipboard `copyToClipboard` and `clipboardText`
     /// use there too, so both kinds of copying and pasting meet.
@@ -124,9 +128,8 @@ pub enum Clipboard {
 
 impl Clipboard {
     pub fn system() -> Clipboard {
-        // (On Android, copying stays inside the app for now.)
         #[cfg(target_os = "android")]
-        return Clipboard::Memory(String::new());
+        return Clipboard::Phone;
         #[cfg(not(target_os = "android"))]
         match arboard::Clipboard::new() {
             Ok(c) => Clipboard::System(c),
@@ -138,6 +141,8 @@ impl Clipboard {
         match self {
             #[cfg(not(target_os = "android"))]
             Clipboard::System(c) => c.get_text().unwrap_or_default(),
+            #[cfg(target_os = "android")]
+            Clipboard::Phone => super::android::pasted().unwrap_or_default(),
             Clipboard::Memory(s) => s.clone(),
             Clipboard::Headless => crate::stdlib::headless_clipboard().unwrap_or_default(),
         }
@@ -145,6 +150,10 @@ impl Clipboard {
 
     fn set(&mut self, text: &str) {
         match self {
+            #[cfg(target_os = "android")]
+            Clipboard::Phone => {
+                super::android::copy(text);
+            }
             #[cfg(not(target_os = "android"))]
             Clipboard::System(c) => {
                 let _ = c.set_text(text.to_string());

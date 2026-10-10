@@ -184,6 +184,140 @@ pub fn destroyed() -> bool {
     .unwrap_or(false)
 }
 
+// ===== the activity's own Java (`TesselActivity`, in the CLI's sources) =====
+
+/// A Java string of `text`. (From UTF-16: Java's own "UTF-8" can't hold emoji.)
+unsafe fn java_string(env: *mut jni_sys::JNIEnv, text: &str) -> jni_sys::jstring {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    unsafe { ((**env).NewString.unwrap())(env, units.as_ptr(), units.len() as i32) }
+}
+
+unsafe fn rust_string(env: *mut jni_sys::JNIEnv, text: jni_sys::jstring) -> Option<String> {
+    if text.is_null() {
+        return None;
+    }
+    unsafe {
+        let len = ((**env).GetStringLength?)(env, text) as usize;
+        let units = ((**env).GetStringChars?)(env, text, std::ptr::null_mut());
+        if units.is_null() {
+            return None;
+        }
+        let out = String::from_utf16_lossy(std::slice::from_raw_parts(units, len));
+        ((**env).ReleaseStringChars?)(env, text, units);
+        Some(out)
+    }
+}
+
+/// The activity's method `name` (`signature` is Java's).
+unsafe fn method(env: *mut jni_sys::JNIEnv, activity: jni_sys::jobject, name: &std::ffi::CStr, signature: &std::ffi::CStr) -> Option<jni_sys::jmethodID> {
+    unsafe {
+        let class = ((**env).GetObjectClass?)(env, activity);
+        let found = ((**env).GetMethodID?)(env, class, name.as_ptr(), signature.as_ptr());
+        (!found.is_null()).then_some(found)
+    }
+}
+
+/// What a text field is for, to the keyboard.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Typing {
+    Text,
+    /// A secret: nothing is suggested or learned.
+    Secret,
+    /// Code: no corrections.
+    Code,
+}
+
+/// Shows the on-screen keyboard for a field, or hides it.
+pub fn keyboard(show: Option<Typing>) {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"keyboard", c"(ZI)V")?;
+        let kind = match show {
+            Some(Typing::Secret) => 1,
+            Some(Typing::Code) => 2,
+            _ => 0,
+        };
+        let args = [jni_sys::jvalue { z: show.is_some() as u8 }, jni_sys::jvalue { i: kind }];
+        ((**env).CallVoidMethodA?)(env, activity, method, args.as_ptr());
+        Some(())
+    });
+}
+
+/// A system dialog with a message (`cancel` none) or a question. Waits for
+/// the answer: whether it was confirmed.
+pub fn ask(title: &str, message: &str, ok: &str, cancel: Option<&str>) -> bool {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"ask", c"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z")?;
+        let args = [
+            jni_sys::jvalue { l: java_string(env, title) },
+            jni_sys::jvalue { l: java_string(env, message) },
+            jni_sys::jvalue { l: java_string(env, ok) },
+            jni_sys::jvalue { l: cancel.map_or(std::ptr::null_mut(), |c| java_string(env, c)) },
+        ];
+        Some(((**env).CallBooleanMethodA?)(env, activity, method, args.as_ptr()) != 0)
+    })
+    .unwrap_or(cancel.is_none())
+}
+
+/// Puts text on the system's clipboard.
+pub fn copy(text: &str) -> bool {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"copy", c"(Ljava/lang/String;)V")?;
+        let args = [jni_sys::jvalue { l: java_string(env, text) }];
+        ((**env).CallVoidMethodA?)(env, activity, method, args.as_ptr());
+        Some(((**env).ExceptionCheck?)(env) == 0)
+    })
+    .unwrap_or(false)
+}
+
+/// The text on the system's clipboard.
+pub fn pasted() -> Option<String> {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"pasted", c"()Ljava/lang/String;")?;
+        let text = ((**env).CallObjectMethodA?)(env, activity, method, std::ptr::null());
+        rust_string(env, text)
+    })
+}
+
+/// What the keyboard and the system tell the app, from Java's thread; the
+/// app takes them on its own (see `take_input`).
+pub enum Input {
+    Typed(String),
+    /// The word being composed: shown at the caret, in place of the one
+    /// before, and typed only when the keyboard says so.
+    Composing(String),
+    /// Characters before and after the caret are taken back.
+    Delete(usize, usize),
+    /// The system's bars or the keyboard moved.
+    Insets,
+}
+
+static INPUT: std::sync::Mutex<Vec<Input>> = std::sync::Mutex::new(Vec::new());
+
+fn tell(input: Input) {
+    INPUT.lock().unwrap().push(input);
+    super::app::wake();
+}
+
+pub fn take_input() -> Vec<Input> {
+    std::mem::take(&mut *INPUT.lock().unwrap())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onText(env: *mut jni_sys::JNIEnv, _class: jni_sys::jclass, text: jni_sys::jstring, kind: i32) {
+    let text = unsafe { rust_string(env, text) }.unwrap_or_default();
+    tell(if kind == 1 { Input::Composing(text) } else { Input::Typed(text) });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onDelete(_env: *mut jni_sys::JNIEnv, _class: jni_sys::jclass, before: i32, after: i32) {
+    tell(Input::Delete(before.max(0) as usize, after.max(0) as usize));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onInsets(_env: *mut jni_sys::JNIEnv, _class: jni_sys::jclass) {
+    tell(Input::Insets);
+}
+
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     print_to_log();

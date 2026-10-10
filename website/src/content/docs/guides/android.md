@@ -18,7 +18,8 @@ tools, so they have to be installed:
 
 - the **Android SDK**, with its build tools and a platform;
 - the **Android NDK**;
-- a **JDK** (Java), which signs packages.
+- a **JDK** (Java), which signs packages and compiles the small Java part
+  every Android app has. A Java *runtime* alone isn't enough.
 
 The simplest way to get all three is to install
 [Android Studio](https://developer.android.com/studio), then open its SDK
@@ -107,11 +108,22 @@ ignored. Beyond that:
   code editor) scrolls it, and it keeps moving for a moment when you let
   go. Sliders and views with `.onDrag` are dragged as with a mouse.
 - **Long press.** Holding a finger on a view opens its
-  [`.contextMenu`](/ui/menus-windows/), as a right click does.
+  [`.contextMenu`](/ui/menus-windows/), as a right click does. Menus are
+  drawn larger than on a computer, for fingers.
+- **Pinch.** Two fingers moving apart or together reach a view's
+  [`.onPointer`](/reference/modifiers/#onpointer) as a pinch, as on a
+  trackpad.
 - **The system's bars.** The app is laid out between the status bar at the
   top and the navigation bar at the bottom, and clear of a camera cutout.
 - **The keyboard.** Tapping a text field brings up the on-screen keyboard,
-  and the layout shrinks to the space above it.
+  with its suggestions, corrections, swipe typing and emoji. The layout
+  shrinks to the space above the keyboard, and a field in a `Scroll` is
+  scrolled into view if the keyboard would cover it. A `secure` field is
+  typed as a password, and a code editor without corrections.
+- **Dialogs and the clipboard.** [`alert` and `confirm`](/ui/dialogs/) are
+  the system's dialogs, and `copyToClipboard` and `clipboardText` use the
+  phone's clipboard. If the user leaves the app while a `confirm` is open,
+  it's answered `false`.
 - **Back.** The Back button (or gesture) closes what's on top: a sheet or
   popover, an open menu, the keyboard. With nothing open, it leaves the
   app, which keeps running in the background.
@@ -131,19 +143,21 @@ be `VStack`s.
 
 ## What doesn't work yet
 
-- **Text input is basic.** Letters, digits, space and backspace from the
-  on-screen keyboard work. Autocorrect, swipe typing, emoji, and letters
-  with accents entered by holding a key have not been made to work.
-- **Dialogs.** `openFile`, `saveFile`, `chooseFolder` and `openFiles` give
-  no file, and `alert` and `confirm` show nothing (`confirm` answers
-  `false`). Use a [sheet](/ui/dialogs/) of your own for questions.
-- **The clipboard** only works inside the app.
+- **Choosing files.** `openFile`, `openFiles`, `saveFile` and `chooseFolder`
+  give no file. Android's file chooser is a screen of its own that the app
+  has to step aside for, and these functions wait for their answer on the
+  spot; the two don't fit together yet. Keep an app's files in its own
+  folder (relative paths, or `appDataFolder`).
+- **Corrections of earlier words.** The keyboard corrects the word being
+  typed. It can't go back and change words typed before, as it can in
+  Android's own text fields.
 - **Extra windows** (`Window`) and **printing** aren't available.
-- **Menu bars and ribbons** are drawn as on a desktop, which is too small
-  to use comfortably with a finger.
-- **Only one finger** is followed: there's no pinch to zoom.
-- Building Android apps has been tried on macOS. It's written to work on
-  Windows too, but that hasn't been tested.
+- **Menu bars and ribbons** are drawn, but they're designed for a wide
+  window and a mouse. On a phone, prefer buttons and context menus.
+- **Pinch** was written but couldn't be tried: the emulator Tessel is
+  tested on has no second finger.
+- Everything here was tested on an emulator, building from macOS. A real
+  phone, and building from Windows, haven't been tried.
 
 ## Publishing on Google Play
 

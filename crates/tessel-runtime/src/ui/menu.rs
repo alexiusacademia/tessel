@@ -382,11 +382,14 @@ pub fn describe_inline(items: &[Entry]) -> String {
 
 // ===== drawn menus =====
 
-pub const ROW_H: f64 = 22.0;
+/// (On a phone, rows are tall enough for a finger.)
+pub const ROW_H: f64 = if cfg!(target_os = "android") { 44.0 } else { 22.0 };
 pub const DIVIDER_H: f64 = 9.0;
 pub const PAD: f64 = 5.0;
 /// The height of the menu bar drawn in the window.
-pub const BAR_H: f64 = 26.0;
+pub const BAR_H: f64 = if cfg!(target_os = "android") { 44.0 } else { 26.0 };
+/// The size of a menu's text.
+const FONT: f64 = if cfg!(target_os = "android") { 16.0 } else { 13.0 };
 
 /// One menu shown (a context menu, a menu of the drawn menu bar, or one of
 /// their submenus), laid out.
@@ -426,15 +429,15 @@ impl Panel {
                 }
                 Entry::Item { label, shortcut, enabled, checked, .. } => {
                     let tint = if *enabled { color } else { gray };
-                    let label = Rc::new(text.layout(label, 13.0, 400.0, tint, None));
-                    let shortcut = shortcut.as_ref().map(|s| Rc::new(text.layout(&s.display(), 13.0, 400.0, gray, None)));
+                    let label = Rc::new(text.layout(label, FONT, 400.0, tint, None));
+                    let shortcut = shortcut.as_ref().map(|s| Rc::new(text.layout(&s.display(), FONT, 400.0, gray, None)));
                     widest = widest.max(label.width() as f64 + shortcut.as_ref().map_or(0.0, |s| s.width() as f64 + 28.0));
                     rows.push(Row { rect: Rect { x: 0.0, y, w: 0.0, h: ROW_H }, label: Some(label), shortcut, enabled: *enabled, checked: *checked, submenu: false });
                     y += ROW_H;
                 }
                 Entry::Sub { title, enabled, .. } => {
                     let tint = if *enabled { color } else { gray };
-                    let label = Rc::new(text.layout(title, 13.0, 400.0, tint, None));
+                    let label = Rc::new(text.layout(title, FONT, 400.0, tint, None));
                     widest = widest.max(label.width() as f64 + 24.0);
                     rows.push(Row { rect: Rect { x: 0.0, y, w: 0.0, h: ROW_H }, label: Some(label), shortcut: None, enabled: *enabled, checked: false, submenu: true });
                     y += ROW_H;
@@ -482,7 +485,7 @@ impl Bar {
         let mut x = 6.0;
         let mut titles = Vec::new();
         for m in menus {
-            let t = Rc::new(text.layout(m.label(), 13.0, 400.0, theme().colors[theme::PRIMARY], None));
+            let t = Rc::new(text.layout(m.label(), FONT, 400.0, theme().colors[theme::PRIMARY], None));
             let w = t.width() as f64 + 20.0;
             titles.push((t, Rect { x, y: 0.0, w, h: BAR_H }));
             x += w;

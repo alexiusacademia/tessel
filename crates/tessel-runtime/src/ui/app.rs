@@ -137,8 +137,9 @@ mod dialogs {
     }
 }
 
-/// Android has no dialogs a program can wait for: nothing is chosen, and
-/// nothing confirmed.
+/// On Android, messages and questions are the system's dialogs. Choosing a
+/// file isn't there: Android's chooser is a screen of its own, which a
+/// program can't wait for, so nothing is chosen.
 #[cfg(target_os = "android")]
 mod dialogs {
     pub fn file(_: bool, _: &str, _: &str, _: &[String]) -> Option<String> {
@@ -150,8 +151,8 @@ mod dialogs {
     pub fn files(_: &str, _: &[String]) -> Vec<String> {
         Vec::new()
     }
-    pub fn message(confirm: bool, _: &str, _: &str, _: &str, _: &str, _: i64) -> bool {
-        !confirm
+    pub fn message(confirm: bool, title: &str, message: &str, ok: &str, cancel: &str, _: i64) -> bool {
+        super::super::android::ask(title, message, ok, confirm.then_some(cancel))
     }
 }
 
@@ -282,6 +283,14 @@ fn next_id() -> u64 {
         n.set(n.get() + 1);
         n.get()
     })
+}
+
+/// Wakes the app's loop (something waits for it that isn't an `Event`).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn wake() {
+    if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
+        let _ = proxy.send_event(());
+    }
 }
 
 fn post(event: Event) {
@@ -4529,6 +4538,20 @@ struct Phone {
     /// Whether `insets` are the window's as it is now.
     insets_known: bool,
     finger: Option<Finger>,
+    /// A second finger, and how far it was from the first: the two pinch
+    /// (for a view with `.onPointer`).
+    pinch: Option<(u64, (f64, f64), f64)>,
+    /// A lifted finger whose release the app hasn't been given yet. It's
+    /// given once the touch itself is dealt with (see `about_to_wait`):
+    /// what it clicks may wait for a dialog, and Android takes an app that
+    /// holds on to a touch for seconds to have stopped responding.
+    lifted: Option<(WindowId, winit::event::DeviceId)>,
+    /// The field the keyboard is shown for.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    typing_in: Option<u64>,
+    /// The caret is to be brought into view (the keyboard came up over it,
+    /// or another field is edited).
+    reveal: bool,
     /// Until when to keep drawing after the screen came back: what's drawn
     /// to a new screen before the system shows it is lost. Also while the
     /// on-screen keyboard slides in or out, which moves the bottom inset.
@@ -4969,13 +4992,35 @@ impl WindowApp {
         let device_id = touch.device_id;
         let moved = WindowEvent::CursorMoved { device_id, position: touch.location };
         let button = |state| WindowEvent::MouseInput { device_id, state, button: MouseButton::Left };
-        // (One finger at a time: others are ignored.)
-        if self.phone.finger.as_ref().is_some_and(|f| f.id != touch.id) {
+        let p = self.point(touch.location);
+        // A second finger: with the first, it pinches (others are ignored).
+        if let Some(first) = self.phone.finger.as_mut().filter(|f| f.id != touch.id) {
+            let apart = (p.0 - first.last.0).hypot(p.1 - first.last.1).max(1.0);
+            let middle = ((p.0 + first.last.0) / 2.0, (p.1 + first.last.1) / 2.0);
+            match (touch.phase, self.phone.pinch) {
+                (TouchPhase::Started, None) => {
+                    // (What the first finger pressed isn't clicked.)
+                    first.doing = Touching::Held;
+                    self.app.ui.pressed = None;
+                    self.selecting = false;
+                    self.drag_start = None;
+                    self.phone.pinch = Some((touch.id, p, apart));
+                }
+                (TouchPhase::Moved, Some((id, _, before))) if id == touch.id => {
+                    self.phone.pinch = Some((id, p, apart));
+                    if let Some(key) = self.app.pointer_at(middle.0, middle.1) {
+                        self.app.pointer(key, PINCH, middle, (0.0, apart / before - 1.0), 0, 0, self.mods);
+                        self.request_redraw();
+                    }
+                }
+                (TouchPhase::Ended | TouchPhase::Cancelled, Some((id, ..))) if id == touch.id => self.phone.pinch = None,
+                _ => {}
+            }
             return;
         }
-        let p = self.point(touch.location);
         match touch.phase {
             TouchPhase::Started => {
+                self.release_lifted(event_loop);
                 self.phone.fling = None;
                 self.window_event(event_loop, id, moved);
                 let dragged = matches!(self.app.hit(p.0, p.1), Some(Hit::Slider(_) | Hit::Drag(_) | Hit::Pointer(_) | Hit::Palette(_)));
@@ -4992,6 +5037,17 @@ impl WindowApp {
             TouchPhase::Moved => {
                 let Some(f) = &mut self.phone.finger else { return };
                 if f.doing == Touching::Held {
+                    // (Pinching: the first finger moves too.)
+                    f.last = p;
+                    if let Some((id, second, before)) = self.phone.pinch {
+                        let apart = (p.0 - second.0).hypot(p.1 - second.1).max(1.0);
+                        let middle = ((p.0 + second.0) / 2.0, (p.1 + second.1) / 2.0);
+                        self.phone.pinch = Some((id, second, apart));
+                        if let Some(key) = self.app.pointer_at(middle.0, middle.1) {
+                            self.app.pointer(key, PINCH, middle, (0.0, apart / before - 1.0), 0, 0, self.mods);
+                            self.request_redraw();
+                        }
+                    }
                     return;
                 }
                 if f.doing == Touching::Pressing {
@@ -5015,14 +5071,15 @@ impl WindowApp {
             }
             TouchPhase::Ended | TouchPhase::Cancelled => {
                 let Some(f) = self.phone.finger.take() else { return };
+                self.phone.pinch = None;
                 let lifted = touch.phase == TouchPhase::Ended;
                 match f.doing {
                     Touching::Waiting if lifted => {
                         self.window_event(event_loop, id, button(ElementState::Pressed));
-                        self.window_event(event_loop, id, button(ElementState::Released));
+                        self.phone.lifted = Some((id, device_id));
                     }
                     Touching::Waiting | Touching::Held => {}
-                    Touching::Pressing => self.window_event(event_loop, id, button(ElementState::Released)),
+                    Touching::Pressing => self.phone.lifted = Some((id, device_id)),
                     // Let go while moving: the scroll goes on by itself.
                     Touching::Scrolling => {
                         let moving = f.moved_at.elapsed().as_secs_f64() < 0.1 && f.velocity.0.hypot(f.velocity.1) > 60.0;
@@ -5033,9 +5090,18 @@ impl WindowApp {
                     }
                 }
                 // (A lifted finger points at nothing: no view stays hovered.)
-                self.window_event(event_loop, id, WindowEvent::CursorLeft { device_id });
+                if self.phone.lifted.is_none() {
+                    self.window_event(event_loop, id, WindowEvent::CursorLeft { device_id });
+                }
             }
         }
+    }
+
+    /// Gives the app the release of a finger that lifted (see `Phone::lifted`).
+    fn release_lifted(&mut self, event_loop: &ActiveEventLoop) {
+        let Some((id, device_id)) = self.phone.lifted.take() else { return };
+        self.window_event(event_loop, id, WindowEvent::MouseInput { device_id, state: ElementState::Released, button: MouseButton::Left });
+        self.window_event(event_loop, id, WindowEvent::CursorLeft { device_id });
     }
 
     /// A finger held in one place long enough opens the context menu of
@@ -5108,6 +5174,17 @@ impl WindowApp {
         self.app.width = (size.width as f64 - left - right).max(1.0) / scale;
         self.app.height = (size.height as f64 - top - bottom).max(1.0) / scale;
         let list = self.app.scene(scale);
+        // The caret, brought back above the keyboard if it's under it now
+        // (where what it's in can scroll).
+        if std::mem::take(&mut self.phone.reveal)
+            && let Some(caret) = self.app.caret_rect()
+        {
+            let below = caret.y + caret.h + 12.0 - self.app.height;
+            if below > 0.0 {
+                self.app.scroll(caret.x, caret.y.min(self.app.height - 1.0), 0.0, below, self.mods);
+                window.request_redraw();
+            }
+        }
         if !screen.present(&list, theme().colors[theme::BACKGROUND]) {
             window.request_redraw();
             return;
@@ -5133,6 +5210,7 @@ impl WindowApp {
                 self.phone.fresh = Some(Instant::now() + Duration::from_millis(900));
                 self.request_redraw();
             }
+            #[cfg(not(target_os = "android"))]
             if let Some(w) = &self.window {
                 w.set_ime_allowed(editing);
             }
@@ -5140,6 +5218,56 @@ impl WindowApp {
                 self.app.ui.composing = None;
             }
         }
+        // A phone's keyboard is shown for the field that's edited: what it
+        // offers depends on the field, and it starts over for another.
+        #[cfg(target_os = "android")]
+        {
+            let key = self.app.ui.editing.as_ref().map(|e| e.key);
+            if key != self.phone.typing_in {
+                self.phone.typing_in = key;
+                self.phone.reveal = key.is_some();
+                let typing = key.map(|key| match self.app.node(key).map(|n| &n.kind) {
+                    Some(Kind::TextField { secure: true, .. }) => super::android::Typing::Secret,
+                    Some(Kind::CodeEditor { .. }) => super::android::Typing::Code,
+                    _ => super::android::Typing::Text,
+                });
+                super::android::keyboard(typing);
+            }
+        }
+    }
+
+    /// What the phone's keyboard and system said since the last look (see
+    /// `android::Input`). Whether anything was said.
+    #[cfg(target_os = "android")]
+    fn phone_input(&mut self) -> bool {
+        let said = super::android::take_input();
+        for input in &said {
+            match input {
+                super::android::Input::Typed(text) => {
+                    self.app.compose(String::new(), None);
+                    self.app.type_text(text);
+                }
+                super::android::Input::Composing(text) => self.app.compose(text.clone(), Some(text.len())),
+                super::android::Input::Delete(before, after) => {
+                    for (count, key) in [(*before, "backspace"), (*after, "delete")] {
+                        for _ in 0..count.min(64) {
+                            self.app.press(key, "", Mods::default(), false);
+                        }
+                    }
+                }
+                // (The keyboard slides: its edge is read until it rests.)
+                super::android::Input::Insets => {
+                    self.phone.insets_known = false;
+                    self.phone.reveal = self.phone.typing_in.is_some();
+                    self.phone.fresh = Some(Instant::now() + Duration::from_millis(500));
+                }
+            }
+        }
+        if !said.is_empty() {
+            self.sync_ime();
+            self.request_redraw();
+        }
+        !said.is_empty()
     }
 
     fn request_redraw(&self) {
@@ -5495,6 +5623,10 @@ impl ApplicationHandler for WindowApp {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
+        #[cfg(target_os = "android")]
+        if self.phone_input() {
+            self.app.dirty = true;
+        }
         let shell = self.take_shell_events();
         if deliver_background() || shell {
             self.app.dirty = true;
@@ -5503,6 +5635,7 @@ impl ApplicationHandler for WindowApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.release_lifted(event_loop);
         // The activity is gone, and the system waits for the app to stop.
         #[cfg(target_os = "android")]
         if self.window.is_none() && super::android::destroyed() {

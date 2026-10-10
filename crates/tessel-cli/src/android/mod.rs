@@ -1,11 +1,13 @@
 //! `tessel build --android`: an app as an Android package (`.apk`).
 //!
 //! The program is compiled for Android and linked with the Android build
-//! of the runtime into a shared library, which the system's own
-//! `NativeActivity` loads: the package has no Java code. Compiling needs
-//! nothing but `tessel`; linking and packaging use Android's own tools (the
-//! NDK's linker, and `aapt2`, `zipalign` and `apksigner` of the SDK's build
-//! tools), which is why the Android SDK and NDK have to be installed.
+//! of the runtime into a shared library, which an activity loads: Android's
+//! `NativeActivity`, with a little Java of Tessel's own on top (see
+//! `TesselActivity.java`) for the keyboard, dialogs and the clipboard.
+//! Compiling the program needs nothing but `tessel`; linking and packaging
+//! use Android's own tools (the NDK's linker, and `aapt2`, `d8`, `zipalign`
+//! and `apksigner` of the SDK's build tools) and the JDK's, which is why
+//! the Android SDK and NDK and a JDK have to be installed.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -224,6 +226,61 @@ fn runtime_lib() -> Result<PathBuf, String> {
         true => Ok(to),
         false => Err(format!("`{}` has no runtime library in it", runtime_package())),
     }
+}
+
+/// The Java part of every app (see the file).
+const ACTIVITY_JAVA: &str = include_str!("TesselActivity.java");
+
+/// The Java part of an app, compiled for Android (`classes.dex`). It's the
+/// same for every app, so it's compiled once (for each version of it) and
+/// kept in Tessel's folder.
+fn activity_dex(tools: &Tools, work: &Path) -> Result<PathBuf, String> {
+    use sha2::{Digest, Sha256};
+    let hash: String = Sha256::digest(ACTIVITY_JAVA.as_bytes()).iter().take(8).map(|b| format!("{b:02x}")).collect();
+    let kept = super::update::home().ok().map(|h| h.join("android").join(format!("activity-{hash}.dex")));
+    if let Some(dex) = kept.as_ref().filter(|d| d.is_file()) {
+        return Ok(dex.clone());
+    }
+    let write = |file: &Path, text: &str| {
+        std::fs::create_dir_all(file.parent().unwrap_or(work))
+            .and_then(|()| std::fs::write(file, text))
+            .map_err(|e| format!("can't write `{}`: {e}", file.display()))
+    };
+    let source = work.join("java/dev/tessel/TesselActivity.java");
+    write(&source, ACTIVITY_JAVA)?;
+    let classes = work.join("classes");
+    run(
+        "javac",
+        Command::new(jdk_tool(&tools.java, "javac")?)
+            .args(["--release", "11", "-nowarn", "-cp"])
+            .arg(&tools.platform.0)
+            .arg("-d")
+            .arg(&classes)
+            .arg(&source),
+    )?;
+    let compiled: Vec<PathBuf> = files_under(&classes).into_iter().filter(|f| f.extension().is_some_and(|e| e == "class")).collect();
+    let dex_dir = work.join("dex");
+    std::fs::create_dir_all(&dex_dir).map_err(|e| format!("can't create `{}`: {e}", dex_dir.display()))?;
+    run(
+        "d8",
+        Command::new(&tools.java)
+            .arg("-cp")
+            .arg(tools.build_tools.join("lib/d8.jar"))
+            .args(["com.android.tools.r8.D8", "--release", "--min-api", &MIN_SDK.to_string(), "--lib"])
+            .arg(&tools.platform.0)
+            .arg("--output")
+            .arg(&dex_dir)
+            .args(&compiled),
+    )?;
+    let dex = dex_dir.join("classes.dex");
+    // (Kept for the next build, if Tessel's folder can be written.)
+    if let Some(kept) = kept {
+        let _ = std::fs::create_dir_all(kept.parent().unwrap_or(work));
+        if std::fs::copy(&dex, &kept).is_ok() {
+            return Ok(kept);
+        }
+    }
+    Ok(dex)
 }
 
 /// Runs a tool, and gives what it printed if it failed.
@@ -455,9 +512,10 @@ fn package(
     package="{id}" android:versionCode="{code}" android:versionName="{version}">
     <uses-sdk android:minSdkVersion="{MIN_SDK}" android:targetSdkVersion="{target}" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="{label}" android:icon="@mipmap/icon" android:theme="@style/App" android:hasCode="false"
+    <application android:label="{label}" android:icon="@mipmap/icon" android:theme="@style/App" android:hasCode="true"
         android:extractNativeLibs="true" android:enableOnBackInvokedCallback="false">
-        <activity android:name="android.app.NativeActivity" android:exported="true"
+        <activity android:name="dev.tessel.TesselActivity" android:exported="true"
+            android:windowSoftInputMode="adjustNothing"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density">
             <meta-data android:name="android.app.lib_name" android:value="main" />
             <intent-filter>
@@ -515,14 +573,19 @@ fn package(
         }
         run("aapt2", aapt2.arg(&resources))
     };
+    let dex = activity_dex(tools, work)?;
     if bundle {
-        return app_bundle(out, tools, &signing, work, &lib, &link);
+        return app_bundle(out, tools, &signing, work, &lib, &dex, &link);
     }
+    std::fs::copy(&dex, work.join("classes.dex")).map_err(|e| format!("can't copy `{}`: {e}", dex.display()))?;
 
     let unsigned = work.join("unsigned.apk");
     link(false, &unsigned)?;
     // (`aapt add` names the file in the package by the path it's given.)
-    run("aapt", Command::new(tools.tool("aapt")).current_dir(work).args(["add", "unsigned.apk", "lib/arm64-v8a/libmain.so"]))?;
+    run(
+        "aapt",
+        Command::new(tools.tool("aapt")).current_dir(work).args(["add", "unsigned.apk", "lib/arm64-v8a/libmain.so", "classes.dex"]),
+    )?;
     let aligned = work.join("aligned.apk");
     run("zipalign", Command::new(tools.tool("zipalign")).args(["-f", "-p", "4"]).arg(&unsigned).arg(&aligned))?;
 
@@ -567,6 +630,7 @@ fn app_bundle(
     signing: &Signing,
     work: &Path,
     lib: &Path,
+    dex: &Path,
     link: &dyn Fn(bool, &Path) -> Result<(), String>,
 ) -> Result<(), Failed> {
     let (jar, jarsigner) = (jdk_tool(&tools.java, "jar")?, jdk_tool(&tools.java, "jarsigner")?);
@@ -579,6 +643,8 @@ fn app_bundle(
     run("jar", Command::new(&jar).current_dir(&base).arg("xf").arg(&linked))?;
     std::fs::rename(base.join("AndroidManifest.xml"), base.join("manifest/AndroidManifest.xml")).map_err(made)?;
     std::fs::copy(lib, base.join("lib/arm64-v8a/libmain.so")).map_err(made)?;
+    std::fs::create_dir_all(base.join("dex")).map_err(made)?;
+    std::fs::copy(dex, base.join("dex/classes.dex")).map_err(made)?;
     std::fs::write(base.join("native.pb"), BUNDLE_NATIVE).map_err(made)?;
     std::fs::write(work.join("bundle/BundleConfig.pb"), BUNDLE_CONFIG).map_err(made)?;
     let _ = std::fs::remove_file(out);

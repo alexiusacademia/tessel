@@ -274,6 +274,7 @@ fn android_packages() {
         let has = |name: &str| bytes.windows(name.len()).any(|w| w == name.as_bytes());
         assert!(has("lib/arm64-v8a/libmain.so"), "{file} has no library");
         assert!(has("AndroidManifest.xml"), "{file} has no manifest");
+        assert!(has("classes.dex"), "{file} has no Java part");
         assert!(bytes.len() > 1_000_000, "{file} is only {} bytes", bytes.len());
     }
     let _ = std::fs::remove_dir_all(&dir);
