@@ -227,16 +227,82 @@ pub enum Typing {
     Code,
 }
 
-/// Shows the on-screen keyboard for a field, or hides it.
-pub fn keyboard(show: Option<Typing>) {
+/// Shows the on-screen keyboard for a field, or hides it. `field` numbers
+/// the field (the keyboard's changes come back with it, see `Input::Edit`).
+/// `text` is what's in the field, with its selection, for the keyboard to
+/// read and correct; with none it only types.
+pub fn keyboard(show: Option<Typing>, field: i32, text: Option<&Text>) {
     with_activity(|env, activity| unsafe {
-        let method = method(env, activity, c"keyboard", c"(ZI)V")?;
+        let method = method(env, activity, c"keyboard", c"(ZIILjava/lang/String;II)V")?;
         let kind = match show {
             Some(Typing::Secret) => 1,
             Some(Typing::Code) => 2,
             _ => 0,
         };
-        let args = [jni_sys::jvalue { z: show.is_some() as u8 }, jni_sys::jvalue { i: kind }];
+        let (start, end) = text.map_or((0, 0), |t| t.selection());
+        let args = [
+            jni_sys::jvalue { z: show.is_some() as u8 },
+            jni_sys::jvalue { i: kind },
+            jni_sys::jvalue { i: field },
+            jni_sys::jvalue { l: text.map_or(std::ptr::null_mut(), |t| java_string(env, &t.text)) },
+            jni_sys::jvalue { i: start },
+            jni_sys::jvalue { i: end },
+        ];
+        ((**env).CallVoidMethodA?)(env, activity, method, args.as_ptr());
+        Some(())
+    });
+}
+
+/// A field's text and selection (in bytes, as the app counts).
+#[derive(Clone, PartialEq)]
+pub struct Text {
+    pub text: String,
+    pub anchor: usize,
+    pub focus: usize,
+}
+
+impl Text {
+    /// The selection as Java counts: in UTF-16 units, start first.
+    fn selection(&self) -> (i32, i32) {
+        let (a, b) = (units(&self.text, self.anchor), units(&self.text, self.focus));
+        (a.min(b), a.max(b))
+    }
+}
+
+/// How many of Java's characters (UTF-16 units) come before byte `at`.
+fn units(text: &str, at: usize) -> i32 {
+    let mut at = at.min(text.len());
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    text[..at].encode_utf16().count() as i32
+}
+
+/// The byte where Java's character `unit` starts (the end, past the last).
+pub fn byte_at(text: &str, unit: usize) -> usize {
+    let mut seen = 0;
+    for (at, c) in text.char_indices() {
+        if seen >= unit {
+            return at;
+        }
+        seen += c.len_utf16();
+    }
+    text.len()
+}
+
+/// Tells the keyboard what's in the field now, after its change `serial`
+/// was taken in. (If it's what the keyboard has, nothing happens; if the
+/// app changed the text or the caret moved, the keyboard starts from this.)
+pub fn typed(text: &Text, serial: i32) {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"text", c"(Ljava/lang/String;III)V")?;
+        let (start, end) = text.selection();
+        let args = [
+            jni_sys::jvalue { l: java_string(env, &text.text) },
+            jni_sys::jvalue { i: start },
+            jni_sys::jvalue { i: end },
+            jni_sys::jvalue { i: serial },
+        ];
         ((**env).CallVoidMethodA?)(env, activity, method, args.as_ptr());
         Some(())
     });
@@ -278,6 +344,135 @@ pub fn pasted() -> Option<String> {
     })
 }
 
+// ===== choosing files =====
+
+/// What the chooser is for.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Choose {
+    Open,
+    OpenSeveral,
+    /// A place to save a file, under a suggested name.
+    Save,
+}
+
+/// The chooser's answer, from Java's thread.
+static CHOSEN: std::sync::Mutex<Option<Vec<String>>> = std::sync::Mutex::new(None);
+/// What became of the screen while the app waited for the chooser, which
+/// winit wasn't told: 1 if it was taken away, 2 if a new one came too.
+static SCREEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// The app's thread (the one `android_main` runs on).
+static MAIN: OnceLock<std::thread::ThreadId> = OnceLock::new();
+
+/// Opens the system's file chooser and waits for the answer: the paths
+/// chosen (none if it was cancelled). `types` are extensions without the dot.
+///
+/// The chooser is a screen of its own. While it's up, Android pauses the
+/// app and takes its screen away, and waits for the app to take note of
+/// each step. So the wait here takes note of them, in the event loop's
+/// place, and tells the app afterwards what became of its screen (`screen`).
+///
+/// The paths are of copies, in the app's cache: Android's documents aren't
+/// files with paths. What the app writes to a copy goes to the document
+/// too (`wrote`).
+pub fn choose(kind: Choose, name: &str, types: &[String]) -> Vec<String> {
+    use std::sync::atomic::Ordering;
+    use winit::platform::android::activity::{InputStatus, MainEvent, PollEvent};
+    // (Only the app's thread may look at the system's events.)
+    if MAIN.get() != Some(&std::thread::current().id()) {
+        return Vec::new();
+    }
+    *CHOSEN.lock().unwrap() = None;
+    let started = with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"choose", c"(ILjava/lang/String;[Ljava/lang/String;)V")?;
+        let string = ((**env).FindClass?)(env, c"java/lang/String".as_ptr());
+        let list = ((**env).NewObjectArray?)(env, types.len() as i32, string, std::ptr::null_mut());
+        if list.is_null() {
+            return None;
+        }
+        for (i, t) in types.iter().enumerate() {
+            let t = java_string(env, t);
+            ((**env).SetObjectArrayElement?)(env, list, i as i32, t);
+            ((**env).DeleteLocalRef?)(env, t);
+        }
+        let kind = match kind {
+            Choose::Open => 0,
+            Choose::OpenSeveral => 1,
+            Choose::Save => 2,
+        };
+        let args = [jni_sys::jvalue { i: kind }, jni_sys::jvalue { l: java_string(env, name) }, jni_sys::jvalue { l: list }];
+        ((**env).CallVoidMethodA?)(env, activity, method, args.as_ptr());
+        Some(((**env).ExceptionCheck?)(env) == 0)
+    });
+    if started != Some(true) {
+        return Vec::new();
+    }
+    let app = app();
+    let (mut lost, mut regained) = (false, false);
+    let chosen = loop {
+        if let Some(chosen) = CHOSEN.lock().unwrap().take() {
+            break chosen;
+        }
+        let (mut input, mut gone) = (false, false);
+        app.poll_events(Some(std::time::Duration::from_millis(100)), |event| match event {
+            PollEvent::Main(MainEvent::TerminateWindow { .. }) => (lost, regained) = (true, false),
+            PollEvent::Main(MainEvent::InitWindow { .. }) => regained = true,
+            PollEvent::Main(MainEvent::InputAvailable) => input = true,
+            PollEvent::Main(MainEvent::Destroy) => gone = true,
+            _ => {}
+        });
+        // (Touches and keys that came just before the chooser: nothing in
+        // the app is there to take them.)
+        if input {
+            if let Ok(mut events) = app.input_events_iter() {
+                while events.next(|_| InputStatus::Handled) {}
+            }
+        }
+        if gone {
+            break Vec::new();
+        }
+    };
+    // (An activity that's gone has no screen either.)
+    if lost || chosen.is_empty() && destroyed() {
+        SCREEN.store(if regained { 2 } else { 1 }, Ordering::Relaxed);
+    }
+    chosen
+}
+
+/// What became of the screen while the app waited in `choose`, once: 1 if
+/// it was taken away, 2 if a new one came too, 0 if nothing.
+pub fn screen() -> u8 {
+    SCREEN.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The program wrote the file at `path`. If it's the copy of a document
+/// (see `choose`), the document gets what's in it.
+pub fn wrote(path: &str) {
+    if !path.contains("/cache/documents/") {
+        return;
+    }
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"store", c"(Ljava/lang/String;)Z")?;
+        let args = [jni_sys::jvalue { l: java_string(env, path) }];
+        ((**env).CallBooleanMethodA?)(env, activity, method, args.as_ptr());
+        Some(())
+    });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onChosen(env: *mut jni_sys::JNIEnv, _class: jni_sys::jclass, paths: jni_sys::jobjectArray) {
+    let mut chosen = Vec::new();
+    unsafe {
+        let count = if paths.is_null() { 0 } else { ((**env).GetArrayLength.unwrap())(env, paths) };
+        for i in 0..count {
+            let path = ((**env).GetObjectArrayElement.unwrap())(env, paths, i);
+            chosen.extend(rust_string(env, path));
+            ((**env).DeleteLocalRef.unwrap())(env, path);
+        }
+    }
+    *CHOSEN.lock().unwrap() = Some(chosen);
+    super::app::wake();
+}
+
 /// What the keyboard and the system tell the app, from Java's thread; the
 /// app takes them on its own (see `take_input`).
 pub enum Input {
@@ -287,6 +482,11 @@ pub enum Input {
     Composing(String),
     /// Characters before and after the caret are taken back.
     Delete(usize, usize),
+    /// The keyboard changed the text it was given (`keyboard`): what was
+    /// from `start` to `end` is now `text`, and the selection is `select`,
+    /// all in Java's characters (see `byte_at`). `field` is the field it
+    /// was given for, and `serial` counts its changes.
+    Edit { field: i32, serial: i32, start: usize, end: usize, text: String, select: (usize, usize) },
     /// The system's bars or the keyboard moved.
     Insets,
 }
@@ -314,6 +514,23 @@ pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onDelete(_env: *mut
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onEdit(
+    env: *mut jni_sys::JNIEnv,
+    _class: jni_sys::jclass,
+    field: i32,
+    serial: i32,
+    start: i32,
+    end: i32,
+    text: jni_sys::jstring,
+    select_start: i32,
+    select_end: i32,
+) {
+    let text = unsafe { rust_string(env, text) }.unwrap_or_default();
+    let at = |n: i32| n.max(0) as usize;
+    tell(Input::Edit { field, serial, start: at(start), end: at(end), text, select: (at(select_start), at(select_end)) });
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_dev_tessel_TesselActivity_onInsets(_env: *mut jni_sys::JNIEnv, _class: jni_sys::jclass) {
     tell(Input::Insets);
 }
@@ -331,6 +548,7 @@ fn android_main(app: AndroidApp) {
         }
     }
     let _ = APP.set(app);
+    let _ = MAIN.set(std::thread::current().id());
     unsafe { tsl_main() };
     // (A program without an `app`: its timers and background work.)
     super::run_until_idle();

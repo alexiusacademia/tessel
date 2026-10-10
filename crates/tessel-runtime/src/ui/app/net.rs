@@ -254,7 +254,7 @@ fn run_download(id: u64, url: &str, to: &str) -> bool {
     };
     // Write to a temporary name, so a failed download leaves no half file.
     let partial = format!("{to}.part");
-    let ok = save(id, reader, total, &partial) && !cancelled(id) && std::fs::rename(&partial, to).is_ok();
+    let ok = save(id, reader, total, &partial) && !cancelled(id) && crate::wrote(to, std::fs::rename(&partial, to).is_ok());
     if !ok {
         let _ = std::fs::remove_file(&partial);
     }

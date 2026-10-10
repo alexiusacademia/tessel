@@ -24,7 +24,7 @@ easier to remember.
 - **Cross-platform.** The same source builds a native app for macOS and
   Windows. Tessel draws every control itself, so apps look the same on both.
 
-Some things are deliberately left out, at least for now: mobile and web
+Some things are deliberately left out, at least for now: iOS and web
 targets, native operating-system widgets, pointers and references, threads,
 inheritance, macros and operator overloading.
 

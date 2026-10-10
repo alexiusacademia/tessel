@@ -23,7 +23,9 @@ its first releases came so quickly. The dates on
   through LLVM. Built apps are single executables that need nothing else
   installed.
 - **Platforms:** macOS (11 and later) and Windows. Both are built and tested
-  on every change. There's no Linux support yet.
+  on every change. Apps can also be built for
+  [Android](/guides/android/) (11 and later), which is newer and has so far
+  been tried only on an emulator. There's no Linux or iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, over 100 built-in icons, SVG,

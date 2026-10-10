@@ -137,22 +137,24 @@ mod dialogs {
     }
 }
 
-/// On Android, messages and questions are the system's dialogs. Choosing a
-/// file isn't there: Android's chooser is a screen of its own, which a
-/// program can't wait for, so nothing is chosen.
+/// On Android, messages, questions and the file chooser are the system's.
+/// There are no folders to choose there: a program can't walk the folders
+/// of a phone by their paths.
 #[cfg(target_os = "android")]
 mod dialogs {
-    pub fn file(_: bool, _: &str, _: &str, _: &[String]) -> Option<String> {
-        None
+    use super::super::android::{self, Choose};
+
+    pub fn file(save: bool, _: &str, name: &str, types: &[String]) -> Option<String> {
+        android::choose(if save { Choose::Save } else { Choose::Open }, name, types).into_iter().next()
     }
     pub fn folder(_: &str) -> Option<String> {
         None
     }
-    pub fn files(_: &str, _: &[String]) -> Vec<String> {
-        Vec::new()
+    pub fn files(_: &str, types: &[String]) -> Vec<String> {
+        android::choose(Choose::OpenSeveral, "", types)
     }
     pub fn message(confirm: bool, title: &str, message: &str, ok: &str, cancel: &str, _: i64) -> bool {
-        super::super::android::ask(title, message, ok, confirm.then_some(cancel))
+        android::ask(title, message, ok, confirm.then_some(cancel))
     }
 }
 
@@ -2368,6 +2370,35 @@ impl App {
         Some(text[line_start..caret].to_string())
     }
 
+    /// The text being edited, with its selection.
+    #[cfg(target_os = "android")]
+    fn edited(&self) -> Option<super::android::Text> {
+        let e = self.ui.editing.as_ref()?;
+        let text = read_string(editable_text(self.node(e.key)?)?);
+        Some(super::android::Text { anchor: e.anchor.min(text.len()), focus: e.focus.min(text.len()), text })
+    }
+
+    /// A phone's keyboard changes the text being edited: what's in `range`
+    /// becomes `text`, and then `select` is selected. All are counted as
+    /// Java does (see `android::byte_at`).
+    #[cfg(target_os = "android")]
+    fn replace(&mut self, range: std::ops::Range<usize>, text: &str, select: (usize, usize)) {
+        use super::android::byte_at;
+        let Some(now) = self.edited() else { return };
+        let (start, end) = (byte_at(&now.text, range.start), byte_at(&now.text, range.end));
+        if start < end || !text.is_empty() {
+            if let Some(e) = self.ui.editing.as_mut() {
+                (e.anchor, e.focus) = (start, end.max(start));
+            }
+            self.edit(if text.is_empty() { Edit::Backspace(edit::Unit::Char) } else { Edit::Insert(text.to_string()) });
+        }
+        let Some(now) = self.edited() else { return };
+        if let Some(e) = self.ui.editing.as_mut() {
+            (e.anchor, e.focus) = (byte_at(&now.text, select.0), byte_at(&now.text, select.1));
+        }
+        self.dirty = true;
+    }
+
     /// Types text. In code, Enter keeps the indentation (one more level after
     /// `{`) and `}` at the start of a line removes one level.
     fn type_text(&mut self, text: &str) {
@@ -4549,6 +4580,16 @@ struct Phone {
     /// The field the keyboard is shown for.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     typing_in: Option<u64>,
+    /// The field's text and selection as the keyboard was last told (see
+    /// `android::keyboard`); none if the keyboard only types into it.
+    #[cfg(target_os = "android")]
+    told: Option<super::android::Text>,
+    /// The number the keyboard knows the field by, and how many of the
+    /// keyboard's changes of it were taken in.
+    #[cfg(target_os = "android")]
+    field: i32,
+    #[cfg(target_os = "android")]
+    serial: i32,
     /// The caret is to be brought into view (the keyboard came up over it,
     /// or another field is edited).
     reveal: bool,
@@ -5222,16 +5263,28 @@ impl WindowApp {
         // offers depends on the field, and it starts over for another.
         #[cfg(target_os = "android")]
         {
+            use super::android::Typing;
             let key = self.app.ui.editing.as_ref().map(|e| e.key);
+            let now = self.app.edited();
             if key != self.phone.typing_in {
                 self.phone.typing_in = key;
                 self.phone.reveal = key.is_some();
                 let typing = key.map(|key| match self.app.node(key).map(|n| &n.kind) {
-                    Some(Kind::TextField { secure: true, .. }) => super::android::Typing::Secret,
-                    Some(Kind::CodeEditor { .. }) => super::android::Typing::Code,
-                    _ => super::android::Typing::Text,
+                    Some(Kind::TextField { secure: true, .. }) => Typing::Secret,
+                    Some(Kind::CodeEditor { .. }) => Typing::Code,
+                    _ => Typing::Text,
                 });
-                super::android::keyboard(typing);
+                // The keyboard reads and corrects a field's text. Code is
+                // only typed (and a very long text: it's passed whole).
+                self.phone.told = now.clone().filter(|t| typing != Some(Typing::Code) && t.text.len() < 20_000);
+                self.phone.field += 1;
+                self.phone.serial = 0;
+                super::android::keyboard(typing, self.phone.field, self.phone.told.as_ref());
+            } else if let (Some(now), true) = (now, self.phone.told.is_some()) {
+                if self.phone.told.as_ref() != Some(&now) {
+                    super::android::typed(&now, self.phone.serial);
+                    self.phone.told = Some(now);
+                }
             }
         }
     }
@@ -5248,6 +5301,13 @@ impl WindowApp {
                     self.app.type_text(text);
                 }
                 super::android::Input::Composing(text) => self.app.compose(text.clone(), Some(text.len())),
+                super::android::Input::Edit { field, serial, start, end, text, select } => {
+                    if *field == self.phone.field && self.phone.told.is_some() {
+                        self.phone.serial = *serial;
+                        self.app.compose(String::new(), None);
+                        self.app.replace(*start..*end, text, *select);
+                    }
+                }
                 super::android::Input::Delete(before, after) => {
                     for (count, key) in [(*before, "backspace"), (*after, "delete")] {
                         for _ in 0..count.min(64) {
@@ -5277,8 +5337,28 @@ impl WindowApp {
     }
 }
 
+impl WindowApp {
+    /// The file chooser took the screen away while the program waited for
+    /// it, where the event loop couldn't see (`android::choose`): what
+    /// `suspended` and `resumed` would have done is done now.
+    fn screen_lost(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "android")]
+        {
+            let became = super::android::screen();
+            if became != 0 && self.key == 0 {
+                self.screen = None;
+                self.window = None;
+                if became == 2 {
+                    self.resumed(_event_loop);
+                }
+            }
+        }
+    }
+}
+
 impl ApplicationHandler for WindowApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.screen_lost(event_loop);
         if self.window.is_some() || self.key != 0 {
             return;
         }
@@ -5311,6 +5391,7 @@ impl ApplicationHandler for WindowApp {
         if std::env::var_os("TESSEL_DEBUG_EVENTS").is_some() && !matches!(event, WindowEvent::RedrawRequested) {
             eprintln!("event: {event:?}");
         }
+        self.screen_lost(event_loop);
         if let WindowEvent::Touch(touch) = &event {
             self.touch(event_loop, id, touch);
             return;
@@ -5635,6 +5716,7 @@ impl ApplicationHandler for WindowApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.screen_lost(event_loop);
         self.release_lifted(event_loop);
         // The activity is gone, and the system waits for the app to stop.
         #[cfg(target_os = "android")]
@@ -5712,6 +5794,9 @@ fn key_name(event: &KeyEvent) -> Option<String> {
     let plain = event.logical_key.clone();
     match (&event.logical_key, &plain) {
         (Key::Named(k), _) => named(k),
+        // (Android gives Enter and Tab as the characters they type.)
+        (Key::Character(c), _) if matches!(c.as_str(), "\n" | "\r") => Some("enter".to_string()),
+        (Key::Character(c), _) if c.as_str() == "\t" => Some("tab".to_string()),
         (_, Key::Character(c)) | (Key::Character(c), _) => Some(c.to_lowercase()),
         _ => None,
     }

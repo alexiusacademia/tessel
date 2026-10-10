@@ -116,10 +116,12 @@ ignored. Beyond that:
 - **The system's bars.** The app is laid out between the status bar at the
   top and the navigation bar at the bottom, and clear of a camera cutout.
 - **The keyboard.** Tapping a text field brings up the on-screen keyboard,
-  with its suggestions, corrections, swipe typing and emoji. The layout
+  with its suggestions, corrections, swipe typing and emoji. It can
+  correct any word in the field, not only the one being typed. The layout
   shrinks to the space above the keyboard, and a field in a `Scroll` is
   scrolled into view if the keyboard would cover it. A `secure` field is
-  typed as a password, and a code editor without corrections.
+  typed as a password, and a code editor without corrections. The
+  keyboard's Enter key runs a field's `.onSubmit`.
 - **Dialogs and the clipboard.** [`alert` and `confirm`](/ui/dialogs/) are
   the system's dialogs, and `copyToClipboard` and `clipboardText` use the
   phone's clipboard. If the user leaves the app while a `confirm` is open,
@@ -137,25 +139,50 @@ ignored. Beyond that:
 Relative file paths are in the app's own private folder, the only place an
 Android app may write freely.
 
+## Files the user chooses
+
+[`openFile`, `openFiles` and `saveFile`](/ui/dialogs/) open Android's own
+file chooser, and give paths as they do on a computer:
+
+```tessel
+Button("Open…") {
+    if let path = openFile(title: "Open", types: ["txt"]) {
+        text = readFile(path) ?? ""
+    }
+}
+```
+
+Android's documents aren't files with paths, though: they may be in the
+cloud, or belong to another app. So Tessel makes a copy of a chosen
+document in the app's cache, and the path is the copy's. Reading works as
+usual. When the app writes to that path (with `writeFile`, `writeData`,
+`writeImage` and the like), what's written goes to the document too, so
+"Save" in an editor works as it does on a computer. This holds in later
+runs of the app as well, for as long as the document is there.
+
+A few things differ from a computer:
+
+- The chooser has no title, and it filters by `types` only when Android
+  knows them all (`txt`, `png`, `pdf`…). With an extension of your own, it
+  shows every file.
+- The path says nothing about where the document is. Show the file's name
+  to the user, not its folder.
+- The system may clear an app's cache when the phone is short of space. A
+  path remembered from an earlier run can then be gone, like a file that
+  was deleted: ask for the file again.
+- `chooseFolder` gives no folder. An app can't walk a phone's folders by
+  their paths.
+
 Design for a narrow screen: a row of five buttons that fits a desktop window
 doesn't fit a phone. `HStack`s that may be too wide can go in a `Scroll`, or
 be `VStack`s.
 
 ## What doesn't work yet
 
-- **Choosing files.** `openFile`, `openFiles`, `saveFile` and `chooseFolder`
-  give no file. Android's file chooser is a screen of its own that the app
-  has to step aside for, and these functions wait for their answer on the
-  spot; the two don't fit together yet. Keep an app's files in its own
-  folder (relative paths, or `appDataFolder`).
-- **Corrections of earlier words.** The keyboard corrects the word being
-  typed. It can't go back and change words typed before, as it can in
-  Android's own text fields.
 - **Extra windows** (`Window`) and **printing** aren't available.
 - **Menu bars and ribbons** are drawn, but they're designed for a wide
   window and a mouse. On a phone, prefer buttons and context menus.
-- **Pinch** was written but couldn't be tried: the emulator Tessel is
-  tested on has no second finger.
+- **Choosing a folder** (`chooseFolder`): see above.
 - Everything here was tested on an emulator, building from macOS. A real
   phone, and building from Windows, haven't been tried.
 

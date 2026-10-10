@@ -60,6 +60,10 @@ Button("Export…") {
 `openFiles` gives an empty list when the dialog is cancelled; `chooseFolder`
 gives `nil`.
 
+On Android these open the system's file chooser, and the paths are of
+copies that Tessel keeps in step with the documents chosen: see
+[Files the user chooses](/guides/android/#files-the-user-chooses).
+
 ## Sheets
 
 `.sheet(isPresented: bind Bool) { … }` shows your own views in a card in the

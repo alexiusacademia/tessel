@@ -193,7 +193,7 @@ pub unsafe extern "C" fn tsl_render_image(
         let mut o = o.borrow_mut();
         o.get_or_insert_with(|| std::mem::ManuallyDrop::new(super::backend::Offscreen::default())).rgba(&list, w, h, base)
     });
-    super::backend::save_rgba(&path, w, h, pixels) as u8
+    crate::wrote(&path, super::backend::save_rgba(&path, w, h, pixels)) as u8
 }
 
 /// `writePDF(path:title:width:height:) { g in … }`: runs the block, with
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn tsl_write_pdf(
         list.append(l, Affine::IDENTITY);
         list
     }));
-    super::backend::write_pdf(&path, &title, width, height, &pages) as u8
+    crate::wrote(&path, super::backend::write_pdf(&path, &title, width, height, &pages)) as u8
 }
 
 /// Drops the drawings kept for canvases that aren't in the tree any more.
