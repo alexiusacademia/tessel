@@ -4541,6 +4541,8 @@ struct Phone {
 struct Finger {
     id: u64,
     start: (f64, f64),
+    /// When it came down (held long enough in one place, it's a long press).
+    down_at: Instant,
     last: (f64, f64),
     moved_at: Instant,
     /// Points per second, smoothed.
@@ -4555,7 +4557,13 @@ enum Touching {
     Scrolling,
     /// Like a mouse button held down.
     Pressing,
+    /// A long press that opened a menu: nothing more until it lifts.
+    Held,
 }
+
+/// How long a finger stays in one place before it's a long press (which
+/// opens a context menu, like a right click).
+const LONG_PRESS: Duration = Duration::from_millis(500);
 
 struct Fling {
     at: (f64, f64),
@@ -4977,11 +4985,15 @@ impl WindowApp {
                     self.window_event(event_loop, id, button(ElementState::Pressed));
                 }
                 let doing = if waits { Touching::Waiting } else { Touching::Pressing };
+                let now = Instant::now();
                 self.phone.finger =
-                    Some(Finger { id: touch.id, start: p, last: p, moved_at: Instant::now(), velocity: (0.0, 0.0), doing });
+                    Some(Finger { id: touch.id, start: p, down_at: now, last: p, moved_at: now, velocity: (0.0, 0.0), doing });
             }
             TouchPhase::Moved => {
                 let Some(f) = &mut self.phone.finger else { return };
+                if f.doing == Touching::Held {
+                    return;
+                }
                 if f.doing == Touching::Pressing {
                     f.last = p;
                     self.window_event(event_loop, id, moved);
@@ -5009,7 +5021,7 @@ impl WindowApp {
                         self.window_event(event_loop, id, button(ElementState::Pressed));
                         self.window_event(event_loop, id, button(ElementState::Released));
                     }
-                    Touching::Waiting => {}
+                    Touching::Waiting | Touching::Held => {}
                     Touching::Pressing => self.window_event(event_loop, id, button(ElementState::Released)),
                     // Let go while moving: the scroll goes on by itself.
                     Touching::Scrolling => {
@@ -5024,6 +5036,36 @@ impl WindowApp {
                 self.window_event(event_loop, id, WindowEvent::CursorLeft { device_id });
             }
         }
+    }
+
+    /// A finger held in one place long enough opens the context menu of
+    /// what's under it, as a right click does. Returns when to look again.
+    fn long_press(&mut self, event_loop: &ActiveEventLoop) -> Option<Instant> {
+        let f = self.phone.finger.as_ref()?;
+        let still = (f.last.0 - f.start.0).hypot(f.last.1 - f.start.1) <= TOUCH_SLOP;
+        if !still || !matches!(f.doing, Touching::Waiting | Touching::Pressing) {
+            return None;
+        }
+        let due = f.down_at + LONG_PRESS;
+        if Instant::now() < due {
+            return Some(due);
+        }
+        let (x, y) = f.start;
+        if !matches!(self.app.context_target(x, y), Some((_, true))) {
+            return None;
+        }
+        // (What the finger pressed isn't clicked when it lifts.)
+        self.app.ui.pressed = None;
+        self.selecting = false;
+        self.drag_start = None;
+        if let Some(f) = &mut self.phone.finger {
+            f.doing = Touching::Held;
+        }
+        if self.app.mouse_press(x, y, true) {
+            self.after_app(event_loop);
+            self.request_all();
+        }
+        None
     }
 
     fn redraw(&mut self) {
@@ -5480,11 +5522,10 @@ impl ApplicationHandler for WindowApp {
         // Wake for the next timer, for a tooltip that's waiting to show, or
         // for a notice that's to go.
         let next = [next_timer(), self.app.tip_time(), notice_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
-        match next {
-            Some(t) => {
-                let wait = Duration::from_secs_f64((t - now()).max(0.0));
-                event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + wait));
-            }
+        let next = next.map(|t| Instant::now() + Duration::from_secs_f64((t - now()).max(0.0)));
+        let held = self.long_press(event_loop);
+        match [next, held].into_iter().flatten().min() {
+            Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
     }

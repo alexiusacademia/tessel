@@ -30,6 +30,20 @@ pub struct Manifest {
     pub tessel: Option<String>,
     #[serde(default)]
     pub app: App,
+    #[serde(default)]
+    pub android: Android,
+}
+
+/// What an Android package needs besides `[app]` (`[android]`).
+#[derive(Deserialize, Default, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Android {
+    /// The keystore the package is signed with, relative to the manifest
+    /// (without one, Android's debug key signs it, which is for trying the
+    /// app, not for Google Play).
+    pub keystore: Option<String>,
+    /// The name (alias) of the key in the keystore.
+    pub key: Option<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -156,6 +170,14 @@ pub fn app_info(found: Option<&Found>, program: &Path) -> tessel_compiler::AppIn
 }
 
 /// Where the app's icon is: the manifest's `icon`, relative to it.
+/// The keystore `[android]` names, and the key in it.
+pub fn keystore(found: Option<&Found>) -> Option<(PathBuf, Option<String>)> {
+    let found = found?;
+    let android = &found.manifest.android;
+    let file = found.file.parent().unwrap_or(Path::new(".")).join(android.keystore.as_ref()?);
+    Some((file, android.key.clone()))
+}
+
 pub fn icon_path(found: Option<&Found>) -> Option<PathBuf> {
     let found = found?;
     let icon = found.manifest.app.icon.as_ref()?;

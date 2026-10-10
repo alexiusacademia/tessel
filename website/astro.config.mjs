@@ -130,6 +130,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Saving data as JSON', slug: 'guides/json' },
 						{ label: 'Saving data in a database', slug: 'guides/database' },
+						{ label: 'Building for Android', slug: 'guides/android' },
 					],
 				},
 				{

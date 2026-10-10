@@ -126,7 +126,10 @@ pub fn doctor() -> std::process::ExitCode {
         line("NDK", ndk_clang(sdk).map(shown));
     }
     line("Java", java().map(shown));
-    line("Tessel's runtime for Android", runtime_lib().map(shown));
+    match runtime_here() {
+        Ok(lib) => line("Tessel's runtime for Android", Ok(shown(lib))),
+        Err(_) => println!("  later    Tessel's runtime for Android: the first Android build downloads it (about 50 MB)"),
+    }
     // Not needed to build: only to try the app.
     println!("To run an app:");
     match sdk.as_ref().ok().map(|s| s.join("platform-tools").join(format!("adb{}", std::env::consts::EXE_SUFFIX))) {
@@ -180,21 +183,47 @@ fn java() -> Result<PathBuf, String> {
     })
 }
 
-/// The Android build of the runtime library: `android/libtessel_runtime.a`
-/// next to `tessel` (or, in the repository, where cargo builds it).
-fn runtime_lib() -> Result<PathBuf, String> {
+/// The file of a release that holds the runtime for Android.
+fn runtime_package() -> String {
+    format!("tessel-v{}-android-arm64.tar.gz", tessel_compiler::VERSION)
+}
+
+/// Where the Android build of the runtime library is, if it's here:
+/// `android/libtessel_runtime.a` next to `tessel` (or, in the repository,
+/// where cargo builds it), or in Tessel's folder, where `runtime_lib`
+/// downloads it to.
+fn runtime_here() -> Result<PathBuf, PathBuf> {
     if let Some(lib) = env_path("TESSEL_ANDROID_RUNTIME") {
         return Ok(lib);
     }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = std::env::current_exe().unwrap_or_default();
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let home = super::update::home().unwrap_or_else(|_| exe.with_file_name("android"));
+    let downloaded = home.join("android").join(tessel_compiler::VERSION).join("libtessel_runtime.a");
     let places = [
         exe.with_file_name("android").join("libtessel_runtime.a"),
         exe.with_file_name("..").join(format!("android/{TRIPLE}/release/libtessel_runtime.a")),
+        downloaded.clone(),
     ];
-    places.iter().find(|p| p.is_file()).cloned().ok_or_else(|| {
-        format!("this `tessel` has no runtime for Android (it would be at `{}`)", places[0].display())
-    })
+    places.into_iter().find(|p| p.is_file()).ok_or(downloaded)
+}
+
+/// The Android build of the runtime library. It isn't in Tessel's package
+/// (most people never build for Android): it's downloaded the first time,
+/// once for each version of Tessel.
+fn runtime_lib() -> Result<PathBuf, String> {
+    let to = match runtime_here() {
+        Ok(lib) => return Ok(lib),
+        Err(to) => to,
+    };
+    eprintln!("Getting Tessel's runtime for Android (once for each version of Tessel)…");
+    let version = format!("v{}", tessel_compiler::VERSION);
+    let dir = to.parent().unwrap_or(Path::new("."));
+    super::update::fetch_part(&version, &runtime_package(), dir).map_err(|e| format!("can't get the runtime for Android: {e}"))?;
+    match to.is_file() {
+        true => Ok(to),
+        false => Err(format!("`{}` has no runtime library in it", runtime_package())),
+    }
 }
 
 /// Runs a tool, and gives what it printed if it failed.
@@ -264,7 +293,69 @@ fn debug_key(java: &Path) -> Result<PathBuf, String> {
     Ok(key)
 }
 
-/// Builds the program at `path` as an Android package at `out`.
+/// What signs a package: a keystore, the key in it, and where its
+/// passwords are (an environment variable, or Android's debug password).
+struct Signing {
+    keystore: PathBuf,
+    key: String,
+    /// `None`: Android's debug key.
+    password_vars: Option<(&'static str, &'static str)>,
+}
+
+/// The environment variables that hold a release keystore's passwords.
+const STORE_PASSWORD: &str = "TESSEL_ANDROID_KEYSTORE_PASSWORD";
+const KEY_PASSWORD: &str = "TESSEL_ANDROID_KEY_PASSWORD";
+
+impl Signing {
+    /// The app's own key (`[android]` in `tessel.toml`), or the debug key.
+    fn of(found: Option<&manifest::Found>, java: &Path) -> Result<Signing, String> {
+        let Some((keystore, key)) = manifest::keystore(found) else {
+            return Ok(Signing { keystore: debug_key(java)?, key: "androiddebugkey".into(), password_vars: None });
+        };
+        if !keystore.is_file() {
+            return Err(format!(
+                "can't find the keystore `{}` that tessel.toml names\n = help: make one with `keytool -genkeypair -keystore {} -alias upload -keyalg RSA -keysize 2048 -validity 10000`",
+                keystore.display(),
+                keystore.display()
+            ));
+        }
+        let key = key.ok_or("tessel.toml's `[android]` names a keystore but not the key in it\n = help: add `key = \"upload\"` (the alias the key was made with)")?;
+        if env_path(STORE_PASSWORD).is_none() {
+            return Err(format!(
+                "the keystore's password isn't set\n = help: set {STORE_PASSWORD} (and {KEY_PASSWORD}, if the key has another) in the environment; passwords don't go in tessel.toml"
+            ));
+        }
+        let key_var = if env_path(KEY_PASSWORD).is_some() { KEY_PASSWORD } else { STORE_PASSWORD };
+        Ok(Signing { keystore, key, password_vars: Some((STORE_PASSWORD, key_var)) })
+    }
+}
+
+/// A tool of the JDK that `java` belongs to.
+fn jdk_tool(java: &Path, name: &str) -> Result<PathBuf, String> {
+    let tool = java.with_file_name(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    // (`java` found on the PATH: so is the tool, if it's a JDK.)
+    let tool = if java.parent().is_some_and(|p| !p.as_os_str().is_empty()) { tool } else { PathBuf::from(name) };
+    match Command::new(&tool).arg("--version").output() {
+        Ok(_) => Ok(tool),
+        Err(_) => Err(format!("can't find `{name}`\n = help: it comes with a JDK (a Java runtime alone isn't enough); install one, or set JAVA_HOME")),
+    }
+}
+
+/// An Android package name from an app's id: what Android allows (letters,
+/// digits and `_`, in at least two parts that start with a letter).
+fn package_name(id: &str) -> Result<String, String> {
+    let name = id.replace('-', "_");
+    let part_ok = |p: &str| p.starts_with(|c: char| c.is_ascii_alphabetic()) && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if name.split('.').count() >= 2 && name.split('.').all(part_ok) {
+        return Ok(name);
+    }
+    Err(format!(
+        "the app's id `{id}` can't name an Android package\n = help: give it at least two parts that start with a letter, like `id = \"com.example.tally\"` in tessel.toml"
+    ))
+}
+
+/// Builds the program at `path` as an Android package at `out`: an `.aab`
+/// (for Google Play) if `out` ends in that, an `.apk` otherwise.
 pub fn build(path: &Path, out: &Path) -> Result<(), std::process::ExitCode> {
     use std::process::ExitCode;
     let fail = |msg: String| {
@@ -326,7 +417,9 @@ fn package(
     let found = manifest::find(path).ok().flatten();
     let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
     let name = info.name.clone().unwrap_or_else(|| app.name.clone());
-    let id = info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(&name));
+    let id = package_name(&info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(&name)))?;
+    let signing = Signing::of(found.as_ref(), &tools.java)?;
+    let bundle = out.extension().is_some_and(|e| e == "aab");
     let version = info.version.clone().unwrap_or_else(|| "1.0".into());
 
     // The program, as the library the activity loads.
@@ -411,45 +504,121 @@ fn package(
 
     let resources = work.join("resources.zip");
     run("aapt2", Command::new(tools.tool("aapt2")).args(["compile", "--dir"]).arg(work.join("res")).arg("-o").arg(&resources))?;
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| format!("can't create `{}`: {e}", parent.display()))?;
+    }
+    let link = |proto: bool, to: &Path| {
+        let mut aapt2 = Command::new(tools.tool("aapt2"));
+        aapt2.args(["link", "-o"]).arg(to).arg("-I").arg(&tools.platform.0).arg("--manifest").arg(&manifest_file);
+        if proto {
+            aapt2.arg("--proto-format");
+        }
+        run("aapt2", aapt2.arg(&resources))
+    };
+    if bundle {
+        return app_bundle(out, tools, &signing, work, &lib, &link);
+    }
+
     let unsigned = work.join("unsigned.apk");
-    run(
-        "aapt2",
-        Command::new(tools.tool("aapt2"))
-            .args(["link", "-o"])
-            .arg(&unsigned)
-            .arg("-I")
-            .arg(&tools.platform.0)
-            .arg("--manifest")
-            .arg(&manifest_file)
-            .arg(&resources),
-    )?;
+    link(false, &unsigned)?;
     // (`aapt add` names the file in the package by the path it's given.)
     run("aapt", Command::new(tools.tool("aapt")).current_dir(work).args(["add", "unsigned.apk", "lib/arm64-v8a/libmain.so"]))?;
     let aligned = work.join("aligned.apk");
     run("zipalign", Command::new(tools.tool("zipalign")).args(["-f", "-p", "4"]).arg(&unsigned).arg(&aligned))?;
 
-    let key = debug_key(&tools.java)?;
-    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).map_err(|e| format!("can't create `{}`: {e}", parent.display()))?;
-    }
-    run(
-        "apksigner",
-        Command::new(&tools.java)
-            .arg("-jar")
-            .arg(tools.build_tools.join("lib/apksigner.jar"))
-            .args(["sign", "--ks"])
-            .arg(&key)
-            .args(["--ks-pass", "pass:android", "--key-pass", "pass:android", "--ks-key-alias", "androiddebugkey", "--out"])
-            .arg(out)
-            .arg(&aligned),
-    )?;
+    let mut apksigner = Command::new(&tools.java);
+    apksigner.arg("-jar").arg(tools.build_tools.join("lib/apksigner.jar")).args(["sign", "--ks"]).arg(&signing.keystore);
+    match signing.password_vars {
+        Some((store, key)) => apksigner.args(["--ks-pass", &format!("env:{store}"), "--key-pass", &format!("env:{key}")]),
+        None => apksigner.args(["--ks-pass", "pass:android", "--key-pass", "pass:android"]),
+    };
+    run("apksigner", apksigner.args(["--ks-key-alias", &signing.key, "--out"]).arg(out).arg(&aligned))?;
     let _ = std::fs::remove_file(out.with_extension("apk.idsig"));
+    Ok(())
+}
+
+/// The settings of an app bundle (`BundleConfig.pb`: the version of the
+/// bundle format's tool it follows), and what says which processors its
+/// libraries are for (`native.pb`: `lib/arm64-v8a` is for 64-bit ARM).
+/// Both are the same for every app, as Google's `bundletool` writes them.
+const BUNDLE_CONFIG: &[u8] = b"\x0a\x08\x12\x061.18.1";
+const BUNDLE_NATIVE: &[u8] = b"\x0a\x15\x0a\x0dlib/arm64-v8a\x12\x04\x0a\x02\x08\x03";
+
+/// Every file in `dir`, and in the folders in it.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for entry in entries {
+        match entry.is_dir() {
+            true => found.extend(files_under(&entry)),
+            false => found.push(entry),
+        }
+    }
+    found
+}
+
+/// An Android App Bundle, the format Google Play takes: the app's one
+/// module (`base/`), with its manifest and resources in the bundle's own
+/// encoding, signed with the JDK's `jarsigner`.
+fn app_bundle(
+    out: &Path,
+    tools: &Tools,
+    signing: &Signing,
+    work: &Path,
+    lib: &Path,
+    link: &dyn Fn(bool, &Path) -> Result<(), String>,
+) -> Result<(), Failed> {
+    let (jar, jarsigner) = (jdk_tool(&tools.java, "jar")?, jdk_tool(&tools.java, "jarsigner")?);
+    let linked = work.join("proto.apk");
+    link(true, &linked)?;
+    let base = work.join("bundle/base");
+    let made = |e: std::io::Error| format!("can't put the bundle together in `{}`: {e}", work.display());
+    std::fs::create_dir_all(base.join("manifest")).map_err(made)?;
+    std::fs::create_dir_all(base.join("lib/arm64-v8a")).map_err(made)?;
+    run("jar", Command::new(&jar).current_dir(&base).arg("xf").arg(&linked))?;
+    std::fs::rename(base.join("AndroidManifest.xml"), base.join("manifest/AndroidManifest.xml")).map_err(made)?;
+    std::fs::copy(lib, base.join("lib/arm64-v8a/libmain.so")).map_err(made)?;
+    std::fs::write(base.join("native.pb"), BUNDLE_NATIVE).map_err(made)?;
+    std::fs::write(work.join("bundle/BundleConfig.pb"), BUNDLE_CONFIG).map_err(made)?;
+    let _ = std::fs::remove_file(out);
+    // (`M`: a zip without the manifest a `.jar` has. Each file is named:
+    // given a folder, `jar` adds entries for folders too, which a bundle
+    // mustn't have.)
+    let root = work.join("bundle");
+    let mut zip = Command::new(&jar);
+    zip.arg("cfM").arg(out);
+    for file in files_under(&root) {
+        zip.arg("-C").arg(&root).arg(file.strip_prefix(&root).unwrap_or(&file));
+    }
+    run("jar", &mut zip)?;
+
+    let mut sign = Command::new(&jarsigner);
+    sign.arg("-keystore").arg(&signing.keystore);
+    match signing.password_vars {
+        Some((store, key)) => sign.args(["-storepass:env", store, "-keypass:env", key]),
+        None => sign.args(["-storepass", "android", "-keypass", "android"]),
+    };
+    run("jarsigner", sign.args(["-sigalg", "SHA256withRSA", "-digestalg", "SHA-256"]).arg(out).arg(&signing.key))?;
+    if signing.password_vars.is_none() {
+        eprintln!(
+            "note: signed with Android's debug key, which Google Play doesn't take\n = help: name the app's own keystore in tessel.toml: `[android]`, `keystore = \"upload.jks\"`, `key = \"upload\"`"
+        );
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ids_become_package_names() {
+        assert_eq!(package_name("com.example.my-app").unwrap(), "com.example.my_app");
+        assert_eq!(package_name("dev.tessel.counter").unwrap(), "dev.tessel.counter");
+        assert!(package_name("counter").is_err());
+        assert!(package_name("com.2fast.app").is_err());
+    }
 
     #[test]
     fn versions_become_numbers() {

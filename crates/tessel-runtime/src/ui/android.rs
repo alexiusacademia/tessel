@@ -188,8 +188,13 @@ pub fn destroyed() -> bool {
 fn android_main(app: AndroidApp) {
     print_to_log();
     // Relative paths are in the app's own folder (the only one it may write).
+    // It's the app's home too (`homeFolder()`, and the folders in it).
     if let Some(folder) = app.internal_data_path() {
-        let _ = std::env::set_current_dir(folder);
+        let _ = std::env::set_current_dir(&folder);
+        if std::env::var_os("HOME").is_none_or(|h| h.is_empty() || h == "/") {
+            // (Nothing else runs yet that could be reading the environment.)
+            unsafe { std::env::set_var("HOME", &folder) };
+        }
     }
     let _ = APP.set(app);
     unsafe { tsl_main() };

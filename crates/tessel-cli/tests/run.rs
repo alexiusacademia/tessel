@@ -247,6 +247,38 @@ fn hot_reload() {
 /// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
 /// on a copy of `tests/ide/project`, then compares its output and the
 /// project's files with what's expected.
+/// `tessel build --android`: an app as an `.apk` and as an `.aab`. Only
+/// where Android's tools and Tessel's runtime for Android are (see
+/// `tessel android doctor`): elsewhere there's nothing to test with.
+#[test]
+fn android_packages() {
+    let tessel = env!("CARGO_BIN_EXE_tessel");
+    let doctor = Command::new(tessel).args(["android", "doctor"]).output().unwrap();
+    let report = String::from_utf8_lossy(&doctor.stdout);
+    if !doctor.status.success() || !report.contains("ok       Tessel's runtime for Android") {
+        eprintln!("skipped: not set up for Android\n{report}");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("tessel-test-android-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(repo().join("tests/run/app_await.tsl"), dir.join("main.tsl")).unwrap();
+    std::fs::write(dir.join("tessel.toml"), "[app]\nname = \"Await\"\nid = \"dev.tessel.test-await\"\nversion = \"2.1.0\"\n").unwrap();
+    for (flags, file) in [(vec!["--android"], "main.apk"), (vec!["--android", "--bundle"], "main.aab")] {
+        let out = Command::new(tessel).arg("build").arg(".").args(&flags).args(["-o", file]).current_dir(&dir).output().unwrap();
+        assert!(out.status.success(), "tessel build {flags:?} failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        // A zip with the app's library in it (stored whole or compressed,
+        // its name is there).
+        let bytes = std::fs::read(dir.join(file)).unwrap();
+        assert!(bytes.starts_with(b"PK"), "{file} isn't a package");
+        let has = |name: &str| bytes.windows(name.len()).any(|w| w == name.as_bytes());
+        assert!(has("lib/arm64-v8a/libmain.so"), "{file} has no library");
+        assert!(has("AndroidManifest.xml"), "{file} has no manifest");
+        assert!(bytes.len() > 1_000_000, "{file} is only {} bytes", bytes.len());
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `tessel preview`: the picture of an app, and what it tells an editor
 /// about the views in it (see `tests/preview`): from the files as saved,
 /// then with text that isn't saved.

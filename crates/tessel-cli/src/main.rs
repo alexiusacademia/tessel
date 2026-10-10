@@ -35,8 +35,9 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app).
                  An icon.png next to the program is the app's icon
-  build <path> --android [-o <output.apk>]
-                 an app as an Android package (needs the Android SDK and NDK)
+  build <path> --android [--bundle] [-o <output>]
+                 an app as an Android package: an .apk to install, or with
+                 --bundle an .aab for Google Play (needs the Android SDK and NDK)
   android doctor
                  check that what building for Android needs is installed
   run <path> [--hot]
@@ -124,7 +125,9 @@ fn main() -> ExitCode {
             let out = rest.iter().position(|a| a == "-o").and_then(|i| rest.get(i + 1)).map(PathBuf::from);
             let bundle = rest.iter().any(|a| a == "--bundle");
             if rest.iter().any(|a| a == "--android") {
-                let out = out.unwrap_or_else(|| default_output(Path::new(path)).with_extension("apk"));
+                // (`--bundle`: the package Google Play takes.)
+                let kind = if bundle { "aab" } else { "apk" };
+                let out = out.unwrap_or_else(|| default_output(Path::new(path)).with_extension(kind));
                 return match android::build(Path::new(path), &out) {
                     Ok(()) => {
                         println!("built {}", out.display());

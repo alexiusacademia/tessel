@@ -262,6 +262,18 @@ installed.
 On Windows, apps (programs with an `app`) are built without a console
 window.
 
+### For Android
+
+```sh
+tessel build <path> --android [--bundle] [-o <output>]
+tessel android doctor
+```
+
+`--android` builds an app as an Android package: an `.apk` to install on a
+phone, or with `--bundle` an `.aab` for Google Play. It needs the Android
+SDK and NDK; `tessel android doctor` checks that they're installed and says
+how to get what's missing. See [Building for Android](/guides/android/).
+
 On macOS, an app whose `app` lists [`documentTypes:`](/ui/menus-windows/#opening-documents)
 (like `app Notes(documentTypes: ["note"])`) gets them in its bundle, so
 Finder opens those files with it.
@@ -477,6 +489,8 @@ summary and exits with status 1.
 | `TESSEL_RELEASES` | `tessel update`, `tessel pin` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
 | `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
 | `TESSEL_HOME` | `tessel pin` | Tessel's folder, where other versions are installed (in `versions/`). The install scripts use it too. |
+| `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |
+| `TESSEL_ANDROID_KEYSTORE_PASSWORD` | `tessel build --android` | The password of the keystore `tessel.toml` names; `TESSEL_ANDROID_KEY_PASSWORD` is the key's, if it differs. See [Publishing on Google Play](/guides/android/#publishing-on-google-play). |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |
 | `TESSEL_DEBUG_EVENTS` | Built apps | When set, an app prints every window event it receives (mouse, keyboard, resizing) to standard error. Useful when something doesn't react to input. |
 | `LLVM_SYS_221_PREFIX` | Building Tessel | Where LLVM 22 is installed; see [Installation](/start/installation/). |

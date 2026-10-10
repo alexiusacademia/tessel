@@ -146,6 +146,29 @@ fn fetch(target: &str, staging: &Path, found: &dyn Fn()) -> Result<PathBuf, Stri
     Ok(unpacked)
 }
 
+/// Downloads a part of release `target` that isn't in its package (`file`,
+/// a `.tar.gz`, checked against the release's checksums) and unpacks it
+/// into `dir`.
+pub fn fetch_part(target: &str, file: &str, dir: &Path) -> Result<(), String> {
+    let base = base();
+    let sums = get_text(&format!("{base}/{target}/SHA256SUMS")).map_err(|_| format!("there's no release {target}"))?;
+    let expected = sums
+        .lines()
+        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
+        .map(|(h, _)| h.to_lowercase())
+        .ok_or_else(|| format!("release {target} has no `{file}`"))?;
+    std::fs::create_dir_all(dir).map_err(|e| writable(dir, e))?;
+    let package = dir.join(file);
+    download(&format!("{base}/{target}/{file}"), &package, &expected)?;
+    let status =
+        Command::new("tar").arg("-xf").arg(&package).arg("-C").arg(dir).status().map_err(|e| format!("can't run tar: {e}"))?;
+    let _ = std::fs::remove_file(&package);
+    if !status.success() {
+        return Err(format!("can't unpack {file}"));
+    }
+    Ok(())
+}
+
 fn exe_name() -> String {
     format!("tessel{}", std::env::consts::EXE_SUFFIX)
 }
@@ -169,7 +192,7 @@ pub fn normalize(v: &str) -> Result<String, String> {
 /// The folder Tessel lives in: `TESSEL_HOME`, or the one around the `bin`
 /// folder this `tessel` is installed in, or where the install scripts put
 /// it (`~/.tessel`, or `%LOCALAPPDATA%\Tessel` on Windows).
-fn home() -> Result<PathBuf, String> {
+pub fn home() -> Result<PathBuf, String> {
     if let Some(h) = std::env::var_os("TESSEL_HOME") {
         return Ok(PathBuf::from(h));
     }

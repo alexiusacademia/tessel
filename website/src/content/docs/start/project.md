@@ -67,6 +67,21 @@ Windows, `tessel build` puts them in the `.exe`, where its Properties show
 them. The About panel (from the app's menu on macOS) shows the name,
 version and copyright.
 
+## Android
+
+An `[android]` table names the key that signs the app's Android packages:
+
+```toml
+[android]
+keystore = "upload.jks"
+key = "upload"
+```
+
+`keystore` is the keystore's path, relative to `tessel.toml`, and `key` is
+the name (alias) of the key in it. Its password comes from the environment,
+never from this file. See
+[Publishing on Google Play](/guides/android/#publishing-on-google-play).
+
 ## Documents
 
 Each `[[app.documents]]` is a kind of file the app opens: its `extensions`
