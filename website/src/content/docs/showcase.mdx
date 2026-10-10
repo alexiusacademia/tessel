@@ -1,6 +1,6 @@
 ---
 title: Built with Tessel
-description: Desktop apps written in Tessel that you can download and use, a spreadsheet, a word processor and an engineering app among them.
+description: Desktop apps written in Tessel, a spreadsheet, a word processor and engineering apps among them.
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
@@ -8,6 +8,8 @@ import { Image } from 'astro:assets';
 import tally from '../../assets/showcase/tally.png';
 import quill from '../../assets/showcase/quill.png';
 import slope from '../../assets/showcase/slope.jpg';
+import flume from '../../assets/showcase/flume.webp';
+import girder from '../../assets/showcase/girder.jpg';
 import ide from '../../assets/screens/ide.png';
 
 Tessel is made for real desktop apps, and the best proof is apps people use.
@@ -74,6 +76,39 @@ the language is fast enough for numerical work, not only for buttons and lists.
 
 <section>
 
+<Image src={flume} loading="eager" alt="Flume showing the water surface through a sluice gate and a hydraulic jump, with the depths and energies beside it" />
+
+## Flume
+
+An engineering app for open channel flow. Flume works out normal and critical
+depth, the hydraulic jump and water surface profiles as you type, for
+rectangular, trapezoidal, circular, parabolic and surveyed sections, draws the
+channel as it goes, and writes the calculation up as a PDF report.
+
+<LinkButton href="https://flume.syncster.dev/" icon="external">flume.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={girder} loading="eager" alt="Girder showing a three-dimensional frame with its bending moment diagrams" />
+
+## Girder
+
+An engineering app for the analysis and design of structures. Girder models
+frames in three dimensions, analyses them under static and seismic loads, with
+P-Δ, natural modes, the response spectrum method and time history, and
+designs steel and concrete members, slabs and footings by NSCP 2015.
+
+The stiffness solver, the eigenvalue solver and the three-dimensional view are
+Tessel code.
+
+<LinkButton href="https://girder.syncster.dev/" icon="external">girder.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
 <Image src={ide} loading="eager" alt="The Tessel IDE with a file explorer, a tabbed code editor and a problems panel" />
 
 ## The Tessel IDE
@@ -92,7 +127,7 @@ you're writing, and one-click run, build and packaging.
 
 - **One language, top to bottom.** No web view, no second language for the
   hard parts, and no UI toolkit underneath: Tessel draws the interface itself.
-- **Small.** Each of the three apps above is a download of under 5 MB.
+- **Small.** Tally, Quill and Slope are each a download of under 5 MB.
 - **Tested without a window.** Each has scripts that drive it headless and
   compare what it prints, as described in [Testing apps](/ui/testing/).
 - **Everything from the standard library.** Tally and Quill update themselves
