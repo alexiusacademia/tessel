@@ -20,6 +20,9 @@ hero:
     - text: Learn to program
       link: /learn/
       variant: minimal
+    - text: Built with Tessel
+      link: /showcase/
+      variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
@@ -27,6 +30,9 @@ import { Image } from 'astro:assets';
 import counter from '../../assets/screens/counter.png';
 import todos from '../../assets/screens/todos.png';
 import ide from '../../assets/screens/ide.png';
+import tally from '../../assets/showcase/tally.png';
+import quill from '../../assets/showcase/quill.png';
+import slope from '../../assets/showcase/slope.jpg';
 
 ## A whole app in a few lines
 
@@ -86,6 +92,17 @@ Structs, enums, lists and dictionaries; text fields, toggles, pickers, tabs and
 a code editor; over 100 built-in icons; files, processes and the network, with
 callbacks that update your UI safely. See the [todo list tutorial](/start/first-app/).
 
+</div>
+
+## Built with Tessel
+
+A spreadsheet, a word processor and an engineering app, each written in Tessel
+from the first line to the last. [See what's been built](/showcase/).
+
+<div class="showcase-strip not-content">
+	<a href="/showcase/#tally"><Image src={tally} loading="eager" alt="Tally, a spreadsheet, showing a table and a chart" />Tally<span>A spreadsheet that reads and writes Excel files</span></a>
+	<a href="/showcase/#quill"><Image src={quill} loading="eager" alt="Quill, a word processor, showing a page of a report" />Quill<span>A word processor with styles, tables and tracked changes</span></a>
+	<a href="/showcase/#slope"><Image src={slope} loading="eager" alt="Slope showing the failure of a slope found by finite elements" />Slope<span>Slope stability by finite elements and slip circles</span></a>
 </div>
 
 ## An IDE written in Tessel

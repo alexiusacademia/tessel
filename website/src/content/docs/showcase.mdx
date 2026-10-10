@@ -1,0 +1,107 @@
+---
+title: Built with Tessel
+description: Desktop apps written in Tessel that you can download and use, a spreadsheet, a word processor and an engineering app among them.
+---
+
+import { LinkButton } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import tally from '../../assets/showcase/tally.png';
+import quill from '../../assets/showcase/quill.png';
+import slope from '../../assets/showcase/slope.jpg';
+import ide from '../../assets/screens/ide.png';
+
+Tessel is made for real desktop apps, and the best proof is apps people use.
+Everything on this page is written in Tessel from the first line to the last:
+the interface, the calculations, the file formats, the printing. Each one is a
+single native program of a few megabytes.
+
+<div class="showcase">
+
+<section>
+
+<Image src={tally} loading="eager" alt="Tally showing a sales table with totals and a column chart" />
+
+## Tally
+
+A spreadsheet. Tally opens and saves Excel and OpenDocument workbooks and
+calculates what Excel calculates: over 490 functions, dynamic arrays, `LET` and
+`LAMBDA`, charts, tables, pivot tables, a solver, and printing with a live
+preview. An edit recalculates only what depends on it.
+
+About 70,000 lines of Tessel. The grid, the formula engine and the `.xlsx`
+reader and writer, zip and encryption included, are all Tessel code.
+
+<LinkButton href="https://tally.syncster.dev/" icon="external">tally.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={quill} loading="eager" alt="Quill showing a report with a title, headings, a numbered list and a table" />
+
+## Quill
+
+A word processor. Quill shows a document as pages, the way it will print, with
+styles, lists, tables, pictures, headers and footers, footnotes, a table of
+contents, comments, tracked changes and spelling as you type. It opens and
+saves Word, OpenDocument and Rich Text files, and exports PDF.
+
+About 50,000 lines of Tessel. Breaking paragraphs into lines and pages, and
+drawing them, is done on a [`Canvas`](/ui/drawing/); a keystroke in a 300-page
+document takes a few milliseconds.
+
+<LinkButton href="https://quill.syncster.dev/" icon="external">quill.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={slope} loading="eager" alt="Slope showing a slope's shear band from finite elements with the critical slip circle over it" />
+
+## Slope
+
+An engineering app for the stability of slopes. Slope finds the factor of
+safety two independent ways, by finite elements with strength reduction and by
+slip circles, with seepage, rapid drawdown, loads, earthquakes, and nails,
+anchors and geogrids. It writes the report as a PDF.
+
+The mesh generator, the finite element solver and the plots are Tessel code:
+the language is fast enough for numerical work, not only for buttons and lists.
+
+<LinkButton href="https://slope.syncster.dev/" icon="external">slope.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={ide} loading="eager" alt="The Tessel IDE with a file explorer, a tabbed code editor and a problems panel" />
+
+## The Tessel IDE
+
+The editor that comes with Tessel is a Tessel app too: a file explorer, a
+tabbed code editor with live errors and completion, a preview of the view
+you're writing, and one-click run, build and packaging.
+
+<LinkButton href="/start/ide/" icon="right-arrow" variant="secondary">The Tessel IDE</LinkButton>
+
+</section>
+
+</div>
+
+## What they have in common
+
+- **One language, top to bottom.** No web view, no second language for the
+  hard parts, and no UI toolkit underneath: Tessel draws the interface itself.
+- **Small.** Each of the three apps above is a download of under 5 MB.
+- **Tested without a window.** Each has scripts that drive it headless and
+  compare what it prints, as described in [Testing apps](/ui/testing/).
+- **Everything from the standard library.** Tally and Quill update themselves
+  in the background, with the network, files and processes of the
+  [standard library](/reference/stdlib/).
+
+## Add yours
+
+Made something with Tessel? We'd like to show it here. Start with
+[your first app](/start/first-app/), and see
+[Menus, windows and documents](/ui/menus-windows/) and
+[Ribbons](/ui/ribbons/) for what a full desktop app needs.
