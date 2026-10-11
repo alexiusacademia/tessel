@@ -105,6 +105,7 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&staging);
     result?;
     println!("Updated to Tessel {target}.");
+    crate::telemetry::installed(&target);
     Ok(())
 }
 

@@ -8,6 +8,7 @@ mod new;
 mod pin;
 mod preview;
 mod repl;
+mod telemetry;
 mod update;
 
 use std::io::IsTerminal;
@@ -62,6 +63,9 @@ commands:
   update [version] [--check]
                  update Tessel to the latest release (or to <version>, like
                  v0.1.2); with --check, only say whether there's a newer one
+  telemetry [on|off]
+                 say what Tessel reports (that it's installed, and in use), or
+                 turn that on or off
   pin [version]  make this project use this version of Tessel (or <version>),
                  written in its tessel.toml: then check, build, run, preview,
                  complete, repl and lsp use that version, installing it once
@@ -107,8 +111,14 @@ fn main() -> ExitCode {
     if let Some(code) = pin::hand_on(&mut args) {
         return code;
     }
+    // (Once a day, when Tessel is used, the count of installations in use
+    // is told: see `telemetry`. Not by what editors run on every key.)
+    if !matches!(args.first().map(String::as_str), Some("telemetry" | "complete" | "preview" | "help" | "--help" | "-h" | "version" | "--version" | "-V")) {
+        telemetry::used();
+    }
     match (args.first().map(String::as_str), args.get(1)) {
         (None, _) => ide(Path::new(".")),
+        (Some("telemetry"), _) => telemetry::run(&args[1..]),
         (Some("ide"), folder) => ide(Path::new(folder.map_or(".", String::as_str))),
         (Some("help" | "--help" | "-h"), _) => {
             println!("{USAGE}");

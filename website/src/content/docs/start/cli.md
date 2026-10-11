@@ -382,6 +382,17 @@ Replaces the installation this `tessel` runs from (the folder it's in) with
 another release, after checking the download against the release's
 checksums. See [Updating](/start/installation/#updating).
 
+## `tessel telemetry`
+
+```sh
+tessel telemetry [on|off]
+```
+
+Says what Tessel [reports](/start/installation/#what-tessel-reports) (that
+it was installed or updated, and at most once a day that it's in use) and
+whether that's on. `tessel telemetry off` turns it off for this
+installation, and `tessel telemetry on` turns it back on.
+
 ## `tessel pin`
 
 ```sh
@@ -529,10 +540,11 @@ summary and exits with status 1.
 | `TESSEL_EXE` | Set by `tessel run` and `tessel ide` | The path of the `tessel` command that started the program. A program can read it with `environment("TESSEL_EXE")`, which is how the IDE finds `tessel`. |
 | `TESSEL_PROJECT` | The IDE | The project folder. `tessel ide` sets it; you don't normally need it. |
 | `TESSEL_RELEASES` | `tessel update`, `tessel pin` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
+| `TESSEL_NO_STATS` | every command, the install scripts | Set to `1` to [report nothing](/start/installation/#what-tessel-reports): not the install or update, and not that Tessel is in use. `DO_NOT_TRACK=1` does the same. |
 | `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
-| `TESSEL_HOME` | `tessel pin` | Tessel's folder, where other versions are installed (in `versions/`). The install scripts use it too. |
 | `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |
 | `TESSEL_ANDROID_KEYSTORE_PASSWORD` | `tessel build --android` | The password of the keystore `tessel.toml` names; `TESSEL_ANDROID_KEY_PASSWORD` is the key's, if it differs. See [Publishing on Google Play](/guides/android/#publishing-on-google-play). |
+| `TESSEL_HOME` | `tessel pin` | Tessel's folder, where other versions are installed (in `versions/`). The install scripts use it too. |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |
 | `TESSEL_DEBUG_EVENTS` | Built apps | When set, an app prints every window event it receives (mouse, keyboard, resizing) to standard error. Useful when something doesn't react to input. |
 | `LLVM_SYS_221_PREFIX` | Building Tessel | Where LLVM 22 is installed; see [Installation](/start/installation/). |
