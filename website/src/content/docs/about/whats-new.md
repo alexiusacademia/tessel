@@ -11,6 +11,50 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.2.0
+
+*October 11, 2026*
+
+From this release on, the second number goes up when a release adds
+features, and the third when it only fixes things.
+
+- **A debugger.** Stop a program at a line, step through its code, and look
+  at its variables: lists, dictionaries, structs and enum values open up to
+  show their parts. A runtime error stops the program where it happened,
+  with its variables still there. It works in three places:
+  - the **Tessel IDE**: click beside a line for a breakpoint and press
+    **Debug**; a new Debug tab shows the calls that led there and the
+    variables;
+  - **VS Code**, with version 0.4.0 of the extension: set a breakpoint and
+    press F5;
+  - **a terminal**: `tessel debug app.tsl`.
+
+  It's part of Tessel, with nothing else to install, and works in apps and
+  across `await`. See [Debugging](/guides/debugging/).
+- **Android: choosing files.** `openFile`, `openFiles` and `saveFile` open
+  Android's file chooser. What the app writes to a chosen file goes to the
+  document it stands for. See
+  [Files the user chooses](/guides/android/#files-the-user-chooses).
+- **Android: the keyboard, dialogs and the clipboard.** The on-screen
+  keyboard has its suggestions, corrections (of any word in a field), swipe
+  typing and emoji. `alert` and `confirm` are the system's dialogs, and
+  `copyToClipboard` and `clipboardText` use the phone's clipboard. Two
+  fingers pinch, menus are sized for fingers, and a field the keyboard
+  would cover is scrolled into view.
+- **`runCommand` can be written to.** With `input: true`, the new
+  [`sendToCommand`](/reference/stdlib/#sendtocommand) writes a line to the
+  program while it runs.
+- **`CodeEditor` for debuggers.** `breakpoints:`, `stoppedLine:` and
+  `onBreakpoint:` mark lines in its margin. See
+  [For a debugger](/ui/code-editor/#for-a-debugger).
+- **Testing apps:** `waitfor "label"` in a script waits until a view with
+  that label is there.
+
+Fixed:
+
+- On Android, Enter did nothing in a code editor, and a text field's
+  `.onSubmit` never ran.
+
 ## 0.1.43
 
 *October 10, 2026 · 0.1.42 and 0.1.43*
