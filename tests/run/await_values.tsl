@@ -120,6 +120,6 @@ async fn main() {
         await tick()
         print("block done {words.count}")
     }
-    await after(seconds: 0.05)
+    await after(seconds: 0.5)
     print("done")
 }

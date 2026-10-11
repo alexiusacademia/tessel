@@ -136,7 +136,12 @@ pub fn doctor() -> std::process::ExitCode {
     println!("To run an app:");
     match sdk.as_ref().ok().map(|s| s.join("platform-tools").join(format!("adb{}", std::env::consts::EXE_SUFFIX))) {
         Some(adb) if adb.is_file() => {
-            let listed = Command::new(&adb).arg("devices").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+            // (adb leaves a server running, which keeps whatever its output
+            // went to open: started here with none, nobody who reads this
+            // command's output waits for that server to end.)
+            let nothing = std::process::Stdio::null;
+            let _ = Command::new(&adb).arg("start-server").stdin(nothing()).stdout(nothing()).stderr(nothing()).status();
+            let listed = Command::new(&adb).arg("devices").stdin(nothing()).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
             let devices: Vec<String> = listed
                 .unwrap_or_default()
                 .lines()
