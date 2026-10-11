@@ -922,17 +922,19 @@ called at any other time, they do nothing. `x` goes to the right, `y` up
 and `z` towards the viewer; angles are in radians.
 
 **Shapes.** Each has `x:`, `y:` and `z:` (0 unless given) for where its
-middle is, and `color:` (`.gray` unless given).
+middle is, `color:` (`.gray` unless given), and last `opacity:` (1 unless
+given): how much of it shows, from 0 to 1. A shape with less than 1, or
+with a see-through color, lets what's behind it show.
 
 | Method | |
 |---|---|
-| `box(width: = 1, height: = 1, depth: = 1, color:, x:, y:, z:)` | A box. |
-| `sphere(radius: = 0.5, color:, x:, y:, z:)` | A ball. |
-| `cylinder(radius: = 0.5, height: = 1, color:, x:, y:, z:)` | A cylinder, standing up, with closed ends. |
-| `cone(radius: = 0.5, height: = 1, color:, x:, y:, z:)` | A cone, its point up. |
-| `plane(width: = 1, depth: = 1, color:, x:, y:, z:)` | A flat sheet, lying down. |
-| `mesh(vertices: [Float], triangles: [Int] = [], color:, smooth: Bool = false)` | Triangles: `vertices` is `x, y, z` for each point, and `triangles` three points' numbers (from 0) for each triangle. Without `triangles`, every three points are one. `smooth` shades across the edges between triangles that share points. A number of a point that isn't there leaves the mesh out. |
-| `surface(heights: [Float], columns: Int, width: = 1, depth: = 1, color:, colors: [Color] = [])` | A sheet over a grid `columns` across, `width` × `depth` around the middle: `heights` is the height at each point, row by row from the back. With `colors`, each point is colored by its height, from the first (the lowest) to the last. Fewer than 2 columns or 2 rows show nothing. |
+| `box(width: = 1, height: = 1, depth: = 1, color:, x:, y:, z:, opacity:)` | A box. |
+| `sphere(radius: = 0.5, color:, x:, y:, z:, opacity:)` | A ball. |
+| `cylinder(radius: = 0.5, height: = 1, color:, x:, y:, z:, opacity:)` | A cylinder, standing up, with closed ends. |
+| `cone(radius: = 0.5, height: = 1, color:, x:, y:, z:, opacity:)` | A cone, its point up. |
+| `plane(width: = 1, depth: = 1, color:, x:, y:, z:, opacity:)` | A flat sheet, lying down. |
+| `mesh(vertices: [Float], triangles: [Int] = [], color:, colors: [Color] = [], smooth: Bool = false, opacity:)` | Triangles: `vertices` is `x, y, z` for each point, and `triangles` three points' numbers (from 0) for each triangle. Without `triangles`, every three points are one. `colors` gives each point its own color (a point without one takes `color`), and a triangle goes from one of its points' colors to the others'. `smooth` shades across the edges between triangles that share points. A number of a point that isn't there leaves the mesh out. |
+| `surface(heights: [Float], columns: Int, width: = 1, depth: = 1, color:, colors: [Color] = [], opacity:)` | A sheet over a grid `columns` across, `width` × `depth` around the middle: `heights` is the height at each point, row by row from the back. With `colors`, each point is colored by its height, from the first (the lowest) to the last. Fewer than 2 columns or 2 rows show nothing. |
 
 **Lines and text.** Their `color:` is `.primary` unless given.
 

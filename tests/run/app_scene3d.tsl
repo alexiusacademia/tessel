@@ -32,11 +32,11 @@ app Solids(width: 400, height: 300) {
         // Kept until `version` changes.
         Scene3D(redraw: version) { s in
             print("the second scene, with {shapes}")
-            s.sphere()
+            s.sphere(opacity: 0.5)
             s.cylinder(x: 2)
             s.cone(x: -2)
-            s.plane(width: 6, depth: 6, y: -0.5)
-            s.mesh(vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], triangles: [0, 1, 2, 2, 1, 3], smooth: true)
+            s.plane(width: 6, depth: 6, color: .rgba(0, 0, 255, 0.3), y: -0.5)
+            s.mesh(vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], triangles: [0, 1, 2, 2, 1, 3], colors: [.red, .green, .blue], smooth: true, opacity: 0.8)
             s.surface(heights: [0, 1, 0, 1, 0, 1, 0, 1, 0], columns: 3, colors: [.blue, .red])
             s.lines([0, 0, 0, 1, 0, 0, 1, 1, 0], closed: true)
             print("{s.width > 0 && s.height > 0}")

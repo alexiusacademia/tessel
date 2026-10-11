@@ -8,6 +8,8 @@ app Main {
         s.mesh(vertices: [1, 2, 3], triangles: [0.5]) // error: expected `Int`, found `Float`
         s.surface(heights: [0.0, 1.0]) // error: `surface` is missing `columns:`
         s.line(0, 0, 0, 1, 1) // error: `line` is missing
+        s.mesh(vertices: [0.0], colors: [1]) // error: expected `Color`, found `Int`
+        s.box(opacity: "half") // error: expected `Float`
         s.rotateY("half") // error: expected `Float`
         s.fillRect(x: 0, y: 0, width: 1, height: 1, color: .red) // error: `Scene` has no method `fillRect`
     }

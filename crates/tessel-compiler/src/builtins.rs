@@ -958,6 +958,7 @@ fn scene_method(name: &str) -> Option<Method> {
     let shape = |mut sizes: Vec<P>| {
         sizes.push(color());
         sizes.extend(at());
+        sizes.push(f("opacity").default());
         method(sizes, Ty::Void)
     };
     Some(match name {
@@ -970,7 +971,9 @@ fn scene_method(name: &str) -> Option<Method> {
                 P::new("vertices", Ty::list(Ty::Float)),
                 P::new("triangles", Ty::list(Ty::Int)).default(),
                 color(),
+                P::new("colors", Ty::list(COLOR)).default(),
                 P::new("smooth", Ty::Bool).default(),
+                f("opacity").default(),
             ],
             Ty::Void,
         ),
@@ -982,6 +985,7 @@ fn scene_method(name: &str) -> Option<Method> {
                 f("depth").default(),
                 color(),
                 P::new("colors", Ty::list(COLOR)).default(),
+                f("opacity").default(),
             ],
             Ty::Void,
         ),
@@ -1329,14 +1333,15 @@ fn scene_call(name: &str) -> Option<RtCall> {
     const PRIMARY: Dflt = Case(0);
     const WHITE: Dflt = Case(10);
     const AT: Dflt = Float(0.0);
+    const WHOLE: Dflt = Float(1.0);
     Some(match name {
-        "box" => rt_g("tsl_scene_box", &[Float(1.0), Float(1.0), Float(1.0), GRAY, AT, AT, AT]),
-        "sphere" => rt_g("tsl_scene_sphere", &[Float(0.5), GRAY, AT, AT, AT]),
-        "cylinder" => rt_g("tsl_scene_cylinder", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT]),
-        "cone" => rt_g("tsl_scene_cone", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT]),
-        "plane" => rt_g("tsl_scene_plane", &[Float(1.0), Float(1.0), GRAY, AT, AT, AT]),
-        "mesh" => rt_g("tsl_scene_mesh", &[Req, EmptyList, GRAY, Bool(false)]),
-        "surface" => rt_g("tsl_scene_surface", &[Req, Req, Float(1.0), Float(1.0), GRAY, EmptyList]),
+        "box" => rt_g("tsl_scene_box", &[Float(1.0), Float(1.0), Float(1.0), GRAY, AT, AT, AT, WHOLE]),
+        "sphere" => rt_g("tsl_scene_sphere", &[Float(0.5), GRAY, AT, AT, AT, WHOLE]),
+        "cylinder" => rt_g("tsl_scene_cylinder", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT, WHOLE]),
+        "cone" => rt_g("tsl_scene_cone", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT, WHOLE]),
+        "plane" => rt_g("tsl_scene_plane", &[Float(1.0), Float(1.0), GRAY, AT, AT, AT, WHOLE]),
+        "mesh" => rt_g("tsl_scene_mesh", &[Req, EmptyList, GRAY, EmptyList, Bool(false), WHOLE]),
+        "surface" => rt_g("tsl_scene_surface", &[Req, Req, Float(1.0), Float(1.0), GRAY, EmptyList, WHOLE]),
         "line" => rt_g("tsl_scene_line", &[Req, Req, Req, Req, Req, Req, PRIMARY]),
         "lines" => rt_g("tsl_scene_lines", &[Req, PRIMARY, Bool(false)]),
         "label" => rt_g("tsl_scene_label", &[Req, AT, AT, AT, Float(12.0), PRIMARY]),

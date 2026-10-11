@@ -238,6 +238,9 @@ pub struct Frame<'a> {
     pub height: u32,
     /// `Vertex`es, three to a triangle, and `LineEnd`s, two to a line.
     pub triangles: &'a [u8],
+    /// The triangles that what's behind them shows through, the farthest
+    /// first.
+    pub clear: &'a [u8],
     pub lines: &'a [u8],
     /// The view and its lights (see `gpu`'s shader for what's where).
     pub uniforms: [f32; 56],
@@ -329,12 +332,29 @@ pub fn shot(key: u64, block: &Callback, redraw: Option<i64>, w: f64, h: f64, sca
         uniforms[40 + i * 4..43 + i * 4].copy_from_slice(color);
     }
 
+    // What shows through goes on last, from the farthest to the nearest, so
+    // that each is over what's behind it.
+    let (mut solid, mut clear) = (Vec::with_capacity(scene.triangles.len()), Vec::new());
+    for t in scene.triangles.chunks_exact(3) {
+        match t.iter().all(|v| v.color[3] >= 0.999) {
+            true => solid.extend_from_slice(t),
+            false if t.iter().all(|v| v.color[3] <= 0.0) => {}
+            false => {
+                let away: f64 = t.iter().map(|v| dot(sub(v.at.map(f64::from), eye), sub(v.at.map(f64::from), eye))).sum();
+                clear.push((away, [t[0], t[1], t[2]]));
+            }
+        }
+    }
+    clear.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let clear: Vec<Vertex> = clear.into_iter().flat_map(|(_, t)| t).collect();
+
     let pixels = |points: f64| ((points * scale).round() as u32).clamp(1, 4096);
     let shown = lit(scene.background);
     let frame = Frame {
         width: pixels(w),
         height: pixels(h),
-        triangles: bytes(&scene.triangles),
+        triangles: bytes(&solid),
+        clear: bytes(&clear),
         lines: bytes(&scene.lines),
         uniforms,
         background: [shown[0] * shown[3], shown[1] * shown[3], shown[2] * shown[3], shown[3]],
@@ -343,7 +363,7 @@ pub fn shot(key: u64, block: &Callback, redraw: Option<i64>, w: f64, h: f64, sca
     let made_from = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (frame.width, frame.height, frame.triangles, frame.lines, bytes(&frame.uniforms), bytes(&frame.background)).hash(&mut h);
+        (frame.width, frame.height, frame.triangles, frame.clear, frame.lines, bytes(&frame.uniforms), bytes(&frame.background)).hash(&mut h);
         h.finish()
     };
     let before =
@@ -524,6 +544,12 @@ fn between(colors: &[Rgba], t: f64) -> Rgba {
 
 // ===== what a block calls =====
 
+/// A color showing `opacity` (0 to 1) of what it does.
+fn faded(color: Rgba, opacity: f64) -> Rgba {
+    let [r, g, b, a] = color.0;
+    Rgba([r, g, b, (a as f64 * if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) }).round() as u8])
+}
+
 /// A shape's own place, added to the transform for the shape only.
 fn placed(c: &mut Current, x: f64, y: f64, z: f64, shape: impl FnOnce(&mut Current)) {
     let before = c.transform;
@@ -532,51 +558,62 @@ fn placed(c: &mut Current, x: f64, y: f64, z: f64, shape: impl FnOnce(&mut Curre
     c.transform = before;
 }
 
-/// `s.box(width:height:depth:color:x:y:z:)`: a box around (x, y, z).
+/// `s.box(width:height:depth:color:x:y:z:opacity:)`: a box around (x, y, z).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_box(w: f64, h: f64, d: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_box(w: f64, h: f64, d: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64, opacity: f64) {
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     with(|c| placed(c, x, y, z, |c| c.solid(&box_corners(w, h, d), color)));
 }
 
-/// `s.sphere(radius:color:x:y:z:)`.
+/// `s.sphere(radius:color:x:y:z:opacity:)`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_sphere(radius: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_sphere(radius: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64, opacity: f64) {
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     with(|c| placed(c, x, y, z, |c| c.solid(&sphere_corners(radius), color)));
 }
 
-/// `s.cylinder(radius:height:color:x:y:z:)`: standing up, (x, y, z) at its middle.
+/// `s.cylinder(radius:height:color:x:y:z:opacity:)`: standing up, (x, y, z) at its middle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_cylinder(radius: f64, height: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_cylinder(radius: f64, height: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64, opacity: f64) {
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     with(|c| placed(c, x, y, z, |c| c.solid(&round_corners(radius, radius, height), color)));
 }
 
-/// `s.cone(radius:height:color:x:y:z:)`: its point up.
+/// `s.cone(radius:height:color:x:y:z:opacity:)`: its point up.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_cone(radius: f64, height: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_cone(radius: f64, height: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64, opacity: f64) {
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     with(|c| placed(c, x, y, z, |c| c.solid(&round_corners(radius, 0.0, height), color)));
 }
 
-/// `s.plane(width:depth:color:x:y:z:)`: a flat sheet, lying down.
+/// `s.plane(width:depth:color:x:y:z:opacity:)`: a flat sheet, lying down.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_plane(w: f64, d: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_plane(w: f64, d: f64, tag: i32, payload: *const Header, x: f64, y: f64, z: f64, opacity: f64) {
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     let (hx, hz) = (w / 2.0, d / 2.0);
     let mut corners = Vec::new();
     face(&mut corners, [[-hx, 0.0, hz], [hx, 0.0, hz], [hx, 0.0, -hz], [-hx, 0.0, -hz]], [0.0, 1.0, 0.0]);
     with(|c| placed(c, x, y, z, |c| c.solid(&corners, color)));
 }
 
-/// `s.mesh(vertices:triangles:color:smooth:)`: triangles of the program's
-/// own. `vertices` is x, y, z for each point; `triangles` is three points'
-/// numbers for each triangle (without it, every three points are one).
+/// `s.mesh(vertices:triangles:color:colors:smooth:opacity:)`: triangles of
+/// the program's own. `vertices` is x, y, z for each point; `triangles` is
+/// three points' numbers for each triangle (without it, every three points
+/// are one). `colors` has a color for each point (a point without one is
+/// `color`), and a triangle goes from one of its points' to the others'.
 /// `smooth` shades across the edges between triangles that share points.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_scene_mesh(vertices: *const List, triangles: *const List, tag: i32, payload: *const Header, smooth: u8) {
-    let color = unsafe { theme::color(tag, payload) };
+pub unsafe extern "C" fn tsl_scene_mesh(
+    vertices: *const List,
+    triangles: *const List,
+    tag: i32,
+    payload: *const Header,
+    colors: *const List,
+    smooth: u8,
+    opacity: f64,
+) {
+    let color = lit(faded(unsafe { theme::color(tag, payload) }, opacity));
+    let colors: Vec<[f32; 4]> = unsafe { super::canvas::colors(colors) }.into_iter().map(|c| lit(faded(c, opacity))).collect();
     let (flat, index) = unsafe { (super::canvas::floats(vertices), super::canvas::ints(triangles)) };
     let points: Vec<V3> = flat.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
     let numbers: Vec<usize> = match index.is_empty() {
@@ -596,17 +633,20 @@ pub unsafe extern "C" fn tsl_scene_mesh(vertices: *const List, triangles: *const
             }
         }
     }
-    let mut corners = Vec::with_capacity(numbers.len());
-    for t in numbers.chunks_exact(3) {
-        let own = facing(points[t[0]], points[t[1]], points[t[2]]);
-        for i in t {
-            corners.push((points[*i], if smooth != 0 { unit(shared[*i], own) } else { own }));
+    with(|c| {
+        let turn = normals(&c.transform);
+        for t in numbers.chunks_exact(3) {
+            let own = facing(points[t[0]], points[t[1]], points[t[2]]);
+            for i in t {
+                let normal = if smooth != 0 { unit(shared[*i], own) } else { own };
+                c.corner(points[*i], normal, colors.get(*i).copied().unwrap_or(color), &turn);
+            }
         }
-    }
-    with(|c| c.solid(&corners, color));
+        c.shapes += 1;
+    });
 }
 
-/// `s.surface(heights:columns:width:depth:color:colors:)`: a sheet over a
+/// `s.surface(heights:columns:width:depth:color:colors:opacity:)`: a sheet over a
 /// grid, `columns` across, whose height at each point of the grid is in
 /// `heights`, row by row from the back. With `colors`, each point is
 /// colored by its height, from the first color (the lowest) to the last.
@@ -619,8 +659,9 @@ pub unsafe extern "C" fn tsl_scene_surface(
     tag: i32,
     payload: *const Header,
     colors: *const List,
+    opacity: f64,
 ) {
-    let color = unsafe { theme::color(tag, payload) };
+    let color = faded(unsafe { theme::color(tag, payload) }, opacity);
     let (heights, colors) = unsafe { (super::canvas::floats(heights), super::canvas::colors(colors)) };
     let cols = columns.clamp(0, 4096) as usize;
     if cols < 2 || heights.len() / cols < 2 {
@@ -641,7 +682,7 @@ pub unsafe extern "C" fn tsl_scene_surface(
             let p = at(i, j);
             let tint = match colors.is_empty() {
                 true => color,
-                false => between(&colors, if highest > lowest { (p[1] - lowest) / (highest - lowest) } else { 0.0 }),
+                false => faded(between(&colors, if highest > lowest { (p[1] - lowest) / (highest - lowest) } else { 0.0 }), opacity),
             };
             c.corner(p, normal(i, j), lit(tint), &turn);
         };
@@ -835,7 +876,7 @@ fn solid(corner: Corner) -> @location(0) vec4<f32> {
             shine += pow(max(dot(normal, middle), 0.0), 40.0) * 0.22 * scene.light_color[i].xyz;
         }
     }
-    return vec4<f32>(corner.color.rgb * light + shine, 1.0);
+    return vec4<f32>(corner.color.rgb * light + shine, corner.color.a);
 }
 
 struct End {
@@ -866,6 +907,8 @@ fn line(end: End) -> @location(0) vec4<f32> {
         device: wgpu::Device,
         queue: wgpu::Queue,
         solids: wgpu::RenderPipeline,
+        /// For triangles that what's behind them shows through.
+        clear: wgpu::RenderPipeline,
         lines: wgpu::RenderPipeline,
         layout: wgpu::BindGroupLayout,
     }
@@ -902,7 +945,13 @@ fn line(end: End) -> @location(0) vec4<f32> {
             bind_group_layouts: &[Some(&layout)],
             ..Default::default()
         });
-        let pipeline = |vertex: &str, fragment: &str, attributes: &[wgpu::VertexAttribute], stride: u64, topology: wgpu::PrimitiveTopology| {
+        let pipeline = |vertex: &str, fragment: &str, attributes: &[wgpu::VertexAttribute], stride: u64, topology: wgpu::PrimitiveTopology, through: bool| {
+            // (Over what's there, by how much of it shows; what's kept is
+            // multiplied by how much shows, as the background is.)
+            let over = wgpu::BlendState {
+                color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::SrcAlpha, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+                alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(fragment),
                 layout: Some(&pipeline_layout),
@@ -915,14 +964,15 @@ fn line(end: End) -> @location(0) vec4<f32> {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(fragment),
-                    targets: &[Some(wgpu::ColorTargetState { format: COLOR, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                    targets: &[Some(wgpu::ColorTargetState { format: COLOR, blend: through.then_some(over), write_mask: wgpu::ColorWrites::ALL })],
                     compilation_options: Default::default(),
                 }),
                 // (Both sides of a triangle show: a sheet has two.)
                 primitive: wgpu::PrimitiveState { topology, cull_mode: None, ..Default::default() },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH,
-                    depth_write_enabled: Some(true),
+                    // (What shows through hides nothing behind it.)
+                    depth_write_enabled: Some(!through),
                     depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: Default::default(),
                     bias: Default::default(),
@@ -934,9 +984,10 @@ fn line(end: End) -> @location(0) vec4<f32> {
         };
         let solid = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4];
         let line = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
-        let solids = pipeline("solid_corner", "solid", &solid, 40, wgpu::PrimitiveTopology::TriangleList);
-        let lines = pipeline("line_end", "line", &line, 28, wgpu::PrimitiveTopology::LineList);
-        Some(Gpu { device, queue, solids, lines, layout })
+        let solids = pipeline("solid_corner", "solid", &solid, 40, wgpu::PrimitiveTopology::TriangleList, false);
+        let clear = pipeline("solid_corner", "solid", &solid, 40, wgpu::PrimitiveTopology::TriangleList, true);
+        let lines = pipeline("line_end", "line", &line, 28, wgpu::PrimitiveTopology::LineList, false);
+        Some(Gpu { device, queue, solids, clear, lines, layout })
     }
 
     /// Draws a frame, and reads its picture back.
@@ -984,6 +1035,7 @@ fn line(end: End) -> @location(0) vec4<f32> {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }],
         });
         let solids = (!frame.triangles.is_empty()).then(|| buffer("solids", frame.triangles, wgpu::BufferUsages::VERTEX));
+        let clear = (!frame.clear.is_empty()).then(|| buffer("clear", frame.clear, wgpu::BufferUsages::VERTEX));
         let lines = (!frame.lines.is_empty()).then(|| buffer("lines", frame.lines, wgpu::BufferUsages::VERTEX));
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -1014,6 +1066,11 @@ fn line(end: End) -> @location(0) vec4<f32> {
                 pass.set_pipeline(&gpu.lines);
                 pass.set_vertex_buffer(0, lines.slice(..));
                 pass.draw(0..(frame.lines.len() / 28) as u32, 0..1);
+            }
+            if let Some(clear) = &clear {
+                pass.set_pipeline(&gpu.clear);
+                pass.set_vertex_buffer(0, clear.slice(..));
+                pass.draw(0..(frame.clear.len() / 40) as u32, 0..1);
             }
         }
         // The picture's rows, as the graphics card lays them out (each a

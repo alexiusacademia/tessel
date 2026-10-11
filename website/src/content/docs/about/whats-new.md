@@ -20,8 +20,9 @@ features, and the third when it only fixes things.
 
 - **3D scenes.** A new view, [`Scene3D`](/reference/views/#scene3d), shows
   solid shapes in three dimensions: boxes, spheres, cylinders, cones,
-  surfaces over a grid, and meshes of your own triangles, with lines and
-  labels. You place a camera (or let it orbit a point as the mouse drags),
+  surfaces over a grid, and meshes of your own triangles (with a color
+  for each point, if you like), with lines and labels. Shapes can be
+  see-through. You place a camera (or let it orbit a point as the mouse drags),
   add lights, and move, turn and size things as on a canvas. The graphics
   card draws it, nearer things in front, shaded, with smooth edges. See
   [3D scenes](/ui/3d/).
