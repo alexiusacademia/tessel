@@ -140,6 +140,7 @@ pub fn doctor() -> std::process::ExitCode {
             // went to open: started here with none, nobody who reads this
             // command's output waits for that server to end.)
             let nothing = std::process::Stdio::null;
+            keep_output_to_ourselves();
             let _ = Command::new(&adb).arg("start-server").stdin(nothing()).stdout(nothing()).stderr(nothing()).status();
             let listed = Command::new(&adb).arg("devices").stdin(nothing()).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
             let devices: Vec<String> = listed
@@ -163,6 +164,28 @@ pub fn doctor() -> std::process::ExitCode {
     } else {
         println!("{problems} missing; see above.");
         std::process::ExitCode::FAILURE
+    }
+}
+
+/// On Windows a program started from here gets every handle of ours that
+/// can be passed on, whatever it's given as its own output: ours no longer
+/// can be, so a program that stays (adb's server) doesn't hold them open.
+fn keep_output_to_ourselves() {
+    #[cfg(windows)]
+    unsafe {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetStdHandle(which: u32) -> *mut std::ffi::c_void;
+            fn SetHandleInformation(handle: *mut std::ffi::c_void, mask: u32, flags: u32) -> i32;
+        }
+        const INHERIT: u32 = 1;
+        // (Input, output and errors: -10, -11 and -12.)
+        for which in [-10i32, -11, -12] {
+            let handle = GetStdHandle(which as u32);
+            if !handle.is_null() && handle as isize != -1 {
+                SetHandleInformation(handle, INHERIT, 0);
+            }
+        }
     }
 }
 

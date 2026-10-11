@@ -87,6 +87,13 @@ jobs:
         timeout-minutes: 15
         run: cargo test -p tessel-cli --test run debug -- --nocapture
 
+      # (With its output read by another program, as the test below reads it.)
+      - name: Check android doctor
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        shell: bash
+        run: cargo run -q -p tessel-cli -- android doctor | cat || true
+
       - name: Test Android packages
         if: ${{ !cancelled() }}
         timeout-minutes: 15

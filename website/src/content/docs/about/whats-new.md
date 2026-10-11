@@ -13,10 +13,7 @@ are listed together under its last version. See
 
 ## 0.4.0
 
-*October 11, 2026 · 0.2.0 to 0.4.0*
-
-From these releases on, the second number goes up when a release adds
-features, and the third when it only fixes things.
+*October 12, 2026*
 
 - **3D scenes.** A new view, [`Scene3D`](/reference/views/#scene3d), shows
   solid shapes in three dimensions: boxes, spheres, cylinders, cones,
@@ -41,6 +38,21 @@ features, and the third when it only fixes things.
 - **Editors: go to definition, find references, rename.** The language
   server (so VS Code and other editors) takes you from a name to where it's
   declared, lists everywhere it's used, and renames it everywhere at once.
+
+Fixed:
+
+- An `Icon` or `Svg` given `.clear` (or a see-through color) was drawn
+  black.
+- A program that declared a function or a type with the name of one of
+  Tessel's own, like `dateParts`, got errors pointing into a file it
+  couldn't see.
+
+## 0.3.0
+
+*October 11, 2026 · 0.2.0 and 0.3.0*
+
+From these releases on, the second number goes up when a release adds
+features, and the third when it only fixes things.
 
 - **Tessel says that it's in use.** So that installations can be counted,
   Tessel reports when it's installed or updated, and at most once a day
@@ -83,11 +95,6 @@ features, and the third when it only fixes things.
 
 Fixed:
 
-- An `Icon` or `Svg` given `.clear` (or a see-through color) was drawn
-  black.
-- A program that declared a function or a type with the name of one of
-  Tessel's own, like `dateParts`, got errors pointing into a file it
-  couldn't see.
 - On Android, Enter did nothing in a code editor, and a text field's
   `.onSubmit` never ran.
 
