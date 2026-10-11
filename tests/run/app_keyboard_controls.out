@@ -1,0 +1,13 @@
+Root
+  View
+    VStack
+      TextField "Name" = ""
+      Button "Add"
+      Toggle "Loud" = true
+      Picker
+        Text "S"
+        Text "M"
+        Text "L"
+      Text "count 12, on true, size medium, tab one"
+      TabView ["One", "Two"] selected 0 focused
+        Text "first page"
