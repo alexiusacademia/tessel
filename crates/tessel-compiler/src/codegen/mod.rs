@@ -1552,7 +1552,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_begin_popover" => (vec![p, p, i32t], Some(i8t)),
             "tsl_ui_begin_window" => (vec![p, p, p, f64t, f64t], Some(i8t)),
             "tsl_ui_on_open_file" | "tsl_ui_on_close_request" => (vec![p, p], None),
-            "tsl_ui_canvas" => (vec![p, p, i8t, i], None),
+            "tsl_ui_canvas" | "tsl_ui_scene3d" => (vec![p, p, i8t, i], None),
             "tsl_ui_view_begin" => (vec![i, p, i, p], Some(p)),
             "tsl_ui_opacity" => (vec![f64t], None),
             "tsl_ui_animation" => (vec![f64t, i32t], None),
@@ -5364,7 +5364,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// `adapter(box, width, height)`: calls the `Canvas` block in the box
     /// with a `Graphics` of that size.
     pub(super) fn graphics_adapter(&mut self) -> PointerValue<'ctx> {
-        let name = "tsl_h_canvas_draw";
+        self.sized_adapter("tsl_h_canvas_draw", builtins::GRAPHICS)
+    }
+
+    /// The same for a `Scene3D` block, with a `Scene`.
+    pub(super) fn scene_adapter(&mut self) -> PointerValue<'ctx> {
+        self.sized_adapter("tsl_h_scene_draw", builtins::SCENE)
+    }
+
+    /// `adapter(box, width, height)`: calls the block in the box with a
+    /// `with` (a struct of a width and a height).
+    fn sized_adapter(&mut self, name: &str, with: Ty) -> PointerValue<'ctx> {
         if let Some(f) = self.helpers.get(name) {
             return f.as_global_value().as_pointer_value();
         }
@@ -5375,11 +5385,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Some(Linkage::Internal),
         );
         self.helpers.insert(name.to_string(), f);
-        let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+        let ft = Ty::func(vec![with.clone()], Ty::Void);
         self.in_helper(f, |g| {
             let bx = f.get_nth_param(0).unwrap().into_pointer_value();
             let closure = g.load(&ft, g.box_data(bx));
-            let st = g.llty(&builtins::GRAPHICS).unwrap().into_struct_type();
+            let st = g.llty(&with).unwrap().into_struct_type();
             let mut s = st.get_undef();
             for i in 0..2 {
                 s = g.b.build_insert_value(s, f.get_nth_param(1 + i).unwrap(), i, "").unwrap().into_struct_value();

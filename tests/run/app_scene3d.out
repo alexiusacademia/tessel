@@ -1,0 +1,40 @@
+the second scene, with 1
+true
+Root
+  View
+    VStack
+      Scene3D (1 shape, 12 triangles, 1 line, 1 label)
+      Scene3D (6 shapes, 1892 triangles, 3 lines)
+      HStack
+        Button "More"
+        Button "Again"
+        Text "yaw 0.50"
+Root
+  View
+    VStack
+      Scene3D (2 shapes, 24 triangles, 1 line, 1 label)
+      Scene3D (6 shapes, 1892 triangles, 3 lines)
+      HStack
+        Button "More"
+        Button "Again"
+        Text "yaw 0.50"
+the second scene, with 2
+true
+Root
+  View
+    VStack
+      Scene3D (2 shapes, 24 triangles, 1 line, 1 label)
+      Scene3D (6 shapes, 1892 triangles, 3 lines)
+      HStack
+        Button "More"
+        Button "Again"
+        Text "yaw 0.50"
+Root
+  View
+    VStack
+      Scene3D (2 shapes, 24 triangles, 1 line, 1 label)
+      Scene3D (6 shapes, 1892 triangles, 3 lines)
+      HStack
+        Button "More"
+        Button "Again"
+        Text "yaw 0.90"

@@ -35,7 +35,8 @@ its first releases came so quickly. The dates on
   own in a `Canvas` (shapes, paths, text and pictures), the mouse in full
   with `.onPointer` (every button, moves, the wheel, pinches), keys with
   `.onKey`, tooltips, pointers, files dropped on the window, and drawings
-  saved as pictures. Ribbons of tabs and groups of commands. Context menus, popovers, the menu bar (the system's on
+  saved as pictures. Solid shapes in three dimensions in a `Scene3D`, with
+  a camera and lights, drawn by the graphics card. Ribbons of tabs and groups of commands. Context menus, popovers, the menu bar (the system's on
   macOS, drawn in the window elsewhere), more than one window, files opened
   with the app from Finder, and asking before the app closes.
 - **Looks:** light and dark appearance that follows the system, colors of

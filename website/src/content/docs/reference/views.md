@@ -39,7 +39,7 @@ the space they are offered.
 | Flexible… | Views |
 |---|---|
 | horizontally only | `TextField`, `Slider`, `DisclosureGroup`, `LazyVStack` |
-| in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas` |
+| in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas`, `Scene3D` |
 | along its stack's direction | `Spacer` |
 | across its stack | `Divider` |
 | when a child is flexible | `VStack`, `HStack`, `ZStack`, custom views |
@@ -880,6 +880,86 @@ The transform applies to the points of paths and shapes, to the corners of
 pictures and SVGs, to the points of gradients, and to the point a text sits on. Line widths, dashes and text
 sizes are always in points: scaling doesn't make lines thicker or text
 larger. `zoom` is the exception: it enlarges those too.
+
+## Scene3D
+
+```text
+Scene3D(redraw: Int = …, draw: fn(Scene))
+```
+
+A view that shows shapes in three dimensions. `draw` is almost always the
+block after the call; it gets a [`Scene`](#scene) to fill. See
+[3D scenes](/ui/3d/).
+
+```tessel
+Scene3D { s in
+    s.camera(x: 3, y: 2, z: 4)
+    s.box(color: .red)
+    s.sphere(radius: 0.4, color: .blue, y: 0.9)
+}
+.frame(width: 300, height: 200)
+```
+
+- A scene is flexible in both directions. When nothing limits it, it is
+  300 × 150 points.
+- It has no background unless `s.background` gives it one: what's under the
+  view shows around the shapes.
+- Without `redraw:`, the block runs each time the window is drawn, and the
+  picture is made again only when what the block said has changed. With it,
+  the block runs again only when the number is different from last time,
+  the view's size changes, or the appearance switches between light and
+  dark.
+- The block shouldn't change `state`.
+- Where there's no graphics card to use, the view is an empty box.
+- In a [headless run](/ui/testing/), `tree` shows what's in the scene:
+  `Scene3D (2 shapes, 812 triangles)`.
+
+### Scene
+
+What a `Scene3D`'s block fills. It has two fields, `width` and `height`:
+the size of the view in points. Its methods add to the scene being made;
+called at any other time, they do nothing. `x` goes to the right, `y` up
+and `z` towards the viewer; angles are in radians.
+
+**Shapes.** Each has `x:`, `y:` and `z:` (0 unless given) for where its
+middle is, and `color:` (`.gray` unless given).
+
+| Method | |
+|---|---|
+| `box(width: = 1, height: = 1, depth: = 1, color:, x:, y:, z:)` | A box. |
+| `sphere(radius: = 0.5, color:, x:, y:, z:)` | A ball. |
+| `cylinder(radius: = 0.5, height: = 1, color:, x:, y:, z:)` | A cylinder, standing up, with closed ends. |
+| `cone(radius: = 0.5, height: = 1, color:, x:, y:, z:)` | A cone, its point up. |
+| `plane(width: = 1, depth: = 1, color:, x:, y:, z:)` | A flat sheet, lying down. |
+| `mesh(vertices: [Float], triangles: [Int] = [], color:, smooth: Bool = false)` | Triangles: `vertices` is `x, y, z` for each point, and `triangles` three points' numbers (from 0) for each triangle. Without `triangles`, every three points are one. `smooth` shades across the edges between triangles that share points. A number of a point that isn't there leaves the mesh out. |
+| `surface(heights: [Float], columns: Int, width: = 1, depth: = 1, color:, colors: [Color] = [])` | A sheet over a grid `columns` across, `width` × `depth` around the middle: `heights` is the height at each point, row by row from the back. With `colors`, each point is colored by its height, from the first (the lowest) to the last. Fewer than 2 columns or 2 rows show nothing. |
+
+**Lines and text.** Their `color:` is `.primary` unless given.
+
+| Method | |
+|---|---|
+| `line(_ x1, _ y1, _ z1, _ x2, _ y2, _ z2, color:)` | A line one pixel wide. |
+| `lines(_ points: [Float], color:, closed: Bool = false)` | A line through points given as `x, y, z, …`; back to the first too, with `closed: true`. |
+| `label(_ text: String, x:, y:, z:, size: = 12, color:)` | Text centered on a point. It faces the viewer, is `size` points high wherever the camera is, and shows over the shapes. |
+
+**The view and its light.**
+
+| Method | |
+|---|---|
+| `camera(x:, y:, z:, lookAtX: = 0, lookAtY: = 0, lookAtZ: = 0, fieldOfView: = 45)` | Where the scene is seen from, and the point at the middle of the view. `fieldOfView` is the angle seen from top to bottom, in degrees. Without a camera, a scene is seen from (3, 2.5, 4). |
+| `orbit(distance:, yaw: = 0.6, pitch: = 0.4, x:, y:, z:, fieldOfView: = 45)` | The camera `distance` from (x, y, z), turned `yaw` around it and raised `pitch` above it. |
+| `light(x:, y:, z:, color: = .white, strength: = 1)` | Light from the direction of (x, y, z), the same on every shape. Up to 4; with none, a scene is lit from over the viewer's left shoulder. |
+| `ambient(_ amount: Float)` | The light there is everywhere, from 0 to 1 (0.3 unless set). |
+| `background(_ color: Color)` | What's behind the shapes. |
+
+**Transforms** apply to what's added after them.
+
+| Method | |
+|---|---|
+| `translate(_ x, _ y, _ z)` | Moves. |
+| `scale(_ x, _ y, _ z)` | Sizes, along each axis. |
+| `rotateX(_ angle)`, `rotateY(_ angle)`, `rotateZ(_ angle)` | Turns around an axis. |
+| `save()`, `restore()` | Remembers the transform, and goes back to it. |
 
 ## Divider
 

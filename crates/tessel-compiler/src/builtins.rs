@@ -155,6 +155,13 @@ pub fn structs() -> Vec<StructDef> {
             fields: vec![field("id", Ty::Int)],
             methods: Vec::new(),
         },
+        // What a `Scene3D`'s block fills: its methods are in `method_of`.
+        StructDef {
+            name: "Scene".into(),
+            span: Span::default(),
+            fields: vec![field("width", Ty::Float), field("height", Ty::Float)],
+            methods: Vec::new(),
+        },
     ]
 }
 
@@ -170,6 +177,8 @@ pub const POINTER_EVENT: Ty = Ty::Struct(3);
 pub const KEY_EVENT: Ty = Ty::Struct(4);
 /// The `BackgroundJob` struct (see `structs`).
 pub const JOB: Ty = Ty::Struct(5);
+/// The `Scene` struct (see `structs`).
+pub const SCENE: Ty = Ty::Struct(6);
 
 /// The built-in enums, by their place in `enums`.
 pub const COLOR: Ty = Ty::Enum(0);
@@ -201,7 +210,7 @@ impl Builtins {
 pub const VIEW_NAMES: &[&str] =
     &[
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
-        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Slider", "Stepper", "ColorPicker",
+        "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Scene3D", "Slider", "Stepper", "ColorPicker",
         "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
         "RibbonButton", "RibbonToggle", "RibbonMenu",
     ];
@@ -263,6 +272,7 @@ impl Builtins {
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
             "Canvas" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void))],
+            "Scene3D" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![SCENE], Ty::Void))],
             "Slider" => vec![
                 P::new("value", Ty::Float).bind(),
                 P::new("from", Ty::Float).default(),
@@ -804,6 +814,7 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             _ => return None,
         },
         t if *t == GRAPHICS => return graphics_method(name),
+        t if *t == SCENE => return scene_method(name),
         t if *t == JOB => match name {
             "progress" => method(vec![P::unlabeled("fraction", Ty::Float), P::new("note", Ty::Str).default()], Ty::Void),
             "isCancelled" => method(vec![], Ty::Bool),
@@ -936,6 +947,80 @@ fn graphics_method(name: &str) -> Option<Method> {
     })
 }
 
+/// Methods of `Scene`, which a `Scene3D`'s block says what's in it with.
+/// Lengths are in the scene's own units, and angles in radians.
+fn scene_method(name: &str) -> Option<Method> {
+    let f = |l: &str| P::new(l, Ty::Float);
+    let u = |l: &str| P::unlabeled(l, Ty::Float);
+    let color = || P::new("color", COLOR).default();
+    // Where a shape's middle is.
+    let at = || [f("x").default(), f("y").default(), f("z").default()];
+    let shape = |mut sizes: Vec<P>| {
+        sizes.push(color());
+        sizes.extend(at());
+        method(sizes, Ty::Void)
+    };
+    Some(match name {
+        "box" => shape(vec![f("width").default(), f("height").default(), f("depth").default()]),
+        "sphere" => shape(vec![f("radius").default()]),
+        "cylinder" | "cone" => shape(vec![f("radius").default(), f("height").default()]),
+        "plane" => shape(vec![f("width").default(), f("depth").default()]),
+        "mesh" => method(
+            vec![
+                P::new("vertices", Ty::list(Ty::Float)),
+                P::new("triangles", Ty::list(Ty::Int)).default(),
+                color(),
+                P::new("smooth", Ty::Bool).default(),
+            ],
+            Ty::Void,
+        ),
+        "surface" => method(
+            vec![
+                P::new("heights", Ty::list(Ty::Float)),
+                P::new("columns", Ty::Int),
+                f("width").default(),
+                f("depth").default(),
+                color(),
+                P::new("colors", Ty::list(COLOR)).default(),
+            ],
+            Ty::Void,
+        ),
+        "line" => method(vec![u("x1"), u("y1"), u("z1"), u("x2"), u("y2"), u("z2"), color()], Ty::Void),
+        "lines" => method(
+            vec![P::unlabeled("points", Ty::list(Ty::Float)), color(), P::new("closed", Ty::Bool).default()],
+            Ty::Void,
+        ),
+        "label" => {
+            let [x, y, z] = at();
+            method(vec![P::unlabeled("text", Ty::Str), x, y, z, f("size").default(), color()], Ty::Void)
+        }
+        "camera" => method(
+            vec![
+                f("x"),
+                f("y"),
+                f("z"),
+                f("lookAtX").default(),
+                f("lookAtY").default(),
+                f("lookAtZ").default(),
+                f("fieldOfView").default(),
+            ],
+            Ty::Void,
+        ),
+        "orbit" => {
+            let [x, y, z] = at();
+            method(vec![f("distance"), f("yaw").default(), f("pitch").default(), x, y, z, f("fieldOfView").default()], Ty::Void)
+        }
+        "light" => method(vec![f("x"), f("y"), f("z"), color(), f("strength").default()], Ty::Void),
+        "ambient" => method(vec![u("amount")], Ty::Void),
+        "background" => method(vec![P::unlabeled("color", COLOR)], Ty::Void),
+        "save" | "restore" => method(vec![], Ty::Void),
+        "translate" => method(vec![u("x"), u("y"), u("z")], Ty::Void),
+        "scale" => method(vec![u("x"), u("y"), u("z")], Ty::Void),
+        "rotateX" | "rotateY" | "rotateZ" => method(vec![u("angle")], Ty::Void),
+        _ => return None,
+    })
+}
+
 /// The method of `Graphics` a call of `name` means: a few draw from
 /// something else when their first argument has another label
 /// (`g.image(pixels: …)`, `g.svg(text: …)`), and are told apart by it.
@@ -978,6 +1063,11 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
             "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
             "fillLinear", "fillRadial", "strokeLinear", "strokeRadial", "beginLayer", "endLayer", "svg", "newPage",
+        ],
+        t if *t == SCENE => &[
+            "width", "height", "camera", "orbit", "light", "ambient", "background", "box", "sphere", "cylinder", "cone",
+            "plane", "mesh", "surface", "line", "lines", "label", "translate", "scale", "rotateX", "rotateY", "rotateZ",
+            "save", "restore",
         ],
         t if *t == JOB => &["id", "progress", "isCancelled", "cancel"],
         Ty::View => &[
@@ -1166,6 +1256,7 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Data, "float32") => rt_number("tsl_data_float32"),
         (Ty::Data, "float64") => rt_number("tsl_data_float64"),
         (t, _) if *t == GRAPHICS => return graphics_call(name),
+        (t, _) if *t == SCENE => return scene_call(name),
         // (The receiver goes as its `id`.)
         (t, "progress") if *t == JOB => rt_d("tsl_job_progress", &[Dflt::Req, Dflt::Str("")]),
         (t, "isCancelled") if *t == JOB => rt("tsl_job_is_cancelled"),
@@ -1226,6 +1317,41 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "newPage" => rt_g("tsl_canvas_new_page", &[]),
         "clip" => rt_g("tsl_canvas_clip", &[]),
         "clipPath" => rt_g("tsl_canvas_clip_path", &[Bool(false)]),
+        _ => return None,
+    })
+}
+
+/// The runtime calls behind the methods of `Scene` (see `scene_method`).
+fn scene_call(name: &str) -> Option<RtCall> {
+    use Dflt::{Bool, Case, EmptyList, Float, Req};
+    // `Color.gray`, `.primary` and `.white`.
+    const GRAY: Dflt = Case(2);
+    const PRIMARY: Dflt = Case(0);
+    const WHITE: Dflt = Case(10);
+    const AT: Dflt = Float(0.0);
+    Some(match name {
+        "box" => rt_g("tsl_scene_box", &[Float(1.0), Float(1.0), Float(1.0), GRAY, AT, AT, AT]),
+        "sphere" => rt_g("tsl_scene_sphere", &[Float(0.5), GRAY, AT, AT, AT]),
+        "cylinder" => rt_g("tsl_scene_cylinder", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT]),
+        "cone" => rt_g("tsl_scene_cone", &[Float(0.5), Float(1.0), GRAY, AT, AT, AT]),
+        "plane" => rt_g("tsl_scene_plane", &[Float(1.0), Float(1.0), GRAY, AT, AT, AT]),
+        "mesh" => rt_g("tsl_scene_mesh", &[Req, EmptyList, GRAY, Bool(false)]),
+        "surface" => rt_g("tsl_scene_surface", &[Req, Req, Float(1.0), Float(1.0), GRAY, EmptyList]),
+        "line" => rt_g("tsl_scene_line", &[Req, Req, Req, Req, Req, Req, PRIMARY]),
+        "lines" => rt_g("tsl_scene_lines", &[Req, PRIMARY, Bool(false)]),
+        "label" => rt_g("tsl_scene_label", &[Req, AT, AT, AT, Float(12.0), PRIMARY]),
+        "camera" => rt_g("tsl_scene_camera", &[Req, Req, Req, AT, AT, AT, Float(45.0)]),
+        "orbit" => rt_g("tsl_scene_orbit", &[Req, Float(0.6), Float(0.4), AT, AT, AT, Float(45.0)]),
+        "light" => rt_g("tsl_scene_light", &[Req, Req, Req, WHITE, Float(1.0)]),
+        "ambient" => rt_g("tsl_scene_ambient", &[]),
+        "background" => rt_g("tsl_scene_background", &[]),
+        "save" => rt_g("tsl_scene_save", &[]),
+        "restore" => rt_g("tsl_scene_restore", &[]),
+        "translate" => rt_g("tsl_scene_translate", &[]),
+        "scale" => rt_g("tsl_scene_scale", &[]),
+        "rotateX" => rt_g("tsl_scene_rotate_x", &[]),
+        "rotateY" => rt_g("tsl_scene_rotate_y", &[]),
+        "rotateZ" => rt_g("tsl_scene_rotate_z", &[]),
         _ => return None,
     })
 }

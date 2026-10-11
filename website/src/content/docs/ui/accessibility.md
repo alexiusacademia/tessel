@@ -26,7 +26,7 @@ app does this without any code of yours.
 | `DisclosureGroup` | A button called by its title, open or closed. |
 | `CodeEditor` | A text area with its text. |
 | `Icon` | A picture called by its name: `Icon(.folderOpen)` is "folder open". |
-| `Image`, `Canvas` | A picture or a drawing, called what you say (see below). |
+| `Image`, `Canvas`, `Scene3D` | A picture or a drawing, called what you say (see below). |
 | `Markdown` | A document with its text. |
 | A view with `.onTap` | A button, called by the text in it (or its icon's name). |
 

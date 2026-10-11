@@ -6,6 +6,7 @@ description: Draw your own views with Canvas and Graphics (shapes, paths, text a
 The built-in views cover text, controls and layout. When you need something
 they don't have (a chart, a map, a game board, a signature pad), you draw it
 yourself in a `Canvas`, and you follow the mouse over it with `.onPointer`.
+(For solid shapes in three dimensions, see [3D scenes](/ui/3d/).)
 
 ## A first drawing
 

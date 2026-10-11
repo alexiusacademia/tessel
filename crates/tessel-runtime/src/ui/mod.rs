@@ -10,6 +10,7 @@ mod access;
 mod anim;
 mod app;
 mod canvas;
+mod scene3d;
 mod controls;
 mod draw;
 mod edit;
@@ -243,6 +244,9 @@ pub enum Kind {
     /// width and height when it's painted. With `redraw`, the drawing is kept
     /// until that number changes.
     Canvas { draw: Callback, redraw: Option<i64> },
+    /// A scene in three dimensions: `draw` is called with the view's size,
+    /// and says what's in it (see `scene3d`).
+    Scene3D { draw: Callback, redraw: Option<i64> },
     /// `Slider(value:from:to:step:onChange:)`: `value` locates a `Float`;
     /// a `step` of 0 means any value.
     Slider { value: Callback, from: f64, to: f64, step: f64, on_change: Option<Callback> },
@@ -568,6 +572,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::RibbonTab { .. } => 33,
         Kind::RibbonGroup { .. } => 34,
         Kind::RibbonItem { .. } => 35,
+        Kind::Scene3D { .. } => 36,
     }
 }
 
@@ -756,6 +761,7 @@ pub fn build_all(root: &Callback) -> Built {
 /// libraries they belong to by the time thread-local values are dropped.
 pub fn release_caches() {
     canvas::forget_all();
+    scene3d::forget_all();
     image::forget_all();
 }
 
@@ -918,6 +924,16 @@ pub unsafe extern "C" fn tsl_ui_canvas(f: *const c_void, env: *mut Header, has_r
     let draw = Callback::new(f, env);
     let redraw = (has_redraw != 0).then_some(redraw);
     with_builder(|b| b.leaf(Kind::Canvas { draw, redraw }));
+}
+
+/// `Scene3D(redraw:) { s in … }`: `f` is called as `f(env, width, height)`
+/// to say what's in the scene, as a canvas's is to draw.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_scene3d(f: *const c_void, env: *mut Header, has_redraw: u8, redraw: i64) {
+    scene3d::enable();
+    let draw = Callback::new(f, env);
+    let redraw = (has_redraw != 0).then_some(redraw);
+    with_builder(|b| b.leaf(Kind::Scene3D { draw, redraw }));
 }
 
 // ===== C ABI: menus, popovers and windows =====

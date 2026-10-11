@@ -781,6 +781,23 @@ impl Painter<'_> {
                 self.scene.append(drawing.list.clone(), t * Affine::translate((content.x, content.y)));
                 self.scene.pop();
             }
+            Kind::Scene3D { draw, redraw } => {
+                // The scene's picture, as large as the view, and its labels over it.
+                let shot = super::scene3d::shot(n.key, draw, *redraw, content.w, content.h, self.scale, true);
+                let t = self.t() * Affine::translate((content.x, content.y));
+                match &shot.picture {
+                    Some(p) => self.scene.image(p.clone(), t * Affine::scale_non_uniform(content.w / p.width.max(1.0), content.h / p.height.max(1.0)), 1.0),
+                    None => {
+                        self.fill(content, 0.0, theme().control);
+                        self.stroke(content, 0.0, 1.0, theme().field_border);
+                    }
+                }
+                self.scene.push(FillRule::NonZero, 1.0, self.t(), &rounded(content, 0.0));
+                for label in &shot.labels {
+                    self.scene.text(label.layout.clone(), t * Affine::translate((label.x, label.y)), Some(label.color));
+                }
+                self.scene.pop();
+            }
             Kind::Slider { value, from, to, .. } => {
                 let v = super::controls::read_number(value, false);
                 let f = if to > from { ((v - from) / (to - from)).clamp(0.0, 1.0) } else { 0.0 };

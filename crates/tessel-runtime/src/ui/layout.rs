@@ -527,7 +527,7 @@ impl Layouter<'_> {
             Kind::Spacer => Size::default(),
             Kind::Image { .. } => Size { w: 64.0, h: 64.0 },
             // A canvas takes the space it's offered.
-            Kind::Canvas { .. } => Size {
+            Kind::Canvas { .. } | Kind::Scene3D { .. } => Size {
                 w: if avail.w.is_finite() { avail.w } else { 300.0 },
                 h: if avail.h.is_finite() { avail.h } else { 150.0 },
             },
@@ -932,7 +932,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } | Kind::Ribbon { .. } => axis == Axis::X,
         Kind::Disclosure { .. } => axis == Axis::X,
-        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } => true,
+        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } => true,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),

@@ -183,6 +183,7 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
         }
         Kind::Image { .. } => Some(item(Role::Image, called("Picture"))),
         Kind::Canvas { .. } => Some(item(Role::Canvas, called("Drawing"))),
+        Kind::Scene3D { .. } => Some(item(Role::Canvas, called("3D scene"))),
         Kind::Markdown { source, .. } => Some(Item { value: source.to_string(), ..item(Role::Document, called("")) }),
         Kind::Picker { .. } => Some(item(Role::Options, called(""))),
         Kind::TabView { .. } => Some(item(Role::Tabs, called(""))),

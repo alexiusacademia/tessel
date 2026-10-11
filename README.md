@@ -36,7 +36,7 @@ is an honest list of where things stand.
   constants, computed properties and static members, and modules. Values
   are copied, not shared; the types are inferred almost everywhere.
 - **The UI toolkit:** stacks, lists, text fields, a code editor, tabs,
-  menus, ribbons, popovers, drawing in a `Canvas`, over 100 built-in icons,
+  menus, ribbons, popovers, drawing in a `Canvas`, 3D scenes, over 100 built-in icons,
   light and dark appearance, and animation. Tessel draws every control
   itself, so an app looks the same everywhere.
 - **The standard library:** files, JSON and binary encoding of your own

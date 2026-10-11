@@ -2249,6 +2249,7 @@ impl App {
         }
         self.keys = keys;
         super::canvas::keep_only(&self.keys);
+        super::scene3d::keep_only(&self.keys);
         let back = self.current;
         for (window, (key, text)) in focus {
             if self.enter(window) {
@@ -3912,6 +3913,11 @@ impl App {
                     let drawing = super::canvas::drawing(n.key, draw, *redraw, c.w, c.h);
                     format!("Canvas ({})", drawing.stats.describe())
                 }
+                Kind::Scene3D { draw, redraw } => {
+                    let c = n.layout.rect.inset_by(n.mods.padding);
+                    let shot = super::scene3d::shot(n.key, draw, *redraw, c.w, c.h, 1.0, false);
+                    format!("Scene3D ({})", shot.describe())
+                }
                 Kind::Markdown { .. } => {
                     let laid = n.layout.markdown.as_ref();
                     let links: Vec<&str> = laid.iter().flat_map(|l| &l.links).map(|l| l.text.as_str()).collect();
@@ -4042,6 +4048,7 @@ impl App {
                 Kind::TabView { .. } => "TabView",
                 Kind::Divider => "Divider",
                 Kind::Canvas { .. } => "Canvas",
+                Kind::Scene3D { .. } => "Scene3D",
                 Kind::Markdown { .. } => "Markdown",
                 Kind::Svg { icon: Some(_), .. } => "Icon",
                 Kind::Svg { .. } => "Svg",

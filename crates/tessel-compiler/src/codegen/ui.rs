@@ -794,17 +794,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "Spacer" => {
                 self.call_rt("tsl_ui_spacer", &[]);
             }
-            "Canvas" => {
+            "Canvas" | "Scene3D" => {
                 // The runtime calls `adapter(box, width, height)`; the box holds the block.
-                let ft = Ty::func(vec![builtins::GRAPHICS], Ty::Void);
+                let scene = name == "Scene3D";
+                let ft = Ty::func(vec![if scene { builtins::SCENE } else { builtins::GRAPHICS }], Ty::Void);
                 let (has_redraw, redraw): (Val, Val) = match a(0) {
                     Some(x) => (self.i8().const_int(1, false).into(), self.expr_as(x, &Ty::Int).unwrap()),
                     None => (self.i8().const_zero().into(), self.i64().const_zero().into()),
                 };
                 let draw = self.expr_as(a(1).unwrap(), &ft).unwrap();
                 let bx = self.box_closure(&ft, draw);
-                let adapter = self.graphics_adapter();
-                self.call_rt("tsl_ui_canvas", &[adapter.into(), bx.into(), has_redraw, redraw]);
+                let adapter = if scene { self.scene_adapter() } else { self.graphics_adapter() };
+                self.call_rt(if scene { "tsl_ui_scene3d" } else { "tsl_ui_canvas" }, &[adapter.into(), bx.into(), has_redraw, redraw]);
             }
             "Slider" | "Stepper" => {
                 let loc = self.locator(a(0).unwrap()).into_struct_value();

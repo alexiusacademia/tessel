@@ -1,0 +1,16 @@
+app Main {
+    Scene3D { s in
+        s.cube() // error: `Scene` has no method `cube`
+        s.height() // error: `height` is a field, not a method
+        s.box(color: "red") // error: expected `Color`
+        s.sphere(0.5) // error: needs its label `radius:`
+        s.camera(x: 1, y: 2) // error: `camera` is missing `z:`
+        s.mesh(vertices: [1, 2, 3], triangles: [0.5]) // error: expected `Int`, found `Float`
+        s.surface(heights: [0.0, 1.0]) // error: `surface` is missing `columns:`
+        s.line(0, 0, 0, 1, 1) // error: `line` is missing
+        s.rotateY("half") // error: expected `Float`
+        s.fillRect(x: 0, y: 0, width: 1, height: 1, color: .red) // error: `Scene` has no method `fillRect`
+    }
+    Scene3D(redraw: 1.5) { s in } // error: expected `Int`
+    Scene3D { a, b in } // error: should take 1 parameter
+}

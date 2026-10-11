@@ -253,12 +253,12 @@ fn with(f: impl FnOnce(&mut Current)) {
     });
 }
 
-fn with_text<R>(f: impl FnOnce(&mut TextEngine) -> R) -> R {
+pub(super) fn with_text<R>(f: impl FnOnce(&mut TextEngine) -> R) -> R {
     TEXT.with(|t| f(t.borrow_mut().get_or_insert_with(TextEngine::new)))
 }
 
 /// The items of a `[Float]`.
-unsafe fn floats<'a>(l: *const List) -> &'a [f64] {
+pub(super) unsafe fn floats<'a>(l: *const List) -> &'a [f64] {
     unsafe {
         if l.is_null() || (*l).len <= 0 {
             return &[];
@@ -269,7 +269,7 @@ unsafe fn floats<'a>(l: *const List) -> &'a [f64] {
 
 /// The items of a `[Color]` (each is its case's place and the box of its
 /// values, as an enum is passed on its own).
-unsafe fn colors(l: *const List) -> Vec<Rgba> {
+pub(super) unsafe fn colors(l: *const List) -> Vec<Rgba> {
     unsafe {
         if l.is_null() || (*l).len <= 0 || (*(*l).elem).size < 16 {
             return Vec::new();
@@ -287,7 +287,7 @@ unsafe fn colors(l: *const List) -> Vec<Rgba> {
 }
 
 /// The items of an `[Int]`.
-unsafe fn ints<'a>(l: *const List) -> &'a [i64] {
+pub(super) unsafe fn ints<'a>(l: *const List) -> &'a [i64] {
     unsafe {
         if l.is_null() || (*l).len <= 0 {
             return &[];

@@ -1,0 +1,7 @@
+tree
+click "More"
+tree
+click "Again"
+tree
+drag 100 50 40 0
+tree
