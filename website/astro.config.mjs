@@ -154,6 +154,7 @@ export default defineConfig({
 						{ label: "What's new", slug: 'about/whats-new' },
 						{ label: 'Design decisions', slug: 'about/design' },
 						{ label: 'Roadmap', slug: 'about/roadmap' },
+						{ label: 'Syncster', link: 'https://syncster.dev/' },
 					],
 				},
 			],
