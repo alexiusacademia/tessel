@@ -76,8 +76,21 @@ jobs:
       - name: Show the runtime's native link libraries
         run: cargo rustc -p tessel-runtime --lib --crate-type staticlib -- --print native-static-libs
 
+      # The debugger's and Android's tests run on their own, each with a
+      # limit: a test that never ends would otherwise hide what the others said.
       - name: Test
-        run: cargo test --workspace
+        timeout-minutes: 40
+        run: cargo test --workspace -- --skip debugger_sessions --skip debug_adapter --skip android_packages
+
+      - name: Test the debugger
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: cargo test -p tessel-cli --test run debug -- --nocapture
+
+      - name: Test Android packages
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: cargo test -p tessel-cli --test run android_packages -- --nocapture
 
       - name: Build the examples
         shell: bash
