@@ -136,11 +136,13 @@ pub fn doctor() -> std::process::ExitCode {
     println!("To run an app:");
     match sdk.as_ref().ok().map(|s| s.join("platform-tools").join(format!("adb{}", std::env::consts::EXE_SUFFIX))) {
         Some(adb) if adb.is_file() => {
-            // (adb leaves a server running, which keeps whatever its output
-            // went to open: started here with none, nobody who reads this
-            // command's output waits for that server to end.)
+            // (Listing the devices starts adb's server, which stays, and on
+            // Windows keeps this command's output open: whoever reads it
+            // would wait for the server to end. One started here is stopped.)
+            let port = std::env::var("ANDROID_ADB_SERVER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(5037u16);
+            let running = std::net::TcpStream::connect(("127.0.0.1", port)).is_ok();
             let nothing = std::process::Stdio::null;
-            keep_output_to_ourselves();
+            // (Started with no output of its own, or the list below would wait for it too.)
             let _ = Command::new(&adb).arg("start-server").stdin(nothing()).stdout(nothing()).stderr(nothing()).status();
             let listed = Command::new(&adb).arg("devices").stdin(nothing()).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
             let devices: Vec<String> = listed
@@ -151,6 +153,9 @@ pub fn doctor() -> std::process::ExitCode {
                 .filter(|(_, state)| state.trim() == "device")
                 .map(|(name, _)| name.to_string())
                 .collect();
+            if cfg!(windows) && !running {
+                let _ = Command::new(&adb).arg("kill-server").stdin(nothing()).stdout(nothing()).stderr(nothing()).status();
+            }
             match devices.is_empty() {
                 true => println!("  none     no phone or emulator is connected (start an emulator, or plug in a phone with USB debugging on)"),
                 false => println!("  ok       connected: {}; install with `adb install -r <app>.apk`", devices.join(", ")),
@@ -164,28 +169,6 @@ pub fn doctor() -> std::process::ExitCode {
     } else {
         println!("{problems} missing; see above.");
         std::process::ExitCode::FAILURE
-    }
-}
-
-/// On Windows a program started from here gets every handle of ours that
-/// can be passed on, whatever it's given as its own output: ours no longer
-/// can be, so a program that stays (adb's server) doesn't hold them open.
-fn keep_output_to_ourselves() {
-    #[cfg(windows)]
-    unsafe {
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetStdHandle(which: u32) -> *mut std::ffi::c_void;
-            fn SetHandleInformation(handle: *mut std::ffi::c_void, mask: u32, flags: u32) -> i32;
-        }
-        const INHERIT: u32 = 1;
-        // (Input, output and errors: -10, -11 and -12.)
-        for which in [-10i32, -11, -12] {
-            let handle = GetStdHandle(which as u32);
-            if !handle.is_null() && handle as isize != -1 {
-                SetHandleInformation(handle, INHERIT, 0);
-            }
-        }
     }
 }
 
