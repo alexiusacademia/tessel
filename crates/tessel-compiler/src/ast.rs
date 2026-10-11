@@ -63,6 +63,17 @@ pub enum Item {
 }
 
 impl Item {
+    pub fn name_mut(&mut self) -> &mut Ident {
+        match self {
+            Item::Struct(d) => &mut d.name,
+            Item::Enum(d) => &mut d.name,
+            Item::Interface(d) => &mut d.name,
+            Item::Fn(d) => &mut d.name,
+            Item::View(d) => &mut d.name,
+            Item::App(d) => &mut d.name,
+        }
+    }
+
     pub fn name(&self) -> &Ident {
         match self {
             Item::Struct(d) => &d.name,

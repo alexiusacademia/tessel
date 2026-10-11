@@ -1,0 +1,22 @@
+// A program's own function or type may have the name of one the prelude
+// declares and uses itself (`dateParts`, `DateParts`): the name is the
+// program's, and the prelude goes on using its own (issue #18).
+
+struct DateParts {
+    label: String
+}
+
+fn dateParts(_ token: String) -> DateParts? {
+    if token == "" {
+        return nil
+    }
+    DateParts(label: "the year {token}")
+}
+
+fn main() {
+    print(dateParts("2000")?.label ?? "none")
+    print(dateParts("")?.label ?? "none")
+    // What the prelude makes with its own `dateParts` still works.
+    print(formatDate(0.0, format: "yyyy-MM-dd", timeZone: "UTC"))
+    print(date(year: 2024, month: 2, day: 29, timeZone: "UTC") > 0.0)
+}

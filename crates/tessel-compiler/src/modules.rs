@@ -105,6 +105,32 @@ pub fn resolve(sources: &mut SourceMap, root: Vec<(u32, Program)>, diags: &mut D
     program
 }
 
+/// Among `items` (declarations that only use each other, like the
+/// prelude's), gives those named in `names` the full name `owner.name`,
+/// and rewrites their uses in `items` to match: they stay what `items`
+/// mean by those names, whatever else is declared under them.
+pub fn set_apart(items: &mut [Item], names: &HashSet<String>, owner: &str, sources: &SourceMap, diags: &mut Diagnostics) {
+    let decls = items
+        .iter()
+        .map(|i| i.name())
+        .filter(|n| names.contains(&n.name))
+        .map(|n| (n.name.clone(), Decl { public: false, private: false, span: n.span }))
+        .collect();
+    let modules = [Module { name: owner.to_string(), decls }];
+    let root = HashMap::new();
+    let mut r = Resolver { module: Some(0), imports: HashMap::new(), modules: &modules, root: &root, scopes: Vec::new(), types: Vec::new(), statics: None, diags, sources };
+    let prefix = format!("{owner}.");
+    for item in items {
+        r.item(item);
+        // (The resolver names every declaration after the module: only
+        // the ones set apart keep that.)
+        let name = item.name_mut();
+        if let Some(own) = name.name.strip_prefix(&prefix).filter(|own| !names.contains(*own)) {
+            name.name = own.to_string();
+        }
+    }
+}
+
 /// The folder a source file is in.
 fn folder_of(file: &str) -> PathBuf {
     match Path::new(file).parent() {

@@ -76,7 +76,7 @@ pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     // (Adds the files of imported modules to `sources`.)
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
-    add_prelude(&mut program, &mut diags, &mut next_id);
+    add_prelude(&mut program, sources, &mut diags, &mut next_id);
     lower_statics(&mut program);
     program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
@@ -188,7 +188,7 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
 
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
     program.items.extend(tuple_structs());
-    add_prelude(&mut program, &mut diags, &mut next_id);
+    add_prelude(&mut program, sources, &mut diags, &mut next_id);
     lower_statics(&mut program);
     program.next_id = next_id;
     let mutable = vars.iter().filter(|v| v.mutable).map(|v| v.name.clone()).collect();
@@ -203,24 +203,30 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
     ReplAnalysis { analysis: Analysis { program, checked, diags }, decls, last_expr }
 }
 
-/// Adds the prelude's declarations (see `prelude.tsl`) that the program
-/// doesn't declare itself. A program with its own `Error` or `Result` gets
-/// none of them, since they all use those two.
-fn add_prelude(program: &mut ast::Program, diags: &mut Diagnostics, next_id: &mut ast::ExprId) {
+/// Adds the prelude's declarations (see `prelude.tsl`). A program with its
+/// own `Error` or `Result` gets none of them, since they all use those two.
+///
+/// A name the program declares itself is the program's: `dateParts` in a
+/// program is its own function. The prelude's declaration of that name is
+/// still there for the rest of the prelude, which uses it, under a name of
+/// its own (`builtin.dateParts`).
+fn add_prelude(program: &mut ast::Program, sources: &SourceMap, diags: &mut Diagnostics, next_id: &mut ast::ExprId) {
     let own: std::collections::HashSet<String> = program.items.iter().map(|i| i.name().name.clone()).collect();
     if own.contains("Error") || own.contains("Result") {
         return;
     }
-    let prelude = parser::parse_file(source::PRELUDE_FILE, source::PRELUDE, diags, next_id);
+    let mut prelude = parser::parse_file(source::PRELUDE_FILE, source::PRELUDE, diags, next_id);
     // Databases' declarations go together: a program with its own
     // `Database` (or another of their names) gets none of them.
     let database = |name: &str| {
         matches!(name, "SqlValue" | "Database" | "DatabaseRow" | "__DatabaseTable" | "openDatabase") || name.starts_with("__sql")
     };
     let own_database = own.iter().any(|n| database(n));
-    program.items.extend(
-        prelude.items.into_iter().filter(|i| !own.contains(&i.name().name) && !(own_database && database(&i.name().name))),
-    );
+    prelude.items.retain(|i| !(own_database && database(&i.name().name)));
+    if prelude.items.iter().any(|i| own.contains(&i.name().name)) {
+        modules::set_apart(&mut prelude.items, &own, "builtin", sources, diags);
+    }
+    program.items.extend(prelude.items);
 }
 
 /// Makes the `static` members of structs and enums functions of the program,
