@@ -11,12 +11,35 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.3.0
+## 0.4.0
 
-*October 11, 2026 · 0.2.0 and 0.3.0*
+*October 11, 2026 · 0.2.0 to 0.4.0*
 
 From these releases on, the second number goes up when a release adds
 features, and the third when it only fixes things.
+
+- **3D scenes.** A new view, [`Scene3D`](/reference/views/#scene3d), shows
+  solid shapes in three dimensions: boxes, spheres, cylinders, cones,
+  surfaces over a grid, and meshes of your own triangles, with lines and
+  labels. You place a camera (or let it orbit a point as the mouse drags),
+  add lights, and move, turn and size things as on a canvas. The graphics
+  card draws it, nearer things in front, shaded, with smooth edges. See
+  [3D scenes](/ui/3d/).
+- **Every control works from the keyboard.** Tab reaches buttons, toggles,
+  pickers and tabs as well as fields; Space or Enter presses, and the arrow
+  keys choose. The control that has the keyboard shows a ring.
+- **Screen readers.** VoiceOver on macOS and Narrator on Windows are told
+  what's in a window: each control, what it's called, its value, and what
+  can be done with it. `.accessibilityLabel` names what has no text of its
+  own. See [Accessibility](/ui/accessibility/).
+- **Animation with springs.** `.animation` takes a
+  [`curve:`](/reference/colors/#curve): `.easeInOut`, `.easeIn`,
+  `.easeOut`, `.linear`, `.spring` or `.bouncy`. A view that goes away now
+  fades out, as one that appears fades in. See
+  [Animation](/ui/styling/#animation).
+- **Editors: go to definition, find references, rename.** The language
+  server (so VS Code and other editors) takes you from a name to where it's
+  declared, lists everywhere it's used, and renames it everywhere at once.
 
 - **Tessel says that it's in use.** So that installations can be counted,
   Tessel reports when it's installed or updated, and at most once a day
@@ -59,6 +82,11 @@ features, and the third when it only fixes things.
 
 Fixed:
 
+- An `Icon` or `Svg` given `.clear` (or a see-through color) was drawn
+  black.
+- A program that declared a function or a type with the name of one of
+  Tessel's own, like `dateParts`, got errors pointing into a file it
+  couldn't see.
 - On Android, Enter did nothing in a code editor, and a text field's
   `.onSubmit` never ran.
 
