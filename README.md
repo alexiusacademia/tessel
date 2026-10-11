@@ -1,7 +1,8 @@
 # Tessel
 
-A small, declarative, compiled language for building desktop GUI apps on
-macOS and Windows.
+A small, compiled language for building native apps, with the UI written
+in the language itself. The same source builds an app for macOS, Windows
+and Android.
 
 ```tessel
 app Counter(width: 320, height: 200) {
@@ -14,12 +15,38 @@ app Counter(width: 320, height: 200) {
 }
 ```
 
-**Status:** apps compile to native macOS executables through LLVM and run in
-their own window, drawn by Tessel's own GPU renderer (`wgpu` + `vello`).
-Windows builds work too. Apps get about 60 built-in icons (`Icon(.folder)`)
-and can show SVG (`Svg("<svg …>")`, `Image("logo.svg")`) and PNG and JPEG
-pictures (`Image("photo.jpg")`). They follow the system's light or dark
-appearance. See [docs/design.md](docs/design.md) for the design and plan.
+You describe what the window looks like for the current state; Tessel
+works out what changed and redraws it. Programs compile ahead of time to
+native code through LLVM, with no garbage collector, and a built app is a
+single executable that needs nothing else installed.
+
+**Documentation, tutorials and reference: <https://tessel-lang.syncster.dev>**
+
+Tessel is young (version 0.3). It's enough to write real apps (the Tessel
+IDE is one), but plenty is missing and details of the language may still
+change. [Status and roadmap](https://tessel-lang.syncster.dev/about/roadmap/)
+is an honest list of where things stand.
+
+![The Tessel IDE with a program stopped at a breakpoint: the line is highlighted, and the Debug tab shows the calls and the variables](website/src/assets/screens/ide-debug.png)
+
+## What's in it
+
+- **The language:** structs, enums with values, interfaces, generics,
+  closures, optionals, errors with `Result` and `try`, `async` and `await`,
+  constants, computed properties and static members, and modules. Values
+  are copied, not shared; the types are inferred almost everywhere.
+- **The UI toolkit:** stacks, lists, text fields, a code editor, tabs,
+  menus, ribbons, popovers, drawing in a `Canvas`, over 100 built-in icons,
+  light and dark appearance, and animation. Tessel draws every control
+  itself, so an app looks the same everywhere.
+- **The standard library:** files, JSON and binary encoding of your own
+  types, SQLite, HTTP and WebSockets, dates and time zones, running other
+  programs, and work on a background thread.
+- **The tools:** the `tessel` command, the Tessel IDE, a REPL, hot reload,
+  a debugger, a language server, a VS Code extension, and a headless mode
+  for testing apps.
+
+A program doesn't need a window:
 
 ```tessel
 fn main() {
@@ -29,30 +56,6 @@ fn main() {
     }
 }
 ```
-
-## The Tessel IDE
-
-Run `tessel` in a project folder (or `tessel ide <folder>`) to open the Tessel
-IDE: a file list, a code editor with syntax colors and live error markers,
-Check / Run / Build / Package buttons (Cmd+K, Cmd+R, Cmd+B; Cmd+S saves), a
-problems list and a console. Click a problem, or an error location in the
-console, to jump to it.
-
-The IDE is itself a Tessel app: see [`ide/`](ide/).
-
-## Layout
-
-| Path | |
-|---|---|
-| `crates/tessel-compiler` | Lexer, parser, type checker, LLVM code generation |
-| `crates/tessel-runtime` | Windows, layout, GPU rendering, event loop |
-| `crates/tessel-cli` | The `tessel` command |
-| `examples/` | Sample programs, one folder each (a folder is a program) |
-| `ide/` | The Tessel IDE, written in Tessel |
-| `editors/vscode/` | VS Code extension, published as `alexiusacademia.tessel` (highlighting, errors as you type, types on hover, completion) |
-| `tests/run/` | Programs with expected output, run by `cargo test` |
-| `tests/repl/` | REPL sessions with expected output |
-| `docs/` | Language design |
 
 ## Installing
 
@@ -68,13 +71,64 @@ Windows (PowerShell):
 irm https://storage.googleapis.com/tessel-releases/install.ps1 | iex
 ```
 
-Packages are built by `.github/workflows/release.yml` when a `v*` tag is
-pushed, and published to the `tessel-releases` bucket in the `tessel-lang`
-Google Cloud project. They contain `tessel` (with LLVM and its linker, lld,
-built in), the runtime library, and `sdk/`: stubs of the macOS libraries
-apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
-import libraries (`install/windows-sdk.sh`). Nothing else is needed to build
-apps: no Xcode or Visual Studio.
+`tessel update` brings an installation up to date.
+[Installation](https://tessel-lang.syncster.dev/start/installation/) has
+the details.
+
+Nothing else is needed to build apps: no Xcode or Visual Studio. `tessel`
+has LLVM and a linker built in, and comes with what apps link against.
+
+### What Tessel reports
+
+So that installations can be counted, Tessel reports when it's installed or
+updated, and at most once a day that it's in use: its version, the system,
+and a random id for the installation. Nothing about you, your files or
+your code. `tessel telemetry off` turns it off. See
+[What Tessel reports](https://tessel-lang.syncster.dev/start/installation/#what-tessel-reports).
+
+## Using it
+
+```sh
+tessel new hello          # a project to start from
+tessel run hello          # build and run (with --hot: reload as you save)
+tessel check hello        # only look for errors
+tessel build hello --bundle           # an app to double-click (macOS: Hello.app)
+tessel build hello --android          # an Android package (needs the Android SDK)
+tessel debug hello        # stop at lines, step, and look at variables
+tessel repl               # type code, a line at a time
+tessel                    # open the Tessel IDE on this folder
+```
+
+A program is one `.tsl` file, or a folder of them.
+
+### The Tessel IDE
+
+`tessel` in a project folder (or `tessel ide <folder>`) opens the IDE: a
+file list, a code editor with completion and errors as you type, Run and
+Debug, a Design panel for building a window by pointing at it, the
+documentation, and a console. It's a Tessel app itself: see [`ide/`](ide/).
+
+### Other editors
+
+The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=alexiusacademia.tessel)
+gives highlighting, errors as you type, types on hover, completion and
+the debugger. Other editors can use `tessel lsp` (a language server) and
+`tessel debug --dap` (a debug adapter).
+
+## This repository
+
+| Path | |
+|---|---|
+| `crates/tessel-compiler` | Lexer, parser, type checker, LLVM code generation |
+| `crates/tessel-runtime` | What every program links against: values, the UI toolkit, rendering, the event loop, the standard library |
+| `crates/tessel-cli` | The `tessel` command: build, run, the REPL, the debugger, the language server, Android packaging, updates |
+| `ide/` | The Tessel IDE, written in Tessel |
+| `examples/` | Sample programs, one folder each |
+| `editors/vscode/` | The VS Code extension |
+| `website/` | The documentation site (Astro Starlight) |
+| `install/` | The install scripts, and what packages a release |
+| `tests/` | Programs and sessions with their expected output |
+| `docs/design.md` | The language's early design notes |
 
 ## Building from source
 
@@ -85,29 +139,58 @@ Requires Rust and LLVM 22 (`brew install llvm@22`; the path is set in
 cargo build
 ./target/debug/tessel check examples/todos       # a folder of .tsl files, or one file
 ./target/debug/tessel run examples/todos         # compile and run (opens a window)
-./target/debug/tessel repl                       # type code, a line at a time
 ./target/debug/tessel build app.tsl -o app        # compile to a native executable
-cargo test    # unit tests, error-message fixtures, and programs in tests/run
+cargo test    # unit tests, error-message fixtures, and the programs in tests/
               # (checked for memory leaks on macOS)
 ```
 
 On Windows, build with `cargo build --target x86_64-pc-windows-msvc` (see
-`.cargo/config.toml`) and set `LLVM_SYS_221_PREFIX` to an LLVM 22 install; the
-CI workflow shows the exact steps.
+`.cargo/config.toml`) and set `LLVM_SYS_221_PREFIX` to an LLVM 22 install;
+`.github/workflows/ci.yml` shows the exact steps.
 
 Use `cargo build --release` for much smaller app binaries: `tessel build`
 links against the runtime library built next to the `tessel` executable.
 
-### Testing apps without a window
+A `tessel` built from source reports nothing (see "What Tessel reports").
 
-Set `TESSEL_SCRIPT` to drive an app headlessly — click, type, wait for
-timers, print the view tree, or save a screenshot:
+### Tests
+
+| | |
+|---|---|
+| `tests/run/` | Programs with their expected output. Apps run without a window, driven by a `.script`. |
+| `tests/repl/`, `tests/hot/`, `tests/preview/`, `tests/net/` | Sessions of the REPL, hot reload, `tessel preview`, and networking against local servers |
+| `tests/debug/` | Debugger sessions: commands in, what the debugger says out |
+| `tests/ide/` | The IDE itself, driven by scripts |
+| `crates/tessel-compiler/tests/ui/` | Programs with mistakes, and the error messages they should get |
+
+`TESSEL_TEST_DEBUG=1 cargo test -p tessel-cli --test run run_programs`
+runs every program in `tests/run/` as the debugger builds it, which must
+change nothing about what it does.
+
+Apps are tested without a window by setting `TESSEL_SCRIPT`: click, type,
+wait for timers, print the view tree, or save a picture.
 
 ```sh
 TESSEL_SCRIPT='click "+"; click "+"; tree; snapshot counter.png' ./counter
 ```
 
-`click "label"` finds a text, button, toggle or field by its label, or a
-built-in icon by its name (`click "trash"`). See
-`crates/tessel-runtime/src/ui/app.rs` for all commands. `tests/run/app_*`
-use this.
+[Testing apps](https://tessel-lang.syncster.dev/ui/testing/) lists the
+commands.
+
+### Releases
+
+Packages are built by `.github/workflows/release.yml` when a `v*` tag is
+pushed, and published to the `tessel-releases` bucket. A package holds
+`tessel`, the runtime library, and `sdk/`: stubs of the macOS libraries
+apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
+import libraries (`install/windows-sdk.sh`). The runtime for Android is
+published alongside, and fetched the first time an app is built for it.
+
+## How Tessel is made
+
+Tessel is developed with the help of an AI coding assistant, which is why
+its first releases came so quickly.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
