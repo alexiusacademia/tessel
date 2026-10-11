@@ -61,6 +61,13 @@ pub fn load(source: &str, color: Rgba) -> Option<Rc<Svg>> {
     (PARSE.get()?)(source, color)
 }
 
+/// `source` with `color` where it says `currentColor`: the color, and how
+/// much of it shows (a clear color draws nothing).
+fn tinted(source: &str, color: Rgba) -> String {
+    let [r, g, b, a] = color.0;
+    source.replace("currentColor", &format!("rgba({r},{g},{b},{:.3})", a as f64 / 255.0))
+}
+
 fn parse(source: &str, color: Rgba) -> Option<Rc<Svg>> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
@@ -72,9 +79,7 @@ fn parse(source: &str, color: Rgba) -> Option<Rc<Svg>> {
         }
         c.entry(key)
             .or_insert_with(|| {
-                let [r, g, b, _] = color.0;
-                let text = source.replace("currentColor", &format!("#{r:02x}{g:02x}{b:02x}"));
-                let tree = usvg::Tree::from_str(&text, &usvg::Options::default()).ok()?;
+                let tree = usvg::Tree::from_str(&tinted(source, color), &usvg::Options::default()).ok()?;
                 let size = tree.size();
                 Some(Rc::new(Svg {
                     scene: super::backend::svg_scene(&tree),
@@ -115,6 +120,27 @@ pub fn icon(name: &str, color: Rgba) -> Option<Rc<Svg>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// How much the first stroke of an icon drawn in `color` shows.
+    fn shows(color: Rgba) -> f32 {
+        fn stroke(group: &usvg::Group) -> Option<f32> {
+            group.children().iter().find_map(|node| match node {
+                usvg::Node::Path(path) => path.stroke().map(|s| s.opacity().get()),
+                usvg::Node::Group(inner) => stroke(inner),
+                _ => None,
+            })
+        }
+        let tree = usvg::Tree::from_str(&tinted(ICONS[0].1, color), &usvg::Options::default()).unwrap();
+        stroke(tree.root()).expect("an icon is drawn with strokes")
+    }
+
+    #[test]
+    fn an_icon_shows_as_much_as_its_color() {
+        assert_eq!(shows(Rgba([255, 0, 0, 255])), 1.0);
+        // A clear color draws nothing (it used to draw black: issue #19).
+        assert_eq!(shows(Rgba([0, 0, 0, 0])), 0.0);
+        assert!((shows(Rgba([255, 0, 0, 128])) - 0.5).abs() < 0.01);
+    }
 
     #[test]
     fn every_icon_parses() {
