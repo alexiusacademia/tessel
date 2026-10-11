@@ -11,12 +11,19 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.2.0
+## 0.3.0
 
-*October 11, 2026*
+*October 11, 2026 · 0.2.0 and 0.3.0*
 
-From this release on, the second number goes up when a release adds
+From these releases on, the second number goes up when a release adds
 features, and the third when it only fixes things.
+
+- **Tessel says that it's in use.** So that installations can be counted,
+  Tessel reports when it's installed or updated, and at most once a day
+  that it's in use: its version, the system, and a random id for the
+  installation. Nothing about you, your files or your code. You're told
+  once, and `tessel telemetry off` turns it off. See
+  [What Tessel reports](/start/installation/#what-tessel-reports).
 
 - **A debugger.** Stop a program at a line, step through its code, and look
   at its variables: lists, dictionaries, structs and enum values open up to
