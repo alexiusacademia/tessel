@@ -207,6 +207,14 @@ How big a ribbon's [button, toggle or menu](/reference/views/#ribbonbutton)
 is: `small` (its icon next to its label; the default) or `large` (its icon
 over its label, as tall as its group).
 
+## Curve
+
+How an [`.animation`](/reference/modifiers/#animation) moves from one state
+to the next: `easeInOut` (slow, fast, slow; the default), `easeIn`,
+`easeOut`, `linear`, `spring` (a little past the end, and back) and `bouncy`
+(further past, and back and forth). See
+[How a change moves](/ui/styling/#how-a-change-moves).
+
 ## PointerEvent
 
 What [`.onPointer`](/reference/modifiers/#onpointer) tells its block. A

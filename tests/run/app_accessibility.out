@@ -1,0 +1,35 @@
+Window
+  Text = "Settings"
+  TextField "Name" = "Ada"
+  Switch "Loud" (on)
+  Options
+    Option "Small" (chosen)
+    Option "Large"
+  Slider "Volume" = 0.5 (0 to 1)
+  Stepper "Copies" = 2 (1 to 9)
+  Button "trash"
+  Button "Save all"
+  Button "About this app"
+  Button "More" (open)
+  Button "Reset"
+  Tabs
+    Tab "One" (chosen)
+    Tab "Two"
+    Text = "first page"
+Window
+  Text = "Settings"
+  TextField "Name"
+  Switch "Loud" (on)
+  Options
+    Option "Small" (chosen)
+    Option "Large"
+  Slider "Volume" = 0.5 (0 to 1)
+  Stepper "Copies" = 2 (1 to 9)
+  Button "trash"
+  Button "Save all"
+  Button "About this app"
+  Button "More" (closed)
+  Tabs
+    Tab "One"
+    Tab "Two" (chosen)
+    Text = "second page"

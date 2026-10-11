@@ -1,0 +1,15 @@
+app Fade(width: 320, height: 240) {
+    state items = ["one", "two", "three"]
+    state wide = false
+
+    VStack(spacing: 8) {
+        for item in items {
+            Text(item).padding(8).background(.blue, radius: 6).id(item)
+        }
+        Spacer().frame(width: if wide { 280 } else { 80 }, height: 20).background(.green, radius: 6)
+        Button("Remove") { items.remove(at: 1) }
+        Button("Widen") { wide = !wide }
+    }
+    .padding(12)
+    .animation(0.4, curve: .bouncy)
+}

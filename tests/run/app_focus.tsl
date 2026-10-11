@@ -1,5 +1,6 @@
 // Tab and Shift+Tab move between text fields (skipping hidden and disabled
-// ones), and text composed with an input method.
+// ones) and the controls among them (the button, which takes no typing),
+// and text composed with an input method.
 
 app Focus(width: 360, height: 300) {
     state first = "Ada"

@@ -18,6 +18,9 @@ Swift-like language for native apps and command-line programs.
   (or with hot reload, from its menu), and the Command Palette has **Tessel:
   Run Program**, **Run with Hot Reload**, **Check Program**, **Build App**
   and **Pin Tessel Version**. They run `tessel` in a terminal.
+- **Go to definition, find references and rename.** F12 goes to where a
+  name is declared, Shift+F12 lists where it's used, and F2 renames it
+  everywhere in the program. Needs Tessel 0.4.0 or later.
 - **A debugger.** Click beside a line to set a breakpoint, and press F5 (or
   the bug button in the editor's title bar): the program of the file being
   edited runs, and stops there. Step through the code, see the calls that

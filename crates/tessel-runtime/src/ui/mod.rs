@@ -6,6 +6,7 @@
 //! keeps what must survive rebuilds (view `state`, focus, scroll offsets)
 //! keyed by each view's position in the tree.
 
+mod access;
 mod anim;
 mod app;
 mod canvas;
@@ -354,9 +355,10 @@ pub struct Mods {
     pub tab_title: Option<String>,
     /// `.hoverBackground(color, radius:)`: drawn while the mouse is over the view.
     pub hover_background: Option<(Rgba, f64)>,
-    /// `.animation(seconds)`: how long changes to the view and the views
-    /// inside it take (0 for at once); inherited.
-    pub animation: Option<f64>,
+    /// `.animation(seconds, curve:)`: how long changes to the view and the
+    /// views inside it take (0 for at once), and how they move (see
+    /// `anim::ease`); inherited.
+    pub animation: Option<(f64, u8)>,
     /// `.onPointer { event in … }`: called with what the mouse does on the
     /// view (see `PointerC`).
     pub on_pointer: Option<Callback>,
@@ -381,6 +383,9 @@ pub struct Mods {
     pub drop_target: Option<DropTarget>,
     /// `.tooltip("…")`: shown next to the pointer when it rests on the view.
     pub tooltip: Option<String>,
+    /// `.accessibilityLabel("…")`: what a screen reader calls the view
+    /// (see `access`).
+    pub access_label: Option<String>,
     /// `.onResize { width, height in … }`: called with the view's size
     /// (inside its padding) when it's first laid out, and when it changes.
     pub on_resize: Option<Callback>,
@@ -1101,8 +1106,8 @@ pub extern "C" fn tsl_ui_text_alignment(align: i32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_ui_animation(seconds: f64) {
-    modify(|m| m.animation = Some(seconds.max(0.0)));
+pub extern "C" fn tsl_ui_animation(seconds: f64, curve: i32) {
+    modify(|m| m.animation = Some((seconds.max(0.0), curve.clamp(0, 5) as u8)));
 }
 
 #[unsafe(no_mangle)]
@@ -1382,6 +1387,13 @@ pub unsafe extern "C" fn tsl_ui_on_resize(f: *const c_void, env: *mut Header) {
     modify(|m| m.on_resize = Some(cb));
 }
 
+/// `.accessibilityLabel("…")`: what a screen reader calls the view.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_accessibility_label(text: *const Str) {
+    let text = unsafe { text_of(text) };
+    modify(|m| m.access_label = (!text.is_empty()).then_some(text));
+}
+
 /// `.tooltip("…")`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_tooltip(text: *const Str) {
@@ -1494,7 +1506,7 @@ mod tests {
 
         let mut list = draw::DrawList::new();
         let ui = render::Interaction::default();
-        render::Painter { scene: &mut list, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None }.paint(&tree);
+        render::Painter { scene: &mut list, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None, marks: Vec::new() }.paint(&tree);
         let path = std::env::temp_dir().join("tessel-runtime-counter.png");
         let pixels = backend::Offscreen::default().rgba(&list, 640, 520, Some(theme::theme().colors[theme::BACKGROUND]));
         assert!(backend::save_rgba(path.to_str().unwrap(), 640, 520, pixels));

@@ -234,6 +234,10 @@ pub struct Painter<'a> {
     /// The part of the window that shows, inside scroll views: what's
     /// outside needn't be drawn.
     pub clip: Option<Rect>,
+    /// The views under `.animation` that were drawn: each one's key, where
+    /// its drawing is in `scene`, and how long it's animated for (for
+    /// `Animations::drew`: a view that's gone fades out as it was drawn).
+    pub marks: Vec<(u64, usize, usize, f64)>,
 }
 
 impl Painter<'_> {
@@ -308,7 +312,7 @@ impl Painter<'_> {
         let r = n.layout.rect;
         let (dx, dy) = (d.at.0 - d.grab.0 - r.x, d.at.1 - d.grab.1 - r.y);
         let mut copy = DrawList::new();
-        let mut painter = Painter { scene: &mut copy, ui: self.ui, scale: self.scale, offset: (0.0, 0.0), clip: None };
+        let mut painter = Painter { scene: &mut copy, ui: self.ui, scale: self.scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
         painter.paint(n);
         // On a card, lifted off the window.
         let t = self.t();
@@ -436,6 +440,15 @@ impl Painter<'_> {
     }
 
     pub fn paint(&mut self, n: &Node) {
+        let from = self.scene.ops.len();
+        self.paint_view(n);
+        let animated = n.layout.style.animation;
+        if animated > 0.0 && self.ui.anim.enabled && !n.mods.hidden {
+            self.marks.push((n.key, from, self.scene.ops.len(), animated));
+        }
+    }
+
+    fn paint_view(&mut self, n: &Node) {
         if n.mods.hidden {
             return;
         }
@@ -885,6 +898,8 @@ impl Painter<'_> {
             let (ring, radius) = match &n.kind {
                 Kind::Disclosure { .. } => (n.layout.segments.first().copied().unwrap_or(content), 5.0),
                 Kind::Slider { .. } => (content.inset(2.0), 11.0),
+                // (Tabs: the one that's selected.)
+                Kind::TabView { .. } => (n.layout.tabs.get(n.selected_tab()).map_or(content, |t| t.rect.inset(4.0)), 3.0),
                 _ => (content, 7.0),
             };
             self.stroke(ring.inset(-3.0), radius + 3.0, 2.0, theme().accent);

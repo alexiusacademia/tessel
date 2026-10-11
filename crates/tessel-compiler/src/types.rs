@@ -87,6 +87,8 @@ pub struct ParamSig {
     pub tag_fn: bool,
     /// Content built for each number, `{ i in … }` (`LazyVStack`'s rows).
     pub rows: bool,
+    /// Where the parameter's name is declared (nowhere, for a built-in's).
+    pub span: Span,
 }
 
 impl ParamSig {
@@ -100,6 +102,7 @@ impl ParamSig {
             sets_tag: false,
             tag_fn: false,
             rows: false,
+            span: Span::default(),
         }
     }
 
@@ -155,6 +158,8 @@ pub struct StructDef {
 pub struct CaseDef {
     pub name: String,
     pub fields: Vec<ParamSig>,
+    /// Where the case's name is declared (nowhere, for a built-in's).
+    pub span: Span,
 }
 
 /// An `interface`: the methods its types have.

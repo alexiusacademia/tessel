@@ -1,0 +1,10 @@
+animations on
+wait 1
+click "Widen"
+wait 0.2
+dump
+wait 1
+dump
+click "Remove"
+wait 1
+tree

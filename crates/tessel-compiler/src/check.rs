@@ -57,6 +57,13 @@ pub struct Checked {
     pub consts: HashSet<String>,
     /// The expressions that read a constant (`limit`, `Rect.zero`), and which.
     pub const_refs: HashMap<ExprId, String>,
+    /// Each use of a name the program declares, and where it's declared:
+    /// (the name where it's used, the name in its declaration). For editors
+    /// (see `crate::navigate`).
+    pub refs: Vec<(Span, Span)>,
+    /// Where the program's functions, types, views and constants are
+    /// declared: the name in each declaration.
+    pub declared: Vec<Span>,
 }
 
 /// What the statements of a REPL entry leave behind.
@@ -306,6 +313,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         const_decls: HashMap::new(),
         const_state: HashMap::new(),
         const_refs: HashMap::new(),
+        refs: Vec::new(),
         waits: Vec::new(),
     };
     c.next_id = program.next_id;
@@ -324,6 +332,8 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
     Checked {
         consts,
         const_refs: c.const_refs,
+        refs: c.refs,
+        declared: c.user_spans.values().copied().collect(),
         types: c.types,
         calls: c.calls,
         structs: c.structs,
@@ -534,6 +544,7 @@ struct Checker<'a> {
     const_decls: HashMap<usize, Rc<FnDecl>>,
     const_state: HashMap<usize, ConstState>,
     const_refs: HashMap<ExprId, String>,
+    refs: Vec<(Span, Span)>,
     /// For each function and block around the code being checked,
     /// innermost last.
     waits: Vec<Wait>,
@@ -610,8 +621,36 @@ impl Checker<'_> {
         }
     }
 
+    /// The name at `at` is a use of what's declared at `decl` (see
+    /// `Checked::refs`). Not of what the program doesn't declare itself: a
+    /// built-in, or something of the prelude.
+    fn note(&mut self, at: Span, decl: Span) {
+        let mask = crate::source::FILE_MASK;
+        // (A specialized copy of generic code is the same code.)
+        let plain = |s: Span| Span { file: s.file & mask, ..s };
+        let (at, decl) = (plain(at), plain(decl));
+        if decl.hi > decl.lo && at.hi > at.lo && decl.file != crate::source::PRELUDE_FILE && at != decl {
+            self.refs.push((at, decl));
+        }
+    }
+
+    /// The name at `at` is a use of the program's `name`: a function, a
+    /// type, a view or a constant.
+    fn note_global(&mut self, at: Span, name: &str) {
+        // (A specialized copy of a generic declaration is known by the
+        // declaration's own name.)
+        let name = match self.instance_of.get(name) {
+            Some((template, _)) => self.template_name(*template),
+            None => name.to_string(),
+        };
+        if let Some(decl) = self.user_spans.get(&name).copied() {
+            self.note(at, decl);
+        }
+    }
+
     /// A `private` member (declared at `decl`) used at `at`, in another file.
     fn check_private_member(&mut self, what: &str, owner: &str, decl: Span, at: Span) {
+        self.note(at, decl);
         let mask = crate::source::FILE_MASK;
         if self.private.contains(&decl) && decl.file & mask != at.file & mask {
             self.error(at, format!("{what} is private to the file that declares `{owner}`"))
@@ -784,6 +823,7 @@ impl Checker<'_> {
     /// Records the interfaces in `: A, B` after a struct or enum name.
     fn conformances(&mut self, names: &[Ident], ty: Ty) {
         for n in names {
+            self.note_global(n.span, &n.name);
             match self.globals.get(&n.name).copied() {
                 Some(Global::Iface(i)) => {
                     if self.conforms.iter().any(|(t, j, _)| *t == ty && *j == i) {
@@ -900,7 +940,10 @@ impl Checker<'_> {
                 }
                 "$error" => Ty::Error,
                 name if name.starts_with('$') => Ty::Generic(name[1..].parse().unwrap_or(0)),
-                name => match self.globals.get(name) {
+                name => match {
+                    self.note_global(id.span, name);
+                    self.globals.get(name)
+                } {
                     Some(Global::GenericStruct(t) | Global::GenericEnum(t)) => {
                         let t = *t;
                         let params: Vec<String> =
@@ -992,6 +1035,7 @@ impl Checker<'_> {
                 sets_tag: false,
                 tag_fn: false,
                 rows: false,
+                span: p.name.span,
             });
         }
         out
@@ -1090,7 +1134,7 @@ impl Checker<'_> {
                             continue;
                         }
                         let fields = self.params_sig(&c.fields, false);
-                        cases.push(CaseDef { name: c.name.name.clone(), fields });
+                        cases.push(CaseDef { name: c.name.name.clone(), fields, span: c.name.span });
                     }
                     let names = cases.iter().map(|c| c.name.clone()).collect();
                     let methods = self.methods(&d.methods, &names, &d.name.name);
@@ -2447,6 +2491,11 @@ impl Checker<'_> {
             self.complete_module(module);
             return Ty::Error;
         }
+        // (`self` isn't declared anywhere.)
+        match self.lookup(n).filter(|l| !matches!(l.kind, Kind::SelfValue)).map(|l| l.span) {
+            Some(decl) => self.note(span, decl),
+            None => self.note_global(span, n),
+        }
         if let Some(l) = self.lookup(n) {
             if let Kind::Fn(sig, _) = &l.kind {
                 if sig.params.iter().any(|p| p.bind) {
@@ -2546,6 +2595,9 @@ impl Checker<'_> {
 
     /// Checks that enum `id` has case `n`; reports missing values if `!called`.
     fn enum_case(&mut self, id: usize, n: &str, span: Span, called: bool) -> Option<CaseDef> {
+        if let Some(decl) = self.enums[id].case(n).map(|c| c.span) {
+            self.note(span, decl);
+        }
         let def = &self.enums[id];
         match def.case(n) {
             Some(case) => {
@@ -2973,6 +3025,7 @@ impl Checker<'_> {
         }
         let full = static_name(tn, &name.name);
         let global = self.globals.get(&full).copied()?;
+        self.note_global(object.span, tn);
         if let Some(decl) = self.user_spans.get(&full).copied() {
             self.check_private_member(&format!("`{}`", name.name), tn, decl, name.span);
         }
@@ -3025,6 +3078,7 @@ impl Checker<'_> {
             && self.lookup(tn).is_none() {
                 match self.globals.get(tn).copied() {
                     Some(Global::Enum(id)) => {
+                        self.note_global(object.span, tn);
                         self.enum_case(id, &name.name, name.span, false);
                         return Ty::Enum(id);
                     }
@@ -3241,6 +3295,10 @@ impl Checker<'_> {
             self.args_unchecked(args, trailing);
             self.complete_module(module);
             return Ty::Error;
+        }
+        match self.lookup(n).map(|l| l.span) {
+            Some(decl) => self.note(name_span, decl),
+            None => self.note_global(name_span, n),
         }
         if self.lookup(n).is_none() {
             match self.globals.get(n).copied() {
@@ -3774,6 +3832,7 @@ impl Checker<'_> {
         if let ExprKind::Name(tn) = &object.kind
             && self.lookup(tn).is_none()
                 && let Some(Global::Enum(id)) = self.globals.get(tn).copied() {
+                    self.note_global(object.span, tn);
                     self.case_call(id, n, name.span, args, trailing, span);
                     return Ty::Enum(id);
                 }
@@ -3796,6 +3855,7 @@ impl Checker<'_> {
             && self.lookup(tn).is_none()
             && let Some(Global::GenericEnum(t)) = self.globals.get(tn).copied()
         {
+            self.note_global(object.span, tn);
             let Some((fields, ret)) = self.template_case(t, n) else {
                 self.error(name.span, format!("`{tn}` has no case `.{n}`"));
                 return Ty::Error;
@@ -4220,6 +4280,10 @@ impl Checker<'_> {
         for arg in args {
             match &arg.label {
                 Some(l) => {
+                    // (The label is a use of the parameter's name.)
+                    if let Some(decl) = params.iter().find(|p| p.label == l.name).map(|p| p.span) {
+                        self.note(l.span, decl);
+                    }
                     if let Some(j) = (pi..positional_end).find(|&j| params[j].label == l.name && !params[j].unlabeled) {
                         assigned[j] = Some(&arg.value);
                         pi = j + 1;
@@ -4435,6 +4499,9 @@ impl Checker<'_> {
             for g in generics {
                 if params.iter().any(|&k: &usize| self.type_params[k].name == g.name.name) {
                     self.error(g.name.span, format!("type parameter `{}` is listed twice", g.name.name));
+                }
+                if let Some(c) = &g.constraint {
+                    self.note_global(c.span, &c.name);
                 }
                 let constraint = g.constraint.as_ref().and_then(|c| match self.globals.get(&c.name) {
                     Some(Global::Iface(i)) => Some(*i),
@@ -4989,6 +5056,8 @@ impl Checker<'_> {
             return self.set_type(targs, span);
         }
         let args: Vec<Ty> = targs.iter().map(|a| self.resolve(a)).collect();
+        // (`Stack<Int>`: the name is what it starts with.)
+        self.note_global(Span { hi: span.lo + n.len() as u32, ..span }, n);
         let t = match self.globals.get(n).copied() {
             Some(Global::GenericStruct(t) | Global::GenericEnum(t)) => t,
             Some(Global::GenericFn(_)) => {

@@ -1,0 +1,26 @@
+Root [0,0 320x240]
+  View [8,1 304x238]
+    VStack [5,1 310x238]
+      Text "one" [140,13 40x32]
+      Text "two" [140,53 39x32]
+      Text "three" [135,94 50x32]
+      Spacer [17,134 286x20]
+      Button "Remove" [120,162 80x28]
+      Button "Widen" [125,199 69x28]
+Root [0,0 320x240]
+  View [8,1 304x238]
+    VStack [8,1 304x238]
+      Text "one" [140,13 40x32]
+      Text "two" [140,53 39x32]
+      Text "three" [135,94 50x32]
+      Spacer [20,134 280x20]
+      Button "Remove" [120,162 80x28]
+      Button "Widen" [125,199 69x28]
+Root
+  View
+    VStack
+      Text "one"
+      Text "three"
+      Spacer
+      Button "Remove"
+      Button "Widen"

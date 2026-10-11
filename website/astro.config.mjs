@@ -122,6 +122,7 @@ export default defineConfig({
 						{ label: 'Menus, windows and documents', slug: 'ui/menus-windows' },
 						{ label: 'Dialogs and sheets', slug: 'ui/dialogs' },
 						{ label: 'Ribbons', slug: 'ui/ribbons' },
+						{ label: 'Accessibility', slug: 'ui/accessibility' },
 						{ label: 'Testing apps', slug: 'ui/testing' },
 					],
 				},

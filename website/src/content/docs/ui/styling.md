@@ -253,17 +253,38 @@ What's animated, between one state of the UI and the next:
 - a view's position and size,
 - its `.opacity`,
 - its `.background` color (one that's added or removed fades in or out),
-- and a view that appears fades in.
+- a view that appears fades in,
+- and a view that disappears fades out, where it was, while the views
+  around it move to fill the gap.
 
 `.animation()` takes a quarter of a second; `.animation(0.6)` takes 0.6
 seconds. It covers the view it's on and everything inside it, so putting it on
 your outermost stack animates the whole window. `.animation(0)` turns it off
 again for a part.
 
-A few things to know:
+### How a change moves
 
-- A view that disappears is gone at once (the views around it then move to
-  fill the gap).
+A change starts slowly, speeds up, and slows down again at the end. `curve:`
+picks another way:
+
+```tessel
+.animation(0.4, curve: .spring)
+```
+
+| Curve | How it moves |
+|---|---|
+| `.easeInOut` | Slow, fast, slow. The default. |
+| `.easeIn` | Starts slowly, and arrives at speed. |
+| `.easeOut` | Starts at speed, and slows to a stop. |
+| `.linear` | At the same speed all the way. |
+| `.spring` | Goes a little past where it's going, and settles back. |
+| `.bouncy` | Goes further past, and back and forth before it settles. |
+
+A spring suits things that move or grow, like a panel sliding open. With
+it a view is briefly a little further, or bigger, than where it ends up;
+colors and opacity never go past.
+
+A few things to know:
 - Tessel tells views apart by their position among their neighbors. When views
   are added or removed in the middle of a list, give each one an
   [`.id`](/ui/lists/#identity-with-id), so that the right ones move.

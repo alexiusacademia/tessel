@@ -32,6 +32,7 @@ pub enum Gradient {
     Radial { center: Point, radius: f64, stops: Vec<(f32, Rgba)> },
 }
 
+#[derive(Clone)]
 pub enum Op {
     Fill { path: BezPath, rule: FillRule, color: Rgba, transform: Affine },
     Stroke { path: BezPath, style: Stroke, color: Rgba, transform: Affine },

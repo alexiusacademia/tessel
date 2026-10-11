@@ -3,11 +3,13 @@ type Grace
 key tab
 type Hopper
 key tab
+key tab
 type Arlington
 key tab
 type Grace Brewster
 key shift+tab
 type Paris
+key shift+tab
 key shift+tab
 key right
 type -Smith

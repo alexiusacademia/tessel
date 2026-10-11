@@ -1,11 +1,18 @@
-click "Line 3"
-key a
-key cmd+c
-key cmd+shift+k
-type x
-tree
-click editor 1
-key end
-type !
-key cmd+c
+key tab
+key tab
+key space
+key enter
+key tab
+key space
+key tab
+key right
+key right
+key right
+key left
+key tab
+key right
+key tab
+key enter
+key shift+tab
+key left
 tree

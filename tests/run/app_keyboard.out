@@ -1,14 +1,13 @@
 Root
   View
     VStack
-      VStack
-        Text "Keys: a cmd+c cmd+shift+k x"
-        Button "Line 3"
-      CodeEditor errors [] = "one\ntwo\nthree"
-Root
-  View
-    VStack
-      VStack
-        Text "Keys: a cmd+c cmd+shift+k x"
-        Button "Line 3"
-      CodeEditor errors [] = "one\ntwo\nthree!"
+      TextField "Name" = ""
+      Button "Add"
+      Toggle "Loud" = true
+      Picker
+        Text "S"
+        Text "M"
+        Text "L"
+      Text "count 12, on true, size medium, tab one"
+      TabView ["One", "Two"] selected 0 focused
+        Text "first page"

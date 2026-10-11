@@ -218,17 +218,25 @@ See [DatePicker](/reference/views/#datepicker) and
 
 ## The keyboard and controls
 
-Besides text fields, Tab and Shift+Tab also go to sliders, steppers, color
-pickers and [disclosure groups](/ui/lists/#trees-with-disclosuregroup);
-clicking one also puts the keyboard on it. Once the keyboard is used, a blue
-ring shows which one it's on. Then:
+Every control can be used without a mouse. Tab and Shift+Tab go from one
+to the next: text fields, buttons, toggles, pickers, tab views, sliders,
+steppers, color pickers and
+[disclosure groups](/ui/lists/#trees-with-disclosuregroup). A blue ring
+shows which one the keyboard is on. Then:
 
 | Keys | What they do |
 |------|-------------|
+| Space, Enter | Press a button, or turn a toggle on or off. |
+| Left, Right, Up, Down | Choose the option before or after in a picker, or the tab before or after in a tab view. |
 | Left, Right, Up, Down | Move a slider or a stepper. |
 | Right, Left | Open or close a disclosure group. |
 | Enter, Space | Open a color picker's palette (ready to type a hex code), or open or close a disclosure group. |
 | Escape | Take the keyboard away from the control, or close the palette. |
+
+Clicking a slider, a stepper, a color picker or a disclosure group also
+puts the keyboard on it; clicking a button doesn't. A view made pressable
+with [`.onTap`](/reference/modifiers/#ontap) isn't a stop for Tab: use a
+`Button` for what should be reachable from the keyboard.
 
 Shortcuts still work meanwhile. Keys a control doesn't use go to
 [`.onKeyEvent`](/reference/modifiers/#onkeyevent) or

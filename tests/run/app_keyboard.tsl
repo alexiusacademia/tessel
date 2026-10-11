@@ -1,18 +1,26 @@
-// Which view the keys go to: a click in a view with .onKey gives it the
-// keyboard (Cmd keys too, as "cmd+c"), until a text field or code editor is
-// clicked; meanwhile a code editor whose line changes only scrolls to it.
-app Keyboard(width: 400, height: 300) {
-    state keys: [String] = []
-    state code = "one\ntwo\nthree"
-    state line = 1
+enum Size { small, medium, large }
 
-    VStack {
-        VStack {
-            Text("Keys: {keys.joined(separator: " ")}")
-            Button("Line 3") { line = 3 }
+app Keys(width: 360, height: 300) {
+    state name = ""
+    state count = 0
+    state on = false
+    state size = Size.small
+    state tab = "one"
+
+    VStack(spacing: 10) {
+        TextField("Name", text: name)
+        Button("Add") { count += 1 }
+        Toggle("Loud", isOn: on)
+        Picker(selection: size) {
+            Text("S").tag(Size.small)
+            Text("M").tag(Size.medium)
+            Text("L").tag(Size.large)
         }
-        .padding(10)
-        .onKey { key in keys.append(key) }
-        CodeEditor(text: code, line: line)
+        Text("count {count}, on {on}, size {size}, tab {tab}")
+        TabView(selection: tab) {
+            Text("first page").tabItem("One").tag("one")
+            Button("In two") { count += 10 }.tabItem("Two").tag("two")
+        }
     }
+    .padding(12)
 }

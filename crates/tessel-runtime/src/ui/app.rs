@@ -816,7 +816,17 @@ impl Hit {
 
 /// Can the keyboard go to this view with Tab (besides text fields)?
 fn focusable(n: &Node) -> bool {
-    matches!(n.kind, Kind::Slider { .. } | Kind::Stepper { .. } | Kind::ColorPicker { .. } | Kind::Disclosure { .. })
+    matches!(
+        n.kind,
+        Kind::Slider { .. }
+            | Kind::Stepper { .. }
+            | Kind::ColorPicker { .. }
+            | Kind::Disclosure { .. }
+            | Kind::Button { .. }
+            | Kind::Toggle { .. }
+            | Kind::Picker { .. }
+            | Kind::TabView { .. }
+    )
 }
 
 struct App {
@@ -2422,6 +2432,17 @@ impl App {
         self.dirty = true;
     }
 
+    /// What a screen reader is told is in the window (titled `title`), and
+    /// which of it the keyboard is on.
+    fn accessible(&self, title: &str) -> (Vec<super::access::Item>, Option<u64>) {
+        let focus = self.ui.editing.as_ref().map(|e| e.key).or(self.ui.focused);
+        let items = match self.tree.as_ref() {
+            Some(tree) => super::access::describe(tree, title, (self.width, self.height)),
+            None => Vec::new(),
+        };
+        (items, focus)
+    }
+
     /// Types text. In code, Enter keeps the indentation (one more level after
     /// `{`) and `}` at the start of a line removes one level.
     fn type_text(&mut self, text: &str) {
@@ -2466,8 +2487,24 @@ impl App {
         self.notice_sync();
         let mut list = super::draw::DrawList::new();
         let tree = self.tree.as_ref().unwrap();
-        let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None };
+        // The views (kept as drawn, for the ones that are gone by the next
+        // drawing and fade out), then the ones fading out now.
+        let at = now();
+        self.ui.anim.leave(at);
+        let mut views = super::draw::DrawList::new();
+        let mut painter = Painter { scene: &mut views, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
         painter.paint(tree);
+        let marks = std::mem::take(&mut painter.marks);
+        let views = std::rc::Rc::new(views);
+        list.append(views.clone(), kurbo::Affine::IDENTITY);
+        let window = kurbo::Rect::new(0.0, 0.0, self.width * scale, self.height * scale);
+        for (ghost, shows) in self.ui.anim.leaving(at) {
+            list.push(super::draw::FillRule::NonZero, shows as f32, kurbo::Affine::IDENTITY, &window);
+            list.append(ghost, kurbo::Affine::IDENTITY);
+            list.pop();
+        }
+        self.ui.anim.drew(views, marks);
+        let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
         painter.paint_overlay(tree);
         painter.paint_dragged(tree);
         painter.paint_popup();
@@ -3293,8 +3330,9 @@ impl App {
         let took = matches!(
                 (&n.kind, name),
                 (Kind::Slider { .. } | Kind::Stepper { .. }, "right" | "up" | "left" | "down")
-                    | (Kind::ColorPicker { .. }, "enter" | "space")
+                    | (Kind::ColorPicker { .. } | Kind::Button { .. } | Kind::Toggle { .. }, "enter" | "space")
                     | (Kind::Disclosure { .. }, "enter" | "space" | "left" | "right")
+                    | (Kind::Picker { .. } | Kind::TabView { .. }, "left" | "right" | "up" | "down")
             );
         if took {
             self.ui.focus_ring = true;
@@ -3305,6 +3343,35 @@ impl App {
             (Kind::Slider { .. } | Kind::Stepper { .. }, "left" | "down") => self.step(key, -1.0),
             (Kind::ColorPicker { .. }, "enter" | "space") => {
                 self.toggle_picker(key, true);
+                true
+            }
+            // Enter or Space presses a button, and turns a toggle.
+            (Kind::Button { action, .. }, "enter" | "space") => {
+                let action = action.clone();
+                action.call();
+                self.dirty = true;
+                true
+            }
+            (Kind::Toggle { is_on, .. }, "enter" | "space") => {
+                let p = is_on.locate();
+                unsafe { *p = (*p & 1) ^ 1 };
+                self.dirty = true;
+                true
+            }
+            // The arrows choose the option, or the tab, before or after.
+            (Kind::Picker { selection } | Kind::TabView { selection, .. }, "left" | "right" | "up" | "down") => {
+                let current = selection.locate();
+                let tagged: Vec<usize> = (0..n.children.len()).filter(|&i| n.children[i].mods.tag.is_some()).collect();
+                let at = tagged.iter().position(|&i| n.children[i].mods.tag.as_ref().is_some_and(|t| t.equals(current)));
+                let to = match (at, matches!(name, "right" | "down")) {
+                    (Some(i), true) => (i + 1).min(tagged.len().saturating_sub(1)),
+                    (Some(i), false) => i.saturating_sub(1),
+                    (None, _) => 0,
+                };
+                if let Some(tag) = tagged.get(to).and_then(|&i| n.children[i].mods.tag.as_ref()) {
+                    unsafe { tag.store_to(selection.locate()) };
+                    self.dirty = true;
+                }
                 true
             }
             (Kind::Disclosure { expanded, .. }, "enter" | "space" | "left" | "right") => {
@@ -4579,6 +4646,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     return 2;
                 }
             }
+            // What a screen reader is told is in the window (see `access`).
+            "accessibility" => {
+                app.update();
+                print!("{}", super::access::listing(&app.accessible("").0));
+            }
             "dump" | "tree" => {
                 app.update();
                 if app.has_menu_bar && app.current == 0 {
@@ -4745,6 +4817,9 @@ struct WindowApp {
     ime_caret: Option<Rect>,
     /// A press a menu or popover took: its release is ignored too.
     swallow: bool,
+    /// What tells screen readers what's in each window (see `access`).
+    #[cfg(any(target_os = "macos", windows))]
+    access: HashMap<WindowId, super::access::system::Adapter>,
 }
 
 /// The fields of `WindowApp` from `key` on, for a parked window.
@@ -4837,6 +4912,8 @@ fn run_window(app: App) -> i32 {
         ime: false,
         ime_caret: None,
         swallow: false,
+        #[cfg(any(target_os = "macos", windows))]
+        access: HashMap::new(),
     };
     w.app.ui.anim.enabled = true;
     // Files the app is started with go to `.onOpenFile` (as files opened
@@ -4916,6 +4993,10 @@ impl WindowApp {
                 2 => Some(winit::window::Theme::Dark),
                 _ => None,
             });
+        // (Shown once the system's hold on it for screen readers is there:
+        // it has to be there first.)
+        #[cfg(any(target_os = "macos", windows))]
+        let attrs = attrs.with_visible(false);
         // The app's icon is icon group 1 in its .exe (`tessel build` puts it
         // there): show it in the title bar and the taskbar.
         #[cfg(windows)]
@@ -4936,6 +5017,11 @@ impl WindowApp {
         if key == 0 && self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
             self.app.dirty = true;
         }
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            self.access.insert(window.id(), super::access::system::adapter(event_loop, &window));
+            window.set_visible(true);
+        }
         match super::backend::Screen::new(window.clone()) {
             Ok(s) => Some((window, s)),
             Err(e) => {
@@ -4955,6 +5041,11 @@ impl WindowApp {
             self.focus(0);
         }
         self.parked.retain(|w| open(w.key));
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            let there: Vec<WindowId> = self.parked.iter().filter_map(|w| w.window.as_ref()).chain(&self.window).map(|w| w.id()).collect();
+            self.access.retain(|id, _| there.contains(id));
+        }
         for (key, title, w, h) in wanted {
             let known = self.key == key || self.parked.iter().any(|p| p.key == key);
             if !known {
@@ -5303,6 +5394,43 @@ impl WindowApp {
         if self.app.ui.anim.running || again {
             window.request_redraw();
         }
+        // A screen reader, if one's listening, is told what the window shows now.
+        #[cfg(any(target_os = "macos", windows))]
+        if let Some(adapter) = self.access.get_mut(&window.id()) {
+            let app = &self.app;
+            adapter.update_if_active(|| {
+                let (items, focus) = app.accessible(&self.title);
+                super::access::system::update(&items, focus, scale)
+            });
+        }
+    }
+
+    /// Does what screen readers asked for (see `access::system::asked`): a
+    /// press where the view is, or a step of a slider or stepper.
+    #[cfg(any(target_os = "macos", windows))]
+    fn accessible_asks(&mut self) -> bool {
+        let asked = super::access::system::asked();
+        for (window, id, action) in &asked {
+            let Some(key) = self.key_of(*window) else { continue };
+            if !self.focus(key) {
+                continue;
+            }
+            let (items, _) = self.app.accessible(&self.title);
+            let Some(item) = items.iter().find(|i| i.id == *id) else { continue };
+            let middle = (item.rect.x + item.rect.w / 2.0, item.rect.y + item.rect.h / 2.0);
+            match action {
+                accesskit::Action::Click | accesskit::Action::Focus if item.press => self.app.click(middle.0, middle.1),
+                accesskit::Action::Increment => {
+                    self.app.step(*id, 1.0);
+                }
+                accesskit::Action::Decrement => {
+                    self.app.step(*id, -1.0);
+                }
+                _ => {}
+            }
+            self.app.dirty = true;
+        }
+        !asked.is_empty()
     }
 
     /// Input methods are on while a text field or code editor is edited.
@@ -5456,6 +5584,13 @@ impl ApplicationHandler for WindowApp {
             eprintln!("event: {event:?}");
         }
         self.screen_lost(event_loop);
+        #[cfg(any(target_os = "macos", windows))]
+        if let Some(adapter) = self.access.get_mut(&id) {
+            let window = self.window.iter().chain(self.parked.iter().filter_map(|w| w.window.as_ref())).find(|w| w.id() == id);
+            if let Some(window) = window {
+                adapter.process_event(window, &event);
+            }
+        }
         if let WindowEvent::Touch(touch) = &event {
             self.touch(event_loop, id, touch);
             return;
@@ -5771,6 +5906,10 @@ impl ApplicationHandler for WindowApp {
         #[cfg(target_os = "android")]
         if self.phone_input() {
             self.app.dirty = true;
+        }
+        #[cfg(any(target_os = "macos", windows))]
+        if self.accessible_asks() | super::access::system::wanted() {
+            self.request_all();
         }
         let shell = self.take_shell_events();
         if deliver_background() || shell {

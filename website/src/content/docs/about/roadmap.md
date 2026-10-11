@@ -30,7 +30,8 @@ its first releases came so quickly. The dates on
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
-  and pressed states, and the layout and styling modifiers. Drawing of your
+  and pressed states, and the layout and styling modifiers. Every control
+  works from the keyboard, and screen readers are told what's in a window. Drawing of your
   own in a `Canvas` (shapes, paths, text and pictures), the mouse in full
   with `.onPointer` (every button, moves, the wheel, pinches), keys with
   `.onKey`, tooltips, pointers, files dropped on the window, and drawings
@@ -38,7 +39,8 @@ its first releases came so quickly. The dates on
   macOS, drawn in the window elsewhere), more than one window, files opened
   with the app from Finder, and asking before the app closes.
 - **Looks:** light and dark appearance that follows the system, colors of
-  your own, and animation of views that move, resize or fade.
+  your own, and animation of views that move, resize, appear or disappear,
+  with springs.
 - **Text editing:** selecting with the mouse and keyboard, word and line
   movement, copy, cut, paste, undo and redo, Tab between fields, and input
   methods (Chinese, Japanese, Korean, accents with dead keys).
@@ -74,16 +76,16 @@ These are the main gaps you may run into today.
 - **Debugging:** the [debugger](/guides/debugging/) stops at lines, steps
   and shows variables, but can't change a value, work out an expression, or
   stop on a condition, and doesn't reach apps on Android.
-- **Keyboard:** Tab moves between text fields, but buttons, toggles and
-  pickers can't be used from the keyboard.
-- **Appearance:** animation covers moving, resizing and fading; there are no
-  springs or custom curves, and a view that disappears goes at once. There's
-  no accessibility support (screen readers) yet.
+- **Accessibility:** apps tell [screen readers](/ui/accessibility/) what's
+  in their windows on macOS and Windows, but text can't be read or edited
+  piece by piece through one, menus drawn in the window aren't described,
+  and it hasn't been tried with Narrator on Windows. Not on Android yet.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS, with your
   `icon.png` as its icon, but apps aren't code signed and there are no
   installers.
-- **Editor support:** the language server reports errors, shows types on
-  hover and completes code, but doesn't offer go-to-definition or rename.
+- **Editor support:** the language server doesn't format code, and the
+  Tessel IDE itself doesn't have go-to-definition or rename yet (VS Code
+  and other editors do, through the language server).
 - **Installation:** packages exist for Apple silicon Macs and 64-bit
   Windows only (no Intel Macs yet). The macOS package is signed and
   notarized; the Windows one isn't signed yet, so Windows SmartScreen may
@@ -95,7 +97,7 @@ These are the next areas of work. None of them has a date.
 
 | Area | Plans |
 |---|---|
-| App polish | Accessibility, using every control from the keyboard, richer animation. |
+| App polish | Fuller accessibility: reading and editing text through a screen reader, and Android. |
 | Standard library | Filling gaps as apps need them. |
 | Language | Packages: installing shared modules by name, with versions. |
 | Packaging | Code signing and installers. |

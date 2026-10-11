@@ -171,11 +171,13 @@ pub struct Style {
     pub text_align: u8,
     /// `.animation(seconds)`: how long changes take; 0 for at once.
     pub animation: f64,
+    /// How they move (see `anim::ease`).
+    pub curve: u8,
 }
 
 impl Default for Style {
     fn default() -> Style {
-        Style { size: 14.0, weight: 400.0, face: Default::default(), color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0 }
+        Style { size: 14.0, weight: 400.0, face: Default::default(), color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0, curve: 0 }
     }
 }
 
@@ -270,7 +272,8 @@ impl Layouter<'_> {
             color: n.mods.color.unwrap_or(parent.color),
             disabled: parent.disabled || n.mods.disabled,
             text_align: n.mods.text_align.unwrap_or(parent.text_align),
-            animation: n.mods.animation.unwrap_or(parent.animation),
+            animation: n.mods.animation.map_or(parent.animation, |a| a.0),
+            curve: n.mods.animation.map_or(parent.curve, |a| a.1),
         }
     }
 

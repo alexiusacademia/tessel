@@ -22,6 +22,10 @@ The Tessel extension is in the VS Code Marketplace. It gives you:
   after `.` where an enum is expected, a module's public names after
   `geometry.`, and the variables, functions, types, views and keywords
   visible elsewhere. Press Ctrl+Space to ask for them.
+- **Go to definition, find references and rename.** F12 on a name goes to
+  where it's declared, Shift+F12 lists where it's used, and F2 renames it
+  everywhere in the program: variables, functions, types, fields, methods,
+  enum cases, views and parameters (with the labels at their calls).
 - **A debugger.** Click beside a line to set a breakpoint and press F5: the
   program runs and stops there, with its variables and the calls that led
   to the line in VS Code's debugging views. See
@@ -116,7 +120,13 @@ eglot or lsp-mode), can use it. Configure it to:
 The server sends diagnostics (errors) when a file is opened, changed, saved
 or closed, answers hover requests with the type of the expression under
 the cursor, and answers completion requests (typing `.` asks for them too).
-It doesn't offer go-to-definition, rename or formatting yet.
+It goes to a name's definition, finds its references, highlights them in
+the file, and renames it (with `prepareRename`, so an editor can say at
+once when something can't be renamed). It doesn't offer formatting yet.
+
+Rename covers the names a program declares. It refuses a member that an
+interface asks for by name (the interface and every type that conforms
+would have to change together), and anything built in.
 
 For debugging, set the editor up to use the debug adapter
 `tessel debug --dap`: see

@@ -129,10 +129,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                         HStack(spacing: 2) {
                             Text("EXPLORER").font(size: 11, weight: .semibold).color(.secondary)
                             Spacer()
-                            IconButton(icon: .filePlus) { ask(Prompt.newFile) }
-                            IconButton(icon: .folderPlus) { ask(Prompt.newFolder) }
-                            IconButton(icon: .pencil) { ask(Prompt.rename) }
-                            IconButton(icon: .trash) { ask(Prompt.delete) }
+                            IconButton(icon: .filePlus) { ask(Prompt.newFile) }.tooltip("New file")
+                            IconButton(icon: .folderPlus) { ask(Prompt.newFolder) }.tooltip("New folder")
+                            IconButton(icon: .pencil) { ask(Prompt.rename) }.tooltip("Rename")
+                            IconButton(icon: .trash) { ask(Prompt.delete) }.tooltip("Delete")
                         }
                         .padding(8)
                         Text(fileName(project).uppercase()).font(size: 11, weight: .bold).padding(8)

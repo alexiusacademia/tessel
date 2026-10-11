@@ -1,0 +1,40 @@
+enum Size { small, large }
+
+app Acc(width: 380, height: 420) {
+    state name = "Ada"
+    state on = true
+    state size = Size.small
+    state tab = "one"
+    state volume = 0.5
+    state copies = 2
+    state open = true
+
+    VStack(spacing: 8) {
+        Text("Settings").font(size: 18, weight: .bold)
+        TextField("Name", text: name)
+        Toggle("Loud", isOn: on)
+        Picker(selection: size) {
+            Text("Small").tag(Size.small)
+            Text("Large").tag(Size.large)
+        }
+        Slider(value: volume, from: 0, to: 1).accessibilityLabel("Volume")
+        Stepper(value: copies, from: 1, to: 9).accessibilityLabel("Copies")
+        HStack {
+            Icon(.trash).onTap { name = "" }
+            HStack {
+                Icon(.save)
+                Text("Save all")
+            }
+            .onTap { name = "saved" }
+            Icon(.info).onTap { name = "?" }.accessibilityLabel("About this app")
+        }
+        DisclosureGroup("More", isExpanded: open) {
+            Button("Reset") { name = "" }.disabled(name == "")
+        }
+        TabView(selection: tab) {
+            Text("first page").tabItem("One").tag("one")
+            Text("second page").tabItem("Two").tag("two")
+        }
+    }
+    .padding(12)
+}

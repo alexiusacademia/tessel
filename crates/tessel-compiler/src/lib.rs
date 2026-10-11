@@ -12,6 +12,7 @@ pub mod generics;
 pub mod jit;
 pub mod lexer;
 pub mod modules;
+pub mod navigate;
 pub mod parser;
 pub mod source;
 pub mod types;

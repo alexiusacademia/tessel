@@ -28,6 +28,8 @@ pub const POINTER_BUTTONS: &[&str] = &["left", "right", "middle"];
 pub const EDGES: &[&str] = &["top", "bottom", "leading", "trailing"];
 /// `RibbonSize`: how big a ribbon's button is.
 pub const RIBBON_SIZES: &[&str] = &["small", "large"];
+/// How an animation moves (`.animation(curve:)`), in the runtime's order.
+pub const CURVES: &[&str] = &["easeInOut", "easeIn", "easeOut", "linear", "spring", "bouncy"];
 
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
@@ -47,12 +49,12 @@ pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt"
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
 /// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode, Edge,
-/// RibbonSize.
+/// RibbonSize, Curve.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
         span: None,
-        cases: cases.iter().map(|c| CaseDef { name: (*c).into(), fields: Vec::new() }).collect(),
+        cases: cases.iter().map(|c| CaseDef { name: (*c).into(), fields: Vec::new(), span: Span::default() }).collect(),
         methods: Vec::new(),
     };
     let icons: Vec<&str> = ICON_NAMES.lines().map(str::trim).filter(|n| !n.is_empty()).collect();
@@ -60,10 +62,10 @@ pub fn enums() -> Vec<EnumDef> {
     // `.rgb(red, green, blue)` (each 0 to 255) and `.rgba(…, opacity)` (0 to 1).
     let mut color = simple("Color", COLORS);
     let channels = || vec![P::unlabeled("red", Ty::Int), P::unlabeled("green", Ty::Int), P::unlabeled("blue", Ty::Int)];
-    color.cases.push(CaseDef { name: "rgb".into(), fields: channels() });
+    color.cases.push(CaseDef { name: "rgb".into(), fields: channels(), span: Span::default() });
     let mut with_opacity = channels();
     with_opacity.push(P::unlabeled("opacity", Ty::Float));
-    color.cases.push(CaseDef { name: "rgba".into(), fields: with_opacity });
+    color.cases.push(CaseDef { name: "rgba".into(), fields: with_opacity, span: Span::default() });
     vec![
         color,
         simple("Weight", WEIGHTS),
@@ -76,6 +78,7 @@ pub fn enums() -> Vec<EnumDef> {
         simple("BlendMode", BLEND_MODES),
         simple("Edge", EDGES),
         simple("RibbonSize", RIBBON_SIZES),
+        simple("Curve", CURVES),
     ]
 }
 
@@ -178,6 +181,7 @@ pub const CURSOR_STYLE: Ty = Ty::Enum(7);
 pub const BLEND_MODE: Ty = Ty::Enum(8);
 pub const EDGE: Ty = Ty::Enum(9);
 pub const RIBBON_SIZE: Ty = Ty::Enum(10);
+pub const CURVE: Ty = Ty::Enum(11);
 
 pub struct Builtins {
     pub color: Ty,
@@ -378,7 +382,7 @@ impl Builtins {
                 P::new("isTargeted", Ty::Bool).bind().default(),
                 P::unlabeled("action", Ty::func(vec![Ty::Str, Ty::Float, Ty::Float], Ty::Void)),
             ],
-            "tooltip" => vec![P::unlabeled("text", Ty::Str)],
+            "tooltip" | "accessibilityLabel" => vec![P::unlabeled("text", Ty::Str)],
             "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "contextMenu" | "menuBar" => vec![P::unlabeled("items", Ty::View)],
             "popover" => vec![
@@ -394,7 +398,7 @@ impl Builtins {
             "onAppear" | "onSubmit" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "tabItem" => vec![P::unlabeled("title", Ty::Str)],
             "autofocus" => vec![],
-            "animation" => vec![P::unlabeled("seconds", Ty::Float).default()],
+            "animation" => vec![P::unlabeled("seconds", Ty::Float).default(), P::new("curve", CURVE).default()],
             "textAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
             "hoverBackground" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
             _ => return None,
@@ -980,7 +984,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
-            "tooltip", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
+            "tooltip", "accessibilityLabel", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
             "onCloseRequest",
         ],
         _ => &[],

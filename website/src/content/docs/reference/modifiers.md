@@ -610,13 +610,13 @@ time, the last one gets the focus.
 ## animation
 
 ```text
-.animation(_ seconds: Float = 0.25)
+.animation(_ seconds: Float = 0.25, curve: Curve = .easeInOut)
 ```
 
 Changes to the view, and to the views inside it, take `seconds` to happen
 instead of happening at once: a view moves and resizes to its new place, its
 [`opacity`](#opacity) and [`background`](#background) color change gradually,
-and a view that appears fades in.
+a view that appears fades in, and one that disappears fades out.
 
 ```tessel
 VStack {
@@ -628,10 +628,12 @@ VStack {
 
 - Inherited: it covers everything inside the view. `.animation(0)` turns it
   off again for a part.
-- A change starts slowly, speeds up and slows down at the end. A change that
-  comes while another is under way starts from where the view is.
-- A view that disappears is removed at once. Scrolling and resizing the
-  window are never animated.
+- A change starts slowly, speeds up and slows down at the end; `curve:`
+  picks another way, like `.spring` (see [`Curve`](/reference/colors/#curve)).
+  A change that comes while another is under way starts from where the view
+  is.
+- A view that disappears fades out where it was, as it last looked.
+  Scrolling and resizing the window are never animated.
 - Views are told apart by their position, or by [`.id`](#id): give the views
   of a list an id so that the right ones move when one is added or removed.
 - Clicks go to where a view will end up, not to where it's drawn on the way.
@@ -927,6 +929,26 @@ Icon(.trash).onTap { remove() }.tooltip("Delete the selected rows")
 
 It goes away when the mouse leaves the view, and on a click, a key or a
 scroll. An empty text shows nothing.
+
+A tooltip is also what a screen reader calls a view that has no words of
+its own (see [`accessibilityLabel`](#accessibilitylabel)).
+
+## accessibilityLabel
+
+```text
+.accessibilityLabel(_ text: String)
+```
+
+What a screen reader (VoiceOver on macOS, Narrator on Windows) calls the
+view. Controls with a title are called by it already; this is for the ones
+without words, or with words that only make sense to someone looking:
+
+```tessel
+Icon(.trash).onTap { remove() }.accessibilityLabel("Delete the selected rows")
+Slider(value: volume, from: 0, to: 1).accessibilityLabel("Volume")
+```
+
+See [Accessibility](/ui/accessibility/).
 
 ## hoverBackground
 

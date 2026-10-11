@@ -1,7 +1,8 @@
 //! `tessel lsp`: a language server for editors (Language Server Protocol).
 //!
 //! It reports the same errors as `tessel check` while you type, shows types
-//! on hover, and suggests completions (the same as the Tessel IDE's). A program is
+//! on hover, suggests completions (the same as the Tessel IDE's), goes to a
+//! name's declaration, finds its uses, and renames it. A program is
 //! every `.tsl` file in a folder, so on each change the whole folder is
 //! checked, with open (possibly unsaved) files taking the place of the saved
 //! versions.
@@ -29,6 +30,10 @@ pub fn run() -> Result<(), String> {
         "textDocumentSync": { "openClose": true, "change": 1, "save": true },
         "hoverProvider": true,
         "completionProvider": { "triggerCharacters": ["."] },
+        "definitionProvider": true,
+        "referencesProvider": true,
+        "documentHighlightProvider": true,
+        "renameProvider": { "prepareProvider": true },
     });
     conn.initialize(caps).map_err(|e| e.to_string())?;
     let mut server = Server { open: HashMap::new(), published: HashMap::new() };
@@ -47,6 +52,16 @@ pub fn run() -> Result<(), String> {
                         .ok()
                         .and_then(|p| server.completion(&p))
                         .map_or(serde_json::Value::Null, |c| serde_json::to_value(c).unwrap()),
+                    "textDocument/definition" | "textDocument/references" | "textDocument/documentHighlight"
+                    | "textDocument/prepareRename" | "textDocument/rename" => match server.navigate(&req.method, &req.params) {
+                        Ok(found) => found,
+                        Err(why) => {
+                            // (-32803: the request failed, as the protocol numbers it.)
+                            let failed = lsp_server::Response::new_err(req.id, -32803, why);
+                            let _ = conn.sender.send(Message::Response(failed));
+                            continue;
+                        }
+                    },
                     _ => serde_json::Value::Null,
                 };
                 let _ = conn.sender.send(Message::Response(lsp_server::Response::new_ok(req.id, result)));
@@ -122,6 +137,67 @@ impl Server {
                 value: format!("```tessel\n{shown}{}\n```", analysis.checked.show(t)),
             }),
             range: Some(range(&sources, e.span)),
+        })
+    }
+
+    /// Go to definition, find references, highlight, and rename: all about
+    /// the name under the cursor, where it's declared and where it's used
+    /// (see the compiler's `navigate`). An error is why a name can't be
+    /// renamed.
+    fn navigate(&self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value, String> {
+        use serde_json::{json, Value};
+        let none = Ok(Value::Null);
+        let Some(uri) = params["textDocument"]["uri"].as_str().and_then(|u| Uri::from_str(u).ok()) else { return none };
+        let Ok(at) = serde_json::from_value::<Position>(params["position"].clone()) else { return none };
+        let Some(path) = uri_to_path(&uri) else { return none };
+        let (mut sources, files) = self.program(&path);
+        let analysis = tessel_compiler::analyze(&mut sources, false);
+        let Some(file) = files.iter().position(|f| *f == path) else { return none };
+        let Some(offset) = offset_of(&sources, file as u32, at) else { return none };
+        let Some(symbol) = tessel_compiler::navigate::symbol_at(&analysis, &sources, file as u32, offset) else {
+            return match method {
+                "textDocument/prepareRename" | "textDocument/rename" => Err("This can't be renamed: it isn't a name the program declares.".into()),
+                _ => none,
+            };
+        };
+        let place = |span: Span| {
+            let uri = path_to_uri(Path::new(&sources.file(span.file).name))?;
+            Some(json!({ "uri": uri, "range": range(&sources, span) }))
+        };
+        let renamed = || match symbol.fixed {
+            Some(why) => Err(format!("`{}` can't be renamed: {why}.", symbol.name)),
+            None => Ok(()),
+        };
+        Ok(match method {
+            "textDocument/definition" => place(symbol.declared).unwrap_or(Value::Null),
+            "textDocument/references" => {
+                let declaration = params["context"]["includeDeclaration"].as_bool().unwrap_or(true);
+                let places = symbol.places.iter().filter(|s| declaration || **s != symbol.declared);
+                json!(places.filter_map(|s| place(*s)).collect::<Vec<_>>())
+            }
+            // (In this file: what an editor marks as the cursor rests on a name.)
+            "textDocument/documentHighlight" => {
+                let here = symbol.places.iter().filter(|s| s.file & FILE_MASK == file as u32);
+                json!(here.map(|s| json!({ "range": range(&sources, *s) })).collect::<Vec<_>>())
+            }
+            "textDocument/prepareRename" => {
+                renamed()?;
+                let on = symbol.places.iter().find(|s| s.file & FILE_MASK == file as u32 && s.lo <= offset && offset <= s.hi);
+                json!({ "range": range(&sources, *on.unwrap_or(&symbol.declared)), "placeholder": symbol.name })
+            }
+            _ => {
+                renamed()?;
+                let to = params["newName"].as_str().unwrap_or_default();
+                if !tessel_compiler::navigate::is_name(to) {
+                    return Err(format!("`{to}` can't be a name: names are letters, digits and `_`, don't start with a digit, and aren't keywords."));
+                }
+                let mut changes: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+                for span in &symbol.places {
+                    let Some(uri) = path_to_uri(Path::new(&sources.file(span.file).name)) else { continue };
+                    changes.entry(uri.as_str().to_string()).or_default().push(json!({ "range": range(&sources, *span), "newText": to }));
+                }
+                json!({ "changes": changes })
+            }
         })
     }
 
@@ -368,6 +444,308 @@ mod tests {
         assert_eq!(labels, ["path", "line"]);
         let Some(lsp_types::CompletionTextEdit::Edit(edit)) = &list.items[0].text_edit else { panic!() };
         assert_eq!(edit.range.start, Position { line: 6, character: 14 });
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A program that uses its names in every way there is, for the
+    /// tests of going to them and renaming them.
+    const PROGRAM: &str = r#"interface Shape {
+    fn area() -> Float
+}
+
+struct Item: Shape {
+    label: String
+    price: Float = 1.0
+
+    doubled: Float { price * 2.0 }
+
+    fn area() -> Float { price }
+
+    fn costlier(than: Item) -> Bool {
+        bump(by: 0.0) > than.price
+    }
+
+    fn bump(by: Float) -> Float { price + by }
+
+    static fn free(label: String) -> Item { Item(label: label, price: 0.0) }
+}
+
+enum Kind {
+    plain
+    boxed(size: Int)
+
+    fn roomy() -> Bool {
+        match self {
+            .plain -> false
+            .boxed(size) -> size > 2
+        }
+    }
+}
+
+struct Stack<T> {
+    items: [T]
+}
+
+let limit = 3
+
+fn total(items: [Item], extra: Float = 0.0) -> Float {
+    var sum = extra
+    for item in items {
+        sum += item.price + item.doubled
+    }
+    fn show(amount: Float) -> String { "sum {amount}, limit {limit}" }
+    print(show(amount: sum))
+    let prices = items.map { each in each.price }
+    return sum + Float(prices.count)
+}
+
+fn largest<T: Shape>(of: [T]) -> Float {
+    var most = 0.0
+    for shape in of {
+        most = max(most, shape.area())
+    }
+    return most
+}
+
+fn main() {
+    let first = Item(label: "tea", price: 2.5)
+    let free = Item.free(label: "air")
+    let kind: Kind = .boxed(size: 3)
+    let other = Kind.plain
+    let stack = Stack<Item>(items: [first, free])
+    let shapes: [Shape] = [first]
+    if first.costlier(than: free) && kind.roomy() && other == .plain {
+        print(total(items: stack.items, extra: 1.0) + largest(of: stack.items) + Float(shapes.count))
+    }
+}
+"#;
+
+    /// A server with `PROGRAM` open as an unsaved file, and the file's address.
+    fn with_program(name: &str) -> (Server, Uri, PathBuf) {
+        with_text(name, PROGRAM)
+    }
+
+    fn with_text(name: &str, text: &str) -> (Server, Uri, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tessel-lsp-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("main.tsl");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let server = Server { open: HashMap::from([(path.clone(), text.to_string())]), published: HashMap::new() };
+        (server, path_to_uri(&path).unwrap(), dir)
+    }
+
+    /// Where the `nth` (from 0) `word` of `PROGRAM` is, with the cursor in it.
+    fn cursor(word: &str, nth: usize) -> Position {
+        cursor_in(PROGRAM, word, nth)
+    }
+
+    fn cursor_in(text: &str, word: &str, nth: usize) -> Position {
+        let at = text.match_indices(word).nth(nth).unwrap_or_else(|| panic!("no {word} #{nth}")).0 + 1;
+        let line = text[..at].matches('\n').count();
+        let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        Position { line: line as u32, character: (at - start) as u32 }
+    }
+
+    /// Renames each of `names` in `text` (a name is given by a place it's
+    /// written, and how many places a rename must change): the program has
+    /// no errors before, and none after each.
+    fn check_renames(test: &str, text: &str, names: &[(&str, usize, usize)]) {
+        let (server, uri, dir) = with_text(test, text);
+        let errors = |text: &str| -> Vec<String> {
+            let mut sources = SourceMap::new();
+            sources.add("main.tsl", text);
+            let analysis = tessel_compiler::analyze(&mut sources, true);
+            analysis.diags.list.iter().map(|d| tessel_compiler::diag::render(d, &sources, false)).collect()
+        };
+        assert!(errors(text).is_empty(), "{}", errors(text).join("\n"));
+        let mut wrong = Vec::new();
+        for &(word, nth, places) in names {
+            // (A type's name starts with a capital, as `Stack<Int>` has to.)
+            let new = if word.starts_with(char::is_uppercase) { "RenamedIt" } else { "renamedIt" };
+            let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": cursor_in(text, word, nth), "newName": new });
+            let prepared = server.navigate("textDocument/prepareRename", &params).unwrap_or_else(|e| panic!("{word}: {e}"));
+            let old = prepared["placeholder"].as_str().unwrap().to_string();
+            let edit = server.navigate("textDocument/rename", &params).unwrap();
+            let count = edit["changes"].as_object().unwrap().values().next().unwrap().as_array().unwrap().len();
+            if count != places {
+                wrong.push(format!("`{old}` (at `{word}`): {count} places changed, not {places}"));
+            }
+            let after = errors(&renamed(text, &edit));
+            if !after.is_empty() {
+                wrong.push(format!("after renaming `{old}` (at `{word}`):\n{}", after.join("\n")));
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn renames_in_an_app() {
+        let app = r#"struct Todo {
+    title: String
+    done: Bool
+}
+
+view Row(todo: Todo, strike: Bool = false) {
+    HStack {
+        let shown = if strike { "({todo.title})" } else { todo.title }
+        Text(shown)
+        if todo.done {
+            Text("done")
+        }
+    }
+}
+
+app Todos(width: 300, height: 300) {
+    state todos: [Todo] = [Todo(title: "one", done: false)]
+    state draft = "two"
+
+    VStack {
+        let open = todos.filter { t in !t.done }
+        Text("{open.count} open")
+        TextField("New", text: draft)
+        for todo in todos {
+            Row(todo: todo, strike: todo.done)
+        }
+        Button("Add") { add(titled: draft) }
+    }
+
+    fn add(titled: String) {
+        todos.append(Todo(title: titled, done: false))
+        draft = ""
+    }
+}
+"#;
+        check_renames(
+            "app",
+            app,
+            &[
+                ("Todo", 0, 5),         // a struct, in a view's parameter and a state's type
+                ("title", 0, 5),        // a field
+                ("Row", 0, 2),          // a view
+                ("todo: Todo", 0, 5),   // a view's parameter, and its label
+                ("strike", 0, 3),       // one with a default
+                ("shown", 0, 2),        // a `let` in a view
+                ("todos", 0, 4),        // state
+                ("draft", 0, 4),        // state that's bound, and set
+                ("open", 0, 2),         // a `let` in the app
+                ("todo in", 0, 3),      // a loop's variable in content
+                ("add", 0, 2),          // the app's function
+                ("titled", 0, 3),       // its parameter
+            ],
+        );
+    }
+
+
+    /// `text` with a rename's changes made.
+    fn renamed(text: &str, edit: &serde_json::Value) -> String {
+        let lines: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
+        let offset = |p: &serde_json::Value| lines[p["line"].as_u64().unwrap() as usize] + p["character"].as_u64().unwrap() as usize;
+        let changes = edit["changes"].as_object().unwrap().values().next().unwrap().as_array().unwrap();
+        let mut edits: Vec<(usize, usize, &str)> =
+            changes.iter().map(|c| (offset(&c["range"]["start"]), offset(&c["range"]["end"]), c["newText"].as_str().unwrap())).collect();
+        edits.sort();
+        let mut out = text.to_string();
+        for (lo, hi, new) in edits.into_iter().rev() {
+            out.replace_range(lo..hi, new);
+        }
+        out
+    }
+
+    #[test]
+    fn goes_to_a_names_declaration_and_finds_its_uses() {
+        let (server, uri, dir) = with_program("go");
+        let ask = |method: &str, at: Position| {
+            let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": at, "context": { "includeDeclaration": true } });
+            server.navigate(method, &params).unwrap()
+        };
+        // From a use of the field (`than.price`) to its declaration.
+        let found = ask("textDocument/definition", cursor(".price", 0));
+        assert_eq!(found["range"]["start"], serde_json::to_value(cursor("price: Float", 0)).unwrap()["line"].as_u64().map(|l| serde_json::json!({ "line": l, "character": 4 })).unwrap());
+        // The field: its declaration, the six times it's read, and where
+        // it's given a value by its label, twice.
+        let uses = ask("textDocument/references", cursor("price: Float", 0));
+        assert_eq!(uses.as_array().unwrap().len(), 9, "{uses:#}");
+        // A function, from its call.
+        let found = ask("textDocument/definition", cursor("total(items: stack", 0));
+        assert_eq!(found["range"]["start"]["line"], PROGRAM[..PROGRAM.find("fn total").unwrap()].matches('\n').count());
+        // Nothing for what the program doesn't declare.
+        assert!(ask("textDocument/definition", cursor("print(show", 0)).is_null());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_renamed_program_still_means_the_same() {
+        let (server, uri, dir) = with_program("rename");
+        let mut sources = SourceMap::new();
+        sources.add("main.tsl", PROGRAM);
+        let before = tessel_compiler::analyze(&mut sources, true);
+        assert!(before.diags.is_empty(), "{}", before.diags.list.iter().map(|d| tessel_compiler::diag::render(d, &sources, false)).collect::<String>());
+        // Each name, by a place it's written (a declaration or a use), and
+        // how many places a rename must change.
+        let names = [
+            ("price: Float", 0, 9),     // a field
+            (".price", 0, 9),           // the same, from a use
+            ("label: String", 0, 3),    // a field given by its label
+            ("doubled", 0, 2),          // a computed property
+            ("bump", 0, 2),             // a method, called by its bare name too
+            ("costlier", 0, 2),         // a method
+            ("than", 0, 3),             // a parameter: its uses and its label
+            ("free(label", 0, 2),       // a static function
+            ("Item", 0, 8),             // a struct
+            ("Kind", 0, 3),             // an enum
+            ("plain", 0, 4),            // a case
+            ("boxed", 0, 3),            // a case with a value
+            ("roomy", 0, 2),            // an enum's method
+            ("Stack", 0, 2),            // a generic struct
+            ("items: [T]", 0, 4),       // its field
+            ("limit", 0, 2),            // a constant, used inside a string
+            ("total", 0, 2),            // a function
+            ("extra", 0, 3),            // a parameter with a default
+            ("sum", 0, 4),              // a variable
+            ("item in", 0, 3),          // a loop's variable
+            ("show", 0, 2),             // a function declared in a function
+            ("amount", 0, 3),           // its parameter: in a string, and as a label
+            ("each", 0, 2),             // a block's parameter
+            ("largest", 0, 2),          // a generic function
+            ("Shape", 0, 4),            // an interface: conformance, constraint, type
+            ("first", 0, 4),            // a variable in `main`
+        ];
+        let mut wrong = Vec::new();
+        for (word, nth, places) in names {
+            let at = cursor(word, nth);
+            // (A type's name starts with a capital, as `Stack<Int>` has to.)
+            let new = if word.starts_with(char::is_uppercase) { "RenamedIt" } else { "renamedIt" };
+            let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": at, "newName": new });
+            let prepared = server.navigate("textDocument/prepareRename", &params).unwrap_or_else(|e| panic!("{word}: {e}"));
+            let old = prepared["placeholder"].as_str().unwrap().to_string();
+            let edit = server.navigate("textDocument/rename", &params).unwrap();
+            let count = edit["changes"].as_object().unwrap().values().next().unwrap().as_array().unwrap().len();
+            let text = renamed(PROGRAM, &edit);
+            if count != places {
+                wrong.push(format!("`{old}` (at `{word}`): {count} places changed, not {places}"));
+            }
+            // The program has no errors after it, and nothing else changed.
+            let mut sources = SourceMap::new();
+            sources.add("main.tsl", text.clone());
+            let analysis = tessel_compiler::analyze(&mut sources, true);
+            let errors: Vec<String> = analysis.diags.list.iter().map(|d| tessel_compiler::diag::render(d, &sources, false)).collect();
+            if !errors.is_empty() {
+                wrong.push(format!("after renaming `{old}` (at `{word}`):\n{}", errors.join("\n")));
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+        // What an interface asks for by name stays, and so does what the
+        // program doesn't declare.
+        for (word, nth) in [("area() -> Float { price", 0), ("print(show", 0), ("Float", 0)] {
+            let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": cursor(word, nth), "newName": "renamedIt" });
+            assert!(server.navigate("textDocument/rename", &params).is_err(), "{word}");
+        }
+        // A new name has to be a name.
+        for bad in ["two words", "9lives", "let", ""] {
+            let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": cursor("total", 0), "newName": bad });
+            assert!(server.navigate("textDocument/rename", &params).is_err(), "{bad}");
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

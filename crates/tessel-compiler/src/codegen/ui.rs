@@ -1070,7 +1070,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "animation" => {
                 let seconds = float(self, a(0), 0.25);
-                self.call_rt("tsl_ui_animation", &[seconds]);
+                // (The `Curve` case's tag; 0 is `.easeInOut`.)
+                let curve = match a(1) {
+                    Some(x) => int(self, x),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                self.call_rt("tsl_ui_animation", &[seconds, curve]);
             }
             "tabItem" => {
                 let title = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
@@ -1183,9 +1188,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_close_request", &[], action);
             }
-            "tooltip" => {
+            "tooltip" | "accessibilityLabel" => {
                 let text = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
-                self.call_rt("tsl_ui_tooltip", &[text]);
+                self.call_rt(if name == "tooltip" { "tsl_ui_tooltip" } else { "tsl_ui_accessibility_label" }, &[text]);
                 self.release(text, &Ty::Str);
             }
             "tag" => {

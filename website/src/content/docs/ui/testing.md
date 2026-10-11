@@ -110,6 +110,7 @@ opens a window as usual.
 | `layout out.json` | Writes the views on screen to a file as JSON: each one's depth in the tree, kind and place. [`tessel preview`](/start/cli/#tessel-preview) uses it. |
 | `tree` | Prints the view tree, with the open menu after it, the menu bar's titles first, and the app's other open windows last. |
 | `dump` | Prints the view tree with each view's position and size. |
+| `accessibility` | Prints what a [screen reader](/ui/accessibility/) is told is in the window: each control and text, with what it's called and what it holds. |
 
 Before each command, the app is brought up to date: state changes from the
 previous command are applied, the views are rebuilt and laid out. `.onAppear`
