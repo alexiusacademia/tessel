@@ -12,6 +12,22 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     state panel = Panel.problems
     state running: Int? = nil
     state reloadOnSave = true
+    // The debugger: `tessel debug --lines` while a program is debugged
+    // (`debugging`), where it's stopped (`calls`, innermost first, and the
+    // one looked at), and its variables there. What's read from the
+    // debugger a line at a time collects in the `…Coming` lists; `asked`
+    // says what each list of variables on its way is for (the row whose
+    // parts they are, or -1 for a call's variables).
+    state breakpoints: [Breakpoint] = []
+    state debugging: Int? = nil
+    state debugStopped = false
+    state debugNote = ""
+    state calls: [DebugCall] = []
+    state callShown = 0
+    state vars: [DebugVar] = []
+    state callsComing: [DebugCall] = []
+    state varsComing: [DebugVar] = []
+    state asked: [Int] = []
     // The Docs panel, next to the editor.
     state helpOpen = false
     state helpWidth = 440.0
@@ -70,13 +86,30 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             Toggle("Reload on save", isOn: reloadOnSave)
             ToolButton(icon: .save, label: "Save") { save() }.shortcut("s") { save() }
             ToolButton(icon: .circleCheck, label: "Check") { check() }.shortcut("k") { check() }
-            if running == nil {
+            if debugging != nil {
+                // (While a program is debugged, the debugger's controls.)
+                if debugStopped {
+                    ToolButton(icon: .play, label: "Continue", tint: .green) { debugSend("continue") }
+                } else {
+                    // (It stops at the next line it runs: an app that's
+                    // waiting for a click, when it gets one.)
+                    ToolButton(icon: .clock, label: "Pause") { debugSend("pause") }
+                }
+                ToolButton(icon: .arrowRight, label: "Step over") { debugSend("next") }.disabled(!debugStopped).shortcut("'") { debugSend("next") }
+                ToolButton(icon: .arrowDown, label: "Step in") { debugSend("step") }.disabled(!debugStopped).shortcut(";") { debugSend("step") }
+                ToolButton(icon: .arrowUp, label: "Step out") { debugSend("out") }.disabled(!debugStopped).shortcut("shift+;") { debugSend("out") }
+                ToolButton(icon: .stop, label: "Stop", tint: .red) { debugOrStop() }.shortcut("shift+r") { debugOrStop() }
+            } else if running == nil {
                 ToolButton(icon: .play, label: "Run", tint: .green) { runOrStop() }.shortcut("r") { runOrStop() }
+                ToolButton(icon: .bug, label: "Debug") { debugOrStop() }.shortcut("shift+r") { debugOrStop() }
             } else {
                 ToolButton(icon: .stop, label: "Stop", tint: .red) { runOrStop() }.shortcut("r") { runOrStop() }
             }
-            ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
-            ToolButton(icon: .package, label: "Package") { build(bundle: true) }
+            // (The debugger's buttons take their room while it's used.)
+            if debugging == nil {
+                ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
+                ToolButton(icon: .package, label: "Package") { build(bundle: true) }
+            }
             if isMarkdown(path: current) {
                 ToolButton(icon: .eye, label: "Preview", tint: if previewOpen { .blue } else { .primary }) { togglePreview() }
             }
@@ -185,7 +218,10 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                                     line: doc.line,
                                     completions: if doc.path == suggestPath { suggestions } else { [] },
                                     completionStart: if doc.path == suggestPath { suggestStart } else { -1 },
-                                    onComplete: { offset in complete(path: doc.path, offset: offset) }
+                                    onComplete: { offset in complete(path: doc.path, offset: offset) },
+                                    breakpoints: breakpointLines(path: doc.path),
+                                    stoppedLine: stoppedLine(path: doc.path),
+                                    onBreakpoint: { line in toggleBreakpoint(path: doc.path, line: line) }
                                 )
                                     .padding(8)
                                     .id(doc.path)
@@ -239,6 +275,56 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     }
                     .tabItem("Console")
                     .tag(Panel.console)
+
+                    // The debugger: the calls that led to where the program
+                    // is stopped, and the variables of the one selected.
+                    HStack(spacing: 0, alignment: .top) {
+                        Scroll {
+                            VStack(spacing: 1, alignment: .leading) {
+                                Text(debugNote).font(size: 12).color(.secondary).padding(3)
+                                for (i, call) in calls.enumerated() {
+                                    HStack(spacing: 6) {
+                                        Text(call.name).font(size: 12, weight: if i == callShown { .bold } else { .regular })
+                                        Text("{fileName(call.path)}:{call.line}").font(size: 12).color(.secondary)
+                                        Spacer()
+                                    }
+                                    .padding(3)
+                                    .background(if i == callShown { .highlight } else { .clear })
+                                    .hoverBackground(.lightGray)
+                                    .onTap { showCall(index: i) }
+                                }
+                            }
+                            .padding(6)
+                        }
+                        .frame(width: 280)
+                        Divider()
+                        Scroll {
+                            VStack(spacing: 1, alignment: .leading) {
+                                for (i, v) in vars.enumerated() {
+                                    HStack(spacing: 5) {
+                                        Spacer().frame(width: Float(v.depth) * 14)
+                                        if v.parts == 0 {
+                                            Spacer().frame(width: 11)
+                                        } else if v.open {
+                                            Icon(.chevronDown).font(size: 11).color(.secondary)
+                                        } else {
+                                            Icon(.chevronRight).font(size: 11).color(.secondary)
+                                        }
+                                        Text(v.name).font(size: 12, weight: .semibold)
+                                        Text(v.type).font(size: 12).color(.secondary)
+                                        Text(v.value).font(size: 12)
+                                        Spacer()
+                                    }
+                                    .padding(2)
+                                    .hoverBackground(.lightGray)
+                                    .onTap { toggleVar(index: i) }
+                                }
+                            }
+                            .padding(6)
+                        }
+                    }
+                    .tabItem("Debug")
+                    .tag(Panel.debug)
                 }
                 .frame(height: panelHeight)
             }
@@ -528,6 +614,197 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                 status = "Ready"
             }
         }
+    }
+
+    // ----- debugging -----
+
+    // Starts the program in the debugger, or stops the one being debugged.
+    // `tessel debug --lines` says what happens a line at a time (see
+    // `debugHeard`), and is told what to do the same way (`debugSend`).
+    fn debugOrStop() {
+        if let id = debugging {
+            stopCommand(id)
+            return
+        }
+        if running != nil {
+            return
+        }
+        save()
+        console = []
+        calls = []
+        vars = []
+        asked = []
+        debugStopped = false
+        debugNote = "Building…"
+        panel = Panel.debug
+        status = "Building…"
+        debugging = runCommand(path: tesselCommand(), args: ["debug", project, "--lines"], input: true, onOutput: { text in debugHeard(text) }) { code in
+            debugging = nil
+            debugStopped = false
+            calls = []
+            vars = []
+            debugNote = "The program ended."
+            console.append("— exited with code {code}")
+            status = "Ready"
+        }
+    }
+
+    fn debugSend(text: String) {
+        if let id = debugging {
+            sendToCommand(id, text: text)
+        }
+    }
+
+    // A line from the debugger.
+    fn debugHeard(text: String) {
+        let f = text.split("\t")
+        match f[0] {
+            "output" -> console.append(text.substring(from: 7, to: text.count))
+            // The program is built, and waits: it's told where to stop, then to run.
+            "ready" -> {
+                for path in breakpointFiles() {
+                    sendBreakpoints(path: path)
+                }
+                debugSend("run")
+                debugNote = "Running. The program stops at the red dots: click beside a line to add one."
+                status = "Debugging"
+            }
+            "failed" -> {
+                panel = Panel.console
+                status = "Build failed"
+            }
+            "running" -> {
+                debugStopped = false
+                calls = []
+                vars = []
+                asked = []
+                debugNote = "Running."
+            }
+            "frames" -> { callsComing = [] }
+            "frame" -> {
+                if let call = parseDebugCall(text: text) {
+                    callsComing.append(call)
+                }
+            }
+            "stopped" -> {
+                calls = callsComing
+                debugStopped = true
+                panel = Panel.debug
+                debugNote = match f[1] {
+                    "breakpoint" -> "Stopped at a breakpoint."
+                    "error" -> "Stopped where an error happened: {if f.count > 2 { f[2] } else { "" }}"
+                    "pause" -> "Paused."
+                    _ -> "Stopped."
+                }
+                vars = []
+                asked = []
+                showCall(index: 0)
+            }
+            "vars" -> { varsComing = [] }
+            "var" -> {
+                if let v = parseDebugVar(text: text, depth: 0) {
+                    varsComing.append(v)
+                }
+            }
+            "end" -> debugVarsCame()
+            _ -> {}
+        }
+    }
+
+    // Looks at one of the calls: its line in the editor, and its variables.
+    fn showCall(index: Int) {
+        if index >= calls.count {
+            return
+        }
+        callShown = index
+        let call = calls[index]
+        jump(p: Problem(file: call.path, line: call.line, column: 1, message: ""))
+        vars = []
+        asked.append(-1)
+        debugSend("vars\t{index}")
+    }
+
+    // Shows or hides the parts of the variable in row `index`.
+    fn toggleVar(index: Int) {
+        if index >= vars.count || vars[index].parts == 0 || !debugStopped {
+            return
+        }
+        if vars[index].open {
+            // (Its parts are the rows after it that are further in.)
+            let depth = vars[index].depth
+            while index + 1 < vars.count && vars[index + 1].depth > depth {
+                vars.remove(at: index + 1)
+            }
+            vars[index].open = false
+            return
+        }
+        vars[index].open = true
+        asked.append(vars[index].parts)
+        debugSend("children\t{vars[index].parts}")
+    }
+
+    // The variables asked for arrived: a call's, or the parts of a row.
+    fn debugVarsCame() {
+        if asked.isEmpty {
+            return
+        }
+        let parts = asked.remove(at: 0)
+        if parts < 0 {
+            vars = varsComing
+            return
+        }
+        for (i, v) in vars.enumerated() {
+            if v.parts == parts && v.open {
+                var at = i + 1
+                for part in varsComing {
+                    var row = part
+                    row.depth = v.depth + 1
+                    vars.insert(row, at: at)
+                    at += 1
+                }
+                if v.count > varsComing.count {
+                    vars.insert(DebugVar(name: "…", type: "", value: "{v.count} in all", parts: 0, count: 0, depth: v.depth + 1), at: at)
+                }
+                return
+            }
+        }
+    }
+
+    fn breakpointLines(path: String) -> [Int] {
+        breakpoints.filter { b in b.path == path }.map { b in b.line }
+    }
+
+    fn breakpointFiles() -> [String] {
+        var files: [String] = []
+        for b in breakpoints {
+            if !files.contains(b.path) {
+                files.append(b.path)
+            }
+        }
+        files
+    }
+
+    // A click beside a line: a breakpoint there, or no more.
+    fn toggleBreakpoint(path: String, line: Int) {
+        if breakpoints.first(where: { b in b.path == path && b.line == line }) == nil {
+            breakpoints.append(Breakpoint(path: path, line: line))
+        } else {
+            breakpoints.removeAll(where: { b in b.path == path && b.line == line })
+        }
+        sendBreakpoints(path: path)
+    }
+
+    fn sendBreakpoints(path: String) {
+        let lines = breakpointLines(path: path).map { l in "{l}" }.joined(separator: ",")
+        debugSend("breakpoints\t{path}\t{lines}")
+    }
+
+    // The line the program is stopped on in a file, for its editor (0: none).
+    fn stoppedLine(path: String) -> Int {
+        if !debugStopped || callShown >= calls.count || calls[callShown].path != path {
+            return 0
+        }
+        calls[callShown].line
     }
 
     fn build(bundle: Bool) {

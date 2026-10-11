@@ -1,0 +1,34 @@
+struct Item {
+    name: String
+    price: Float
+    tags: [String]
+}
+
+enum Shape {
+    circle(radius: Float)
+    square(side: Float)
+    dot
+}
+
+fn total(items: [Item]) -> Float {
+    var sum = 0.0
+    for item in items {
+        sum += item.price
+    }
+    return sum
+}
+
+fn main() {
+    let items = [Item(name: "tea", price: 2.5, tags: ["hot", "drink"]), Item(name: "cake", price: 4.0, tags: [])]
+    let ages = ["ann": 31, "bo": 27]
+    let shape = Shape.circle(radius: 1.5)
+    let maybe: Int? = 7
+    let nothing: String? = nil
+    var count = 0
+    let doubled = items.map { item in
+        count += 1
+        item.price * 2.0
+    }
+    let t = total(items: items)
+    print("total {t}, {doubled}, {ages}, {count}")
+}

@@ -212,6 +212,12 @@ pub enum Kind {
         completion_start: i64,
         /// Asks for suggestions, with the caret's byte offset.
         on_complete: Option<Callback>,
+        /// For a debugger: the lines marked as breakpoints, the line a
+        /// program is stopped on (0 for none), and what a click in the
+        /// margin calls, with the line clicked.
+        breakpoints: Vec<i64>,
+        stopped_line: i64,
+        on_breakpoint: Option<Callback>,
     },
     /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
     TabView { selection: Callback, close: Option<Callback> },
@@ -799,7 +805,7 @@ pub struct Suggestion {
     pub kind: String,
 }
 
-/// `CodeEditor(text:errorLines:line:completions:completionStart:onComplete:)`.
+/// `CodeEditor(text:errorLines:line:completions:completionStart:onComplete:breakpoints:stoppedLine:onBreakpoint:)`.
 /// The lists are borrowed; `line_f` and `complete_f` are null when not given.
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
@@ -813,7 +819,17 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
     completion_start: i64,
     complete_f: *const c_void,
     complete_env: *mut Header,
+    breakpoints: *const crate::List,
+    stopped_line: i64,
+    breakpoint_f: *const c_void,
+    breakpoint_env: *mut Header,
 ) {
+    let numbers = |list: *const crate::List| -> Vec<i64> {
+        let n = unsafe { crate::tsl_list_len(list) };
+        (0..n).map(|i| unsafe { *(crate::tsl_list_get(list, i, std::ptr::null()) as *const i64) }).collect()
+    };
+    let breakpoints = numbers(breakpoints);
+    let on_breakpoint = (!breakpoint_f.is_null()).then(|| Callback::new(breakpoint_f, breakpoint_env));
     let text = Callback::new(f, env);
     let line = (!line_f.is_null()).then(|| Callback::new(line_f, line_env));
     let on_complete = (!complete_f.is_null()).then(|| Callback::new(complete_f, complete_env));
@@ -829,7 +845,17 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
         })
         .collect();
     with_builder(|b| {
-        b.leaf(Kind::CodeEditor { text, error_lines, line, completions, completion_start, on_complete })
+        b.leaf(Kind::CodeEditor {
+            text,
+            error_lines,
+            line,
+            completions,
+            completion_start,
+            on_complete,
+            breakpoints,
+            stopped_line,
+            on_breakpoint,
+        })
     });
 }
 

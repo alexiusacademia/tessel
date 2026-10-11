@@ -149,7 +149,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: self.boxed_vars(src.body),
             record: None,
             coro: None,
+            dbg: None,
         });
+        self.debug_enter(name, src.body.span);
         let mut args = Vec::new();
         for (i, (p, sig)) in src.params.iter().zip(&sigs).enumerate() {
             let v = f.get_nth_param(1 + i as u32).unwrap();
@@ -249,12 +251,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: self.boxed_vars(&fd.body),
             record: Some(Record { data, ty: st, view: view.to_string() }),
             coro: None,
+            dbg: None,
         });
         // While it waits, it keeps the view's state.
         if fd.is_async {
             let record = self.record_box(data);
             self.begin_coro(&[record]);
         }
+        self.debug_enter(&format!("{view}.{}", fd.name.name), fd.name.span);
         // The view's parameters, as kept in the record by its last build.
         let states = self.state_count(view);
         let view_params = self.view_decls[view].params.iter().zip(self.checked.views.get(view).cloned().unwrap_or_default());
@@ -327,6 +331,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: Default::default(),
             record: None,
             coro: None,
+            dbg: None,
         });
         let arg = |label: &str| app.args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == label));
         // `title:`, or the manifest's name for the app, or its own.
@@ -371,6 +376,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for s in &b.stmts {
             if self.terminated() {
                 self.continue_dead();
+            }
+            if !matches!(s, Stmt::State(_) | Stmt::Fn(_)) {
+                self.debug_line(super::debug::stmt_span(s));
             }
             match s {
                 Stmt::Expr(e) => self.content_expr(e),
@@ -623,7 +631,33 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
                 };
-                self.call_rt("tsl_ui_code_editor", &[f, env, lines, line_f, line_env, completions, start, oc_f, oc_env]);
+                // For a debugger: the lines with breakpoints, the line the
+                // program is stopped on, and the block a click in the
+                // margin calls.
+                let breakpoints = match a(6) {
+                    Some(x) => self.expr_as(x, &list_t).unwrap(),
+                    None => {
+                        let ti = self.type_info(&Ty::Int);
+                        let zero = self.i64().const_zero();
+                        self.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                    }
+                };
+                let stopped = match a(7) {
+                    Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
+                    None => self.i64().const_zero().into(),
+                };
+                let (ob_f, ob_env) = match a(8) {
+                    Some(x) => {
+                        let c = self.expr_as(x, &Ty::func(vec![Ty::Int], Ty::Void)).unwrap().into_struct_value();
+                        (self.b.build_extract_value(c, 0, "").unwrap(), self.b.build_extract_value(c, 1, "").unwrap())
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                self.call_rt(
+                    "tsl_ui_code_editor",
+                    &[f, env, lines, line_f, line_env, completions, start, oc_f, oc_env, breakpoints, stopped, ob_f, ob_env],
+                );
+                self.release(breakpoints, &list_t);
                 self.release(lines, &list_t);
                 self.release(completions, &comp_t);
             }

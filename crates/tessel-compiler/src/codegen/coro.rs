@@ -108,6 +108,13 @@ pub(super) fn awaits(b: &Block) -> bool {
     in_block(b)
 }
 
+impl<'ctx> Coro<'ctx> {
+    /// Where the function's frame is freed, whichever way it ends.
+    pub(super) fn free_block(&self) -> BasicBlock<'ctx> {
+        self.free
+    }
+}
+
 impl<'ctx, 'a> Gen<'ctx, 'a> {
     // ===== constants =====
 
@@ -146,6 +153,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: self.boxed_vars(&decl.body),
             record: None,
             coro: None,
+            dbg: None,
         });
         let (work, ready) = (self.block_named("work"), self.block_named("ready"));
         let s = self.b.build_load(self.i8(), state, "").unwrap().into_int_value();
@@ -406,6 +414,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// The end of a coroutine (its variables are released already): gives
     /// the result to the completion block, and frees the frame.
     pub(super) fn finish_coro(&mut self, c: &Coro<'ctx>, v: Option<Val<'ctx>>) {
+        self.debug_done();
         if let Some((slot, ft)) = &c.done {
             let Ty::Fn(ps, _) = ft else { unreachable!() };
             let block = self.load(ft, *slot);
@@ -446,10 +455,25 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
         self.b.position_at_end(wait);
         self.b.build_store(c.state, i8t.const_int(1, false)).unwrap();
+        // (For the debugger, the function is off the stack of calls while
+        // it waits, and back on it when it goes on, or is done away with.)
+        self.debug_park();
         let no = self.ctx.bool_type().const_zero().as_value_ref();
         let woke = self.intrinsic("llvm.coro.suspend", &[], &[self.no_token(), no]);
         let woke = unsafe { IntValue::new(woke) };
-        self.b.build_switch(woke, c.leave, &[(i8t.const_zero(), on), (i8t.const_int(1, false), gone)]).unwrap();
+        let (back_on, back_gone) = if self.debugged() {
+            let blocks = (self.block_named("back"), self.block_named("back_gone"));
+            for (from, to) in [(blocks.0, on), (blocks.1, gone)] {
+                self.b.position_at_end(from);
+                self.debug_resume();
+                self.b.build_unconditional_branch(to).unwrap();
+            }
+            self.b.position_at_end(wait);
+            blocks
+        } else {
+            (on, gone)
+        };
+        self.b.build_switch(woke, c.leave, &[(i8t.const_zero(), back_on), (i8t.const_int(1, false), back_gone)]).unwrap();
 
         // Nothing will ever go on from here: let go of everything.
         self.b.position_at_end(gone);

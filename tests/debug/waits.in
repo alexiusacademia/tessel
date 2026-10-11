@@ -1,0 +1,20 @@
+break 6
+break 14
+run
+locals
+print self.step
+where
+continue
+locals
+next
+next
+where
+next
+step
+locals
+continue
+where
+up
+locals
+print numbers[2]
+continue

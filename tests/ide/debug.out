@@ -1,0 +1,542 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Debugging"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Continue"
+        View
+          HStack
+            Icon arrowRight
+            Text "Step over"
+        View
+          HStack
+            Icon arrowDown
+            Text "Step in"
+        View
+          HStack
+            Icon arrowUp
+            Text "Step out"
+        View
+          HStack
+            Icon stop
+            Text "Stop"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug"] selected 2
+            HStack
+              Scroll
+                VStack
+                  Text "Stopped at a breakpoint."
+                  HStack
+                    Text "total"
+                    Text "main.tsl:9"
+                    Spacer
+                  HStack
+                    Text "main"
+                    Text "main.tsl:16"
+                    Spacer
+              Divider
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "orders"
+                    Text "[Order]"
+                    Text "[Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "sum"
+                    Text "Int"
+                    Text "0"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "order"
+                    Text "Order"
+                    Text "Order(item: \"tea\", quantity: 2)"
+                    Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Debugging"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Continue"
+        View
+          HStack
+            Icon arrowRight
+            Text "Step over"
+        View
+          HStack
+            Icon arrowDown
+            Text "Step in"
+        View
+          HStack
+            Icon arrowUp
+            Text "Step out"
+        View
+          HStack
+            Icon stop
+            Text "Stop"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug"] selected 2
+            HStack
+              Scroll
+                VStack
+                  Text "Stopped at a breakpoint."
+                  HStack
+                    Text "total"
+                    Text "main.tsl:9"
+                    Spacer
+                  HStack
+                    Text "main"
+                    Text "main.tsl:16"
+                    Spacer
+              Divider
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronDown
+                    Text "orders"
+                    Text "[Order]"
+                    Text "[Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronDown
+                    Text "[0]"
+                    Text "Order"
+                    Text "Order(item: \"tea\", quantity: 2)"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "item"
+                    Text "String"
+                    Text "\"tea\""
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "quantity"
+                    Text "Int"
+                    Text "2"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "[1]"
+                    Text "Order"
+                    Text "Order(item: \"cake\", quantity: 3)"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "sum"
+                    Text "Int"
+                    Text "0"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "order"
+                    Text "Order"
+                    Text "Order(item: \"tea\", quantity: 2)"
+                    Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Debugging"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Continue"
+        View
+          HStack
+            Icon arrowRight
+            Text "Step over"
+        View
+          HStack
+            Icon arrowDown
+            Text "Step in"
+        View
+          HStack
+            Icon arrowUp
+            Text "Step out"
+        View
+          HStack
+            Icon stop
+            Text "Stop"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug"] selected 2
+            HStack
+              Scroll
+                VStack
+                  Text "Stopped."
+                  HStack
+                    Text "total"
+                    Text "main.tsl:9"
+                    Spacer
+                  HStack
+                    Text "main"
+                    Text "main.tsl:16"
+                    Spacer
+              Divider
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "orders"
+                    Text "[Order]"
+                    Text "[Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "sum"
+                    Text "Int"
+                    Text "2"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "order"
+                    Text "Order"
+                    Text "Order(item: \"cake\", quantity: 3)"
+                    Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Debugging"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Continue"
+        View
+          HStack
+            Icon arrowRight
+            Text "Step over"
+        View
+          HStack
+            Icon arrowDown
+            Text "Step in"
+        View
+          HStack
+            Icon arrowUp
+            Text "Step out"
+        View
+          HStack
+            Icon stop
+            Text "Stop"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] stopped 17 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug"] selected 2
+            HStack
+              Scroll
+                VStack
+                  Text "Stopped."
+                  HStack
+                    Text "main"
+                    Text "main.tsl:17"
+                    Spacer
+              Divider
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Text "orders"
+                    Text "[Order]"
+                    Text "[Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Text "count"
+                    Text "Int"
+                    Text "5"
+                    Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ready"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug"] selected 1
+            Scroll
+              VStack
+                Text "5 things"
+                Text "— exited with code 0"
+--- files: main.tsl

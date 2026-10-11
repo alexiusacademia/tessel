@@ -18,6 +18,14 @@ Swift-like language for native apps and command-line programs.
   (or with hot reload, from its menu), and the Command Palette has **Tessel:
   Run Program**, **Run with Hot Reload**, **Check Program**, **Build App**
   and **Pin Tessel Version**. They run `tessel` in a terminal.
+- **A debugger.** Click beside a line to set a breakpoint, and press F5 (or
+  the bug button in the editor's title bar): the program of the file being
+  edited runs, and stops there. Step through the code, see the calls that
+  led to a line, and look at variables: lists, dictionaries, structs and
+  enum values open up to show their parts. A runtime error stops the
+  program where it happened, with its variables still there to look at. See
+  [Debugging](https://tessel-lang.syncster.dev/guides/debugging/). Needs
+  Tessel 0.2.0 or later.
 - **`tessel.toml`.** With the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
   extension, a project's `tessel.toml` gets completion, descriptions and
   checking of its keys (`[app]`, `[[app.documents]]`, …). See

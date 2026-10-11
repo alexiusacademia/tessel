@@ -1,0 +1,31 @@
+struct Counter {
+    value: Int
+    step: Int
+
+    fn bumped() -> Counter {
+        let next = value + step
+        return Counter(value: next, step: step)
+    }
+}
+
+async fn slow(n: Int) -> Int {
+    let before = n
+    await after(seconds: 0.05)
+    let result = before * 2
+    return result
+}
+
+fn pick(list: [Int], at: Int) -> Int {
+    let chosen = list[at]
+    return chosen
+}
+
+async fn main() {
+    var c = Counter(value: 1, step: 2)
+    c = c.bumped()
+    let doubled = await slow(n: c.value)
+    print("doubled {doubled}")
+    let numbers = [1, 2, 3]
+    let bad = pick(list: numbers, at: 5)
+    print(bad)
+}

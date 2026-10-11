@@ -1,0 +1,41 @@
+will stop at values.tsl:16
+will stop at values.tsl:29
+at a breakpoint: values.tsl:29 in block in main
+   29 |         count += 1
+count: Int = 0
+item: Item = Item(name: "tea", price: 2.5, tags: ["hot", "drink"])
+* 0: block in main at values.tsl:29
+  1: main at values.tsl:28
+at a breakpoint: values.tsl:29 in block in main
+   29 |         count += 1
+item: Item = Item(name: "cake", price: 4.0, tags: [])
+  name: String = "cake"
+  price: Float = 4.0
+  tags: [String] = []
+won't stop at values.tsl:29
+at a breakpoint: values.tsl:16 in total
+   16 |         sum += item.price
+items: [Item] = [Item(name: "tea", price: 2.5, tags: ["hot", "drink"]), Item(name: "cake", price: 4.0, tags: [])]
+sum: Float = 0.0
+item: Item = Item(name: "tea", price: 2.5, tags: ["hot", "drink"])
+items[0].tags: [String] = ["hot", "drink"]
+  [0]: String = "hot"
+  [1]: String = "drink"
+1: main at values.tsl:32
+items: [Item] = [Item(name: "tea", price: 2.5, tags: ["hot", "drink"]), Item(name: "cake", price: 4.0, tags: [])]
+ages: [String: Int] = ["ann": 31, "bo": 27]
+shape: Shape = .circle(radius: 1.5)
+maybe: Int? = 7
+nothing: String? = nil
+count: Int = 2
+doubled: [Float] = [5.0, 8.0]
+shape: Shape = .circle(radius: 1.5)
+  radius: Float = 1.5
+ages["bo"]: Int = 27
+there's no `nope` here (see `locals`)
+0: total at values.tsl:16
+at a breakpoint: values.tsl:16 in total
+   16 |         sum += item.price
+stopped: values.tsl:18 in total
+   18 |     return sum
+--- errors

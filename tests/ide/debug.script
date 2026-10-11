@@ -1,0 +1,23 @@
+wait 0
+click 268 262
+click "Debug"
+waitfor "Stopped at a breakpoint."
+waitfor "orders"
+tree
+click "orders"
+waitfor "[1]"
+click "[0]"
+waitfor "item"
+tree
+click 268 262
+click "Step over"
+waitfor "Stopped."
+waitfor "sum"
+tree
+click "Step out"
+waitfor "count"
+tree
+click "Continue"
+waitfor "The program ended."
+click "Console"
+tree

@@ -22,6 +22,10 @@ The Tessel extension is in the VS Code Marketplace. It gives you:
   after `.` where an enum is expected, a module's public names after
   `geometry.`, and the variables, functions, types, views and keywords
   visible elsewhere. Press Ctrl+Space to ask for them.
+- **A debugger.** Click beside a line to set a breakpoint and press F5: the
+  program runs and stops there, with its variables and the calls that led
+  to the line in VS Code's debugging views. See
+  [Debugging](/guides/debugging/#in-vs-code).
 - Comment toggling (`//`), bracket matching, auto-closing of brackets and
   quotes, and automatic indentation after `{`.
 
@@ -113,6 +117,10 @@ The server sends diagnostics (errors) when a file is opened, changed, saved
 or closed, answers hover requests with the type of the expression under
 the cursor, and answers completion requests (typing `.` asks for them too).
 It doesn't offer go-to-definition, rename or formatting yet.
+
+For debugging, set the editor up to use the debug adapter
+`tessel debug --dap`: see
+[Debugging](/guides/debugging/#for-other-editors).
 
 For syntax highlighting, the extension's TextMate grammar,
 `editors/vscode/syntaxes/tessel.tmLanguage.json`, works in any editor that

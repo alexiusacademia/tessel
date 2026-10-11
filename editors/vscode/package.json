@@ -1,8 +1,8 @@
 {
   "name": "tessel",
   "displayName": "Tessel",
-  "description": "Tessel language support: highlighting, errors as you type, types on hover, completion, commands to run and build, and tessel.toml checking",
-  "version": "0.3.0",
+  "description": "Tessel language support: highlighting, errors as you type, types on hover, completion, a debugger, commands to run and build, and tessel.toml checking",
+  "version": "0.4.0",
   "publisher": "alexiusacademia",
   "license": "MIT",
   "icon": "icon.png",
@@ -30,7 +30,8 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Debuggers"
   ],
   "contributes": {
     "languages": [
@@ -63,12 +64,63 @@
         }
       }
     },
+    "breakpoints": [
+      {
+        "language": "tessel"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "tessel",
+        "label": "Tessel",
+        "languages": [
+          "tessel"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The program to debug: a .tsl file, or a folder of them. Without it, the program of the file being edited.",
+                "default": "${workspaceFolder}"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "tessel",
+            "request": "launch",
+            "name": "Debug Tessel program",
+            "program": "${workspaceFolder}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Tessel: Debug program",
+            "description": "Runs a Tessel program in the debugger",
+            "body": {
+              "type": "tessel",
+              "request": "launch",
+              "name": "Debug Tessel program",
+              "program": "^\"\\${workspaceFolder}\""
+            }
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "tessel.run",
         "title": "Run Program",
         "category": "Tessel",
         "icon": "$(play)"
+      },
+      {
+        "command": "tessel.debug",
+        "title": "Debug Program",
+        "category": "Tessel",
+        "icon": "$(debug-alt)"
       },
       {
         "command": "tessel.runHot",
@@ -108,11 +160,20 @@
           "command": "tessel.runHot",
           "when": "resourceLangId == tessel",
           "group": "navigation@2"
+        },
+        {
+          "command": "tessel.debug",
+          "when": "resourceLangId == tessel",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
           "command": "tessel.run",
+          "when": "editorLangId == tessel"
+        },
+        {
+          "command": "tessel.debug",
           "when": "editorLangId == tessel"
         },
         {
@@ -138,7 +199,8 @@
   },
   "main": "./extension.js",
   "activationEvents": [
-    "onLanguage:tessel"
+    "onLanguage:tessel",
+    "onDebugResolve:tessel"
   ],
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

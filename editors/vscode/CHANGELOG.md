@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- A debugger: breakpoints in `.tsl` files, stepping, the calls that led to a
+  line, and variables with their parts. F5 (or the bug button) debugs the
+  program of the file being edited. Needs Tessel 0.2.0 or later.
+- Highlighting for `async`, `await` and `static`.
+
 ## 0.3.0
 
 - Commands to run (also with hot reload), check and build the program, and

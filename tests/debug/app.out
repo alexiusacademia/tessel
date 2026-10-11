@@ -1,0 +1,35 @@
+will stop at app.tsl:31
+will stop at app.tsl:9
+at a breakpoint: app.tsl:9 in Row
+    9 |         if todo.done {
+todo: Todo = Todo(title: "one", done: false)
+* 0: Row at app.tsl:9
+  1: Todos at app.tsl:23
+at a breakpoint: app.tsl:31 in Todos.add
+   31 |         let title = draft
+todos: [Todo] = [Todo(title: "one", done: false)]
+draft: String = "two"
+* 0: Todos.add at app.tsl:31
+  1: block in Todos at app.tsl:26
+stopped: app.tsl:32 in Todos.add
+   32 |         todos.append(Todo(title: title, done: true))
+stopped: app.tsl:33 in Todos.add
+   33 |         draft = ""
+todos: [Todo] = [Todo(title: "one", done: false), Todo(title: "two", done: true)]
+draft: String = "two"
+title: String = "two"
+no breakpoints left
+Root
+  View
+    VStack
+      Text "1 open"
+      View
+        HStack
+          Text "one"
+      View
+        HStack
+          Text "two"
+          Text "done"
+      Button "Add"
+the program ended
+--- errors

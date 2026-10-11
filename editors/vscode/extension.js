@@ -1,5 +1,6 @@
 // Starts `tessel lsp`, which gives VS Code Tessel's errors, types on hover and
-// completion, and adds commands that run and build the program being edited.
+// completion, adds commands that run and build the program being edited, and
+// gives VS Code's debugger `tessel debug --dap` to talk to.
 const fs = require("fs");
 const path = require("path");
 const vscode = require("vscode");
@@ -80,10 +81,52 @@ function startClient() {
   });
 }
 
+/// The debugger: VS Code speaks the Debug Adapter Protocol with `tessel
+/// debug --dap`, which builds the program and runs it.
+function registerDebugger(context) {
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory("tessel", {
+      createDebugAdapterDescriptor(session) {
+        // (In the program's folder: where its relative paths are from, and
+        // where its tessel.toml is.)
+        const program = session.configuration.program;
+        const cwd = program && fs.existsSync(program) ? folderOf(program) : workspaceFolder() || undefined;
+        return new vscode.DebugAdapterExecutable(tesselCommand(), ["debug", "--dap"], { cwd });
+      },
+    })
+  );
+  // F5 with no launch.json (or one that names no program): the program of
+  // the file being edited.
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider("tessel", {
+      async resolveDebugConfiguration(_folder, config) {
+        if (!config.type && !config.request && !config.name) {
+          config = { type: "tessel", request: "launch", name: "Debug Tessel program" };
+        }
+        if (!config.program) {
+          config.program = currentProgram();
+        }
+        if (!config.program) {
+          return undefined;
+        }
+        await vscode.workspace.saveAll(false);
+        return config;
+      },
+    })
+  );
+}
+
 function activate(context) {
   startClient();
+  registerDebugger(context);
   const commands = {
     "tessel.run": () => saveAndRun("Tessel", (p) => ["run", p]),
+    "tessel.debug": () => {
+      const program = currentProgram();
+      if (program) {
+        vscode.debug.startDebugging(undefined, { type: "tessel", request: "launch", name: "Debug Tessel program", program });
+      }
+    },
     "tessel.runHot": () => saveAndRun("Tessel", (p) => ["run", p, "--hot"]),
     "tessel.build": () => saveAndRun("Tessel", (p) => ["build", p, "--bundle"]),
     "tessel.check": () => saveAndRun("Tessel", (p) => ["check", p]),

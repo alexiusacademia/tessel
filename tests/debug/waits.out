@@ -1,0 +1,38 @@
+will stop at waits.tsl:6
+will stop at waits.tsl:14
+at a breakpoint: waits.tsl:6 in Counter.bumped
+    6 |         let next = value + step
+self: Counter = Counter(value: 1, step: 2)
+self.step: Int = 2
+* 0: Counter.bumped at waits.tsl:6
+  1: main at waits.tsl:25
+at a breakpoint: waits.tsl:14 in slow
+   14 |     let result = before * 2
+n: Int = 3
+before: Int = 3
+stopped: waits.tsl:15 in slow
+   15 |     return result
+stopped: waits.tsl:27 in main
+   27 |     print("doubled {doubled}")
+* 0: main at waits.tsl:27
+doubled 6
+stopped: waits.tsl:28 in main
+   28 |     let numbers = [1, 2, 3]
+stopped: waits.tsl:29 in main
+   29 |     let bad = pick(list: numbers, at: 5)
+c: Counter = Counter(value: 3, step: 2)
+doubled: Int = 6
+numbers: [Int] = [1, 2, 3]
+where the error happened: waits.tsl:19 in pick
+   19 |     let chosen = list[at]
+* 0: pick at waits.tsl:19
+  1: main at waits.tsl:29
+1: main at waits.tsl:29
+c: Counter = Counter(value: 3, step: 2)
+doubled: Int = 6
+numbers: [Int] = [1, 2, 3]
+numbers[2]: Int = 3
+the program ended (with code 101)
+--- errors
+error: index 5 is out of range for a list of 3 items
+ --> waits.tsl:19:18

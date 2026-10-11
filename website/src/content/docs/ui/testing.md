@@ -100,6 +100,7 @@ opens a window as usual.
 | `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
 | `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |
 | `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due. |
+| `waitfor "Done"` | Waits until a view with this label is there (for up to a minute): for what a program started with [`runCommand`](/reference/stdlib/#runcommand) and `input: true` brings about, which `wait` doesn't wait for. |
 | `repeat 20 key down` | Runs a command several times. |
 | `compose "ni"` | Text an [input method](/ui/controls/#input-methods) is composing in the field being edited; `tree` shows it. A `type` after it is what it became. |
 | `reload` | With [`tessel run --hot`](/start/cli/#hot-reload): takes the program's new code now, if its files changed. (A scripted run doesn't watch the files by itself.) |

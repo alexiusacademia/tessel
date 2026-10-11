@@ -18,6 +18,7 @@
 
 mod codec;
 mod db;
+mod debug;
 mod dates;
 mod stack_guard;
 mod stdlib;
@@ -296,6 +297,7 @@ pub fn guard_stack() {
 fn fatal(msg: &str) -> ! {
     let _ = std::io::stdout().flush();
     eprintln!("error: {msg}");
+    debug::failed(msg);
     stop();
 }
 
@@ -307,6 +309,7 @@ unsafe fn panic_at(loc: *const Loc, msg: &str) -> ! {
         let file = unsafe { CStr::from_ptr(loc.file) }.to_string_lossy();
         eprintln!(" --> {file}:{}:{}", loc.line, loc.col);
     }
+    debug::failed(msg);
     stop();
 }
 
@@ -1503,6 +1506,15 @@ pub unsafe extern "C" fn tsl_dict_eq(a: *const Dict, b: *const Dict) -> bool {
 // A `Set<T>` is a dictionary from its items to `true`.
 
 /// The live keys of `d`, in order (valid until `d` changes).
+/// Where each entry's key and value are, in the order they were added.
+pub(crate) unsafe fn dict_entries(d: *const Dict) -> Vec<(*const u8, *const u8)> {
+    unsafe {
+        let inner = &*(*d).inner;
+        let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
+        (0..inner.used()).filter(|&i| inner.live[i]).map(|i| (inner.keys.as_ptr().add(i * ks), inner.values.as_ptr().add(i * vs))).collect()
+    }
+}
+
 unsafe fn live_keys(d: *const Dict) -> Vec<*const u8> {
     unsafe {
         let inner = &*(*d).inner;
@@ -1593,6 +1605,7 @@ pub unsafe extern "C" fn tsl_set_is_disjoint(a: *const Dict, b: *const Dict) -> 
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_start(program: extern "C" fn()) -> i32 {
     stack_guard::install();
+    debug::start();
     program();
     // Apps never get here (their event loop ends the process); a program
     // with only `fn main` still runs its timers and background callbacks.

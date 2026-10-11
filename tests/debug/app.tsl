@@ -1,0 +1,35 @@
+struct Todo {
+    title: String
+    done: Bool
+}
+
+view Row(todo: Todo) {
+    HStack {
+        Text(todo.title)
+        if todo.done {
+            Text("done")
+        }
+    }
+}
+
+app Todos(width: 300, height: 300) {
+    state todos: [Todo] = [Todo(title: "one", done: false)]
+    state draft = "two"
+
+    VStack {
+        let open = todos.filter { t in !t.done }
+        Text("{open.count} open")
+        for todo in todos {
+            Row(todo: todo)
+        }
+        Button("Add") {
+            add()
+        }
+    }
+
+    fn add() {
+        let title = draft
+        todos.append(Todo(title: title, done: true))
+        draft = ""
+    }
+}

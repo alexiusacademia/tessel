@@ -23,7 +23,52 @@ struct Doc {
     line: Int = 1
 }
 
-enum Panel { problems, console }
+enum Panel { problems, console, debug }
+
+// A line the debugger stops the program at.
+struct Breakpoint {
+    path: String
+    line: Int
+}
+
+// A call the stopped program is in.
+struct DebugCall {
+    name: String
+    path: String
+    line: Int
+}
+
+// A row among the stopped program's variables: a variable, or a part of
+// one (`depth` levels in). `parts` is the number to ask the debugger for
+// its own parts with (0: it has none), and `open` whether they're shown.
+struct DebugVar {
+    name: String
+    type: String
+    value: String
+    parts: Int
+    count: Int
+    depth: Int = 0
+    open: Bool = false
+}
+
+// A line of `tessel debug --lines`: `var`, then its name, type, value,
+// number for its parts, and how many they are (tab-separated).
+fn parseDebugVar(text: String, depth: Int) -> DebugVar? {
+    let f = text.split("\t")
+    if f.count != 6 || f[0] != "var" {
+        return nil
+    }
+    DebugVar(name: f[1], type: f[2], value: f[3], parts: Int(f[4]) ?? 0, count: Int(f[5]) ?? 0, depth: depth)
+}
+
+// `frame`, then its number, function, file and line.
+fn parseDebugCall(text: String) -> DebugCall? {
+    let f = text.split("\t")
+    if f.count != 5 || f[0] != "frame" {
+        return nil
+    }
+    DebugCall(name: f[2], path: normalize(path: f[3]), line: Int(f[4]) ?? 1)
+}
 
 enum Prompt { none, newFile, newFolder, rename, delete }
 

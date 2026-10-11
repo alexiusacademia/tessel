@@ -1,0 +1,19 @@
+break 16
+break 29
+run
+locals
+where
+continue
+print item
+delete 29
+continue
+locals
+print items[0].tags
+up
+locals
+print shape
+print ages["bo"]
+print nope
+down
+out
+next

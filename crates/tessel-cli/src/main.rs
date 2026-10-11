@@ -1,4 +1,5 @@
 mod android;
+mod debug;
 mod icon;
 mod hot;
 mod lsp;
@@ -43,6 +44,9 @@ commands:
   run <path> [--hot]
                  build and run a program; with --hot, an app takes its new
                  code when its files change, and keeps its state
+  debug <path>   run a program in the debugger: stop at lines, step through
+                 the code, and look at its variables (`help` in it lists its
+                 commands). --lines and --dap are for editors
   repl           type code and see what it does, a line at a time
   complete <file> <offset> [--text <path>]
                  completion suggestions at byte <offset> of <file> (with the
@@ -140,6 +144,8 @@ fn main() -> ExitCode {
             if cfg!(windows) && out.extension().is_none() {
                 out.set_extension("exe");
             }
+            // (For `tessel debug`: the program says where it is as it runs.)
+            DEBUG_BUILD.store(rest.iter().any(|a| a == "--debug"), std::sync::atomic::Ordering::Relaxed);
             match build(Path::new(path), &out) {
                 Ok(app) if bundle => match make_bundle(&out, app.as_ref(), Some(Path::new(path))) {
                     Ok(bundle) => {
@@ -163,6 +169,7 @@ fn main() -> ExitCode {
             hot::run(Path::new(path), &rest)
         }
         (Some("run"), Some(path)) => run(Path::new(path), &args[2..]),
+        (Some("debug"), _) => debug::run(&args[1..]),
         (Some("repl"), _) => repl::run(),
         (Some("complete"), Some(file)) => {
             let offset = args.get(2).and_then(|o| o.parse().ok());
@@ -343,6 +350,9 @@ fn default_output(path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Whether `build` compiles for the debugger (`tessel build --debug`).
+static DEBUG_BUILD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// File name of the runtime static library on this platform.
 const RUNTIME_LIB: &str = if cfg!(target_env = "msvc") { "tessel_runtime.lib" } else { "libtessel_runtime.a" };
 
@@ -419,7 +429,12 @@ fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) ->
     };
     let runtime = runtime_lib().map_err(fail)?;
     let obj = std::env::temp_dir().join(format!("tessel-{}.o", std::process::id()));
-    if let Err(diags) = codegen::compile(&analysis.program, &analysis.checked, sources, &obj, true, target_triple().as_deref()) {
+    let compiled = if DEBUG_BUILD.load(std::sync::atomic::Ordering::Relaxed) {
+        codegen::compile_debug(&analysis.program, &analysis.checked, sources, &obj, target_triple().as_deref())
+    } else {
+        codegen::compile(&analysis.program, &analysis.checked, sources, &obj, true, target_triple().as_deref())
+    };
+    if let Err(diags) = compiled {
         report(&diags, sources);
         return Err(ExitCode::FAILURE);
     }

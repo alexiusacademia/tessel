@@ -224,6 +224,9 @@ impl Builtins {
                 P::new("completions", Ty::list(COMPLETION)).default(),
                 P::new("completionStart", Ty::Int).default(),
                 P::new("onComplete", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("breakpoints", Ty::list(Ty::Int)).default(),
+                P::new("stoppedLine", Ty::Int).default(),
+                P::new("onBreakpoint", Ty::func(vec![Ty::Int], Ty::Void)).default(),
             ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
@@ -427,12 +430,14 @@ impl Builtins {
                 params: vec![
                     P::new("path", Ty::Str),
                     P::new("args", Ty::list(Ty::Str)).default(),
+                    P::new("input", Ty::Bool).default(),
                     P::new("onOutput", Ty::func(vec![Ty::Str], Ty::Void)),
                     P::new("onExit", Ty::func(vec![Ty::Int], Ty::Void)),
                 ],
                 ret: Ty::Int,
             },
             "stopCommand" => FnSig { params: vec![P::new("id", Ty::Int)], ret: Ty::Void },
+            "sendToCommand" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("text", Ty::Str)], ret: Ty::Bool },
             "sqrt" | "exp" | "log" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "floor"
             | "ceil" | "round" => FnSig { params: vec![P::unlabeled("x", Ty::Float)], ret: Ty::Float },
             "pow" => FnSig { params: vec![P::unlabeled("x", Ty::Float), P::unlabeled("power", Ty::Float)], ret: Ty::Float },
@@ -644,7 +649,7 @@ impl Builtins {
 pub const FUNCTION_NAMES: &[&str] = &[
     "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
-    "stopCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "stopCommand", "sendToCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
@@ -1089,6 +1094,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "readInput" => rt("tsl_read_input"),
         "decodeBase64" => rt("tsl_decode_base64"),
         "sendWebSocket" => rt("tsl_send_web_socket"),
+        "sendToCommand" => rt("tsl_send_to_command"),
         "closeWebSocket" => rt("tsl_close_web_socket"),
         "readData" => rt("tsl_read_data"),
         "writeImage" => rt("tsl_write_image"),

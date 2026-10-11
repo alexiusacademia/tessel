@@ -172,6 +172,9 @@ error: index 2 is out of range for a list of 2 items
  --> rt/main.tsl:3:11
 ```
 
+To stop at a line and look at the variables instead, use
+[`tessel debug`](#tessel-debug).
+
 ### Hot reload
 
 ```sh
@@ -212,6 +215,45 @@ With `--hot` the app's code is compiled the same way, but loaded into
 `tessel` itself rather than made into an executable, so that new code can
 join it. The [Tessel IDE](/start/ide/#reload-on-save) runs programs this way
 when **Reload on save** is on.
+
+## `tessel debug`
+
+```sh
+tessel debug <path>
+```
+
+Runs the program in the debugger: it stops at the lines you say, shows its
+variables there, and goes on a line at a time. [Debugging](/guides/debugging/)
+explains it, with the commands to type.
+
+The program is built for the debugger first, which is what
+`tessel build <path> --debug` does on its own: such a program tells the
+debugger where it is as it runs. Started by anything else, it just runs,
+a little slower than a normal build.
+
+Editors use two other forms:
+
+- `tessel debug --dap` is the debugger as an adapter of the
+  [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/),
+  on its standard input and output. The `launch` request's `program` is the
+  file or folder to debug. The VS Code extension uses this.
+- `tessel debug <path> --lines` reads commands and prints what happens, a
+  line at a time, with tabs between a line's parts. The Tessel IDE uses
+  this.
+
+With `--lines`, the commands are `breakpoints <file> <line,line,…>` (every
+line to stop at in a file), `run` (once, to start), `continue`, `next`,
+`step`, `out`, `pause`, `vars <call>`, `children <ref>`,
+`eval <call> <expression>` and `stop`. It prints:
+
+| Line | When |
+|---|---|
+| `ready` | The program is built and waits for `run`. `failed`: it has errors (printed before, as `output` lines). |
+| `output <text>` | The program printed a line. |
+| `frames`, then `frame <n> <function> <file> <line>` for each call (innermost first), then `stopped <reason> <message>` | The program stopped. The reason is `breakpoint`, `step`, `pause` or `error` (with the error's message). |
+| `running` | It goes on. |
+| `vars <what was asked>`, then `var <name> <type> <value> <ref> <count>` for each, then `end` | The answer to `vars`, `children` or `eval`. A `ref` that isn't 0 has `count` parts, to ask for with `children <ref>`. |
+| `exited <code>` | The program ended. |
 
 ## `tessel repl`
 

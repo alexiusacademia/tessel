@@ -566,7 +566,7 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
-            Kind::CodeEditor { error_lines, .. } => {
+            Kind::CodeEditor { error_lines, breakpoints, stopped_line, .. } => {
                 let editing = self.ui.shown_editing(n.key);
                 let editing = editing.as_ref();
                 let t_scene = self.t();
@@ -585,6 +585,18 @@ impl Painter<'_> {
                         let band = Rect { x: content.x + n.layout.gutter, y, w: content.w - n.layout.gutter, h: bottom - top };
                         self.fill(band, 0.0, theme().error_line);
                         self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, theme().error_mark);
+                    }
+                    // Where a program is stopped: the whole line, in yellow.
+                    if let Some(&(top, bottom)) = lines.get((*stopped_line - 1).max(0) as usize).filter(|_| *stopped_line > 0) {
+                        let band = Rect { x: content.x, y: y0 - scroll_y + top, w: content.w, h: bottom - top };
+                        self.fill(band, 0.0, theme().stopped_line);
+                    }
+                    // Breakpoints: a red dot at the margin's left.
+                    for &line in breakpoints {
+                        let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
+                        let size = ((bottom - top) * 0.55).min(9.0);
+                        let dot = Rect { x: content.x + 3.0, y: y0 - scroll_y + top + (bottom - top - size) / 2.0, w: size, h: size };
+                        self.fill(dot, size / 2.0, theme().error_mark);
                     }
                     if let Some(numbers) = &n.layout.placeholder {
                         self.text(numbers, content.x + GUTTER_PAD.0, y0 - scroll_y, None);

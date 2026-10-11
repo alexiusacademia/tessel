@@ -268,6 +268,9 @@ static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 static WAKE: Mutex<Option<EventLoopProxy<()>>> = Mutex::new(None);
 /// Running commands, so `stopCommand` can stop them.
 static CHILDREN: Mutex<Vec<(u64, Arc<Mutex<std::process::Child>>)>> = Mutex::new(Vec::new());
+/// The inputs of running commands started with `input: true`, for
+/// `sendToCommand`.
+static INPUTS: Mutex<Vec<(u64, std::process::ChildStdin)>> = Mutex::new(Vec::new());
 
 thread_local! {
     /// Completion blocks waiting for their loads, by id.
@@ -323,14 +326,16 @@ pub unsafe extern "C" fn tsl_fetch(url: *const Str, f: *const c_void, env: *mut 
     std::thread::spawn(move || post(Event::Fetched(id, load(&url))));
 }
 
-/// `runCommand(path:args:onOutput:onExit:)`: starts a program. Each line it
-/// prints (stdout and stderr) goes to `onOutput` (`void fn(env, String)`),
-/// then its exit code to `onExit` (`void fn(env, Int)`), on the UI thread.
-/// Returns an id for `stopCommand`.
+/// `runCommand(path:args:input:onOutput:onExit:)`: starts a program. Each
+/// line it prints (stdout and stderr) goes to `onOutput` (`void fn(env,
+/// String)`), then its exit code to `onExit` (`void fn(env, Int)`), on the
+/// UI thread. With `input`, it can be written to (`sendToCommand`);
+/// otherwise it has nothing to read. Returns an id for `stopCommand`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_run_command(
     path: *const Str,
     args: *const crate::List,
+    input: u8,
     out_f: *const c_void,
     out_env: *mut Header,
     exit_f: *const c_void,
@@ -348,7 +353,7 @@ pub unsafe extern "C" fn tsl_run_command(
     COMMANDS.with(|c| c.borrow_mut().insert(id, (Callback::new(out_f, out_env), Callback::new(exit_f, exit_env))));
     let spawned = std::process::Command::new(&path)
         .args(&args)
-        .stdin(std::process::Stdio::null())
+        .stdin(if input != 0 { std::process::Stdio::piped() } else { std::process::Stdio::null() })
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn();
@@ -360,6 +365,9 @@ pub unsafe extern "C" fn tsl_run_command(
             return id as i64;
         }
     };
+    if let Some(stdin) = child.stdin.take() {
+        INPUTS.lock().unwrap().push((id, stdin));
+    }
     let readers: Vec<_> = [
         child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>),
         child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>),
@@ -388,9 +396,21 @@ pub unsafe extern "C" fn tsl_run_command(
         }
         let code = child.lock().unwrap().wait().ok().and_then(|s| s.code()).unwrap_or(-1);
         CHILDREN.lock().unwrap().retain(|(i, _)| *i != id);
+        INPUTS.lock().unwrap().retain(|(i, _)| *i != id);
         post(Event::Exited(id, code));
     });
     id as i64
+}
+
+/// `sendToCommand(id, text:)`: writes a line to a running command started
+/// with `input: true`. False if it isn't running, or wasn't.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_send_to_command(id: i64, text: *const Str) -> u8 {
+    use std::io::Write;
+    let text = unsafe { crate::str_text(text) };
+    let mut inputs = INPUTS.lock().unwrap();
+    let Some((_, input)) = inputs.iter_mut().find(|(i, _)| *i == id as u64) else { return 0 };
+    (writeln!(input, "{text}").is_ok() && input.flush().is_ok()) as u8
 }
 
 /// `stopCommand(id)`: stops a running command (its `onExit` still runs).
@@ -742,8 +762,11 @@ fn background_busy() -> bool {
 
 /// Background work that finishes by itself (not open WebSockets).
 fn jobs_busy() -> bool {
+    // (A command that's written to goes on for as long as it's told to: a
+    // script doesn't wait for it to end, but for what it does, with `waitfor`.)
+    let written_to: Vec<u64> = INPUTS.lock().unwrap().iter().map(|(id, _)| *id).collect();
     WAITING.with(|w| !w.borrow().is_empty())
-        || COMMANDS.with(|c| !c.borrow().is_empty())
+        || COMMANDS.with(|c| c.borrow().keys().any(|id| !written_to.contains(id)))
         || COMPUTING.with(|c| !c.borrow().is_empty())
         || net::working()
 }
@@ -3103,6 +3126,18 @@ impl App {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
             }
+            // A click in a code editor's margin, when that sets breakpoints.
+            (Hit::Field(_), Kind::CodeEditor { on_breakpoint: Some(toggle), .. })
+                if x < node.layout.rect.inset_by(node.mods.padding).x + node.layout.gutter =>
+            {
+                let toggle = toggle.clone();
+                let at = y - render::code_origin(node).1 + self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
+                let lines = node.layout.text.as_ref().map(|t| t.lines.iter().map(|l| (l.top, l.bottom)).collect::<Vec<_>>());
+                if let Some(line) = lines.unwrap_or_default().iter().position(|(top, bottom)| at >= *top && at < *bottom) {
+                    toggle.call_with_int(line as i64 + 1);
+                    self.dirty = true;
+                }
+            }
             (Hit::Field(key), Kind::TextField { text, .. } | Kind::CodeEditor { text, .. }) => {
                 if self.ui.editing.as_ref().is_none_or(|e| e.key != *key) {
                     self.ui.editing = Some(Editing::new(*key, &read_string(text)));
@@ -3817,8 +3852,16 @@ impl App {
                 }
                 Kind::Svg { icon: Some(name), .. } => format!("Icon {name}"),
                 Kind::Svg { .. } => "Svg".to_string(),
-                Kind::CodeEditor { text, error_lines, .. } => {
-                    format!("CodeEditor errors {error_lines:?} = {:?}", read_string(text))
+                Kind::CodeEditor { text, error_lines, breakpoints, stopped_line, .. } => {
+                    // (A debugger's marks, when there are any.)
+                    let mut marks = String::new();
+                    if !breakpoints.is_empty() {
+                        marks += &format!(" breakpoints {breakpoints:?}");
+                    }
+                    if *stopped_line > 0 {
+                        marks += &format!(" stopped {stopped_line}");
+                    }
+                    format!("CodeEditor errors {error_lines:?}{marks} = {:?}", read_string(text))
                 }
                 Kind::Slider { value, .. } => format!("Slider = {}", super::controls::read_number(value, false)),
                 Kind::Stepper { value, int, decimals, .. } => {
@@ -4400,6 +4443,27 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     return 2;
                 };
                 app.scroll(x, y, dx, dy, mods);
+            }
+            // `waitfor "label"`: until a view with that label is there (what
+            // a running command, a load or a timer brings about).
+            "waitfor" => {
+                let label = rest.trim_matches('"');
+                let started = Instant::now();
+                loop {
+                    app.update();
+                    if app.find_label(label).is_some() {
+                        break;
+                    }
+                    if started.elapsed() > Duration::from_secs(60) {
+                        eprintln!("script: `{label}` never appeared");
+                        return 2;
+                    }
+                    if deliver_background() | fire_timers() {
+                        app.dirty = true;
+                    } else {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
             }
             "wait" => {
                 // Loads and commands in progress finish first (tests shouldn't depend on timing).

@@ -81,6 +81,7 @@ On Windows, use Ctrl wherever this page says Cmd.
 | Save | Cmd+S | Saves every changed file, then checks the program again. |
 | Check | Cmd+K | Checks the program for errors (like `tessel check`) and lists them under Problems. |
 | Run / Stop | Cmd+R | Saves and runs the program, showing its output in the Console. While it runs, the button becomes Stop. |
+| Debug | Shift+Cmd+R | Saves and runs the program in the [debugger](#debugging). While it's debugged, the toolbar shows the debugger's buttons instead. |
 | Build | Cmd+B | Builds an executable into the project folder, named after the folder. |
 | Package | | Like Build, but makes an app bundle (`Name.app` on macOS). |
 | Preview | | Only while a Markdown file is open: shows or hides the [Preview panel](#the-preview-panel). |
@@ -314,9 +315,26 @@ the explorer and the editor, the one above Problems and Console, and the one
 beside the Preview, Design or Docs panel. An edge turns blue under the pointer. The sizes last
 until you close the IDE.
 
-## Problems and console
+## Debugging
 
-The bottom of the window has two tabs:
+Click in the margin beside a line, left of its number, to set a
+**breakpoint**: a red dot marks it. Press **Debug**, and the program runs
+until it reaches that line. The line turns yellow, and the Debug tab at the
+bottom shows the calls that led there and the variables. Click a variable
+with an arrow to see its parts.
+
+![The IDE with a program stopped at line 9, which is yellow with a red dot beside it. The toolbar has Continue, Step over, Step in, Step out and Stop. The Debug tab at the bottom lists the calls total and main, and the variables: orders opened up to show its first Order with item "tea" and quantity 2, then sum and order](../../../assets/screens/ide-debug.png)
+
+From there, **Continue**, **Step over** (Cmd+'), **Step in** (Cmd+;) and
+**Step out** (Shift+Cmd+;) say how the program goes on, and **Stop** ends
+it. A runtime error stops the program at the line where it happened, with
+its variables still there.
+
+[Debugging](/guides/debugging/) has the whole story.
+
+## Problems, console and debug
+
+The bottom of the window has three tabs:
 
 - **Problems** lists the errors from the last check, with the file and line
   of each one. The tab title shows how many there are. Click a problem to
@@ -326,6 +344,8 @@ The bottom of the window has two tabs:
   their location as ` --> file:line:column`; click such a line to jump to it.
   This works for compile errors and for runtime errors, such as an index
   out of range.
+- **Debug** shows where a program being [debugged](#debugging) is stopped:
+  the calls that led there, and their variables.
 
 ## Other editors
 

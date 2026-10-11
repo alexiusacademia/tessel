@@ -42,6 +42,9 @@ CodeEditor(text: source, errorLines: problems, line: currentLine)
 | `completions:` | `[Completion]` | Suggestions to offer as the user types. Optional; see [Code completion](#code-completion). |
 | `completionStart:` | `Int` | Where the word those suggestions are for starts (a byte offset in `text`). |
 | `onComplete:` | `fn(Int)` | Called when the editor wants suggestions, with the cursor's byte offset. |
+| `breakpoints:` | `[Int]` | Lines to mark with a red dot in the margin. Optional; see [For a debugger](#for-a-debugger). |
+| `stoppedLine:` | `Int` | A line to highlight in yellow, as where a program is stopped. 0 (the default) for none. |
+| `onBreakpoint:` | `fn(Int)` | Called with the line when the margin is clicked. |
 
 Line numbers start at 1, as they do in the gutter.
 
@@ -160,6 +163,35 @@ app Editor(width: 500, height: 300) {
 (This counts characters, which equal bytes only for plain ASCII text. The
 [Tessel IDE](/start/ide/) asks `tessel complete` instead, which knows Tessel
 and works in bytes.)
+
+## For a debugger
+
+Three parameters make the margin a place for breakpoints, as in the
+[Tessel IDE](/guides/debugging/#in-the-tessel-ide):
+
+```tessel
+app Stops(width: 440, height: 200) {
+    state source = "let a = 1\nlet b = 2\nprint(a + b)\n"
+    state stops: [Int] = [2]
+
+    CodeEditor(text: source, breakpoints: stops, stoppedLine: 2, onBreakpoint: { line in
+        if stops.contains(line) {
+            stops.removeAll(where: { l in l == line })
+        } else {
+            stops.append(line)
+        }
+    })
+    .padding(12)
+}
+```
+
+- `breakpoints:` lines get a red dot at the left of the margin.
+- `stoppedLine:` is highlighted in yellow across the editor.
+- `onBreakpoint:` is called with the line when the margin is clicked,
+  beside that line. The editor doesn't keep the breakpoints itself: the
+  block changes the list, as above.
+
+What these mean is up to your app. The editor only draws them.
 
 ## Size
 

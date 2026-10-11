@@ -4,7 +4,7 @@
 //! On macOS, every successful program is also checked for memory leaks.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
@@ -26,9 +26,13 @@ fn run_programs() {
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
         let rel = if path.is_dir() { format!("tests/run/{name}") } else { format!("tests/run/{name}.tsl") };
         let exe = std::env::temp_dir().join(format!("tessel-test-{name}-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
+        // (With TESSEL_TEST_DEBUG set, every program is built as `tessel
+        // debug` builds it, and must do the same as otherwise.)
+        let how: &[&str] = if std::env::var_os("TESSEL_TEST_DEBUG").is_some() { &["--debug"] } else { &[] };
         let built = Command::new(env!("CARGO_BIN_EXE_tessel"))
             .args(["build", &rel, "-o"])
             .arg(&exe)
+            .args(how)
             .current_dir(repo())
             .output()
             .unwrap();
@@ -280,6 +284,119 @@ fn android_packages() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `tessel debug`: each program in `tests/debug`, driven by the commands in
+/// its `.in` file (an app also by its `.script`), prints what its `.out`
+/// file says: where it stops, the calls that led there, and its variables.
+#[test]
+fn debugger_sessions() {
+    let dir = repo().join("tests/debug");
+    let mut failed = Vec::new();
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.unwrap().file_name().to_string_lossy().strip_suffix(".in").map(str::to_string))
+        .collect();
+    names.sort();
+    assert!(!names.is_empty());
+    for name in names {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessel"));
+        cmd.current_dir(&dir).args(["debug", &format!("{name}.tsl")]);
+        if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
+            cmd.env("TESSEL_SCRIPT", script);
+        }
+        let out = run_with_input(&mut cmd, &std::fs::read(dir.join(format!("{name}.in"))).unwrap());
+        // (What the program and the debugger print, and the program's errors.)
+        let got = format!("{}--- errors\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        let expected = std::fs::read_to_string(dir.join(format!("{name}.out"))).unwrap_or_default();
+        if got != expected {
+            std::fs::write(dir.join(format!("{name}.actual")), &got).unwrap();
+            failed.push(format!("debugger session `{name}` differs; see tests/debug/{name}.actual\n--- got\n{got}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// `tessel debug --dap`: the debugger as editors drive it, with the Debug
+/// Adapter Protocol. A breakpoint, the calls there, a variable and its
+/// parts, a step, and the program's end.
+#[test]
+fn debug_adapter() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let dir = repo().join("tests/debug");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .current_dir(&dir)
+        .args(["debug", "--dap"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut to = child.stdin.take().unwrap();
+    let mut from = BufReader::new(child.stdout.take().unwrap());
+    let mut seq = 0;
+    let mut send = |command: &str, arguments: serde_json::Value| {
+        seq += 1;
+        let body = serde_json::json!({ "seq": seq, "type": "request", "command": command, "arguments": arguments }).to_string();
+        write!(to, "Content-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+        to.flush().unwrap();
+    };
+    // The next message that's the response to `command`, or the event `event`.
+    let mut until = |kind: &str, name: &str| -> serde_json::Value {
+        loop {
+            let mut length = 0;
+            loop {
+                let mut header = String::new();
+                assert!(from.read_line(&mut header).unwrap() > 0, "the adapter closed before `{name}`");
+                match header.trim().strip_prefix("Content-Length:") {
+                    Some(n) => length = n.trim().parse().unwrap(),
+                    None if header.trim().is_empty() => break,
+                    None => {}
+                }
+            }
+            let mut body = vec![0; length];
+            from.read_exact(&mut body).unwrap();
+            let message: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            if message["type"] == kind && (message["command"] == name || message["event"] == name) {
+                return message;
+            }
+        }
+    };
+    let source = dir.join("values.tsl").canonicalize().unwrap();
+    send("initialize", serde_json::json!({ "adapterID": "tessel" }));
+    until("event", "initialized");
+    send("launch", serde_json::json!({ "program": source }));
+    send("setBreakpoints", serde_json::json!({ "source": { "path": source }, "breakpoints": [{ "line": 16 }] }));
+    send("configurationDone", serde_json::json!({}));
+    assert_eq!(until("event", "stopped")["body"]["reason"], "breakpoint");
+    send("stackTrace", serde_json::json!({ "threadId": 1 }));
+    let calls = until("response", "stackTrace");
+    let calls = calls["body"]["stackFrames"].as_array().unwrap();
+    assert_eq!((calls[0]["name"].as_str(), calls[0]["line"].as_i64()), (Some("total"), Some(16)));
+    assert_eq!(calls[1]["name"], "main");
+    assert_eq!(calls[0]["source"]["path"], serde_json::json!(source));
+    send("scopes", serde_json::json!({ "frameId": 0 }));
+    let scope = until("response", "scopes")["body"]["scopes"][0]["variablesReference"].clone();
+    send("variables", serde_json::json!({ "variablesReference": scope }));
+    let vars = until("response", "variables");
+    let vars = vars["body"]["variables"].as_array().unwrap();
+    let item = vars.iter().find(|v| v["name"] == "item").expect("the loop's variable");
+    assert_eq!(item["value"], "Item(name: \"tea\", price: 2.5, tags: [\"hot\", \"drink\"])");
+    send("variables", serde_json::json!({ "variablesReference": item["variablesReference"] }));
+    let parts = until("response", "variables");
+    assert_eq!(parts["body"]["variables"][1]["name"], "price");
+    assert_eq!(parts["body"]["variables"][1]["value"], "2.5");
+    send("evaluate", serde_json::json!({ "expression": "item.tags[1]", "frameId": 0 }));
+    assert_eq!(until("response", "evaluate")["body"]["result"], "\"drink\"");
+    send("setBreakpoints", serde_json::json!({ "source": { "path": source }, "breakpoints": [] }));
+    send("stepOut", serde_json::json!({ "threadId": 1 }));
+    assert_eq!(until("event", "stopped")["body"]["reason"], "step");
+    send("continue", serde_json::json!({ "threadId": 1 }));
+    let printed = until("event", "output");
+    assert!(printed["body"]["output"].as_str().unwrap().starts_with("total 6.5"), "{printed}");
+    assert_eq!(until("event", "exited")["body"]["exitCode"], 0);
+    send("disconnect", serde_json::json!({}));
+    until("response", "disconnect");
+    assert!(child.wait().unwrap().success());
+}
+
 /// `tessel preview`: the picture of an app, and what it tells an editor
 /// about the views in it (see `tests/preview`): from the files as saved,
 /// then with text that isn't saved.
@@ -346,7 +463,13 @@ fn ide_session() {
     let mut failed = Vec::new();
     // `new` starts a project from a template in an empty folder.
     for (name, folder, show) in
-        [("session", "project", None), ("design", "design", Some("main.tsl")), ("new", "empty", Some("README.md"))]
+        [
+            ("session", "project", None),
+            ("design", "design", Some("main.tsl")),
+            ("new", "empty", Some("README.md")),
+            // The debugger: a breakpoint, the calls and variables, stepping.
+            ("debug", "debugging", None),
+        ]
     {
         let base = std::env::temp_dir().join(format!("tessel-ide-test-{}-{name}", std::process::id()));
         let project = base.join("project");

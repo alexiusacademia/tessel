@@ -1814,7 +1814,7 @@ with its text fields' copy and paste, so tests never touch yours.
 ### runCommand
 
 ```text
-runCommand(path: String, args: [String] = [],
+runCommand(path: String, args: [String] = [], input: Bool = false,
            onOutput: fn(String), onExit: fn(Int)) -> Int
 ```
 
@@ -1850,8 +1850,39 @@ app Runner {
   the folders of the `PATH` environment variable. It isn't run through a
   shell, so each argument goes in `args` separately, and shell features like
   `*` or `|` don't apply.
-- The program gets no input.
+- The program gets no input, unless you pass `input: true`: then
+  [`sendToCommand`](#sendtocommand) writes to it.
 - Both blocks run on the UI thread, so they can change `state` directly.
+
+### sendToCommand
+
+```text
+sendToCommand(_ id: Int, text: String) -> Bool
+```
+
+Writes a line of text (with a line ending after it) to the input of a
+program started with [`runCommand`](#runcommand) and `input: true`. Gives
+`false` if the program isn't running any more, or wasn't started that way.
+
+```tessel
+app Calculator {
+    state answers: [String] = []
+    state bc = -1
+
+    Button("Start") {
+        bc = runCommand(path: "bc", input: true, onOutput: { line in answers.append(line) }) { code in
+            bc = -1
+        }
+    }
+    Button("6 × 7") { sendToCommand(bc, text: "6 * 7") }
+    for answer in answers {
+        Text(answer)
+    }
+}
+```
+
+This is how a program drives another that takes commands as it runs. The
+Tessel IDE's debugger talks to `tessel debug --lines` this way.
 
 ### stopCommand
 

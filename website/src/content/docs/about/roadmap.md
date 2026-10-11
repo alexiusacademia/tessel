@@ -61,7 +61,8 @@ its first releases came so quickly. The dates on
   (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE
   (with this documentation built in, a Design panel for building a
   window by pointing at it, and a preview for Markdown files), a VS Code extension, a
-  language server for other editors, app bundles on macOS, and a headless
+  language server for other editors, a [debugger](/guides/debugging/) in
+  the IDE, VS Code and the terminal, app bundles on macOS, and a headless
   mode for testing apps and taking screenshots.
 
 ## Known limitations
@@ -70,9 +71,9 @@ its first releases came so quickly. The dates on
 These are the main gaps you may run into today.
 :::
 
-- **Debugging:** there is no debugger with breakpoints or stepping yet.
-  Runtime errors show a message and the place in your code, which you can
-  click in the IDE's console, and `print` output appears there too.
+- **Debugging:** the [debugger](/guides/debugging/) stops at lines, steps
+  and shows variables, but can't change a value, work out an expression, or
+  stop on a condition, and doesn't reach apps on Android.
 - **Keyboard:** Tab moves between text fields, but buttons, toggles and
   pickers can't be used from the keyboard.
 - **Appearance:** animation covers moving, resizing and fading; there are no
@@ -98,7 +99,7 @@ These are the next areas of work. None of them has a date.
 | Standard library | Filling gaps as apps need them. |
 | Language | Packages: installing shared modules by name, with versions. |
 | Packaging | Code signing and installers. |
-| Debugging | Stepping through code with breakpoints, building on the clickable errors and console the IDE has today. |
+| Debugging | Changing values and conditions on breakpoints in the debugger. |
 
 Tessel's goals and the reasons for its design are on
 [Tessel's design](/about/design/).

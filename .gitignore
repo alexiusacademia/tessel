@@ -2,5 +2,6 @@
 .tessel-run
 .tessel-run.exe
 tests/ide/*.actual
+tests/debug/*.actual
 tests/run/dialog_test.och
 tests/preview/actual.out

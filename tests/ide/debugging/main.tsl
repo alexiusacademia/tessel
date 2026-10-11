@@ -1,0 +1,18 @@
+struct Order {
+    item: String
+    quantity: Int
+}
+
+fn total(orders: [Order]) -> Int {
+    var sum = 0
+    for order in orders {
+        sum += order.quantity
+    }
+    return sum
+}
+
+fn main() {
+    let orders = [Order(item: "tea", quantity: 2), Order(item: "cake", quantity: 3)]
+    let count = total(orders: orders)
+    print("{count} things")
+}

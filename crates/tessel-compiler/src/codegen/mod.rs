@@ -41,6 +41,7 @@ use crate::types::{FnSig, Ty};
 
 mod codec;
 mod coro;
+mod debug;
 mod stdlib;
 mod ui;
 
@@ -85,6 +86,21 @@ pub fn compile(
     target_triple: Option<&str>,
 ) -> Result<(), Vec<Diagnostic>> {
     generate(program, checked, sources, optimize, target_triple, Mode::Program, |tm, module| {
+        tm.write_to_file(module, FileType::Object, out).map_err(|e| vec![internal(e.to_string())])
+    })
+}
+
+/// Compiles a checked program for `tessel debug`: like `compile`, for this
+/// computer, with the program telling the runtime's debugger where it is
+/// and what its variables are as it runs (see `debug`).
+pub fn compile_debug(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+    out: &Path,
+    target_triple: Option<&str>,
+) -> Result<(), Vec<Diagnostic>> {
+    generate(program, checked, sources, true, target_triple, Mode::Debug, |tm, module| {
         tm.write_to_file(module, FileType::Object, out).map_err(|e| vec![internal(e.to_string())])
     })
 }
@@ -168,6 +184,8 @@ pub fn compile_design(
 enum Mode<'a> {
     /// A program, to an object file that's linked into an executable.
     Program,
+    /// A program for the debugger (see `debug`).
+    Debug,
     Repl(ReplEntry<'a>),
     /// A program for hot reload: this many times compiled.
     Hot(usize),
@@ -206,7 +224,7 @@ fn generate<R>(
     // Code loaded into `tessel` (the REPL, hot reload, previews) may land
     // far from `tessel` itself: on Windows its references to the runtime
     // would then not fit in 32 bits, so every address is a full one there.
-    let jit = !matches!(mode, Mode::Program);
+    let jit = !matches!(mode, Mode::Program | Mode::Debug);
     let model = if jit && name.contains("windows") { CodeModel::Large } else { CodeModel::Default };
     let tm = target
         .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, model)
@@ -222,6 +240,7 @@ fn generate<R>(
     g.android = name.contains("android");
     match mode {
         Mode::Program => {}
+        Mode::Debug => g.debug = true,
         Mode::Repl(entry) => g.repl = Some(entry),
         Mode::Hot(generation) => g.hot = Some(generation),
         Mode::Design(views) => {
@@ -349,6 +368,8 @@ struct FnCtx<'ctx> {
     record: Option<Record<'ctx>>,
     /// A function that can `await` (see `coro`).
     coro: Option<coro::Coro<'ctx>>,
+    /// A function that tells the debugger where it is (see `debug`).
+    dbg: Option<debug::Dbg<'ctx>>,
 }
 
 /// Where `continue` and `break` jump in a loop of function `func`; `depth`
@@ -433,6 +454,10 @@ struct Gen<'ctx, 'a> {
     /// Compiling an Android app: the system starts it, through the runtime
     /// (which calls `tsl_main`), so it has no `main`.
     android: bool,
+    /// Compiling for the debugger (see `debug`), and the descriptions of
+    /// types made for it so far.
+    debug: bool,
+    dbg_types: HashMap<String, PointerValue<'ctx>>,
 
     /// Views by name (the `app` included), and what's compiled for them.
     view_decls: HashMap<String, ViewSource<'a>>,
@@ -502,6 +527,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             awaits: Vec::new(),
             has_coros: false,
             android: false,
+            debug: false,
+            dbg_types: HashMap::new(),
             view_decls: HashMap::new(),
             view_builds: HashMap::new(),
             view_fns: HashMap::new(),
@@ -602,7 +629,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
-            self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async);
+            self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
         }
         for (key, (decl, owner)) in self.method_decls.clone() {
             let f = self.methods[&key];
@@ -610,7 +637,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             let self_ptr = f.get_nth_param(1).unwrap().into_pointer_value();
-            self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2, decl.is_async);
+            let shown = format!("{}.{}", key.0, key.1);
+            self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2, decl.is_async, Some((&shown, decl.name.span)));
         }
 
         self.compile_views();
@@ -638,6 +666,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: HashSet::new(),
             record: None,
             coro: None,
+            dbg: None,
         });
         for &item in &items {
             let Item::Fn(f) = item else { continue };
@@ -713,7 +742,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let declared = self.checked.repl.clone().unwrap_or_default().vars;
         let mut boxed = self.boxed_vars(&decl.body);
         boxed.extend(declared.iter().map(|(name, ..)| name.clone()));
-        self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None, coro: None });
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: Ty::Void, self_ptr: None, boxed, record: None, coro: None, dbg: None });
         self.push_scope();
         for s in &decl.body.stmts {
             if self.terminated() {
@@ -862,6 +891,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self_info: Option<(PointerValue<'ctx>, Ty)>,
         first_param: u32,
         is_async: bool,
+        named: Option<(&str, Span)>,
     ) {
         let entry = self.ctx.append_basic_block(func, "entry");
         self.b.position_at_end(entry);
@@ -875,10 +905,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             (true, Some((_, Ty::Fn(ps, _), _))) => ps.first().cloned().unwrap_or(Ty::Void),
             _ => ret.clone(),
         };
-        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None, coro: None });
+        self.stack.push(FnCtx { func, scopes: vec![scope], ret: ret.clone(), self_ptr: self_info, boxed, record: None, coro: None, dbg: None });
         if is_async {
             self.begin_coro(&[]);
             self.own_receiver();
+        }
+        if let Some((name, span)) = named {
+            self.debug_enter(name, span);
         }
         for (i, (name, ty, bind)) in params.iter().enumerate() {
             let raw = func.get_nth_param(first_param + i as u32).unwrap();
@@ -1271,6 +1304,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             return self.finish_coro(&c, v);
         }
         let ret = self.stack.last().unwrap().ret.clone();
+        self.debug_leave();
         if self.big(&ret) {
             if let Some(v) = v {
                 let out = self.func().get_last_param().unwrap().into_pointer_value();
@@ -1472,12 +1506,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_write_file" => (vec![p, p], Some(i8t)),
             "tsl_file_exists" | "tsl_is_folder" | "tsl_delete_file" => (vec![p], Some(i8t)),
             "tsl_current_folder" => (vec![], Some(p)),
-            "tsl_run_command" => (vec![p, p, p, p, p, p], Some(i)),
+            "tsl_run_command" => (vec![p, p, i8t, p, p, p, p], Some(i)),
             "tsl_stop_command" => (vec![i], None),
             "tsl_str_substring" => (vec![p, i, i], Some(p)),
             "tsl_str_find" => (vec![p, p], Some(i)),
             "tsl_ui_shortcut" => (vec![p, p, p], None),
-            "tsl_ui_code_editor" => (vec![p, p, p, p, p, p, i, p, p], None),
+            "tsl_ui_code_editor" => (vec![p, p, p, p, p, p, i, p, p, p, i, p, p], None),
             "tsl_ui_on_appear" | "tsl_ui_on_submit" => (vec![p, p], None),
             "tsl_ui_begin_tabs" => (vec![p, p, p, p], None),
             "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),
@@ -1795,6 +1829,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             boxed: HashSet::new(),
             record: None,
             coro: None,
+            dbg: None,
         });
         let entry = self.ctx.append_basic_block(f, "entry");
         self.b.position_at_end(entry);
@@ -2515,6 +2550,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             if self.terminated() {
                 self.continue_dead();
             }
+            self.debug_line(debug::stmt_span(s));
             match (s, want) {
                 (Stmt::Expr(e), Some(t)) if i + 1 == n => result = self.expr_as(e, t),
                 _ => self.stmt(s),
@@ -4283,11 +4319,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             (true, Some(Ty::Fn(ps, _))) => ps.first().cloned().unwrap_or(Ty::Void),
             _ => ret,
         };
-        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record, coro: None });
+        // What the debugger calls it, and where it is.
+        let named = match &body {
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => Some((self.debug_block_name(), b.span)),
+            Body::LocalFn(d) => Some((d.name.name.clone(), d.name.span)),
+            _ => None,
+        };
+        self.stack.push(FnCtx { func: f, scopes: vec![scope], ret: ret.clone(), self_ptr, boxed, record: inner_record, coro: None, dbg: None });
         if waits {
             let keep: Vec<PointerValue> = (!env_fields.is_empty()).then_some(env_param).into_iter().collect();
             self.begin_coro(&keep);
             self.own_receiver();
+        }
+        if let Some((name, span)) = named {
+            self.debug_enter(&name, span);
         }
         match body {
             Body::Fn(params, b) => {
@@ -6273,9 +6318,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 };
                 let out_t = Ty::func(vec![Ty::Str], Ty::Void);
                 let exit_t = Ty::func(vec![Ty::Int], Ty::Void);
-                let on_out = self.expr_as(arg(info.args[2].unwrap()), &out_t).unwrap().into_struct_value();
-                let on_exit = self.expr_as(arg(info.args[3].unwrap()), &exit_t).unwrap().into_struct_value();
-                let mut all = vec![path, args];
+                // (`input: true`: the program's input stays open, for `sendToCommand`.)
+                let input = match info.args[2] {
+                    Some(r) => {
+                        let on = self.expr_as(arg(r), &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(on)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                let on_out = self.expr_as(arg(info.args[3].unwrap()), &out_t).unwrap().into_struct_value();
+                let on_exit = self.expr_as(arg(info.args[4].unwrap()), &exit_t).unwrap().into_struct_value();
+                let mut all = vec![path, args, input];
                 for c in [on_out, on_exit] {
                     all.push(self.b.build_extract_value(c, 0, "").unwrap());
                     all.push(self.b.build_extract_value(c, 1, "").unwrap());
