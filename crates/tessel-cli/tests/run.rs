@@ -573,3 +573,28 @@ fn manifest_bundle() {
     assert!(dir.join("Tally Pro.app/Contents/MacOS/Tally Pro").is_file());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An app asks macOS for nothing that Apple keeps to itself (the Mac App
+/// Store refuses an app that does): the functions it names, of the kind
+/// the windowing library once brought in, are all public.
+#[test]
+fn apps_name_no_private_functions() {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let exe = std::env::temp_dir().join(format!("tessel-test-private-{}", std::process::id()));
+    let built = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .args(["build", "examples/counter", "-o"])
+        .arg(&exe)
+        .current_dir(repo())
+        .output()
+        .unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let Ok(names) = Command::new("nm").arg("-u").arg(&exe).output() else { return };
+    let names = String::from_utf8_lossy(&names.stdout).into_owned();
+    let _ = std::fs::remove_file(&exe);
+    // (`CGS…`, `CGSMainConnectionID` and its like, is the window server's
+    // own interface; `CGShieldingWindowLevel` is `CG`'s, and public.)
+    let private: Vec<&str> = names.lines().map(str::trim).filter(|n| n.starts_with("_CGS") && *n != "_CGShieldingWindowLevel").collect();
+    assert!(private.is_empty(), "the app names private functions: {private:?}");
+}

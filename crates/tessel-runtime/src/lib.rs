@@ -1670,3 +1670,28 @@ mod tests {
         }
     }
 }
+
+// The windowing library (winit) can blur what's behind a window, with two
+// functions of macOS that Apple keeps to itself. A Tessel app never asks
+// for that, but the calls are in every app, and the Mac App Store refuses
+// an app that names them. These stand in their place: the calls come here,
+// nothing in the app asks the system for the real ones, and (they're
+// `private_extern`: known while linking, in no list afterwards) their
+// names aren't in the app either.
+#[cfg(target_os = "macos")]
+std::arch::global_asm!(
+    ".text",
+    ".p2align 2",
+    ".private_extern _CGSMainConnectionID",
+    ".globl _CGSMainConnectionID",
+    "_CGSMainConnectionID:",
+    ".private_extern _CGSSetWindowBackgroundBlurRadius",
+    ".globl _CGSSetWindowBackgroundBlurRadius",
+    "_CGSSetWindowBackgroundBlurRadius:",
+    // (Both give 0: no connection, and no error.)
+    #[cfg(target_arch = "aarch64")]
+    "mov x0, #0",
+    #[cfg(target_arch = "x86_64")]
+    "xor eax, eax",
+    "ret",
+);
