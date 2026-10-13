@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.5.0
+
+*October 13, 2026*
+
+- **Android: where the phone is.** After
+  [`requestPermission(.location)`](/reference/stdlib/#requestpermission)
+  shows Android's question and `startLocation()` starts listening,
+  [`location()`](/reference/stdlib/#location) gives the latitude,
+  longitude, altitude, accuracy, speed and course.
+- **Android: the satellites.** [`satellites()`](/reference/stdlib/#satellites)
+  lists every navigation satellite the phone hears: its system (GPS,
+  GLONASS, Galileo, BeiDou and the others), where it is in the sky, how
+  strong its signal is, and whether the phone's place is worked out from
+  it.
+- **Android: the compass.** [`heading()`](/reference/stdlib/#heading) says
+  which way the phone points, from magnetic north and from true north.
+- **Trying these on a computer.** `TESSEL_SENSORS=simulated` makes up a
+  place, a sky of satellites and a heading, to build an app's screens
+  without a phone. See [Where the phone is](/guides/android/#where-the-phone-is).
+
+Fixed:
+
+- On Windows, `tessel android doctor` never finished when another program
+  (the IDE, a script) read its output.
+
 ## 0.4.0
 
 *October 12, 2026*

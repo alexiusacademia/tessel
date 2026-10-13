@@ -3,7 +3,7 @@ title: Status and roadmap
 description: What works in Tessel today, its known limitations, and what is planned next.
 ---
 
-Tessel is at version 0.4. It's young: the core of the language and its UI
+Tessel is at version 0.5. It's young: the core of the language and its UI
 toolkit work, and they're enough to write real apps (the
 [Tessel IDE](/start/ide/) is one), but plenty is missing, and details of the
 language may still change. This page is an honest list of where things stand.
@@ -25,7 +25,8 @@ its first releases came so quickly. The dates on
 - **Platforms:** macOS (11 and later) and Windows. Both are built and tested
   on every change. Apps can also be built for
   [Android](/guides/android/) (11 and later), which is newer and has so far
-  been tried only on an emulator. There's no Linux or iOS support yet.
+  been tried only on an emulator; there an app can read the phone's
+  location, satellites and compass. There's no Linux or iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
   `CodeEditor` with syntax colors, `Divider`, over 100 built-in icons, SVG,

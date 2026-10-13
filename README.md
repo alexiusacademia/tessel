@@ -22,7 +22,7 @@ single executable that needs nothing else installed.
 
 **Documentation, tutorials and reference: <https://tessel-lang.syncster.dev>**
 
-Tessel is young (version 0.4). It's enough to write real apps (the Tessel
+Tessel is young (version 0.5). It's enough to write real apps (the Tessel
 IDE is one), but plenty is missing and details of the language may still
 change. [Status and roadmap](https://tessel-lang.syncster.dev/about/roadmap/)
 is an honest list of where things stand.
