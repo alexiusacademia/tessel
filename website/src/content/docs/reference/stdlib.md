@@ -1906,6 +1906,166 @@ app Watcher {
 }
 ```
 
+## Location, satellites and the compass
+
+Where the device is, the navigation satellites it hears, and which way it
+points. These work in apps built [for Android](/guides/android/#where-the-phone-is).
+On a computer nothing is allowed and nothing is known (every function
+below gives `false`, `nil` or an empty list), unless you
+[simulate a device](/guides/android/#trying-it-on-a-computer).
+
+The device is listened to between `startLocation()` and `stopLocation()`
+(and `startCompass()` and `stopCompass()`); in between, `location()`,
+`satellites()` and `heading()` give the latest that was heard. Read them
+when you need them, or in a timer:
+
+```tessel
+app Where {
+    state place = "Not known yet"
+
+    VStack(spacing: 12) {
+        Text(place)
+        Button("Find me") {
+            if await requestPermission(.location) {
+                startLocation()
+            }
+        }
+    }
+    .onAppear {
+        every(seconds: 1) {
+            if let l = location() {
+                place = "{l.latitude.formatted(5)}, {l.longitude.formatted(5)}"
+            }
+        }
+    }
+}
+```
+
+### requestPermission
+
+```text
+async requestPermission(_ permission: Permission) -> Bool
+hasPermission(_ permission: Permission) -> Bool
+```
+
+`requestPermission` asks the user to allow something, and waits for the
+answer: `true` if they did. If they've already answered, it says what they
+said without asking again (Android stops asking after the second refusal).
+`hasPermission` only looks.
+
+`Permission` is `.location` (where the device is, as exactly as it can
+tell) or `.approximateLocation` (to within a few kilometers). When asked for
+`.location`, the user may grant only the approximate one: then
+`requestPermission(.location)` is `false`, and
+`hasPermission(.approximateLocation)` is `true`.
+
+Like every `async` function, it's called with `await`, or with a block that
+gets the answer:
+
+```tessel
+requestPermission(.location) { allowed in
+    if allowed { startLocation() }
+}
+```
+
+Ask when the user does something that needs it, like pressing a button, so
+they know why they're asked.
+
+### startLocation
+
+```text
+startLocation(precise: Bool = true, interval: Float = 1) -> Bool
+stopLocation()
+```
+
+Starts listening for where the device is, about every `interval` seconds.
+It returns `false` if the user hasn't allowed it (see
+[`requestPermission`](#requestpermission)) or the device can't tell.
+
+- With `precise:` (and the `.location` permission) the satellites are
+  used. Without it, only the phone network and Wi-Fi, which use less
+  battery and are rougher.
+- Listening pauses while the app isn't in front, and goes on when it is
+  again.
+- `stopLocation()` stops it; `location()` is `nil` and `satellites()`
+  empty again.
+
+### location
+
+```text
+location() -> Location?
+```
+
+Where the device was last heard to be, or `nil` before the first answer
+(which can take a while outdoors, and may never come indoors). A `Location`
+has:
+
+| Field | |
+|---|---|
+| `latitude: Float` | Degrees north of the equator; south is negative. |
+| `longitude: Float` | Degrees east of Greenwich; west is negative. |
+| `altitude: Float?` | Meters above the WGS 84 ellipsoid, which is not quite sea level. |
+| `accuracy: Float?` | How far off the place may be, in meters. |
+| `altitudeAccuracy: Float?` | How far off the altitude may be, in meters. |
+| `speed: Float?` | Meters a second. |
+| `course: Float?` | The direction of movement, in degrees clockwise from north. |
+| `time: Float` | When the device was there (see [`now`](#now)). The first answer can be an old one: the last place the phone knew. |
+| `source: String` | `"satellites"`, `"network"` or `"other"`. |
+
+What the device doesn't know is `nil`.
+
+### satellites
+
+```text
+satellites() -> [Satellite]
+```
+
+The navigation satellites the device hears, after
+[`startLocation`](#startlocation) with the `.location` permission. Empty
+until the receiver reports. Each `Satellite` has:
+
+| Field | |
+|---|---|
+| `system: String` | `"GPS"`, `"GLONASS"`, `"Galileo"`, `"BeiDou"`, `"QZSS"`, `"SBAS"`, `"NavIC"` or `"unknown"`. |
+| `number: Int` | Its number in its system. |
+| `azimuth: Float` | Where it is in the sky: degrees clockwise from north. |
+| `elevation: Float` | Degrees above the horizon (90 is overhead). |
+| `signal: Float` | How strongly it's heard: the carrier-to-noise density, in dB-Hz. 0 when it isn't heard. |
+| `used: Bool` | Whether the device's place is worked out from it. |
+| `hasEphemeris: Bool` | Whether the device knows its exact orbit. |
+| `hasAlmanac: Bool` | Whether the device knows its rough orbit. |
+| `frequency: Float?` | Of the signal, in MHz. A satellite heard on two frequencies is listed twice. |
+
+```tessel
+let used = satellites().filter { s in s.used }.count
+```
+
+### startCompass
+
+```text
+startCompass() -> Bool
+stopCompass()
+```
+
+Starts listening to the device's compass. `false` on a device without
+one. It needs no permission. Like the location, it pauses while the app
+isn't in front.
+
+### heading
+
+```text
+heading() -> Heading?
+```
+
+Which way the top of the screen points with the device lying flat, or `nil`
+before [`startCompass`](#startcompass) has a reading. A `Heading` has:
+
+| Field | |
+|---|---|
+| `magnetic: Float` | Degrees clockwise from magnetic north (where a compass needle points), from 0 up to 360. |
+| `geographic: Float?` | Degrees clockwise from the north of maps. It's worked out from where the device is, so it's `nil` until `location()` has an answer. |
+| `accuracy: Int` | How sure the compass is, from 0 (not at all: move the phone in a figure of 8) to 3. |
+
 ## Callbacks
 
 The functions below finish their work later: the network, timers and

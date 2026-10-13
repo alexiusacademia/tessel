@@ -1,0 +1,8 @@
+async fn main() {
+    let a = hasPermission(.camera) // error: `Permission` has no case `.camera`
+    requestPermission(.location) // error: wait for it with `await`
+    startLocation(true) // error: needs its label `precise:`
+    let c: Location = location() // error: expected `Location`
+    let d: Float = heading() // error: expected `Float`
+    let e: Int = satellites() // error: expected `Int`
+}

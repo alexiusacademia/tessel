@@ -20,6 +20,7 @@ mod codec;
 mod db;
 mod debug;
 mod dates;
+mod sensors;
 mod stack_guard;
 mod stdlib;
 pub mod ui;

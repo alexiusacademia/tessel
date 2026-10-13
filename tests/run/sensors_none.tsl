@@ -1,0 +1,14 @@
+// On a computer there's nothing to say where it is: nothing is allowed,
+// nothing starts, and nothing is known.
+
+async fn main() {
+    print(hasPermission(.location))
+    print(await requestPermission(.approximateLocation))
+    print(startLocation())
+    print(startCompass())
+    print(location() == nil)
+    print(satellites().isEmpty)
+    print(heading() == nil)
+    stopLocation()
+    stopCompass()
+}

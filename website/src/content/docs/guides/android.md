@@ -6,7 +6,8 @@ description: Turn a Tessel app into an Android package - what to install, tessel
 A Tessel app can be built as an Android app from the same code: the views,
 `state`, timers, `await` and the rest work as they do on a computer. This
 page covers what to install, how to build and try an app, how it behaves on
-a phone, and how to make the package Google Play takes.
+a phone, and how to make the package Google Play takes, and how to read the phone's
+location, satellites and compass.
 
 Android support is new. Read [What doesn't work yet](#what-doesnt-work-yet)
 before planning an app around it.
@@ -177,12 +178,82 @@ Design for a narrow screen: a row of five buttons that fits a desktop window
 doesn't fit a phone. `HStack`s that may be too wide can go in a `Scroll`, or
 be `VStack`s.
 
+## Where the phone is
+
+An app can ask where the phone is, which navigation satellites it hears,
+and which way it points:
+
+```tessel
+app Sky {
+    state sky: [Satellite] = []
+    state place = "Waiting for the satellites…"
+
+    VStack(spacing: 8) {
+        Text(place)
+        Text("{sky.filter { s in s.used }.count} of {sky.count} satellites used")
+        Button("Start") {
+            if await requestPermission(.location) {
+                startLocation()
+                startCompass()
+            }
+        }
+    }
+    .onAppear {
+        every(seconds: 1) {
+            sky = satellites()
+            if let l = location() {
+                place = "{l.latitude.formatted(5)}, {l.longitude.formatted(5)}"
+            }
+        }
+    }
+}
+```
+
+[Location, satellites and the compass](/reference/stdlib/#location-satellites-and-the-compass)
+has every function and field. What's particular to a phone:
+
+- **The permission.** [`requestPermission(.location)`](/reference/stdlib/#requestpermission)
+  shows Android's own question, where the user chooses between the precise
+  and the approximate place, and between this once and every time. A
+  package says what it may ask for: `tessel build --android` adds the
+  location permissions to an app that calls `startLocation`, and to no
+  other, so an app that doesn't use the location doesn't say it might.
+- **Only in front.** The phone is listened to while the app is on screen.
+  An app doesn't follow the phone from the background.
+- **The first answer** can take from a second to a minute outdoors, and
+  indoors the satellites may not be heard at all. Until then `location()`
+  gives the phone's last known place, if it has one: look at its `time`.
+- **The compass** needs no permission. Its `geographic` heading needs the
+  location, to know how far magnetic north is from true north there.
+- **On Google Play,** an app that asks for the location has to say why in
+  its listing and its privacy policy.
+
+### Trying it on a computer
+
+A computer has no satellites to hear, so there these functions give
+nothing. To build an app's screens without a phone, run it with
+`TESSEL_SENSORS=simulated`: permissions are granted when asked, the device
+is in one place and hears a dozen satellites that stay where they are.
+
+```sh
+TESSEL_SENSORS=simulated TESSEL_LOCATION=14.5995,120.9842,12 TESSEL_HEADING=45 tessel run sky.tsl
+```
+
+`TESSEL_LOCATION` is the latitude, longitude and altitude (Greenwich
+without it), and `TESSEL_HEADING` the compass heading in degrees.
+
+On the Android emulator, the location comes from its **Location** panel
+(or `adb emu geo fix <longitude> <latitude>`). Its satellites are made up:
+all at azimuth and elevation 0.
+
 ## What doesn't work yet
 
 - **Extra windows** (`Window`) and **printing** aren't available.
 - **Menu bars and ribbons** are drawn, but they're designed for a wide
   window and a mouse. On a phone, prefer buttons and context menus.
 - **Choosing a folder** (`chooseFolder`): see above.
+- **The location in the background**, and other sensors and permissions
+  (the camera, the microphone, notifications).
 - Everything here was tested on an emulator, building from macOS. A real
   phone, and building from Windows, haven't been tried.
 

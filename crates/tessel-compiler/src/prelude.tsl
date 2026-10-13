@@ -196,6 +196,150 @@ fn appInfo() -> AppInfo {
     AppInfo(name: f[0], id: f[1], version: f[2], build: f[3], description: f[4], author: f[5], copyright: f[6])
 }
 
+// ===== where the device is, its satellites and its compass =====
+
+/// What a program has to be allowed by the user before it can do it.
+enum Permission {
+    /// Knowing where the device is, as exactly as it can tell.
+    location
+    /// Knowing about where it is (to a few kilometers).
+    approximateLocation
+}
+
+fn __permissionKind(_ permission: Permission) -> Int {
+    match permission {
+        .location -> 0
+        .approximateLocation -> 1
+    }
+}
+
+/// Whether the user has allowed it.
+fn hasPermission(_ permission: Permission) -> Bool {
+    __permission(__permissionKind(permission), false) == 1
+}
+
+/// Asks the user to allow it, if they haven't said yet, and waits for the
+/// answer: whether they have.
+async fn requestPermission(_ permission: Permission) -> Bool {
+    let kind = __permissionKind(permission)
+    var answer = __permission(kind, true)
+    while answer == 2 {
+        await after(seconds: 0.1)
+        answer = __permission(kind, false)
+    }
+    answer == 1
+}
+
+fn __known(_ number: Float) -> Float? {
+    if number.isNaN {
+        return nil
+    }
+    number
+}
+
+/// Where the device is. Lengths are in meters.
+struct Location {
+    /// Degrees north of the equator (south is negative).
+    latitude: Float
+    /// Degrees east of Greenwich (west is negative).
+    longitude: Float
+    /// Above the WGS 84 ellipsoid, which isn't quite sea level.
+    altitude: Float?
+    /// How far off `latitude` and `longitude` may be.
+    accuracy: Float?
+    /// How far off `altitude` may be.
+    altitudeAccuracy: Float?
+    /// In meters a second.
+    speed: Float?
+    /// The direction it's moving in: degrees clockwise from north.
+    course: Float?
+    /// When it was there (see `now`).
+    time: Float
+    /// What told: "satellites", "network" or "other".
+    source: String
+}
+
+/// Where the device is, as last heard after `startLocation`; nil until
+/// then, and where that can't be known.
+fn location() -> Location? {
+    let l = __location()
+    if l.count < 9 {
+        return nil
+    }
+    let sources = ["satellites", "network", "other"]
+    Location(latitude: l[0], longitude: l[1], altitude: __known(l[2]), accuracy: __known(l[3]),
+             altitudeAccuracy: __known(l[7]), speed: __known(l[4]), course: __known(l[5]), time: l[6],
+             source: sources[Int(l[8]).clamped(min: 0, max: 2)])
+}
+
+/// A navigation satellite the device hears.
+struct Satellite {
+    /// Whose it is: "GPS", "GLONASS", "Galileo", "BeiDou", "QZSS", "SBAS",
+    /// "NavIC" or "unknown".
+    system: String
+    /// Its number in its system.
+    number: Int
+    /// Where it is in the sky: degrees clockwise from north…
+    azimuth: Float
+    /// …and degrees above the horizon.
+    elevation: Float
+    /// How strongly it's heard (C/N0, in dB-Hz); 0 when it isn't.
+    signal: Float
+    /// Whether it's one of those the device's place is worked out from.
+    used: Bool
+    /// Whether the device knows its exact orbit, and its rough one.
+    hasEphemeris: Bool
+    hasAlmanac: Bool
+    /// Of its signal, in MHz.
+    frequency: Float?
+}
+
+/// The satellites the device hears, after `startLocation` (which needs
+/// the `.location` permission for them).
+fn satellites() -> [Satellite] {
+    let s = __satellites()
+    let systems = ["unknown", "GPS", "SBAS", "GLONASS", "QZSS", "BeiDou", "Galileo", "NavIC"]
+    var all: [Satellite] = []
+    var at = 0
+    while at + 9 <= s.count {
+        let system = Int(s[at])
+        all.append(Satellite(system: if system >= 0 && system < systems.count { systems[system] } else { "unknown" },
+                             number: Int(s[at + 1]), azimuth: s[at + 2], elevation: s[at + 3], signal: s[at + 4],
+                             used: s[at + 5] != 0, hasEphemeris: s[at + 6] != 0, hasAlmanac: s[at + 7] != 0,
+                             frequency: __known(s[at + 8])))
+        at += 9
+    }
+    all
+}
+
+/// Which way the top of the device points, in degrees clockwise from north.
+struct Heading {
+    /// From where a compass needle points.
+    magnetic: Float
+    /// From the north of maps. Known only where the device is: nil until
+    /// `location()` has an answer.
+    geographic: Float?
+    /// How sure the compass is: 0 (not at all, wave the device in an 8) to 3.
+    accuracy: Int
+}
+
+/// Which way the device points, after `startCompass`; nil until it knows,
+/// and on a device without a compass.
+fn heading() -> Heading? {
+    let h = __heading()
+    if h.count < 3 {
+        return nil
+    }
+    var geographic: Float? = nil
+    if !h[1].isNaN {
+        var turned = h[0] + h[1]
+        if turned < 0 { turned += 360 }
+        if turned >= 360 { turned -= 360 }
+        geographic = turned
+    }
+    Heading(magnetic: h[0], geographic: geographic, accuracy: Int(h[2]))
+}
+
 // ===== databases =====
 
 /// A value in a database: what a column of a row holds, or a value given

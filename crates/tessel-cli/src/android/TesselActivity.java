@@ -3,8 +3,9 @@
 // The app itself is native code, which Android's NativeActivity loads and
 // draws for. This adds what only Java can reach: the on-screen keyboard as
 // a text editor would use it (words being composed, corrections, emoji),
-// the system's dialogs, file chooser and clipboard, and word of the
-// system's bars and keyboard moving. `tessel build --android` compiles it into the package.
+// the system's dialogs, file chooser and clipboard, word of the system's
+// bars and keyboard moving, and where the phone is, the satellites it
+// hears and which way it points. `tessel build --android` compiles it into the package.
 package dev.tessel;
 
 import android.app.AlertDialog;
@@ -15,15 +16,27 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.location.GnssStatus;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
 import android.text.SpannableStringBuilder;
 import android.view.KeyEvent;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.ViewGroup;
@@ -98,7 +111,15 @@ public class TesselActivity extends NativeActivity {
     @Override
     protected void onPause() {
         closeDialog();
+        // (Nothing listens while the app isn't in front: it would only use the battery.)
+        unlisten();
         super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        listen();
     }
 
     @Override
@@ -447,6 +468,301 @@ public class TesselActivity extends NativeActivity {
     }
 
     /** A dialog's answer, which the app's thread waits for. */
+    // ===== permissions, places, satellites and the compass =====
+    //
+    // The app asks for these when it wants them (from its own thread): the
+    // system tells the listeners here, on the main thread, and the latest
+    // of each is kept for the app to read.
+
+    private static final int PERMISSION = 7002;
+    private static final String PRECISE = "android.permission.ACCESS_FINE_LOCATION";
+    private static final String ROUGH = "android.permission.ACCESS_COARSE_LOCATION";
+
+    // Whether the user is being asked.
+    private volatile boolean asking;
+    // What the app has started, and how.
+    private volatile boolean locating, preciseWanted, pointing;
+    private volatile long everyMillis = 1000;
+    // Whether the system is being listened to.
+    private boolean listening;
+    // The latest of each (see `location`, `satellites` and `heading`).
+    private volatile double[] place = new double[0];
+    private volatile double[] sky = new double[0];
+    private volatile double[] pointed = new double[0];
+    private volatile int sureness = 3;
+    // When the satellites last said where the phone is.
+    private long bySatellites;
+
+    private boolean may(String permission) {
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    // What the app may do of `kind` (0: know exactly where the phone is; 1:
+    // about where): 1 if it may, 0 if not, 2 while the user is being asked.
+    // With `ask`, the user is asked if they haven't said. (A permission the
+    // package doesn't declare is refused without a question.)
+    public int permission(final int kind, boolean ask) {
+        if (may(PRECISE) || kind == 1 && may(ROUGH)) {
+            return 1;
+        }
+        if (asking) {
+            return 2;
+        }
+        if (!ask) {
+            return 0;
+        }
+        asking = true;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    requestPermissions(kind == 1 ? new String[] {ROUGH} : new String[] {PRECISE, ROUGH}, PERMISSION);
+                } catch (RuntimeException e) {
+                    asking = false;
+                }
+            }
+        });
+        return 2;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        if (request == PERMISSION) {
+            asking = false;
+            listen();
+        }
+    }
+
+    private final LocationListener placeListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location l) {
+            boolean satellites = LocationManager.GPS_PROVIDER.equals(l.getProvider());
+            long now = System.currentTimeMillis();
+            // (While the satellites say where the phone is, the network's
+            // rougher guesses aren't taken in their place.)
+            if (satellites) {
+                bySatellites = now;
+            } else if (now - bySatellites < Math.max(10000, 3 * everyMillis)) {
+                return;
+            }
+            double source = satellites ? 0 : LocationManager.NETWORK_PROVIDER.equals(l.getProvider()) ? 1 : 2;
+            place = new double[] {
+                l.getLatitude(),
+                l.getLongitude(),
+                l.hasAltitude() ? l.getAltitude() : Double.NaN,
+                l.hasAccuracy() ? l.getAccuracy() : Double.NaN,
+                l.hasSpeed() ? l.getSpeed() : Double.NaN,
+                l.hasBearing() ? l.getBearing() : Double.NaN,
+                l.getTime() / 1000.0,
+                l.hasVerticalAccuracy() ? l.getVerticalAccuracyMeters() : Double.NaN,
+                source,
+            };
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {}
+
+        @Override
+        public void onProviderDisabled(String provider) {}
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {}
+    };
+
+    private final GnssStatus.Callback skyListener = new GnssStatus.Callback() {
+        @Override
+        public void onSatelliteStatusChanged(GnssStatus status) {
+            int count = status.getSatelliteCount();
+            double[] all = new double[count * 9];
+            for (int i = 0; i < count; i++) {
+                int at = i * 9;
+                all[at] = status.getConstellationType(i);
+                all[at + 1] = status.getSvid(i);
+                all[at + 2] = status.getAzimuthDegrees(i);
+                all[at + 3] = status.getElevationDegrees(i);
+                all[at + 4] = status.getCn0DbHz(i);
+                all[at + 5] = status.usedInFix(i) ? 1 : 0;
+                all[at + 6] = status.hasEphemerisData(i) ? 1 : 0;
+                all[at + 7] = status.hasAlmanacData(i) ? 1 : 0;
+                all[at + 8] = status.hasCarrierFrequencyHz(i) ? status.getCarrierFrequencyHz(i) / 1e6 : Double.NaN;
+            }
+            sky = all;
+        }
+
+        @Override
+        public void onStopped() {
+            sky = new double[0];
+        }
+    };
+
+    private final SensorEventListener compassListener = new SensorEventListener() {
+        private final float[] turned = new float[9];
+        private final float[] upright = new float[9];
+        private final float[] angles = new float[3];
+
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            SensorManager.getRotationMatrixFromVector(turned, event.values);
+            // (The top of the screen as it's held, not of the phone.)
+            int x = SensorManager.AXIS_X, y = SensorManager.AXIS_Y;
+            switch (getDisplay() == null ? Surface.ROTATION_0 : getDisplay().getRotation()) {
+                case Surface.ROTATION_90:
+                    x = SensorManager.AXIS_Y;
+                    y = SensorManager.AXIS_MINUS_X;
+                    break;
+                case Surface.ROTATION_180:
+                    x = SensorManager.AXIS_MINUS_X;
+                    y = SensorManager.AXIS_MINUS_Y;
+                    break;
+                case Surface.ROTATION_270:
+                    x = SensorManager.AXIS_MINUS_Y;
+                    y = SensorManager.AXIS_X;
+                    break;
+                default:
+            }
+            SensorManager.remapCoordinateSystem(turned, x, y, upright);
+            SensorManager.getOrientation(upright, angles);
+            double degrees = Math.toDegrees(angles[0]);
+            pointed = new double[] {(degrees % 360 + 360) % 360};
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            sureness = accuracy;
+        }
+    };
+
+    // Listens to what the app has started (and may hear), from the main thread.
+    private void listen() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                stopListening();
+                listening = true;
+                if (locating && (may(PRECISE) || may(ROUGH))) {
+                    LocationManager places = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+                    boolean satellites = preciseWanted && may(PRECISE);
+                    try {
+                        Location known = null;
+                        for (String provider : places.getProviders(true)) {
+                            if (LocationManager.PASSIVE_PROVIDER.equals(provider) || LocationManager.GPS_PROVIDER.equals(provider) && !satellites) {
+                                continue;
+                            }
+                            places.requestLocationUpdates(provider, everyMillis, 0f, placeListener, Looper.getMainLooper());
+                            Location last = places.getLastKnownLocation(provider);
+                            if (last != null && (known == null || last.getTime() > known.getTime())) {
+                                known = last;
+                            }
+                        }
+                        // (Until the first word: where the phone last was.)
+                        if (place.length == 0 && known != null) {
+                            placeListener.onLocationChanged(known);
+                            bySatellites = 0;
+                        }
+                        if (may(PRECISE)) {
+                            places.registerGnssStatusCallback(getMainExecutor(), skyListener);
+                        }
+                    } catch (RuntimeException e) {
+                        // (A permission taken back meanwhile, or a provider that went.)
+                    }
+                }
+                if (pointing) {
+                    SensorManager sensors = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+                    Sensor compass = compassOf(sensors);
+                    if (compass != null) {
+                        sensors.registerListener(compassListener, compass, SensorManager.SENSOR_DELAY_UI);
+                    }
+                }
+            }
+        });
+    }
+
+    private void unlisten() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                stopListening();
+            }
+        });
+    }
+
+    private void stopListening() {
+        if (!listening) {
+            return;
+        }
+        listening = false;
+        LocationManager places = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        places.removeUpdates(placeListener);
+        places.unregisterGnssStatusCallback(skyListener);
+        ((SensorManager) getSystemService(Context.SENSOR_SERVICE)).unregisterListener(compassListener);
+    }
+
+    // The sensor that knows which way the phone points: the one that uses
+    // the gyroscope too, or the magnet's alone.
+    private static Sensor compassOf(SensorManager sensors) {
+        Sensor best = sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        return best != null ? best : sensors.getDefaultSensor(Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR);
+    }
+
+    public boolean locationStart(boolean precise, double interval) {
+        if (!may(PRECISE) && !may(ROUGH)) {
+            return false;
+        }
+        preciseWanted = precise;
+        everyMillis = Math.max(100, (long) (interval * 1000));
+        locating = true;
+        listen();
+        return true;
+    }
+
+    public boolean locationStop() {
+        locating = false;
+        place = new double[0];
+        sky = new double[0];
+        listen();
+        return true;
+    }
+
+    public double[] location() {
+        return locating ? place : new double[0];
+    }
+
+    public double[] satellites() {
+        return locating ? sky : new double[0];
+    }
+
+    public boolean compassStart() {
+        if (compassOf((SensorManager) getSystemService(Context.SENSOR_SERVICE)) == null) {
+            return false;
+        }
+        pointing = true;
+        listen();
+        return true;
+    }
+
+    public boolean compassStop() {
+        pointing = false;
+        pointed = new double[0];
+        listen();
+        return true;
+    }
+
+    // The heading from magnetic north, how far that is from true north
+    // where the phone is (not a number if that isn't known), and how sure
+    // the compass is (0 to 3).
+    public double[] heading() {
+        double[] now = pointed, where = place;
+        if (!pointing || now.length == 0) {
+            return new double[0];
+        }
+        double off = Double.NaN;
+        if (where.length >= 3) {
+            float height = Double.isNaN(where[2]) ? 0f : (float) where[2];
+            off = new GeomagneticField((float) where[0], (float) where[1], height, System.currentTimeMillis()).getDeclination();
+        }
+        return new double[] {now[0], off, sureness};
+    }
+
     private static final class Answer {
         private final CountDownLatch given = new CountDownLatch(1);
         private volatile boolean yes;

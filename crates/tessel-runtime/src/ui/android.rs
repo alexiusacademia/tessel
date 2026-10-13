@@ -344,6 +344,85 @@ pub fn pasted() -> Option<String> {
     })
 }
 
+// ===== permissions, places, satellites and the compass =====
+
+/// What the program may do of `kind` (0: know exactly where the device is;
+/// 1: about where): 1 if it may, 0 if not, 2 while the user is being
+/// asked. With `ask`, the user is asked if they haven't said.
+pub fn permission(kind: i32, ask: bool) -> i32 {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"permission", c"(IZ)I")?;
+        let args = [jni_sys::jvalue { i: kind }, jni_sys::jvalue { z: ask as u8 }];
+        Some(((**env).CallIntMethodA?)(env, activity, method, args.as_ptr()))
+    })
+    .unwrap_or(-1)
+}
+
+/// The numbers the activity's method `name` gives (`double[] name()`).
+fn numbers(name: &std::ffi::CStr) -> Vec<f64> {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, name, c"()[D")?;
+        let list = ((**env).CallObjectMethodA?)(env, activity, method, std::ptr::null());
+        if list.is_null() {
+            return None;
+        }
+        let count = ((**env).GetArrayLength?)(env, list);
+        let mut numbers = vec![0.0; count.max(0) as usize];
+        ((**env).GetDoubleArrayRegion?)(env, list, 0, count, numbers.as_mut_ptr());
+        Some(numbers)
+    })
+    .unwrap_or_default()
+}
+
+/// Calls the activity's `boolean name()`.
+fn does(name: &std::ffi::CStr) -> bool {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, name, c"()Z")?;
+        Some(((**env).CallBooleanMethodA?)(env, activity, method, std::ptr::null()) != 0)
+    })
+    .unwrap_or(false)
+}
+
+/// Starts listening for where the device is, and for its satellites.
+pub fn location_start(precise: bool, interval: f64) -> bool {
+    with_activity(|env, activity| unsafe {
+        let method = method(env, activity, c"locationStart", c"(ZD)Z")?;
+        let args = [jni_sys::jvalue { z: precise as u8 }, jni_sys::jvalue { d: interval }];
+        Some(((**env).CallBooleanMethodA?)(env, activity, method, args.as_ptr()) != 0)
+    })
+    .unwrap_or(false)
+}
+
+pub fn location_stop() {
+    does(c"locationStop");
+}
+
+/// Latitude, longitude, altitude, accuracy, speed, course, time and the
+/// altitude's accuracy (what isn't known is NaN); nothing before the first.
+pub fn location() -> Vec<f64> {
+    numbers(c"location")
+}
+
+/// For each satellite: its system, number, azimuth, elevation, signal,
+/// whether it's used, has its orbit and the almanac, and its frequency.
+pub fn satellites() -> Vec<f64> {
+    numbers(c"satellites")
+}
+
+pub fn compass_start() -> bool {
+    does(c"compassStart")
+}
+
+pub fn compass_stop() {
+    does(c"compassStop");
+}
+
+/// The heading from magnetic north, how far that is from true north (NaN
+/// if the place isn't known), and how sure the compass is (0 to 3).
+pub fn heading() -> Vec<f64> {
+    numbers(c"heading")
+}
+
 // ===== choosing files =====
 
 /// What the chooser is for.

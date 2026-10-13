@@ -56,6 +56,10 @@ fn run_programs() {
         }
         let mut cmd = Command::new(&exe);
         cmd.current_dir(repo()).env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"));
+        // `<name>.env`: what the program finds in its environment (`NAME=value` lines).
+        let env_file = std::fs::read_to_string(dir.join(format!("{name}.env"))).unwrap_or_default();
+        let env: Vec<(&str, &str)> = env_file.lines().filter_map(|l| l.trim().split_once('=')).collect();
+        cmd.envs(env.iter().copied());
         // UI apps run headless, driven by `<name>.script`.
         if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
             cmd.env("TESSEL_SCRIPT", script);
@@ -91,6 +95,7 @@ fn run_programs() {
         if cfg!(target_os = "macos") && expected_err.is_none() {
             let mut leaks = Command::new("leaks");
             leaks.args(["--atExit", "--"]).arg(&exe).current_dir(repo());
+            leaks.envs(env.iter().copied());
             if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
                 leaks.env("TESSEL_SCRIPT", script);
             }

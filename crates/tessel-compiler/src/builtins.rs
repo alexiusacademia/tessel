@@ -620,6 +620,17 @@ impl Builtins {
             },
             // For the prelude's `imageSize`.
             "__imageSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
+            // Where the device is, its satellites and its compass: the
+            // prelude makes values of the numbers (`location`, `satellites`,
+            // `heading`, `requestPermission`).
+            "__permission" => FnSig { params: vec![P::unlabeled("kind", Ty::Int), P::unlabeled("ask", Ty::Bool)], ret: Ty::Int },
+            "startLocation" => FnSig {
+                params: vec![P::new("precise", Ty::Bool).default(), P::new("interval", Ty::Float).default()],
+                ret: Ty::Bool,
+            },
+            "startCompass" => FnSig { params: vec![], ret: Ty::Bool },
+            "stopLocation" | "stopCompass" => FnSig { params: vec![], ret: Ty::Void },
+            "__location" | "__satellites" | "__heading" => FnSig { params: vec![], ret: Ty::list(Ty::Float) },
             // For the prelude's `appInfo`.
             "__appInfo" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             // For the prelude's `readImage`.
@@ -675,6 +686,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow", "dismiss", "showNotice",
+    "__permission", "startLocation", "stopLocation", "__location", "__satellites", "startCompass", "stopCompass", "__heading",
 ];
 
 /// A built-in method: its signature and whether it changes the receiver.
@@ -1209,6 +1221,14 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "undoTextEdit" => rt("tsl_undo_text_edit"),
         "redoTextEdit" => rt("tsl_redo_text_edit"),
         "quit" => rt("tsl_quit"),
+        "__permission" => rt("tsl_permission"),
+        "startLocation" => rt_d("tsl_location_start", &[Dflt::Bool(true), Dflt::Float(1.0)]),
+        "stopLocation" => rt("tsl_location_stop"),
+        "__location" => rt("tsl_location"),
+        "__satellites" => rt("tsl_satellites"),
+        "startCompass" => rt("tsl_compass_start"),
+        "stopCompass" => rt("tsl_compass_stop"),
+        "__heading" => rt("tsl_heading"),
         "closeWindow" => rt("tsl_close_window"),
         "dismiss" => rt("tsl_ui_dismiss"),
         "showNotice" => rt_d("tsl_ui_notice", &[Dflt::Req, Dflt::Float(2.5)]),

@@ -409,6 +409,21 @@ fn jdk_tool(java: &Path, name: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// The permissions a package has to declare for what its program does,
+/// as lines of the manifest. A program that calls `startLocation` may ask
+/// where the phone is; one that doesn't can't, and its users aren't told
+/// it might. (`program` is its compiled code, which names what it calls.)
+fn permissions(program: &[u8]) -> String {
+    let calls = |name: &str| program.windows(name.len()).any(|w| w == name.as_bytes());
+    let mut lines = String::new();
+    if calls("tsl_location_start") {
+        for name in ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"] {
+            lines += &format!("    <uses-permission android:name=\"android.permission.{name}\" />\n");
+        }
+    }
+    lines
+}
+
 /// An Android package name from an app's id: what Android allows (letters,
 /// digits and `_`, in at least two parts that start with a letter).
 fn package_name(id: &str) -> Result<String, String> {
@@ -523,7 +538,7 @@ fn package(
     package="{id}" android:versionCode="{code}" android:versionName="{version}">
     <uses-sdk android:minSdkVersion="{MIN_SDK}" android:targetSdkVersion="{target}" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="{label}" android:icon="@mipmap/icon" android:theme="@style/App" android:hasCode="true"
+{permissions}    <application android:label="{label}" android:icon="@mipmap/icon" android:theme="@style/App" android:hasCode="true"
         android:extractNativeLibs="true" android:enableOnBackInvokedCallback="false">
         <activity android:name="dev.tessel.TesselActivity" android:exported="true"
             android:windowSoftInputMode="adjustNothing"
@@ -538,6 +553,7 @@ fn package(
 </manifest>
 "#,
             id = xml(&id),
+            permissions = permissions(&std::fs::read(&obj).unwrap_or_default()),
             code = version_code(&version, info.build.as_deref()),
             version = xml(&version),
             label = xml(&name),
