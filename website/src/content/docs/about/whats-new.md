@@ -11,9 +11,9 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.5.0
+## 0.5.1
 
-*October 13, 2026*
+*October 13, 2026 · 0.5.0 and 0.5.1*
 
 - **Android: where the phone is.** After
   [`requestPermission(.location)`](/reference/stdlib/#requestpermission)
@@ -33,6 +33,9 @@ are listed together under its last version. See
 
 Fixed:
 
+- The Mac App Store refused apps built by Tessel: each named two
+  functions of macOS that Apple keeps to itself, which no Tessel app
+  used. They're gone from apps.
 - On Windows, `tessel android doctor` never finished when another program
   (the IDE, a script) read its output.
 
