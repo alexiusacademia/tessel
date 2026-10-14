@@ -440,6 +440,16 @@ impl Painter<'_> {
     }
 
     pub fn paint(&mut self, n: &Node) {
+        // A view that's scrolled out of sight isn't drawn (a long list is
+        // mostly that). Only one that's where layout put it: not while
+        // it or what it's in is moving, or shown somewhere else.
+        if let Some(clip) = self.clip {
+            let (r, near) = (n.layout.rect, 64.0);
+            let out = r.y > clip.y + clip.h + near || r.y + r.h < clip.y - near || r.x > clip.x + clip.w + near || r.x + r.w < clip.x - near;
+            if out && self.offset == (0.0, 0.0) && n.mods.offset == (0.0, 0.0) && self.ui.anim.shown(n.key).is_none() {
+                return;
+            }
+        }
         let from = self.scene.ops.len();
         self.paint_view(n);
         let animated = n.layout.style.animation;

@@ -8,7 +8,7 @@ license.workspace = true
 # The renderers: the GPU one (vello, wgpu and parley), and the system's
 # (`native`). Where the system's is on, apps use it; elsewhere the GPU's.
 default = ["gpu", "native"]
-gpu = ["dep:vello", "dep:vello_svg", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
+gpu = ["dep:vello", "dep:skrifa", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
 # The system's renderer: on macOS Core Graphics, Core Text and ImageIO (see
 # ui/mac); on Windows Direct2D, DirectWrite and WIC (see ui/win). They come
 # with the system, so apps carry none of them.
@@ -17,6 +17,8 @@ native = ["dep:windows", "dep:windows-numerics", "dep:windows-core"]
 [dependencies]
 parley = { version = "0.11", optional = true }
 pollster = { version = "1.0.1", optional = true }
+# Glyphs' outlines, for text in PDFs (vello and parley draw with it too).
+skrifa = { version = "0.44", optional = true }
 # Dates in the computer's time zone (formatDate, parseDate, date).
 # Reading Markdown, for the `Markdown` view.
 pulldown-cmark = { version = "0.13", default-features = false }
@@ -39,7 +41,6 @@ ureq = "3.4.2"
 tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
 # Without wgpu's default backends: each platform gets only its own (below).
 vello = { version = "0.10", default-features = false, features = ["wgpu"], optional = true }
-vello_svg = { version = "0.11", optional = true }
 # Reading SVG (both renderers), and the geometry drawings are made of.
 usvg = "0.48"
 kurbo = "0.13"

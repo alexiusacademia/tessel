@@ -61,6 +61,12 @@ pub trait Source {
     /// A picture's pixels: red, green, blue and opacity (not multiplied by
     /// it), row by row from the top; with its width and height.
     fn pixels(&self, picture: &Picture) -> Option<(u32, u32, Vec<u8>)>;
+    /// A layout as shapes, each with its color, for a renderer whose fonts
+    /// can't go into the file as they are (fonts that vary: one file for
+    /// every weight). The text is then drawn, and can't be selected.
+    fn outlines(&self, _layout: &TextLayout) -> Option<Vec<(BezPath, Rgba)>> {
+        None
+    }
 }
 
 /// Writes pages (each drawn in points, from its top left corner) as a PDF
@@ -610,6 +616,37 @@ impl PageWriter<'_, '_> {
     }
 
     fn text(&mut self, layout: &TextLayout, t: Affine, tint: Option<Rgba>, halo: Option<(Rgba, f64)>) {
+        if let Some(shapes) = self.doc.source.outlines(layout) {
+            self.content().save_state();
+            self.content().transform(matrix(t));
+            if let Some((color, width)) = halo {
+                let (r, g, b) = rgb(color);
+                let c = self.content();
+                c.set_stroke_rgb(r, g, b);
+                c.set_line_width(width as f32);
+                c.set_line_join(LineJoinStyle::RoundJoin);
+                for (shape, _) in &shapes {
+                    path_into(c, shape);
+                    c.stroke();
+                }
+            }
+            for (shape, color) in &shapes {
+                let color = tint.unwrap_or(*color);
+                if alpha(color) <= 0.0 {
+                    continue;
+                }
+                let (r, g, b) = rgb(color);
+                self.content().save_state();
+                self.set_state(alpha(color), 1.0, 0);
+                let c = self.content();
+                c.set_fill_rgb(r, g, b);
+                path_into(c, shape);
+                c.fill_nonzero();
+                c.restore_state();
+            }
+            self.content().restore_state();
+            return;
+        }
         let glyphs = self.doc.source.glyphs(layout);
         if glyphs.is_empty() {
             return;

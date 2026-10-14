@@ -246,6 +246,14 @@ On the Android emulator, the location comes from its **Location** panel
 (or `adb emu geo fix <longitude> <latitude>`). Its satellites are made up:
 all at azimuth and elevation 0.
 
+## PDFs
+
+[`writePDF`](/reference/stdlib/#writepdf) writes PDFs on a phone as it does
+on a computer, with one difference: the text is drawn as shapes, so it
+looks exactly as on screen but can't be selected or searched in the PDF.
+(A phone's fonts are of a kind that holds every weight in one file, which
+a PDF can't carry as it is.) Emoji in color are left out.
+
 ## What doesn't work yet
 
 - **Extra windows** (`Window`) and **printing** aren't available.
@@ -254,8 +262,12 @@ all at azimuth and elevation 0.
 - **Choosing a folder** (`chooseFolder`): see above.
 - **The location in the background**, and other sensors and permissions
   (the camera, the microphone, notifications).
-- Everything here was tested on an emulator, building from macOS. A real
-  phone, and building from Windows, haven't been tried.
+- **Speed on phones with a Mali graphics card** (most Android phones that
+  aren't Snapdragon ones). Their driver fails on one step of Tessel's
+  drawing, so part of each frame is worked out by the processor instead:
+  apps run, but a busy screen scrolls at 15 to 30 frames a second.
+- Apps have run on the emulator and on one phone (a Pixel 10a), built
+  from macOS. Building from Windows hasn't been tried.
 
 ## Publishing on Google Play
 

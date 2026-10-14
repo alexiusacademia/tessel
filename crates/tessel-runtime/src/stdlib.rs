@@ -396,13 +396,15 @@ pub extern "C" fn tsl_exit(code: i64) {
     std::process::exit(code as i32);
 }
 
-/// `platform()`: "macos" or "windows".
+/// `platform()`: "macos", "windows" or "android".
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_platform() -> *mut Str {
     str_new(if cfg!(windows) {
         "windows"
     } else if cfg!(target_os = "macos") {
         "macos"
+    } else if cfg!(target_os = "android") {
+        "android"
     } else {
         "linux"
     })

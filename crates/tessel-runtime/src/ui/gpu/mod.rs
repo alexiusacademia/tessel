@@ -25,8 +25,9 @@ use super::Rgba;
 /// A decoded picture, ready to draw.
 pub type ImageData = vello::peniko::ImageData;
 
-/// A parsed SVG, ready to draw.
-pub type SvgScene = Scene;
+/// A parsed SVG, ready to draw: a drawing like any other (so it's the same
+/// with every renderer, and goes into a PDF as shapes).
+pub type SvgScene = DrawList;
 
 fn color(c: Rgba) -> Color {
     Color::from_rgba8(c.0[0], c.0[1], c.0[2], c.0[3])
@@ -98,7 +99,7 @@ pub fn play(list: &DrawList, scene: &mut Scene, base: Affine) {
                 let brush = ImageBrush::new(picture.image.clone()).with_alpha(*alpha);
                 scene.draw_image(&brush, base * *transform);
             }
-            Op::Svg { svg, transform } => scene.append(&svg.scene, Some(base * *transform)),
+            Op::Svg { svg, transform } => play(&svg.scene, scene, base * *transform),
             Op::List { list, transform } => play(list, scene, base * *transform),
         }
     }
@@ -164,9 +165,7 @@ pub fn picture_from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Pictu
     })
 }
 
-pub fn svg_scene(tree: &usvg::Tree) -> SvgScene {
-    vello_svg::render_tree(tree)
-}
+pub use super::svg_list::svg_scene;
 
 // ===== picture files =====
 
@@ -196,11 +195,20 @@ pub fn image_size(path: &str) -> Option<(u32, u32)> {
 
 // ===== the screen =====
 
-fn renderer(device: &wgpu::Device) -> Renderer {
+/// ARM's graphics cards (Mali), by the number their maker has.
+const ARM: u32 = 0x13B5;
+
+fn renderer(dev: &vello::util::DeviceHandle) -> Renderer {
+    // The renderer does most of its work on the graphics card, in steps.
+    // On a Mali (most Android phones: a Pixel 10a's G715 was tried), one of
+    // them, `tile_alloc`, makes the driver give the card up, and nothing
+    // more can be drawn. There the steps before the last one are done by
+    // the processor instead: slower (some 20 to 70 ms a frame), but drawn.
+    let slow = dev.adapter().get_info().vendor == ARM;
     Renderer::new(
-        device,
+        &dev.device,
         RendererOptions {
-            use_cpu: false,
+            use_cpu: slow,
             antialiasing_support: AaSupport::area_only(),
             num_init_threads: NonZeroUsize::new(1),
             pipeline_cache: None,
@@ -239,7 +247,7 @@ impl Screen {
         play(list, &mut scene, Affine::translate(self.origin));
         let surface = &self.surface;
         let dev = &self.cx.devices[surface.dev_id];
-        let renderer = self.renderer.get_or_insert_with(|| renderer(&dev.device));
+        let renderer = self.renderer.get_or_insert_with(|| renderer(dev));
         let (w, h) = (surface.config.width, surface.config.height);
         let params = RenderParams { base_color: color(background), width: w, height: h, antialiasing_method: AaConfig::Area };
         if renderer.render_to_texture(&dev.device, &dev.queue, &scene, &surface.target_view, &params).is_err() {
@@ -302,7 +310,7 @@ fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene:
     let dev = pollster::block_on(cx.device(None)).expect("no GPU device");
     let handle = &cx.devices[dev];
     let (device, queue) = (&handle.device, &handle.queue);
-    let renderer = renderer.get_or_insert_with(|| self::renderer(device));
+    let renderer = renderer.get_or_insert_with(|| self::renderer(handle));
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("snapshot"),
         size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -345,7 +353,7 @@ fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene:
     pixels
 }
 
-/// PDFs aren't written with the GPU renderer yet: `writePDF` returns false.
-pub fn write_pdf(_path: &str, _title: &str, _width: f64, _height: f64, _pages: &[super::draw::DrawList]) -> bool {
-    false
+/// Writes pages as a PDF (see `ui::pdf`).
+pub fn write_pdf(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList]) -> bool {
+    super::pdf::write(path, title, width, height, pages, &text::PdfSource::default())
 }

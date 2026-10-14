@@ -2991,13 +2991,13 @@ dependencies = [
  "serde_json",
  "sha1 0.10.7",
  "sha2",
+ "skrifa",
  "subsetter",
  "ttf-parser",
  "tungstenite",
  "ureq",
  "usvg",
  "vello",
- "vello_svg",
  "wgpu",
  "windows",
  "windows-core",
@@ -3392,19 +3392,6 @@ dependencies = [
  "naga",
  "thiserror 2.0.21",
  "vello_encoding",
-]
-
-[[package]]
-name = "vello_svg"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76e121946d05c44dd71a767fcc462ff632baf30d05a3b9dfe4e655c1ac93ff06"
-dependencies = [
- "kurbo",
- "peniko",
- "thiserror 2.0.21",
- "usvg",
- "vello",
 ]
 
 [[package]]

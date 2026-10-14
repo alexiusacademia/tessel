@@ -43,10 +43,10 @@ pub(crate) use mac as backend;
 pub(crate) mod win;
 #[cfg(all(feature = "native", windows))]
 pub(crate) use win as backend;
-#[cfg(all(feature = "native", any(target_os = "macos", windows)))]
 mod svg_list;
-// Writing PDFs where the system has nothing to write them with (Windows).
-#[cfg(any(all(feature = "native", windows), test))]
+// Writing PDFs where the system has nothing to write them with (everywhere
+// but macOS).
+#[cfg(any(not(all(feature = "native", target_os = "macos")), test))]
 mod pdf;
 mod theme;
 

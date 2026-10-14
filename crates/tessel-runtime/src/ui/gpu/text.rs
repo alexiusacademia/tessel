@@ -13,8 +13,20 @@ use crate::ui::Rgba;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Paint(pub [u8; 4]);
 
-/// A layout as parley made it.
-pub type Shaped = parley::Layout<Paint>;
+/// A layout as parley made it, with the text it's of (which a PDF says
+/// its glyphs show).
+pub struct Shaped {
+    layout: parley::Layout<Paint>,
+    text: String,
+}
+
+impl std::ops::Deref for Shaped {
+    type Target = parley::Layout<Paint>;
+
+    fn deref(&self) -> &parley::Layout<Paint> {
+        &self.layout
+    }
+}
 
 /// Lays text out with parley. Each layout takes the fonts the system has.
 pub struct TextEngine {
@@ -205,6 +217,155 @@ fn finish(mut shaped: parley::Layout<Paint>, text: &str, max_w: Option<f64>, ali
         lines.push(Line { range: 0..0, top: 0.0, bottom: shaped.height() as f64, stops: vec![(0, 0.0)], end_x: 0.0 });
     }
     let advance = shaped.lines().map(|l| l.metrics().advance as f64).fold(shaped.width() as f64, f64::max);
-    TextLayout { width: shaped.width() as f64, advance, height: shaped.height() as f64, lines, len: text.len(), shaped }
+    let (width, height) = (shaped.width() as f64, shaped.height() as f64);
+    TextLayout { width, advance, height, lines, len: text.len(), shaped: Shaped { layout: shaped, text: text.to_string() } }
 }
 
+
+// ===== PDFs =====
+
+/// What `ui::pdf` asks of the renderer: the glyphs a layout is drawn with,
+/// the font files they're in, and pictures' pixels.
+#[derive(Default)]
+pub struct PdfSource {
+    /// Font files met so far, by where their bytes are and their index.
+    fonts: std::cell::RefCell<std::collections::HashMap<(u64, u32), std::rc::Rc<crate::ui::pdf::FontFile>>>,
+}
+
+impl crate::ui::pdf::Source for PdfSource {
+    fn glyphs(&self, layout: &TextLayout) -> Vec<crate::ui::pdf::PlacedGlyph> {
+        let mut out = Vec::new();
+        for line in layout.shaped.lines() {
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(run) = item else { continue };
+                let r = run.run();
+                let font = r.font();
+                let key = (font.data.id(), font.index);
+                let file = self
+                    .fonts
+                    .borrow_mut()
+                    .entry(key)
+                    .or_insert_with(|| {
+                        std::rc::Rc::new(crate::ui::pdf::FontFile {
+                            key: format!("{}:{}", key.0, key.1),
+                            data: std::rc::Rc::new(font.data.data().to_vec()),
+                            index: font.index,
+                        })
+                    })
+                    .clone();
+                // (A font with no italic of its own is slanted for one.)
+                let slant = r.synthesis().skew().map_or(0.0, |degrees| degrees.to_radians().tan());
+                // The text each glyph shows: the first glyph of a cluster
+                // gets its characters.
+                let mut shows = Vec::new();
+                for cluster in r.visual_clusters() {
+                    let text = layout.shaped.text.get(cluster.text_range()).unwrap_or_default();
+                    for (i, _) in cluster.glyphs().enumerate() {
+                        shows.push(if i == 0 { text } else { "" });
+                    }
+                }
+                let color = Rgba(run.style().brush.0);
+                for (i, g) in run.positioned_glyphs().enumerate() {
+                    out.push(crate::ui::pdf::PlacedGlyph {
+                        font: file.clone(),
+                        id: g.id as u16,
+                        size: r.font_size(),
+                        x: g.x,
+                        y: g.y,
+                        advance: g.advance,
+                        text: shows.get(i).copied().unwrap_or_default().trim_end_matches(['\n', '\r']).to_string(),
+                        color,
+                        slant,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// The fonts of a phone are mostly ones that vary (one file for every
+    /// weight and slant), which a PDF can't hold as they are: a layout that
+    /// uses one, or a font slanted or thickened to stand in for a style it
+    /// lacks, is drawn as its glyphs' shapes.
+    fn outlines(&self, layout: &TextLayout) -> Option<Vec<(kurbo::BezPath, Rgba)>> {
+        use skrifa::MetadataProvider;
+        let plain = layout.shaped.lines().flat_map(|l| l.items()).all(|item| match item {
+            PositionedLayoutItem::GlyphRun(run) => {
+                let r = run.run();
+                r.normalized_coords().iter().all(|c| *c == 0)
+                    && r.synthesis().skew().is_none()
+                    && !r.synthesis().embolden()
+                    && skrifa::FontRef::from_index(r.font().data.data(), r.font().index).is_ok_and(|f| f.axes().is_empty())
+            }
+            _ => true,
+        });
+        if plain {
+            return None;
+        }
+        let mut shapes = Vec::new();
+        for line in layout.shaped.lines() {
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(run) = item else { continue };
+                let r = run.run();
+                let Ok(font) = skrifa::FontRef::from_index(r.font().data.data(), r.font().index) else { continue };
+                let glyphs = font.outline_glyphs();
+                let coords: Vec<skrifa::instance::NormalizedCoord> =
+                    r.normalized_coords().iter().map(|c| skrifa::instance::NormalizedCoord::from_bits(*c)).collect();
+                let slant = r.synthesis().skew().map_or(0.0, |degrees| (degrees as f64).to_radians().tan());
+                let mut pen = Pen { path: kurbo::BezPath::new(), x: 0.0, y: 0.0, slant };
+                for g in run.positioned_glyphs() {
+                    let Some(glyph) = glyphs.get(skrifa::GlyphId::new(g.id as u32)) else { continue };
+                    (pen.x, pen.y) = (g.x as f64, g.y as f64);
+                    let how = skrifa::outline::DrawSettings::unhinted(skrifa::instance::Size::new(r.font_size()), skrifa::instance::LocationRef::new(&coords));
+                    let _ = glyph.draw(how, &mut pen);
+                }
+                if !pen.path.elements().is_empty() {
+                    shapes.push((pen.path, Rgba(run.style().brush.0)));
+                }
+            }
+        }
+        Some(shapes)
+    }
+
+    fn pixels(&self, picture: &crate::ui::image::Picture) -> Option<(u32, u32, Vec<u8>)> {
+        let image = &picture.image;
+        Some((image.width, image.height, image.data.data().to_vec()))
+    }
+}
+
+/// Takes a glyph's outline (which has y going up, from the glyph's origin)
+/// into a path of the layout's.
+struct Pen {
+    path: kurbo::BezPath,
+    x: f64,
+    y: f64,
+    slant: f64,
+}
+
+impl Pen {
+    fn at(&self, x: f32, y: f32) -> kurbo::Point {
+        kurbo::Point::new(self.x + x as f64 + self.slant * y as f64, self.y - y as f64)
+    }
+}
+
+impl skrifa::outline::OutlinePen for Pen {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.path.move_to(self.at(x, y));
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.path.line_to(self.at(x, y));
+    }
+
+    fn quad_to(&mut self, cx: f32, cy: f32, x: f32, y: f32) {
+        self.path.quad_to(self.at(cx, cy), self.at(x, y));
+    }
+
+    fn curve_to(&mut self, ax: f32, ay: f32, bx: f32, by: f32, x: f32, y: f32) {
+        self.path.curve_to(self.at(ax, ay), self.at(bx, by), self.at(x, y));
+    }
+
+    fn close(&mut self) {
+        self.path.close_path();
+    }
+}
