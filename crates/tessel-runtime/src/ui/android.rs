@@ -225,6 +225,8 @@ pub enum Typing {
     Secret,
     /// Code: no corrections.
     Code,
+    /// Text in lines: Enter starts a new one.
+    Lines,
 }
 
 /// Shows the on-screen keyboard for a field, or hides it. `field` numbers
@@ -237,6 +239,7 @@ pub fn keyboard(show: Option<Typing>, field: i32, text: Option<&Text>) {
         let kind = match show {
             Some(Typing::Secret) => 1,
             Some(Typing::Code) => 2,
+            Some(Typing::Lines) => 3,
             _ => 0,
         };
         let (start, end) = text.map_or((0, 0), |t| t.selection());

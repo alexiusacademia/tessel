@@ -882,6 +882,9 @@ public class TesselActivity extends NativeActivity {
             } else if (kind == 2) {
                 // Code: no corrections, no suggestions.
                 info.inputType |= InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            } else if (kind == 3) {
+                // Text in lines: the keyboard's Enter starts a new one.
+                info.inputType |= InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
             }
             // (The keyboard never covers the app with a field of its own.)
             info.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN;

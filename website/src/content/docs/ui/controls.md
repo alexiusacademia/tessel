@@ -72,6 +72,28 @@ the available width. Give it a `.frame(width:)` to make it a fixed size.
 Click a field to start editing it; a blue ring shows which field is being
 edited. Clicking somewhere else, or pressing Escape, stops editing.
 
+### Several lines
+
+`lines:` makes a field for longer text, a few lines high. The text wraps at
+the field's width, Enter starts a new line, and the field scrolls when the
+text is longer than it:
+
+```tessel
+app Notes(width: 360, height: 260) {
+    state notes = ""
+
+    VStack(spacing: 8) {
+        TextField("Notes", text: notes, lines: 5)
+        Text("{notes.count} characters")
+    }
+    .padding(16)
+}
+```
+
+In a field of several lines, Cmd+Enter (Ctrl+Enter on Windows) runs its
+`.onSubmit`, since Enter is taken. On Android the keyboard's Enter key
+starts a new line too.
+
 ### Submitting with Enter
 
 `.onSubmit { … }` runs a block when the user presses Enter in the field.

@@ -139,10 +139,10 @@ Button("Add one") {
 ## TextField
 
 ```text
-TextField(_ placeholder: String, text: bind String, secure: Bool = false)
+TextField(_ placeholder: String, text: bind String, secure: Bool = false, lines: Int = 1)
 ```
 
-A one-line text input. `text` is changed as the user types. The placeholder is
+A text input. `text` is changed as the user types. The placeholder is
 shown in gray while the text is empty.
 
 ```tessel
@@ -162,6 +162,12 @@ TextField("Password", text: password, secure: true)
   redo (Ctrl instead of Cmd on Windows).
 - A text field is flexible horizontally: it stretches to the width it's
   offered. It's at least 120 points wide when there's room.
+- `lines:` above 1 makes a field for text of several lines (notes, a
+  message): it's that many lines high, the text wraps at its width, and it
+  scrolls when there's more. There, **Enter** starts a new line, and
+  **Cmd+Enter** (Ctrl+Enter on Windows) runs `.onSubmit` and stops editing;
+  the up and down arrows move between lines. A `secure` field is always one
+  line.
 - [`.autofocus()`](/reference/modifiers/#autofocus) makes it start editing as
   soon as it appears.
 

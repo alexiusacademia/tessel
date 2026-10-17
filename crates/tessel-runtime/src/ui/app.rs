@@ -2125,6 +2125,12 @@ impl App {
                 let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
                 keep(sy, cy0, cy1, visible_h, layout.height());
             }
+            Kind::TextField { lines: 2.., .. } => {
+                let (cy0, cy1) = caret.map_or((0.0, 16.0), |c| (c.y0, c.y1));
+                let visible_h = (content.h - 12.0).max(1.0);
+                let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
+                keep(sy, cy0, cy1, visible_h, layout.height());
+            }
             _ => {
                 let caret_x = caret.map_or(0.0, |c| c.x0);
                 let visible = (node.layout.rect.w - 16.0).max(1.0);
@@ -2382,12 +2388,22 @@ impl App {
                 let sy = self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
                 (x0, y0, sx, sy)
             }
+            Kind::TextField { lines: 2.., .. } => {
+                let (x0, y0) = field_origin(node);
+                (x0, y0, 0.0, self.ui.scroll.get(&node.key).copied().unwrap_or(0.0))
+            }
             _ => {
                 let (x0, y0) = field_origin(node);
                 let sx = self.ui.editing.as_ref().filter(|e| e.key == node.key).map_or(0.0, |e| e.scroll);
                 (x0, y0, sx, 0.0)
             }
         }
+    }
+
+    /// Whether the text being edited is a text field of several lines.
+    fn editing_lines(&self) -> bool {
+        let key = self.ui.editing.as_ref().map(|e| e.key);
+        key.and_then(|k| self.node(k)).is_some_and(|n| matches!(n.kind, Kind::TextField { lines: 2.., .. }))
     }
 
     fn editing_code(&self) -> bool {
@@ -3403,7 +3419,7 @@ impl App {
         let current = read_string(text);
         let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
         let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
-        let multiline = matches!(node.kind, Kind::CodeEditor { .. });
+        let multiline = in_lines(&node.kind);
         // (What's typed in a secure field stays in it.)
         if matches!(node.kind, Kind::TextField { secure: true, .. }) && matches!(change, Edit::Copy | Edit::Cut) {
             return;
@@ -3627,6 +3643,12 @@ impl App {
                 self.undo(mods.shift);
                 return;
             }
+            // In a field of several lines, Enter is a new line (and
+            // Command-Enter, or Control-Enter, submits).
+            "enter" if !mods.primary && self.editing_lines() => {
+                self.edit(Edit::Insert("\n".into()));
+                return;
+            }
             "enter" | "escape" => {
                 let submit = (name == "enter")
                     .then(|| self.ui.editing.as_ref().and_then(|e| self.node(e.key)).and_then(|n| n.mods.on_submit.clone()))
@@ -3675,7 +3697,7 @@ impl App {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
-            inner.or(matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some(n.key))
+            inner.or((matches!(n.kind, Kind::Scroll) || in_lines(&n.kind)).then_some(n.key))
         }
         self.point_root(x, y).and_then(|t| find(t, x, y))
     }
@@ -3692,7 +3714,7 @@ impl App {
                 if n.mods.on_pointer.is_some() && !n.layout.style.disabled {
                     Some((n.key, true))
                 } else {
-                    matches!(n.kind, Kind::Scroll | Kind::CodeEditor { .. }).then_some((n.key, false))
+                    (matches!(n.kind, Kind::Scroll) || in_lines(&n.kind)).then_some((n.key, false))
                 }
             })
         }
@@ -3887,7 +3909,7 @@ impl App {
                 Kind::Group => "View".to_string(),
                 Kind::Text(s) => format!("Text {s:?}"),
                 Kind::Button { label, .. } => format!("Button {label:?}"),
-                Kind::TextField { text, placeholder, secure } => {
+                Kind::TextField { text, placeholder, secure, .. } => {
                     let composing = ui.composing_in(n.key).map(|(_, c)| format!(" composing {:?}", c.text)).unwrap_or_default();
                     let mut value = read_string(text);
                     if *secure {
@@ -5470,6 +5492,7 @@ impl WindowApp {
                 self.phone.reveal = key.is_some();
                 let typing = key.map(|key| match self.app.node(key).map(|n| &n.kind) {
                     Some(Kind::TextField { secure: true, .. }) => Typing::Secret,
+                    Some(Kind::TextField { lines: 2.., .. }) => Typing::Lines,
                     Some(Kind::CodeEditor { .. }) => Typing::Code,
                     _ => Typing::Text,
                 });
@@ -6047,6 +6070,12 @@ fn unshifted(c: char) -> (String, bool) {
 /// How many bytes two texts start with in common (at a character boundary).
 fn common_prefix(a: &str, b: &str) -> usize {
     a.char_indices().zip(b.chars()).find(|((_, x), y)| x != y).map_or(a.len().min(b.len()), |((i, _), _)| i)
+}
+
+/// Whether a view's text is edited in lines: a code editor, or a text field
+/// of several.
+fn in_lines(kind: &Kind) -> bool {
+    matches!(kind, Kind::CodeEditor { .. } | Kind::TextField { lines: 2.., .. })
 }
 
 fn editable_text(n: &Node) -> Option<&Callback> {

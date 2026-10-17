@@ -176,6 +176,7 @@ pub fn scroll_bars(n: &Node, ui: &Interaction) -> (Option<Bar>, Option<Bar>) {
     let down = ui.scroll.get(&n.key).copied().unwrap_or(0.0);
     match &n.kind {
         Kind::Scroll => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
+        Kind::TextField { lines: 2.., .. } => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
         Kind::CodeEditor { .. } => {
             let code = Rect { x: content.x + n.layout.gutter, w: (content.w - n.layout.gutter).max(0.0), ..content };
             let across = ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
@@ -538,6 +539,9 @@ impl Painter<'_> {
                     let t_scene = self.t();
                     self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
                     let scroll = editing.map_or(0.0, |e| e.scroll);
+                    // (Several lines scroll down, one line across.)
+                    let down = self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
+                    let (scroll, y0) = if matches!(n.kind, Kind::TextField { lines: 2.., .. }) { (0.0, y0 - down) } else { (scroll, y0) };
                     if let Some(e) = editing {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
@@ -559,6 +563,7 @@ impl Painter<'_> {
                         self.underline_composing(n, t, x0 - scroll, y0);
                     }
                     self.scene.pop();
+                    self.paint_scroll_bars(n);
                 }
             }
             Kind::Toggle { is_on, .. } => {
@@ -950,9 +955,13 @@ pub fn code_origin(n: &Node) -> (f64, f64) {
     (content.x + n.layout.gutter + CODE_PAD_X, content.y + CODE_PAD_Y)
 }
 
-/// Where a text field's text starts (before horizontal scrolling).
+/// Where a text field's text starts (before it's scrolled). A field of
+/// several lines has its text at the top; one of one line, in the middle.
 pub fn field_origin(n: &Node) -> (f64, f64) {
     let content = n.layout.rect.inset_by(n.mods.padding);
+    if matches!(n.kind, Kind::TextField { lines: 2.., .. }) {
+        return (content.x + 8.0, content.y + 6.0);
+    }
     let line_h = match (&n.layout.text, &n.layout.placeholder) {
         (Some(t), Some(p)) => p.height().max(t.height()),
         _ => 0.0,

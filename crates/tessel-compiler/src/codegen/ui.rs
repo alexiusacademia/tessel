@@ -580,7 +580,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     None => self.i8().const_zero().into(),
                 };
-                self.pass_closure("tsl_ui_text_field", &[label, secure], loc);
+                let lines = match a(3) {
+                    Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
+                    None => self.i64().const_int(1, false).into(),
+                };
+                self.pass_closure("tsl_ui_text_field", &[label, secure, lines], loc);
                 self.release(label, &Ty::Str);
             }
             "Toggle" => {

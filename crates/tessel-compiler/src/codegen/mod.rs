@@ -1529,7 +1529,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_fetch" => (vec![p, p, p], None),
             "tsl_ui_text" | "tsl_ui_image" => (vec![p], None),
             "tsl_ui_button" | "tsl_ui_toggle" => (vec![p, p, p], None),
-            "tsl_ui_text_field" => (vec![p, i8t, p, p], None),
+            "tsl_ui_text_field" => (vec![p, i8t, i, p, p], None),
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),

@@ -228,6 +228,7 @@ impl Builtins {
                 P::unlabeled("placeholder", Ty::Str),
                 P::new("text", Ty::Str).bind(),
                 P::new("secure", Ty::Bool).default(),
+                P::new("lines", Ty::Int).default(),
             ],
             "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
             "CodeEditor" => vec![

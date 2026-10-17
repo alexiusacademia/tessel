@@ -1,0 +1,18 @@
+Root
+  View
+    VStack
+      TextField "Title" = ""
+      TextField "Notes" = "A line long enough that it has to wrap onto the next line of the field\n!two\nthree"
+      Text "3 lines, sent 0"
+Root
+  View
+    VStack
+      TextField "Title" = ""
+      TextField "Notes" = "A line long enough that it has to wrap onto the next line of the field\n!two\nthree"
+      Text "3 lines, sent 1"
+Root
+  View
+    VStack
+      TextField "Title" = "One line"
+      TextField "Notes" = "A line long enough that it has to wrap onto the next line of the field\n!two\nthree"
+      Text "3 lines, sent 1"

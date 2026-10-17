@@ -189,6 +189,8 @@ enum Axis {
 
 const BUTTON_PAD: (f64, f64) = (14.0, 6.0);
 const FIELD_PAD: (f64, f64) = (8.0, 6.0);
+/// Room kept beside the text of a field of several lines, for its scroll bar.
+const LINES_BAR: f64 = 8.0;
 const SEGMENT_PAD: f64 = 12.0;
 const SWITCH: Size = Size { w: 38.0, h: 22.0 };
 const GROUP_SPACING: f64 = 8.0;
@@ -365,7 +367,23 @@ impl Layouter<'_> {
                 n.layout.text = Some(t);
                 size
             }
-            Kind::TextField { placeholder, text, secure } => {
+            Kind::TextField { placeholder, text, lines, .. } if *lines > 1 => {
+                // As wide as it's let be, and `lines` high; the text wraps
+                // inside (again when it's placed: `place`).
+                let value = self.shown_text(n.key, read_string(text));
+                let (placeholder, lines) = (placeholder.clone(), *lines);
+                let w = if avail.w.is_finite() { avail.w.max(60.0) } else { 240.0 };
+                let wrap = (w - 2.0 * FIELD_PAD.0 - LINES_BAR).max(1.0);
+                let ph = self.text_layout(&placeholder, style, Some(wrap));
+                let t = self.text_layout(&value, style, Some(wrap));
+                let line_h = self.text_layout("X", style, None).height();
+                n.layout.empty = value.is_empty();
+                n.layout.content_h = t.height() + 2.0 * FIELD_PAD.1;
+                n.layout.text = Some(t);
+                n.layout.placeholder = Some(ph);
+                Size { w, h: lines as f64 * line_h + 2.0 * FIELD_PAD.1 }
+            }
+            Kind::TextField { placeholder, text, secure, .. } => {
                 let value = self.shown_text(n.key, read_string(text));
                 let (placeholder, secure) = (placeholder.clone(), *secure);
                 let ph = self.text_layout(&placeholder, style, None);
@@ -814,6 +832,20 @@ impl Layouter<'_> {
                 let page = Rect { x: content.x, y: content.y + TAB_BAR, w: content.w, h: (content.h - TAB_BAR).max(0.0) };
                 if let Some(c) = n.children.get_mut(selected) {
                     self.place(c, page);
+                }
+            }
+            Kind::TextField { placeholder, text, lines, .. } if *lines > 1 => {
+                // The text wraps at the width the field was given.
+                let wrap = (content.w - 2.0 * FIELD_PAD.0 - LINES_BAR).max(1.0);
+                {
+                    let style = n.layout.style.clone();
+                    let style = &style;
+                    let value = self.shown_text(n.key, read_string(text));
+                    let placeholder = placeholder.clone();
+                    let t = self.text_layout(&value, style, Some(wrap));
+                    n.layout.content_h = t.height() + 2.0 * FIELD_PAD.1;
+                    n.layout.text = Some(t);
+                    n.layout.placeholder = Some(self.text_layout(&placeholder, style, Some(wrap)));
                 }
             }
             Kind::TextField { .. } => {

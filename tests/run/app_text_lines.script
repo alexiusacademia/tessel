@@ -1,0 +1,16 @@
+click "Notes"
+type "A line long enough that it has to wrap onto the next line of the field"
+key enter
+type "two"
+key enter
+type "three"
+key up
+key home
+type "!"
+tree
+key cmd+enter
+tree
+click "Title"
+type "One line"
+key enter
+tree

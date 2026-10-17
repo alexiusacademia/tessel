@@ -155,10 +155,17 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
             _ => Item { press: true, ..item(Role::Button, called(label)) },
         }),
         Kind::Toggle { label, is_on } => Some(Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) }),
-        Kind::TextField { placeholder, text, secure } => Some(Item {
+        Kind::TextField { placeholder, text, secure, lines } => Some(Item {
             value: if *secure { String::new() } else { read_string(text) },
             press: true,
-            ..item(if *secure { Role::Secret } else { Role::TextField }, called(placeholder))
+            ..item(
+                match (*secure, *lines > 1) {
+                    (true, _) => Role::Secret,
+                    (false, true) => Role::Editor,
+                    _ => Role::TextField,
+                },
+                called(placeholder),
+            )
         }),
         Kind::CodeEditor { text, .. } => {
             // (A screen reader is given a long text in parts it asks for;

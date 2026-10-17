@@ -1,0 +1,16 @@
+// A text field of several lines: the text wraps, Enter starts a new line,
+// arrows move between lines, and Cmd+Enter submits.
+
+app Notes(width: 360, height: 300) {
+    state notes = ""
+    state title = ""
+    state sent = 0
+
+    VStack(spacing: 10) {
+        TextField("Title", text: title)
+        TextField("Notes", text: notes, lines: 4)
+            .onSubmit { sent += 1 }
+        Text("{notes.lines().count} lines, sent {sent}")
+    }
+    .padding(16)
+}
