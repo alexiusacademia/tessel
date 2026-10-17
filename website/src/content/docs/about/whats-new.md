@@ -11,9 +11,9 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.6.0
+## 0.6.1
 
-*October 17, 2026*
+*October 17, 2026 · 0.6.0 and 0.6.1*
 
 - **Text fields of several lines.** `TextField("Notes", text: notes,
   lines: 5)` is five lines high: the text wraps, Enter starts a new line,
@@ -29,8 +29,9 @@ are listed together under its last version. See
 - **Android: PDFs.** `writePDF` writes PDFs on Android too. See
   [PDFs](/guides/android/#pdfs).
 - **Faster.** A function with `bind` parameters is about as fast to call
-  as a method when what it's given is a variable or a field of one (it was
-  some 25 times slower), and views scrolled out of sight aren't drawn.
+  as a method when what it's given is a variable or a field of one, or (for
+  a function with one `bind`) an item of a list; it was some 15 to 25 times
+  slower. And views scrolled out of sight aren't drawn.
 - **Testing apps:** `click` and `hover` find a view by its
   `.accessibilityLabel` or `.tooltip`, for pictures with no text; and
   `keyup` lets a key go.
