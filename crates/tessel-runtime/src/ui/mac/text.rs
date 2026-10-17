@@ -536,6 +536,10 @@ pub fn glyphs(layout: &TextLayout) -> Vec<crate::ui::text::PlacedGlyph> {
                 CTRunGetAdvances(run, CFRange::new(0, 0), advances.as_mut_ptr());
                 CTRunGetStringIndices(run, CFRange::new(0, 0), indices.as_mut_ptr());
                 for i in 0..n {
+                    // (Core Text gives a line break a glyph of its own: it's none.)
+                    if matches!(layout.shaped.text.as_bytes().get(byte(indices[i])), Some(b'\n' | b'\r')) {
+                        continue;
+                    }
                     at.push(byte(indices[i]));
                     placed.push((l.x + positions[i].x, l.baseline - positions[i].y, advances[i].width));
                 }

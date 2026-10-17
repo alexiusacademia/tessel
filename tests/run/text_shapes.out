@@ -1,8 +1,8 @@
 o: 2 contours, starts with a move: true, closed: true
 nothing: 0
 two weights differ: true
-0-1 1-2 2-2 3-4 4-5
-second line lower: false, starts again at the left: false
+0-1 1-2 3-4 4-5
+second line lower: true, starts again at the left: true
 in order: true
 tracking adds 10: true
 kerning: true
