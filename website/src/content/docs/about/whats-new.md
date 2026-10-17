@@ -11,6 +11,32 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.7.0
+
+*October 18, 2026*
+
+- **Text as a shape.** [`g.textPath`](/reference/views/#graphics) adds the
+  outline of text to the path, to fill with a gradient, stroke or clip by,
+  and [`textOutline`](/reference/stdlib/#textoutline) gives it as path
+  commands to keep: the font's own curves, exactly where `g.text` draws
+  them. See [Text as a shape](/ui/drawing/#text-as-a-shape).
+- **Where each glyph goes.** [`textGlyphs`](/reference/stdlib/#textglyphs)
+  places each glyph as `g.text` does, after kerning and ligatures, with the
+  characters it shows: for text along a path, or a caret between letters.
+- **Font metrics.** [`fontMetrics`](/reference/stdlib/#fontmetrics) gives a
+  font's ascent, descent, line gap, cap height and x-height at a size.
+- **A family's faces.** [`fontStyles`](/reference/stdlib/#fontstyles)
+  lists them (Light, Medium, Condensed Black…) with their weights, for a
+  style picker; and [`Weight`](/reference/colors/#weight) has `thin`,
+  `ultraLight`, `light`, `heavy` and `black`.
+- **Kerning and tracking.** `g.text` and `g.textWidth` take `kerning:` and
+  `tracking:`.
+
+Fixed:
+
+- Lists of numbers that Tessel's own functions give compared as equal
+  whatever was in them.
+
 ## 0.6.1
 
 *October 17, 2026 · 0.6.0 and 0.6.1*
