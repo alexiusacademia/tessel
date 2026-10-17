@@ -156,7 +156,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             .cloned()
             .collect();
         let place = |v: &Var<'ctx>| match v.store {
-            Store::Slot(p) | Store::Boxed(p) | Store::EnvValue(p) | Store::EnvBox(p) => p.as_value_ref() as usize,
+            Store::Slot(p) | Store::Boxed(p) | Store::EnvValue(p) | Store::EnvBox(p) | Store::Place(p) => p.as_value_ref() as usize,
             Store::ListElem { idx, .. } | Store::ListElemVia { idx, .. } => idx.as_value_ref() as usize,
             Store::Binding { slot, .. } => slot.as_value_ref() as usize,
             Store::State(i) | Store::Field(i) => i as usize,

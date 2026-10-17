@@ -1,0 +1,43 @@
+Menu "Easel"
+  MenuItem "About Easel"
+  MenuDivider
+  MenuItem "Settings…" cmd+,
+  MenuDivider
+  MenuItem "Hide Easel" cmd+h
+  MenuItem "Hide Others" cmd+alt+h
+  MenuItem "Show All"
+  MenuDivider
+  MenuItem "Quit Easel" cmd+q
+Menu "File"
+  MenuItem "Open…" cmd+o
+Menu "Edit"
+  MenuItem "Undo" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy" cmd+c
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All" cmd+a
+Menu "Window"
+  MenuItem "Minimize" cmd+m
+  MenuItem "Zoom"
+  MenuDivider
+  MenuItem "Close Window" cmd+w
+MenuBar (native) "Easel" "File" "Edit" "Window"
+Root
+  View
+    Text "settings"
+Menu "Easel"
+  MenuItem "Settings…" cmd+,
+  MenuDivider
+  MenuItem "Quit" cmd+q
+Menu "Edit"
+  MenuItem "Undo" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy" cmd+c
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All" cmd+a
+Menu "File"
+  MenuItem "Open…" cmd+o

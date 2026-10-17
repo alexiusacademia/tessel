@@ -1,0 +1,23 @@
+// `.onKeyEvent` hears keys let go too (`up`), and modifiers on their own:
+// for what's done while a key is held, like panning while Space is down.
+
+app Hold(width: 300, height: 200) {
+    state panning = false
+    state shift = false
+    state log: [String] = []
+
+    VStack {
+        Text(if panning { "panning" } else { "drawing" })
+        Text(if shift { "shift held" } else { "" })
+    }
+    .onKeyEvent(releases: true) { e in
+        log.append("{e.key} {if e.up { "up" } else if e.repeated { "repeat" } else { "down" }} shift={e.shift}")
+        print(log.last ?? "")
+        if e.key == "space" && !e.repeated {
+            panning = !e.up
+        }
+        if e.key == "shift" {
+            shift = !e.up
+        }
+    }
+}

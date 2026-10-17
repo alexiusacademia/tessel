@@ -265,6 +265,7 @@ struct with these fields:
 | `text` | `String` | What the key types (`"A"` for Shift+A), or `""` for a key that types nothing. |
 | `shift`, `alt`, `command`, `control` | `Bool` | Whether the key was held. `command` is Cmd on macOS and Ctrl on Windows and Linux; `control` is the Ctrl key on every system; `alt` is Option on macOS. |
 | `repeated` | `Bool` | True for the presses a key held down sends after the first one. |
+| `up` | `Bool` | True when the key was let go. Only with [`.onKeyEvent(releases: true)`](/reference/modifiers/#onkeyevent). |
 
 ```tessel
 .onKeyEvent { e in

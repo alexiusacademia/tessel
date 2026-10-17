@@ -1,0 +1,6 @@
+click "Brush"
+tree
+click "Eraser"
+click "Color"
+hover "Brush"
+tree

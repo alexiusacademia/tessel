@@ -397,7 +397,7 @@ VStack {
 ## onKeyEvent
 
 ```text
-.onKeyEvent(_ action: fn(KeyEvent))
+.onKeyEvent(releases: Bool = false, _ action: fn(KeyEvent))
 ```
 
 Like [`onKey`](#onkey), with the modifier keys held: runs `action` with a
@@ -433,6 +433,18 @@ Canvas { g in drawMap(g) }
   were held. `command` is Cmd on macOS and Ctrl on Windows and Linux (the
   key shortcuts use); `control` is the Ctrl key itself, on every system.
 - `e.repeated` is true for the presses a key held down sends after the first.
+- With `releases: true`, `action` also runs when a key is let go (with
+  `e.up` true), and for the modifier keys pressed and let go on their own
+  (`e.key` is `"shift"`, `"alt"`, `"control"` or `"command"`). That's for
+  what's done while a key is held, like panning while Space is down:
+
+  ```tessel
+  .onKeyEvent(releases: true) { e in
+      if e.key == "space" && !e.repeated {
+          panning = !e.up
+      }
+  }
+  ```
 - [`shortcut`](#shortcut)s come first: a key with Cmd that a shortcut takes
   doesn't come here. Keys with Cmd that no shortcut takes do.
 - While a text field or code editor is being edited, keys go to it, not to

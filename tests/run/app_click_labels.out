@@ -1,0 +1,16 @@
+Root
+  View
+    VStack
+      HStack
+        Svg
+        Svg
+        Canvas (1 fill)
+      Text "brush, 0"
+Root
+  View
+    VStack
+      HStack
+        Svg
+        Svg
+        Canvas (1 fill)
+      Text "eraser, 1"

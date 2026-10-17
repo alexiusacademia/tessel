@@ -1,0 +1,22 @@
+space down shift=false
+space repeat shift=false
+Root
+  View
+    VStack
+      Text "panning"
+      Text ""
+space up shift=false
+Root
+  View
+    VStack
+      Text "drawing"
+      Text ""
+shift down shift=true
+a down shift=true
+shift up shift=false
+a up shift=false
+Root
+  View
+    VStack
+      Text "drawing"
+      Text ""

@@ -1,0 +1,21 @@
+// A test script finds any view by its accessibility label or its tooltip:
+// a toolbar of pictures has no text to find it by.
+
+let BRUSH = "<svg viewBox='0 0 10 10'><circle cx='5' cy='5' r='4'/></svg>"
+
+app Tools(width: 300, height: 200) {
+    state tool = "none"
+    state taps = 0
+
+    VStack(spacing: 8) {
+        HStack(spacing: 8) {
+            Svg(BRUSH).frame(width: 24, height: 24).accessibilityLabel("Brush").onTap { tool = "brush" }
+            Svg(BRUSH).frame(width: 24, height: 24).tooltip("Eraser").onTap { tool = "eraser" }
+            Canvas { g in g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .blue) }
+                .frame(width: 24, height: 24)
+                .accessibilityLabel("Color")
+                .onTap { taps += 1 }
+        }
+        Text("{tool}, {taps}")
+    }
+}

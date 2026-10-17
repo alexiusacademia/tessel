@@ -2990,20 +2990,24 @@ impl App {
 
     /// Runs `.onKeyEvent` with a key pressed while no text is edited: the
     /// first visible, enabled view with one gets it. Returns whether one did.
-    fn run_on_key_event(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) -> bool {
-        fn find(n: &Node) -> Option<Callback> {
+    fn run_on_key_event(&mut self, name: &str, text: &str, mods: Mods, repeated: bool, up: bool) -> bool {
+        fn find(n: &Node) -> Option<(Callback, bool)> {
             if n.mods.hidden || n.layout.style.disabled {
                 return None;
             }
             if let Some(cb) = &n.mods.on_key_event {
-                return Some(cb.clone());
+                return Some((cb.clone(), n.mods.key_releases));
             }
             n.visible_children().iter().find_map(find)
         }
         if name.is_empty() {
             return false;
         }
-        let Some(cb) = self.tree.as_ref().and_then(find) else { return false };
+        let Some((cb, releases)) = self.tree.as_ref().and_then(find) else { return false };
+        // (A key let go, or a modifier on its own, only where it's asked for.)
+        if (up || MODIFIER_KEYS.contains(&name)) && !releases {
+            return false;
+        }
         let mut event = super::KeyC {
             key: crate::str_new(name),
             text: crate::str_new(text),
@@ -3012,6 +3016,7 @@ impl App {
             command: mods.primary as u8,
             control: mods.control as u8,
             repeated: repeated as u8,
+            up: up as u8,
         };
         cb.call_with(&mut event as *mut super::KeyC as *mut u8);
         self.dirty = true;
@@ -3041,8 +3046,23 @@ impl App {
         true
     }
 
+    /// A key let go: only `.onKeyEvent` is told (while no text is edited),
+    /// for what's done while a key is held.
+    fn release_key(&mut self, name: &str, mods: Mods) {
+        if self.ui.editing.is_none() && self.menu.is_none() {
+            self.run_on_key_event(name, "", mods, false, true);
+        }
+    }
+
     fn press(&mut self, name: &str, text: &str, mods: Mods, repeated: bool) {
         use super::controls::{hex_field_text, parse_hex, HEX_FIELD, OPEN_PICKER};
+        // A modifier on its own (Shift, Alt…) only goes to `.onKeyEvent`.
+        if MODIFIER_KEYS.contains(&name) {
+            if self.ui.editing.is_none() && self.menu.is_none() {
+                self.run_on_key_event(name, "", mods, repeated, false);
+            }
+            return;
+        }
         let plain = !(mods.primary || mods.alt || mods.control);
         // Escape puts away what's being dragged, then an open palette.
         if name == "escape" && self.ui.dragging.is_some() {
@@ -3081,7 +3101,7 @@ impl App {
             if plain && self.control_key(name) {
                 return;
             }
-            if self.run_on_key_event(name, text, mods, repeated) {
+            if self.run_on_key_event(name, text, mods, repeated, false) {
                 return;
             }
         }
@@ -3780,7 +3800,9 @@ impl App {
 
     /// Center of the first view labelled `label`.
     fn find_label(&self, label: &str) -> Option<(f64, f64)> {
-        fn visit(n: &Node, label: &str) -> Option<(f64, f64)> {
+        // `named`: a view's accessibility label or tooltip counts too (only
+        // when no view says the label: those come first).
+        fn visit(n: &Node, label: &str, named: bool) -> Option<(f64, f64)> {
             if let Kind::TabView { .. } = n.kind {
                 for (i, tab) in n.layout.tabs.iter().enumerate() {
                     if n.children.get(i).and_then(|c| c.mods.tab_title.as_deref()) == Some(label) {
@@ -3788,7 +3810,7 @@ impl App {
                         return Some((r.x + r.w / 2.0 - 10.0, r.y + r.h / 2.0));
                     }
                 }
-                return n.children.get(n.selected_tab()).and_then(|c| visit(c, label));
+                return n.children.get(n.selected_tab()).and_then(|c| visit(c, label, named));
             }
             // A ribbon's tab by its title.
             if let (Kind::Ribbon { .. }, false) = (&n.kind, n.mods.hidden) {
@@ -3818,11 +3840,14 @@ impl App {
                 Kind::Swatch(c) => super::controls::hex(*c) == label,
                 _ => false,
             };
+            // Any view by what it's called to a screen reader, or by its
+            // tooltip (a toolbar of pictures has nothing else).
+            let matches = matches || named && (n.mods.access_label.as_deref() == Some(label) || n.mods.tooltip.as_deref() == Some(label));
             if matches && !n.mods.hidden {
                 let r = n.layout.rect;
                 return Some((r.x + r.w / 2.0, r.y + r.h / 2.0));
             }
-            n.visible_children().iter().find_map(|c| visit(c, label))
+            n.visible_children().iter().find_map(|c| visit(c, label, named))
         }
         // An open menu's items (the deepest menu first), then the drawn
         // menu bar's titles, then the views (the topmost popover's first).
@@ -3852,12 +3877,17 @@ impl App {
             }
         }
         let tree = self.tree.as_ref()?;
-        for p in self.popovers().into_iter().rev() {
-            if let Some(found) = visit(p, label) {
+        for named in [false, true] {
+            for p in self.popovers().into_iter().rev() {
+                if let Some(found) = visit(p, label, named) {
+                    return Some(found);
+                }
+            }
+            if let Some(found) = visit(tree, label, named) {
                 return Some(found);
             }
         }
-        visit(tree, label)
+        None
     }
 
     /// Center of the close button of the tab titled `title`.
@@ -4458,6 +4488,21 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
             }
+            "keyup" => {
+                let mut mods = Mods::default();
+                let mut name = rest;
+                while let Some((m, tail)) = name.split_once('+').filter(|(_, tail)| !tail.is_empty()) {
+                    match m {
+                        "shift" => mods.shift = true,
+                        "alt" => mods.alt = true,
+                        "cmd" | "ctrl" => mods.primary = true,
+                        "control" => mods.control = true,
+                        _ => {}
+                    }
+                    name = tail;
+                }
+                app.release_key(name, mods);
+            }
             "key" => {
                 let mut mods = Mods::default();
                 let mut repeated = false;
@@ -4472,6 +4517,14 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                         _ => {}
                     }
                     name = tail;
+                }
+                // A modifier pressed on its own is held down.
+                match name {
+                    "shift" => mods.shift = true,
+                    "alt" => mods.alt = true,
+                    "control" => mods.control = true,
+                    "command" => mods.primary = true,
+                    _ => {}
                 }
                 // What the key types: a character (shifted with Shift, as on
                 // a US keyboard), or a space.
@@ -5920,10 +5973,31 @@ impl ApplicationHandler for WindowApp {
                 }
                 self.request_all();
             }
-            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+            WindowEvent::KeyboardInput { event, .. } => {
                 let Some(name) = key_name(&event) else { return };
-                let text = event.text.as_deref().unwrap_or("").to_string();
-                self.app.press(&name, &text, self.mods, event.repeat);
+                // (A modifier's own press or release says how it is now,
+                // whichever of it and the change of modifiers comes first.)
+                let mut mods = self.mods;
+                let down = event.state == ElementState::Pressed;
+                let mac = cfg!(target_os = "macos");
+                match name.as_str() {
+                    "shift" => mods.shift = down,
+                    "alt" => mods.alt = down,
+                    "control" => {
+                        mods.control = down;
+                        if !mac {
+                            mods.primary = down;
+                        }
+                    }
+                    "command" if mac => mods.primary = down,
+                    _ => {}
+                }
+                if down {
+                    let text = event.text.as_deref().unwrap_or("").to_string();
+                    self.app.press(&name, &text, mods, event.repeat);
+                } else {
+                    self.app.release_key(&name, mods);
+                }
                 self.request_redraw();
             }
             _ => {}
@@ -5982,6 +6056,9 @@ impl ApplicationHandler for WindowApp {
 /// A key's name, as `.onKeyEvent` and the script's `key` command name it:
 /// the key without the modifiers (`"a"` for Shift+A, `"1"` for Shift+1),
 /// or a special key's name. `None` for keys that are only modifiers.
+/// Keys that only change what other keys do.
+const MODIFIER_KEYS: [&str; 4] = ["shift", "alt", "control", "command"];
+
 fn key_name(event: &KeyEvent) -> Option<String> {
     let named = |k: &NamedKey| -> Option<String> {
         Some(
@@ -6000,6 +6077,10 @@ fn key_name(event: &KeyEvent) -> Option<String> {
                 NamedKey::Escape => "escape",
                 NamedKey::Tab => "tab",
                 NamedKey::Space => "space",
+                NamedKey::Shift => "shift",
+                NamedKey::Alt => "alt",
+                NamedKey::Control => "control",
+                NamedKey::Super | NamedKey::Meta => "command",
                 NamedKey::Insert => "insert",
                 NamedKey::F1 => "f1",
                 NamedKey::F2 => "f2",

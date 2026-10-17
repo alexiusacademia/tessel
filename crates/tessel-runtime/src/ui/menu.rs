@@ -281,6 +281,16 @@ pub fn bar(user: Option<&Node>, app_name: &str, native: bool, shortcut_keys: &[S
             }
         }
     };
+    // On macOS, a menu of the app's named after it is the app menu (below):
+    // its items go after About (Settings…, say), and one of its own called
+    // About… takes the standard one's place.
+    let own = match menus.iter().position(|m| native && m.label() == app_name) {
+        Some(i) => match menus.remove(i) {
+            Entry::Sub { items, .. } => items,
+            _ => Vec::new(),
+        },
+        None => Vec::new(),
+    };
     if user.is_some() || native {
         merge(&mut menus, "Edit", edit, 1);
     }
@@ -293,15 +303,22 @@ pub fn bar(user: Option<&Node>, app_name: &str, native: bool, shortcut_keys: &[S
         ];
         let help = menus.iter().position(|m| m.label() == "Help").unwrap_or(menus.len());
         merge(&mut menus, "Window", window, help);
-        let app = vec![
-            std(&format!("About {app_name}"), "", Std::About),
-            Entry::Divider,
+        let own_about = own.iter().any(|e| matches!(e, Entry::Item { .. }) && e.label().starts_with("About"));
+        let mut app = Vec::new();
+        if !own_about {
+            app.extend([std(&format!("About {app_name}"), "", Std::About), Entry::Divider]);
+        }
+        if !own.is_empty() {
+            app.extend(own);
+            app.push(Entry::Divider);
+        }
+        app.extend([
             std(&format!("Hide {app_name}"), "cmd+h", Std::Hide),
             std("Hide Others", "cmd+alt+h", Std::HideOthers),
             std("Show All", "", Std::ShowAll),
             Entry::Divider,
             std(&format!("Quit {app_name}"), "cmd+q", Std::Quit),
-        ];
+        ]);
         menus.insert(0, Entry::Sub { title: app_name.into(), enabled: true, items: app });
     } else if let Some(Entry::Sub { items, .. }) = menus.first_mut() {
         if !items.is_empty() {

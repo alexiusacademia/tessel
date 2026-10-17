@@ -1,0 +1,6 @@
+menubar native
+menus
+menu "Easel" "Settings…"
+tree
+menubar drawn
+menus

@@ -373,6 +373,9 @@ pub struct Mods {
     /// `.onKeyEvent { event in … }`: like `on_key`, with the modifier keys
     /// held (see `KeyC`).
     pub on_key_event: Option<Callback>,
+    /// `.onKeyEvent(releases: true)`: keys let go, and modifiers on their
+    /// own, go to it too.
+    pub key_releases: bool,
     /// `.cursor(…)`: the pointer shown over the view (a `CursorStyle` tag).
     pub cursor: Option<u8>,
     /// `.offset(x:y:)`: the view (and what's in it) is shown this far from
@@ -478,6 +481,8 @@ pub struct KeyC {
     pub command: u8,
     pub control: u8,
     pub repeated: u8,
+    /// The key was let go.
+    pub up: u8,
 }
 
 pub struct Node {
@@ -1358,11 +1363,16 @@ pub unsafe extern "C" fn tsl_ui_on_key(f: *const c_void, env: *mut Header) {
     modify(|m| m.on_key = Some(cb));
 }
 
-/// `.onKeyEvent { event in … }`: `f` is called as `f(env, &KeyC)`.
+/// `.onKeyEvent(releases:) { event in … }`: `f` is called as `f(env,
+/// &KeyC)`. With `releases`, also when a key is let go, and for the
+/// modifier keys on their own.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_on_key_event(f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_on_key_event(f: *const c_void, env: *mut Header, releases: u8) {
     let cb = Callback::new(f, env);
-    modify(|m| m.on_key_event = Some(cb));
+    modify(|m| {
+        m.on_key_event = Some(cb);
+        m.key_releases = releases != 0;
+    });
 }
 
 /// `.offset(x:y:)`.

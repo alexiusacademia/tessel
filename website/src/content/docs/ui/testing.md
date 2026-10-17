@@ -77,7 +77,8 @@ opens a window as usual.
 | `close "main.tsl"` | Clicks the close button of the tab with this title. |
 | `type hello world` | Types text into the text field or code editor being edited. |
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
-| `key enter` | Presses a key, optionally with modifiers (see below). |
+| `key enter` | Presses a key, optionally with modifiers (see below). `key shift` presses a modifier on its own. |
+| `keyup space` | Lets a key go, for [`.onKeyEvent(releases: true)`](/reference/modifiers/#onkeyevent). |
 | `drag 150 100 40 0` | Presses the mouse at a point and moves it by 40 points across and 0 down, for views with [`.onDrag`](/reference/modifiers/#ondrag), sliders and scroll bars. |
 | `dragto "Roads" "Parcels"` | Drags the view with [`.draggable`](/reference/modifiers/#draggable) at the first label onto the second, and lets go there (or `dragto 40 60 40 200`, with points). |
 | `scroll 0 120` | Scrolls the scroll view (or code editor) under the middle of the window down by 120 points. A negative number scrolls up. |
@@ -126,7 +127,11 @@ whose label is exactly the given text:
 - an `Icon`'s name, such as `click "trash"` for `Icon(.trash)`;
 - a tab's title in a `TabView`, or a `DisclosureGroup`'s title;
 - a color in an open `ColorPicker`'s palette, by its hex code, like
-  `click "#000000"`.
+  `click "#000000"`;
+- failing all of those, any view's
+  [`.accessibilityLabel`](/reference/modifiers/#accessibilitylabel) or
+  [`.tooltip`](/reference/modifiers/#tooltip), for views with no text, like
+  a toolbar of `Svg` pictures or a `Canvas`.
 
 It clicks the middle of that view. Hidden views, and pages of a `TabView` that
 aren't selected, are skipped.

@@ -145,6 +145,8 @@ pub fn structs() -> Vec<StructDef> {
                 field("command", Ty::Bool),
                 field("control", Ty::Bool),
                 field("repeated", Ty::Bool),
+                // Let go (with `repeated` false); otherwise pressed.
+                field("up", Ty::Bool),
             ],
             methods: Vec::new(),
         },
@@ -383,7 +385,7 @@ impl Builtins {
             "onDrag" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "onPointer" => vec![P::unlabeled("action", Ty::func(vec![POINTER_EVENT], Ty::Void))],
             "onKey" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
-            "onKeyEvent" => vec![P::unlabeled("action", Ty::func(vec![KEY_EVENT], Ty::Void))],
+            "onKeyEvent" => vec![P::new("releases", Ty::Bool).default(), P::unlabeled("action", Ty::func(vec![KEY_EVENT], Ty::Void))],
             "cursor" => vec![P::unlabeled("style", CURSOR_STYLE)],
             "offset" => vec![P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
             "clipped" => vec![P::unlabeled("isClipped", Ty::Bool).default()],

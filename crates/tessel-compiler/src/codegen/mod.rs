@@ -334,6 +334,9 @@ enum Store<'ctx> {
     ListElemVia { locator: PointerValue<'ctx>, idx: PointerValue<'ctx> },
     /// A captured value inside a closure's environment (not owned).
     EnvValue(PointerValue<'ctx>),
+    /// The caller's storage, given to a function's direct version for a
+    /// `bind` parameter (see `binds_direct`): changed in place, not owned.
+    Place(PointerValue<'ctx>),
     /// A captured box pointer inside a closure's environment (not owned).
     EnvBox(PointerValue<'ctx>),
     /// A field of the method's receiver.
@@ -417,6 +420,14 @@ struct Gen<'ctx, 'a> {
 
     fn_decls: HashMap<String, &'a FnDecl>,
     fns: HashMap<String, FunctionValue<'ctx>>,
+    /// Functions with `bind` parameters compiled a second time to take the
+    /// caller's storage as a plain pointer (see `binds_direct`): the
+    /// version a call uses when every `bind` argument stays put.
+    direct_fns: HashMap<String, FunctionValue<'ctx>>,
+    /// Set while a function's direct version is compiled.
+    direct_now: bool,
+    /// Set while the arguments of a call to a direct version are worked out.
+    direct_args: bool,
     method_decls: HashMap<(String, String), (&'a FnDecl, Ty)>,
     methods: HashMap<(String, String), FunctionValue<'ctx>>,
     struct_decls: HashMap<usize, &'a StructDecl>,
@@ -508,6 +519,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             errors: Vec::new(),
             fn_decls: HashMap::new(),
             fns: HashMap::new(),
+            direct_fns: HashMap::new(),
+            direct_now: false,
+            direct_args: false,
             method_decls: HashMap::new(),
             methods: HashMap::new(),
             struct_decls: HashMap::new(),
@@ -607,6 +621,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let sig = self.checked.fns[&name].clone();
             let ty = self.fn_type(&param_lltys(&sig.params), &sig.ret, false);
             let f = self.module.add_function(&format!("tsl_f_{name}"), ty, Some(Linkage::Internal));
+            let decl = self.fn_decls[&name];
+            if self.binds_direct(decl, &sig) {
+                let d = self.module.add_function(&format!("tsl_fd_{name}"), ty, Some(Linkage::Internal));
+                self.direct_fns.insert(name.clone(), d);
+            }
             self.fns.insert(name, f);
         }
         let method_keys: Vec<(String, String)> = self.method_decls.keys().cloned().collect();
@@ -630,6 +649,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
+            if let Some(&d) = self.direct_fns.get(&name) {
+                self.direct_now = true;
+                self.function_body(d, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
+                self.direct_now = false;
+            }
         }
         for (key, (decl, owner)) in self.method_decls.clone() {
             let f = self.methods[&key];
@@ -868,6 +892,47 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// The variables that `bind` arguments in `body` start at (`todos` for
     /// `todos[0].title`).
+    /// Whether a function can also take its `bind` parameters as plain
+    /// pointers to the caller's storage: when it only reads and changes
+    /// them, here and now (no closure keeps one, none is passed on as a
+    /// `bind` or looped over in place), and isn't `async` (which would
+    /// outlive the call). A call uses that version only when every `bind`
+    /// argument stays where it is meanwhile (`stays_put`). Otherwise a
+    /// `bind` is a locator, a closure called at each use, which finds the
+    /// storage again however it moved: far slower in a tight loop.
+    fn binds_direct(&self, decl: &FnDecl, sig: &FnSig) -> bool {
+        let names: Vec<&str> =
+            decl.params.iter().zip(&sig.params).filter(|(_, s)| s.bind).map(|(p, _)| p.name.name.as_str()).collect();
+        if names.is_empty() || decl.is_async || decl.constant {
+            return false;
+        }
+        let roots = self.bind_roots(&decl.body);
+        let mut ok = names.iter().all(|n| !roots.contains(*n) && !captures(&decl.body, n));
+        walk_block(&decl.body, &mut |node| {
+            if let Node::S(Stmt::For { iter, .. }) = node {
+                if root_name(iter).is_some_and(|r| names.contains(&r)) {
+                    ok = false;
+                }
+            }
+        });
+        ok
+    }
+
+    /// Whether the storage `e` names can't move while a call runs: a
+    /// variable (or a receiver's field), or a field of one, all the way
+    /// down. Not an item of a list (which moves when the list grows), nor
+    /// what a `bind` or a view's `state` reaches.
+    fn stays_put(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Name(n) => self
+                .lookup(n)
+                .is_some_and(|v| matches!(v.store, Store::Slot(_) | Store::Boxed(_) | Store::EnvBox(_) | Store::Field(_) | Store::SelfRef)),
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
+            ExprKind::Member { object, optional: false, .. } => matches!(self.ty(object), Ty::Struct(_)) && self.stays_put(object),
+            _ => false,
+        }
+    }
+
     fn bind_roots(&self, body: &Block) -> HashSet<String> {
         let mut roots = HashSet::new();
         walk_block(body, &mut |node| {
@@ -916,7 +981,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         for (i, (name, ty, bind)) in params.iter().enumerate() {
             let raw = func.get_nth_param(first_param + i as u32).unwrap();
             let value = raw;
-            if *bind {
+            if *bind && self.direct_now {
+                // The caller's storage itself (see `binds_direct`): it's
+                // read and changed in place, and isn't the function's to let go.
+                let at = self.b.build_extract_value(value.into_struct_value(), 1, "").unwrap().into_pointer_value();
+                self.push_var(Var { name: name.name.clone(), ty: ty.clone(), store: Store::Place(at) });
+            } else if *bind {
                 // A `bind` parameter: a locator for the caller's storage.
                 let lt = self.llty(&Ty::View).unwrap();
                 let slot = self.alloca(lt, &name.name);
@@ -1533,7 +1603,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_spacer" | "tsl_ui_end" | "tsl_ui_view_end" => (vec![], None),
             "tsl_ui_begin" => (vec![i32t, f64t, i32t], None),
             "tsl_ui_begin_picker" | "tsl_ui_on_tap" | "tsl_ui_on_drag" | "tsl_ui_tag" => (vec![p, p], None),
-            "tsl_ui_on_pointer" | "tsl_ui_on_key" | "tsl_ui_on_key_event" => (vec![p, p], None),
+            "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),
+            "tsl_ui_on_key_event" => (vec![p, p, i8t], None),
             "tsl_ui_slider" => (vec![p, p, f64t, f64t, f64t, p, p], None),
             "tsl_ui_stepper" => (vec![p, p, i8t, f64t, f64t, f64t, i, p, p], None),
             "tsl_ui_color_picker" | "tsl_ui_drop_target" => (vec![p, p, p, p], None),
@@ -2323,7 +2394,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Pointer to a variable's current value, for reading.
     fn var_read_ptr(&mut self, v: &Var<'ctx>, span: Span) -> PointerValue<'ctx> {
         match v.store {
-            Store::Slot(p) | Store::EnvValue(p) => p,
+            Store::Slot(p) | Store::EnvValue(p) | Store::Place(p) => p,
             Store::Boxed(slot) => {
                 let bx = self.b.build_load(self.ptr_ty(), slot, "").unwrap().into_pointer_value();
                 self.box_data(bx)
@@ -4522,8 +4593,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Callee::Fn(name) => {
                 let sig = self.checked.fns[name].clone();
                 let decl = self.fn_decls[name];
+                // (The direct version when every `bind` argument stays put.)
+                let direct = self.direct_fns.contains_key(name)
+                    && sig.params.iter().enumerate().all(|(i, p)| {
+                        !p.bind || info.args.get(i).copied().flatten().is_some_and(|r| self.stays_put(arg(r)))
+                    });
+                self.direct_args = direct;
                 let vals = self.call_args(&info, &sig, &decl.params, &arg);
-                let f = self.fns[name];
+                let f = if direct { self.direct_fns[name] } else { self.fns[name] };
                 let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into()];
                 all.extend(self.abi_args(&vals, &param_lltys(&sig.params)));
                 let place = self.result_place(&sig.ret, &mut all);
@@ -4830,13 +4907,28 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         decl_params: &[Param],
         arg: &dyn Fn(ArgRef) -> &'e Expr,
     ) -> Vec<Val<'ctx>> {
+        // (Taken now: the arguments may be calls with arguments of their own.)
+        let direct = std::mem::replace(&mut self.direct_args, false);
         let mut vals = Vec::new();
+        // (A direct `bind` argument is the caller's own storage: nothing to hold.)
+        let mut held = 0;
         for (i, p) in sig.params.iter().enumerate() {
             let v = match info.args.get(i).copied().flatten() {
                 // The callee changes the caller's value through a locator.
+                // The storage itself, for a function's direct version.
+                Some(r) if p.bind && direct => {
+                    let at = self.write_ptr(arg(r));
+                    let lt = self.llty(&Ty::View).unwrap().into_struct_type();
+                    let none = self.ptr_ty().const_null();
+                    let pair = self.b.build_insert_value(lt.get_undef(), none, 0, "").unwrap().into_struct_value();
+                    let pair = self.b.build_insert_value(pair, at, 1, "").unwrap().into_struct_value();
+                    vals.push(pair.into());
+                    continue;
+                }
                 Some(r) if p.bind => {
                     let loc = self.make_closure(Body::Locator(arg(r)), &Ty::View);
                     self.hold(loc, &Ty::View);
+                    held += 1;
                     vals.push(loc);
                     continue;
                 }
@@ -4848,9 +4940,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             };
             let v = v.unwrap();
             self.hold(v, &p.ty);
+            held += 1;
             vals.push(v);
         }
-        self.unhold(vals.len());
+        self.unhold(held);
         vals
     }
 
@@ -5484,15 +5577,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let bx = f.get_nth_param(0).unwrap().into_pointer_value();
             let ec = f.get_nth_param(1).unwrap().into_pointer_value();
             let closure = g.load(&ft, g.box_data(bx));
-            // KeyC: { ptr key, ptr text, i8 shift, alt, command, control, repeated }
+            // KeyC: { ptr key, ptr text, i8 shift, alt, command, control, repeated, up }
             let i8t = g.i8();
             let ct = g.ctx.struct_type(
-                &[p.into(), p.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into()],
+                &[p.into(), p.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into(), i8t.into()],
                 false,
             );
             let st = g.llty(&builtins::KEY_EVENT).unwrap().into_struct_type();
             let mut s = st.get_undef();
-            for i in 0..7u32 {
+            for i in 0..8u32 {
                 let fp = g.b.build_struct_gep(ct, ec, i, "").unwrap();
                 let v = if i < 2 {
                     g.b.build_load(p, fp, "").unwrap()

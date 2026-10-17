@@ -1,0 +1,47 @@
+// A function with `bind` parameters takes the caller's storage directly
+// when every argument stays put (a variable or its fields): as fast as a
+// method. An item of a list, or a `bind` a closure keeps, goes through a
+// locator instead. Both must change the same things.
+
+struct P {
+    x: Int = 0
+    items: [Int] = []
+    inner: Q = Q()
+}
+struct Q {
+    name: String = ""
+}
+fn grow(_ p: bind P, _ n: Int) {
+    p.x += n
+    p.items.append(n)
+    p.inner.name = p.inner.name + "{n}"
+}
+fn both(_ a: bind P, _ b: bind P) {
+    a.x += 1
+    b.x += 10
+}
+fn rename(_ q: bind Q, _ to: String) { q.name = to }
+fn keeps(_ p: bind P) -> fn() -> Int {
+    // Captured: the slow version only.
+    let read = { p.x }
+    read
+}
+fn nested(_ p: bind P) {
+    grow(p, 100)
+    rename(p.inner, "nested")
+}
+fn main() {
+    var p = P()
+    grow(p, 1)
+    grow(p, 2)
+    rename(p.inner, "named")
+    both(p, p)
+    var list = [P(), P()]
+    grow(list[1], 5)
+    rename(list[0].inner, "first")
+    nested(p)
+    let read = keeps(p)
+    p.x += 1
+    print("kept {read()}")
+    print("{p.x} {p.items} {p.inner.name} | {list[1].x} {list[1].items} {list[0].inner.name}")
+}

@@ -1,0 +1,17 @@
+// A menu named after the app is the app menu on macOS: its items go after
+// About (an About… of its own takes the standard one's place). Drawn in
+// the window, it's a menu like the others.
+
+app Easel(title: "Easel", width: 300, height: 200) {
+    state shown = "nothing"
+
+    Text(shown)
+        .menuBar {
+            Menu("Easel") {
+                MenuItem("Settings…", shortcut: "cmd+,") { shown = "settings" }
+            }
+            Menu("File") {
+                MenuItem("Open…", shortcut: "cmd+o") { shown = "open" }
+            }
+        }
+}

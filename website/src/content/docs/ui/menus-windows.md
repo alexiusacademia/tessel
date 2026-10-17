@@ -175,7 +175,10 @@ the standard menus around yours:
 - **Window**: Minimize (Cmd+M), Zoom and Close Window (Cmd+W).
 
 A menu of yours called "Edit" or "Window" gets its items after the standard
-ones. An app without `.menuBar` still gets the standard menus on macOS.
+ones. One with the app's name is the app menu: its items go after About, so
+that's where Settings… goes (`MenuItem("Settings…", shortcut: "cmd+,")`), and
+an About… of your own takes the place of the standard one. Drawn in the
+window (on Windows), it's a menu of its own. An app without `.menuBar` still gets the standard menus on macOS.
 
 On Windows there's no menu bar at the top of the screen, so the
 menu bar is drawn at the top of the window, and the window's content goes

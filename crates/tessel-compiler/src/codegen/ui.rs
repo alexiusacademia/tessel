@@ -1114,10 +1114,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "onKeyEvent" => {
                 // The runtime calls `adapter(box, event)`; the box holds the block.
                 let ft = Ty::func(vec![builtins::KEY_EVENT], Ty::Void);
-                let action = self.expr_as(a(0).unwrap(), &ft).unwrap();
+                let releases = match a(0) {
+                    Some(x) => {
+                        let v = self.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(v)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                let action = self.expr_as(a(1).unwrap(), &ft).unwrap();
                 let bx = self.box_closure(&ft, action);
                 let adapter = self.key_event_adapter();
-                self.call_rt("tsl_ui_on_key_event", &[adapter.into(), bx.into()]);
+                self.call_rt("tsl_ui_on_key_event", &[adapter.into(), bx.into(), releases]);
             }
             "cursor" => {
                 let style = int(self, a(0).unwrap());
