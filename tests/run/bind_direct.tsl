@@ -1,7 +1,8 @@
 // A function with `bind` parameters takes the caller's storage directly
-// when every argument stays put (a variable or its fields): as fast as a
-// method. An item of a list, or a `bind` a closure keeps, goes through a
-// locator instead. Both must change the same things.
+// when every argument stays put (a variable or its fields, or an item of a
+// list for a function with one `bind`): as fast as a method. Otherwise, or
+// for a `bind` a closure keeps, it goes through a locator. Both must change
+// the same things.
 
 struct P {
     x: Int = 0
@@ -44,4 +45,16 @@ fn main() {
     p.x += 1
     print("kept {read()}")
     print("{p.x} {p.items} {p.inner.name} | {list[1].x} {list[1].items} {list[0].inner.name}")
+    // An item of a list that another variable shares: only this one changes.
+    var layers = [P(), P()]
+    let before = layers
+    grow(layers[1], 7)
+    rename(layers[0].inner, "top")
+    print("{layers[1].x} {layers[0].inner.name} | {before[1].x} '{before[0].inner.name}'")
+    // A list of lists: the inner one moves when the outer grows (a locator).
+    var grid = [[P()], [P()]]
+    grow(grid[1][0], 3)
+    // Two `bind`s, one an item: through locators.
+    both(layers[0], layers[1])
+    print("{grid[1][0].x} {layers[0].x} {layers[1].x}")
 }

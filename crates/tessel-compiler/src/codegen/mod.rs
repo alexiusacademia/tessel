@@ -920,15 +920,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// Whether the storage `e` names can't move while a call runs: a
     /// variable (or a receiver's field), or a field of one, all the way
-    /// down. Not an item of a list (which moves when the list grows), nor
-    /// what a `bind` or a view's `state` reaches.
-    fn stays_put(&self, e: &Expr) -> bool {
+    /// down; not what a `bind` or a view's `state` reaches. With `items`, an
+    /// item of a list there too: it moves only if the list grows, which the
+    /// callee can't do when it has no other `bind` (as with a changing
+    /// method called on an item, which has it as `self` the same way).
+    fn stays_put(&self, e: &Expr, items: bool) -> bool {
         match &e.kind {
             ExprKind::Name(n) => self
                 .lookup(n)
                 .is_some_and(|v| matches!(v.store, Store::Slot(_) | Store::Boxed(_) | Store::EnvBox(_) | Store::Field(_) | Store::SelfRef)),
             ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
-            ExprKind::Member { object, optional: false, .. } => matches!(self.ty(object), Ty::Struct(_)) && self.stays_put(object),
+            ExprKind::Member { object, optional: false, .. } => matches!(self.ty(object), Ty::Struct(_)) && self.stays_put(object, items),
+            ExprKind::Index(object, _) => items && matches!(self.ty(object), Ty::List(_)) && self.stays_put(object, false),
             _ => false,
         }
     }
@@ -4594,9 +4597,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let sig = self.checked.fns[name].clone();
                 let decl = self.fn_decls[name];
                 // (The direct version when every `bind` argument stays put.)
+                let items = sig.params.iter().filter(|p| p.bind).count() == 1;
                 let direct = self.direct_fns.contains_key(name)
                     && sig.params.iter().enumerate().all(|(i, p)| {
-                        !p.bind || info.args.get(i).copied().flatten().is_some_and(|r| self.stays_put(arg(r)))
+                        !p.bind || info.args.get(i).copied().flatten().is_some_and(|r| self.stays_put(arg(r), items))
                     });
                 self.direct_args = direct;
                 let vals = self.call_args(&info, &sig, &decl.params, &arg);
