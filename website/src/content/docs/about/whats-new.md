@@ -11,6 +11,38 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.6.0
+
+*October 17, 2026*
+
+- **Text fields of several lines.** `TextField("Notes", text: notes,
+  lines: 5)` is five lines high: the text wraps, Enter starts a new line,
+  and it scrolls when there's more. Cmd+Enter (Ctrl+Enter on Windows) runs
+  its `.onSubmit`. See [Several lines](/ui/controls/#several-lines).
+- **Keys let go.** `.onKeyEvent(releases: true)` also hears a key being
+  let go (`e.up`) and the modifier keys on their own, for what's done while
+  a key is held, like panning while Space is down. See
+  [onKeyEvent](/reference/modifiers/#onkeyevent).
+- **Settings… in the app menu.** On macOS, a `Menu` with the app's name
+  adds its items to the app menu, after About. See
+  [Menus, windows and documents](/ui/menus-windows/).
+- **Android: PDFs.** `writePDF` writes PDFs on Android too. See
+  [PDFs](/guides/android/#pdfs).
+- **Faster.** A function with `bind` parameters is about as fast to call
+  as a method when what it's given is a variable or a field of one (it was
+  some 25 times slower), and views scrolled out of sight aren't drawn.
+- **Testing apps:** `click` and `hover` find a view by its
+  `.accessibilityLabel` or `.tooltip`, for pictures with no text; and
+  `keyup` lets a key go.
+
+Fixed:
+
+- Android apps stopped at their first frame on phones with a Mali graphics
+  card (a Pixel 10a). They run now, though slower than they should: see
+  [What doesn't work yet](/guides/android/#what-doesnt-work-yet).
+- On Android, `writePDF` always returned `false`, and `platform()` said
+  `"linux"`; it says `"android"`.
+
 ## 0.5.1
 
 *October 13, 2026 · 0.5.0 and 0.5.1*
