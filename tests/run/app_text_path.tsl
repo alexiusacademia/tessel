@@ -1,0 +1,11 @@
+// `g.textPath` adds text's outline to the path, to fill, stroke or clip.
+
+app Lettering(width: 300, height: 120) {
+    Canvas { g in
+        g.beginPath()
+        g.textPath("Easel", x: g.width / 2, y: g.height / 2, size: 48, weight: .heavy, align: .center)
+        g.fill(.blue)
+        g.stroke(.black, width: 1)
+        g.text("thin", x: 10, y: 10, weight: .thin, kerning: false, tracking: 2)
+    }
+}

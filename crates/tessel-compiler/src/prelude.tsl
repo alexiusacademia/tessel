@@ -196,6 +196,96 @@ fn appInfo() -> AppInfo {
     AppInfo(name: f[0], id: f[1], version: f[2], build: f[3], description: f[4], author: f[5], copyright: f[6])
 }
 
+// ===== fonts =====
+
+/// How a font is laid out at a size, in points.
+struct FontMetrics {
+    /// From the baseline up to the top of the tallest letters (and accents)…
+    ascent: Float
+    /// …and down to the bottom of the deepest (positive).
+    descent: Float
+    /// The room the font asks for between one line's descent and the next
+    /// one's ascent.
+    lineGap: Float
+    /// How tall capitals are (H), and small letters without a stem (x).
+    capHeight: Float
+    xHeight: Float
+    /// From one baseline to the next: ascent, descent and line gap.
+    lineHeight: Float
+}
+
+/// The metrics of a font, as `g.text` would use it at `size`.
+fn fontMetrics(size: Float, weight: Weight = .regular, italic: Bool = false, family: String = "") -> FontMetrics {
+    let m = __fontMetrics(size: size, weight: weight, italic: italic, family: family)
+    if m.count < 5 {
+        return FontMetrics(ascent: 0, descent: 0, lineGap: 0, capHeight: 0, xHeight: 0, lineHeight: 0)
+    }
+    FontMetrics(ascent: m[0], descent: m[1], lineGap: m[2], capHeight: m[3], xHeight: m[4], lineHeight: m[0] + m[1] + m[2])
+}
+
+/// A glyph of a text, as it's placed after shaping (kerning and ligatures
+/// done): from the text's top left corner.
+struct TextGlyph {
+    /// Where it starts, on its line's baseline.
+    x: Float
+    y: Float
+    /// How far it moves the next glyph along.
+    advance: Float
+    /// The characters it shows, `start` up to `end` (as `substring` counts).
+    /// A glyph after the first that shows the same ones (a part of an
+    /// accented letter, say) has none: `start == end`.
+    start: Int
+    end: Int
+}
+
+/// The glyphs of a text as `g.text` places them.
+fn textGlyphs(_ text: String, size: Float, weight: Weight = .regular, italic: Bool = false, family: String = "",
+              kerning: Bool = true, tracking: Float = 0) -> [TextGlyph] {
+    let g = __textGlyphs(text, size: size, weight: weight, italic: italic, family: family, kerning: kerning, tracking: tracking)
+    var all: [TextGlyph] = []
+    var at = 0
+    while at + 5 <= g.count {
+        all.append(TextGlyph(x: g[at], y: g[at + 1], advance: g[at + 2], start: Int(g[at + 3]), end: Int(g[at + 4])))
+        at += 5
+    }
+    all
+}
+
+/// A face of a font family.
+struct FontStyle {
+    /// What the family calls it: "Light", "Bold Italic", "Condensed Black"…
+    name: String
+    /// The `Weight` nearest it.
+    weight: Weight
+    italic: Bool
+}
+
+fn __weightNear(_ w: Float) -> Weight {
+    if w < 150 { return .thin }
+    if w < 250 { return .ultraLight }
+    if w < 350 { return .light }
+    if w < 450 { return .regular }
+    if w < 550 { return .medium }
+    if w < 650 { return .semibold }
+    if w < 750 { return .bold }
+    if w < 850 { return .heavy }
+    Weight.black
+}
+
+/// The faces of an installed font family, lightest first; none for a
+/// family that isn't installed.
+fn fontStyles(_ family: String) -> [FontStyle] {
+    let names = __fontStyleNames(family)
+    let kinds = __fontStyleKinds(family)
+    var all: [FontStyle] = []
+    for (i, name) in names.enumerated() {
+        if i * 2 + 1 < kinds.count {
+            all.append(FontStyle(name: name, weight: __weightNear(kinds[i * 2]), italic: kinds[i * 2 + 1] != 0))
+        }
+    }
+    all
+}
+
 // ===== where the device is, its satellites and its compass =====
 
 /// What a program has to be allowed by the user before it can do it.

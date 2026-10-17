@@ -10,6 +10,9 @@
 use std::ops::Range;
 
 pub use super::backend::text::TextEngine;
+/// Of a laid-out text: its glyphs as they're placed, its outline, the
+/// metrics of its font; and the faces of a family.
+pub use super::backend::text::{glyphs, metrics, outline, styles};
 
 /// The height of a line of code (its text is 13 points): room to read.
 pub const CODE_LINE: f32 = 20.0;
@@ -25,11 +28,74 @@ pub enum Family {
 }
 
 /// What text looks like besides its size and weight: `.font(italic:family:)`,
-/// `g.text(italic:family:)`.
+/// `g.text(italic:family:kerning:tracking:)`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Face {
     pub family: Family,
     pub italic: bool,
+    /// The font's kerning left out (`kerning: false`).
+    pub no_kerning: bool,
+    /// Room added between letters, in hundredths of a point.
+    pub tracking: i32,
+}
+
+impl Face {
+    /// The room added between letters, in points.
+    pub fn tracking(&self) -> f64 {
+        self.tracking as f64 / 100.0
+    }
+}
+
+/// A glyph of a layout, as it's placed: its origin on its line's baseline,
+/// in the layout's coordinates (y down from its top), how far it moves the
+/// next one along, and the bytes of the text it shows (none for a glyph
+/// that shows part of what another does, or after a ligature's first).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlacedGlyph {
+    pub x: f64,
+    pub y: f64,
+    pub advance: f64,
+    pub text: std::ops::Range<usize>,
+}
+
+/// How a font is laid out at a size, in points: above and below the
+/// baseline, the room between lines, and how tall capitals and small
+/// letters are.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FontMetrics {
+    pub ascent: f64,
+    pub descent: f64,
+    pub line_gap: f64,
+    pub cap_height: f64,
+    pub x_height: f64,
+}
+
+/// A face of a font family: its name in the family ("Light", "Bold
+/// Italic"), its weight (100 to 900) and whether it's italic.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FontStyle {
+    pub name: String,
+    pub weight: f32,
+    pub italic: bool,
+}
+
+/// Which glyph shows which text: given each glyph's place in the text
+/// (`at`, in bytes), each glyph that's first at its place gets the text up
+/// to the next place a glyph starts (or `end`); the others, none.
+pub fn cluster_ranges(at: &[usize], end: usize) -> Vec<std::ops::Range<usize>> {
+    let mut starts: Vec<usize> = at.to_vec();
+    starts.sort_unstable();
+    starts.dedup();
+    let mut seen = std::collections::HashSet::new();
+    at.iter()
+        .map(|&a| {
+            if !seen.insert(a) {
+                return a..a;
+            }
+            let next = starts.iter().copied().find(|&s| s > a).unwrap_or(end).max(a);
+            a..next
+        })
+        .collect()
 }
 
 thread_local! {

@@ -175,6 +175,26 @@ let w = g.textWidth("Total", size: 13, weight: .bold, italic: true, family: "Geo
 g.text("=SUM(B2:B9)", x: 20 + w, y: 10, size: 13, family: "monospaced")
 ```
 
+`kerning: false` leaves out the font's kerning, and `tracking:` adds room
+after each letter (in points), as in a design program.
+
+### Text as a shape
+
+`g.textPath` adds the outline of text to the path, so it can be filled
+with a gradient, stroked, or used to clip what's drawn next:
+
+```tessel
+g.beginPath()
+g.textPath("Easel", x: 20, y: 20, size: 72, weight: .black)
+g.fillLinear(x1: 0, y1: 20, x2: 0, y2: 100, colors: [.orange, .red])
+g.stroke(.black, width: 1)
+```
+
+[`textOutline`](/reference/stdlib/#textoutline) gives the same outline as
+numbers, to keep as a shape; [`textGlyphs`](/reference/stdlib/#textglyphs)
+where each letter goes, and [`fontMetrics`](/reference/stdlib/#fontmetrics)
+how tall the font is, for placing text yourself.
+
 `g.image(path, x:, y:, width:, height:)` draws a PNG or JPEG file into a
 rectangle, and `opacity:` makes it see-through. It returns `false` if the
 file isn't there (or isn't a picture), so you can draw something else

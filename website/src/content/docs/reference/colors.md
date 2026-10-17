@@ -81,14 +81,23 @@ HStack {
 
 ## Weight
 
-Used by [`.font(weight:)`](/reference/modifiers/#font).
+Used by [`.font(weight:)`](/reference/modifiers/#font) and `g.text(weight:)`.
 
 | Case | Font weight |
 |---|---|
+| `thin` | 100 |
+| `ultraLight` | 200 |
+| `light` | 300 |
 | `regular` | 400, the default |
 | `medium` | 500 |
 | `semibold` | 600 |
 | `bold` | 700 |
+| `heavy` | 800 |
+| `black` | 900 |
+
+The family's face nearest the weight is used: a family without a light one
+is drawn regular. [`fontStyles`](/reference/stdlib/#fontstyles) tells which
+faces a family has.
 
 ```tessel
 Text("Heading").font(size: 20, weight: .semibold)

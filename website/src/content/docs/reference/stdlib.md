@@ -1666,6 +1666,83 @@ Scroll {
 A family that isn't installed (a document from another computer may ask for
 one) is drawn in the system's font.
 
+### textOutline
+
+```text
+textOutline(_ text: String, size: Float, weight: Weight = .regular, italic: Bool = false,
+            family: String = "system", kerning: Bool = true, tracking: Float = 0) -> [Float]
+```
+
+The outline of the text, as [`g.text`](/reference/views/#graphics) draws it,
+as path commands from the text's top left corner (y goes down): `0 x y`
+moves to a point, `1 x y` draws a line to one, `2 c1x c1y c2x c2y x y` a
+curve (the font's own curves, as cubic Béziers), and `3` closes the part.
+Text with line breaks is on several lines. No text gives `[]`.
+
+To draw it, add it to a path with [`g.textPath`](/reference/views/#graphics)
+instead; this is for keeping the shape, to edit or save it.
+
+### textGlyphs
+
+```text
+textGlyphs(_ text: String, size: Float, weight: Weight = .regular, italic: Bool = false,
+           family: String = "system", kerning: Bool = true, tracking: Float = 0) -> [TextGlyph]
+```
+
+Each glyph of the text as `g.text` places it, after kerning and ligatures,
+from the text's top left corner. A `TextGlyph` has:
+
+| Field | |
+|---|---|
+| `x`, `y: Float` | Where the glyph starts, on its line's baseline. |
+| `advance: Float` | How far it moves the next glyph along. |
+| `start`, `end: Int` | The characters it shows, as [`substring`](#substring) counts them. A ligature shows several (`fi`); a glyph that shows part of what the one before it does (an accent drawn separately) has `start == end`. |
+
+For placing letters one by one (along a path, say) with the font's own
+spacing, or for knowing where a caret goes between two letters.
+
+### fontMetrics
+
+```text
+fontMetrics(size: Float, weight: Weight = .regular, italic: Bool = false, family: String = "system") -> FontMetrics
+```
+
+How a font is laid out at a size, in points:
+
+| Field | |
+|---|---|
+| `ascent` | From the baseline up to the top of the tallest letters. |
+| `descent` | From the baseline down to the bottom of the deepest (a positive number). |
+| `lineGap` | The room the font asks for between lines. |
+| `capHeight` | How tall capital letters are. |
+| `xHeight` | How tall small letters like x are. |
+| `lineHeight` | From one baseline to the next: `ascent + descent + lineGap`. |
+
+`g.text` puts the first baseline `ascent` below the top of the text (with
+`.topLeading`), and each next one `lineHeight` further down.
+
+### fontStyles
+
+```text
+fontStyles(_ family: String) -> [FontStyle]
+```
+
+The faces of an installed family, lightest first: each with its `name` in
+the family (`"Light"`, `"Bold Italic"`, `"Condensed Black"`), the
+[`Weight`](/reference/colors/#weight) nearest its own, and whether it's
+`italic`. A family that isn't installed has none. For a style picker:
+
+```tessel
+Picker(selection: style) {
+    for (i, s) in fontStyles(family).enumerated() {
+        Text(s.name).tag(i)
+    }
+}
+```
+
+Draw in one of them with its `weight` and `italic`. Two faces with the same
+weight (a family with condensed ones too) can't be told apart that way.
+
 ### setWindowTitle
 
 ```text

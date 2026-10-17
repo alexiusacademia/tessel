@@ -839,9 +839,11 @@ pub unsafe extern "C" fn tsl_canvas_text(
     halo_width: f64,
     italic: u8,
     family: *const Str,
+    kerning: u8,
+    tracking: f64,
 ) {
     let text = unsafe { crate::str_text(text) };
-    let face = unsafe { face(italic, family) };
+    let face = unsafe { spaced_face(italic, family, kerning, tracking) };
     let ink = unsafe { theme::color(tag, payload) };
     let halo = unsafe { theme::color(halo_tag, halo_payload) };
     if text.is_empty() || size <= 0.0 {
@@ -866,13 +868,21 @@ pub unsafe extern "C" fn tsl_canvas_text(
 
 /// `g.textWidth(…)`: how wide `g.text` would draw the text, in points.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weight: i32, italic: u8, family: *const Str) -> f64 {
+pub unsafe extern "C" fn tsl_canvas_text_width(
+    text: *const Str,
+    size: f64,
+    weight: i32,
+    italic: u8,
+    family: *const Str,
+    kerning: u8,
+    tracking: f64,
+) -> f64 {
     let text = unsafe { crate::str_text(text) };
     if text.is_empty() || size <= 0.0 {
         return 0.0;
     }
     let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
-    let face = unsafe { face(italic, family) };
+    let face = unsafe { spaced_face(italic, family, kerning, tracking) };
     // (With the spaces at its end: a program that places words itself
     // measures them too.)
     with_text(|t| t.styled(text, size, weight, face, Rgba([0, 0, 0, 255]), None, 0).advance)
@@ -881,7 +891,154 @@ pub unsafe extern "C" fn tsl_canvas_text_width(text: *const Str, size: f64, weig
 /// `italic:` and `family:` of `g.text` and `g.textWidth`.
 unsafe fn face(italic: u8, family: *const Str) -> super::text::Face {
     let family = if family.is_null() { "" } else { unsafe { crate::str_text(family) } };
-    super::text::Face { family: super::text::Family::named(family), italic: italic != 0 }
+    super::text::Face { family: super::text::Family::named(family), italic: italic != 0, ..Default::default() }
+}
+
+/// `italic:`, `family:`, `kerning:` and `tracking:` of text.
+unsafe fn spaced_face(italic: u8, family: *const Str, kerning: u8, tracking: f64) -> super::text::Face {
+    let tracking = if tracking.is_finite() { (tracking * 100.0).round().clamp(-100_000.0, 100_000.0) as i32 } else { 0 };
+    super::text::Face { no_kerning: kerning == 0, tracking, ..unsafe { face(italic, family) } }
+}
+
+/// Text laid out as `g.text` lays it out, on one line or more (at its line
+/// breaks): in black, at the size given.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shaped(text: *const Str, size: f64, weight: i32, italic: u8, family: *const Str, kerning: u8, tracking: f64) -> Option<super::text::TextLayout> {
+    let text = unsafe { crate::str_text(text) };
+    if text.is_empty() || !(size > 0.0 && size.is_finite()) {
+        return None;
+    }
+    let weight = WEIGHTS[(weight.max(0) as usize).min(WEIGHTS.len() - 1)];
+    let face = unsafe { spaced_face(italic, family, kerning, tracking) };
+    Some(with_text(|t| t.styled(text, size, weight, face, Rgba([0, 0, 0, 255]), None, 0)))
+}
+
+/// A path as `[Float]` commands: `0 x y` moves, `1 x y` draws a line, `2
+/// c1x c1y c2x c2y x y` a curve, `3` closes.
+fn commands(path: &BezPath) -> Vec<f64> {
+    let mut out = Vec::new();
+    let mut last = Point::ZERO;
+    for el in path.elements() {
+        match *el {
+            PathEl::MoveTo(p) => {
+                out.extend([0.0, p.x, p.y]);
+                last = p;
+            }
+            PathEl::LineTo(p) => {
+                out.extend([1.0, p.x, p.y]);
+                last = p;
+            }
+            // (A quadratic curve as the cubic that's the same.)
+            PathEl::QuadTo(c, p) => {
+                let (c1, c2) = (last + (c - last) * (2.0 / 3.0), p + (c - p) * (2.0 / 3.0));
+                out.extend([2.0, c1.x, c1.y, c2.x, c2.y, p.x, p.y]);
+                last = p;
+            }
+            PathEl::CurveTo(c1, c2, p) => {
+                out.extend([2.0, c1.x, c1.y, c2.x, c2.y, p.x, p.y]);
+                last = p;
+            }
+            PathEl::ClosePath => out.push(3.0),
+        }
+    }
+    out
+}
+
+/// A `[Float]` of `values`.
+fn float_list(values: &[f64]) -> *mut List {
+    unsafe {
+        let mut list = crate::tsl_list_new(&crate::codec::FLOAT_TYPE, values.len() as i64);
+        for v in values {
+            crate::tsl_list_push(&mut list, v as *const f64 as *const u8);
+        }
+        list
+    }
+}
+
+/// `textOutline(text, size:weight:italic:family:kerning:tracking:)`: the
+/// outline of the text as `g.text` draws it, from its top left corner, as
+/// path commands (see `commands`). Nothing for no text.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_text_outline(text: *const Str, size: f64, weight: i32, italic: u8, family: *const Str, kerning: u8, tracking: f64) -> *mut List {
+    let path = unsafe { shaped(text, size, weight, italic, family, kerning, tracking) }.map(|l| super::text::outline(&l));
+    float_list(&path.map(|p| commands(&p)).unwrap_or_default())
+}
+
+/// `textGlyphs(…)`: each glyph's place (x and its baseline's y), advance,
+/// and the characters it shows (from, to: none for the glyphs after a
+/// cluster's first), five numbers each.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_text_glyphs(text: *const Str, size: f64, weight: i32, italic: u8, family: *const Str, kerning: u8, tracking: f64) -> *mut List {
+    let s = unsafe { crate::str_text(text) };
+    let Some(layout) = (unsafe { shaped(text, size, weight, italic, family, kerning, tracking) }) else { return float_list(&[]) };
+    // Bytes to characters, as strings count.
+    let mut chars = vec![0usize; s.len() + 1];
+    let mut n = 0;
+    for (i, c) in s.char_indices() {
+        for b in 0..c.len_utf8() {
+            chars[i + b] = n;
+        }
+        n += 1;
+    }
+    chars[s.len()] = n;
+    let at = |b: usize| chars[b.min(s.len())] as f64;
+    let mut out = Vec::new();
+    for g in super::text::glyphs(&layout) {
+        out.extend([g.x, g.y, g.advance, at(g.text.start), at(g.text.end)]);
+    }
+    float_list(&out)
+}
+
+/// `fontMetrics(size:weight:italic:family:)`: ascent, descent, line gap,
+/// cap height and x-height, in points.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_font_metrics(size: f64, weight: i32, italic: u8, family: *const Str) -> *mut List {
+    let sample = crate::str_new("Hx");
+    let m = unsafe { shaped(sample, size, weight, italic, family, 1, 0.0) }.and_then(|l| super::text::metrics(&l));
+    unsafe { crate::tsl_release(sample as *mut Header) };
+    float_list(&m.map(|m| vec![m.ascent, m.descent, m.line_gap, m.cap_height, m.x_height]).unwrap_or_default())
+}
+
+/// `fontStyles(family)`: its faces' names…
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_font_style_names(family: *const Str) -> *mut List {
+    let family = unsafe { crate::str_text(family) };
+    unsafe { crate::str_list(super::text::styles(family).iter().map(|s| s.name.as_str())) }
+}
+
+/// …and their weights (100 to 900) and whether each is italic (0 or 1),
+/// two numbers each.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_font_style_kinds(family: *const Str) -> *mut List {
+    let family = unsafe { crate::str_text(family) };
+    let kinds: Vec<f64> = super::text::styles(family).iter().flat_map(|s| [s.weight as f64, s.italic as u8 as f64]).collect();
+    float_list(&kinds)
+}
+
+/// `g.textPath(text, x:y:size:…)`: the outline of the text as `g.text`
+/// would draw it there, added to the path (to fill, stroke or clip by).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_canvas_text_path(
+    text: *const Str,
+    x: f64,
+    y: f64,
+    size: f64,
+    weight: i32,
+    align: i32,
+    italic: u8,
+    family: *const Str,
+    kerning: u8,
+    tracking: f64,
+) {
+    let Some(layout) = (unsafe { shaped(text, size, weight, italic, family, kerning, tracking) }) else { return };
+    let mut path = super::text::outline(&layout);
+    let (h, v) = super::align_2d(align.clamp(0, 8) as u8);
+    let (w, ht) = (layout.width(), layout.height());
+    path.apply_affine(Affine::translate((x - w * h as f64 / 2.0, y - ht * v as f64 / 2.0)));
+    with(|c| c.add_shape(&path));
 }
 
 /// `g.image(path, …)`: a PNG or JPEG file, in the rectangle given. Returns

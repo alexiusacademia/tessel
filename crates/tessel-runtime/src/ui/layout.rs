@@ -270,6 +270,7 @@ impl Layouter<'_> {
             face: super::text::Face {
                 family: n.mods.family.unwrap_or(parent.face.family),
                 italic: n.mods.italic.unwrap_or(parent.face.italic),
+                ..parent.face
             },
             color: n.mods.color.unwrap_or(parent.color),
             disabled: parent.disabled || n.mods.disabled,

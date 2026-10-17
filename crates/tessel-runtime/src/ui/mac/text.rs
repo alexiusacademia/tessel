@@ -51,9 +51,10 @@ pub struct ShapedLine {
     pub baseline: f64,
 }
 
-/// A layout's lines, ready to draw.
+/// A layout's lines, ready to draw, and the text they're of.
 pub struct Shaped {
     pub lines: Vec<ShapedLine>,
+    pub text: String,
 }
 
 pub struct TextEngine {
@@ -61,15 +62,26 @@ pub struct TextEngine {
     /// The attribute that holds each stretch's color (Core Text is told to
     /// take the color from the context, so it can be drawn in another one).
     color_key: Owned,
+    /// For the layout being built: the font's kerning left out, and room
+    /// added between letters (see `styled`).
+    spacing: (bool, f64),
 }
 
 /// The weight trait Core Text uses, for a CSS weight (400 regular, 700 bold).
 fn weight_trait(weight: f32) -> f64 {
     match weight {
+        // (Thin, ultra light and light, as AppKit's weights are.)
+        w if w <= 100.0 => -0.8,
+        w if w <= 200.0 => -0.8 + 0.2 * (w as f64 - 100.0) / 100.0,
+        w if w <= 300.0 => -0.6 + 0.2 * (w as f64 - 200.0) / 100.0,
+        w if w < 400.0 => -0.4 + 0.4 * (w as f64 - 300.0) / 100.0,
         w if w <= 400.0 => 0.0,
         w if w <= 500.0 => 0.23 * (w as f64 - 400.0) / 100.0,
         w if w <= 600.0 => 0.23 + 0.07 * (w as f64 - 500.0) / 100.0,
-        w => 0.3 + 0.1 * ((w as f64 - 600.0) / 100.0).min(1.0),
+        w if w <= 700.0 => 0.3 + 0.1 * (w as f64 - 600.0) / 100.0,
+        // (Heavy and black.)
+        w if w <= 800.0 => 0.4 + 0.16 * (w as f64 - 700.0) / 100.0,
+        w => 0.56 + 0.06 * ((w as f64 - 800.0) / 100.0).min(1.0),
     }
 }
 
@@ -79,7 +91,7 @@ fn packed(c: Rgba) -> i32 {
 
 impl TextEngine {
     pub fn new() -> TextEngine {
-        TextEngine { fonts: HashMap::new(), color_key: cfstring("TesselColor") }
+        TextEngine { fonts: HashMap::new(), color_key: cfstring("TesselColor"), spacing: (false, 0.0) }
     }
 
     fn font(&mut self, f: Font) -> CTFontRef {
@@ -119,7 +131,10 @@ impl TextEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn styled(&mut self, text: &str, size: f64, weight: f32, face: Face, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
         let font = Font { family: face.family, size, weight, italic: face.italic };
-        self.build(text, font, color, &[], LineHeight::Natural, max_w, align)
+        self.spacing = (face.no_kerning, face.tracking());
+        let layout = self.build(text, font, color, &[], LineHeight::Natural, max_w, align);
+        self.spacing = (false, 0.0);
+        layout
     }
 
     /// Lays `text` out in `font` and `color`, with `spans` in others.
@@ -161,6 +176,15 @@ impl TextEngine {
                 CFAttributedStringSetAttribute(a, all, kCTForegroundColorFromContextAttributeName, kCFBooleanTrue);
                 let c = cfnumber_i32(packed(color));
                 CFAttributedStringSetAttribute(a, all, self.color_key.get(), c.get());
+                // (A kerning of 0 leaves the font's out; tracking adds to it.)
+                if self.spacing.0 {
+                    let none = cfnumber_f64(0.0);
+                    CFAttributedStringSetAttribute(a, all, kCTKernAttributeName, none.get());
+                }
+                if self.spacing.1 != 0.0 {
+                    let room = cfnumber_f64(self.spacing.1);
+                    CFAttributedStringSetAttribute(a, all, kCTTrackingAttributeName, room.get());
+                }
                 for (span, f) in spans.iter().zip(&span_fonts) {
                     let (from, to) = (unit(span.range.start), unit(span.range.end));
                     if to <= from {
@@ -257,7 +281,7 @@ impl TextEngine {
                 top += h;
             }
             let height = top;
-            TextLayout { width: widest, advance: advance.max(widest), height, lines, len: text.len(), shaped: Shaped { lines: shaped } }
+            TextLayout { width: widest, advance: advance.max(widest), height, lines, len: text.len(), shaped: Shaped { lines: shaped, text: text.to_string() } }
         }
     }
 
@@ -458,4 +482,174 @@ thread_local! {
 /// The attribute the engines keep colors in (the same text in each).
 pub fn color_key() -> CFStringRef {
     COLOR_KEY.with(|k| k.get())
+}
+
+// ===== glyphs, outlines, metrics and styles =====
+
+/// Each run of a layout's lines: the line, its run, and the run's font.
+unsafe fn runs(layout: &TextLayout, mut f: impl FnMut(&ShapedLine, CTRunRef, CTFontRef)) {
+    unsafe {
+        for l in &layout.shaped.lines {
+            let Some(line) = &l.line else { continue };
+            let runs = CTLineGetGlyphRuns(line.get());
+            for i in 0..CFArrayGetCount(runs) {
+                let run = CFArrayGetValueAtIndex(runs, i);
+                let font = CFDictionaryGetValue(CTRunGetAttributes(run), kCTFontAttributeName);
+                f(l, run, font);
+            }
+        }
+    }
+}
+
+/// Where each UTF-16 unit of `text` starts, in bytes (and its end).
+fn unit_bytes(text: &str) -> Vec<usize> {
+    let mut bytes = Vec::with_capacity(text.len() + 1);
+    for (i, c) in text.char_indices() {
+        for _ in 0..c.len_utf16() {
+            bytes.push(i);
+        }
+    }
+    bytes.push(text.len());
+    bytes
+}
+
+/// The glyphs of a layout, as they're placed (see `PlacedGlyph`).
+pub fn glyphs(layout: &TextLayout) -> Vec<crate::ui::text::PlacedGlyph> {
+    let bytes = unit_bytes(&layout.shaped.text);
+    let byte = |i: CFIndex| bytes.get(i.max(0) as usize).copied().unwrap_or(layout.shaped.text.len());
+    let mut out = Vec::new();
+    unsafe {
+        for l in &layout.shaped.lines {
+            let Some(line) = &l.line else { continue };
+            let range = CTLineGetStringRange(line.get());
+            let end = byte(range.location + range.length);
+            let mut at = Vec::new();
+            let mut placed = Vec::new();
+            let all = CTLineGetGlyphRuns(line.get());
+            for r in 0..CFArrayGetCount(all) {
+                let run = CFArrayGetValueAtIndex(all, r);
+                let n = CTRunGetGlyphCount(run) as usize;
+                let mut positions = vec![CGPoint::default(); n];
+                let mut advances = vec![CGSize::default(); n];
+                let mut indices = vec![0 as CFIndex; n];
+                CTRunGetPositions(run, CFRange::new(0, 0), positions.as_mut_ptr());
+                CTRunGetAdvances(run, CFRange::new(0, 0), advances.as_mut_ptr());
+                CTRunGetStringIndices(run, CFRange::new(0, 0), indices.as_mut_ptr());
+                for i in 0..n {
+                    at.push(byte(indices[i]));
+                    placed.push((l.x + positions[i].x, l.baseline - positions[i].y, advances[i].width));
+                }
+            }
+            // (The line break at the end of a line is no glyph's.)
+            let text = &layout.shaped.text;
+            let end = if text[..end].ends_with('\n') { end - 1 } else { end };
+            for ((x, y, advance), text) in placed.into_iter().zip(crate::ui::text::cluster_ranges(&at, end)) {
+                out.push(crate::ui::text::PlacedGlyph { x, y, advance, text });
+            }
+        }
+    }
+    out
+}
+
+/// The outline of a layout's glyphs, in its coordinates (y down from its
+/// top): the font's own curves.
+pub fn outline(layout: &TextLayout) -> kurbo::BezPath {
+    unsafe extern "C" fn element(info: *mut c_void, e: *const CGPathElement) {
+        let path = unsafe { &mut *(info as *mut kurbo::BezPath) };
+        let e = unsafe { &*e };
+        let p = |i: usize| {
+            let q = unsafe { *e.points.add(i) };
+            kurbo::Point::new(q.x, q.y)
+        };
+        match e.kind {
+            0 => path.move_to(p(0)),
+            1 => path.line_to(p(0)),
+            2 => path.quad_to(p(0), p(1)),
+            3 => path.curve_to(p(0), p(1), p(2)),
+            _ => path.close_path(),
+        }
+    }
+    let mut path = kurbo::BezPath::new();
+    unsafe {
+        runs(layout, |l, run, font| {
+            if font.is_null() {
+                return;
+            }
+            let n = CTRunGetGlyphCount(run) as usize;
+            let mut glyphs = vec![0u16; n];
+            let mut positions = vec![CGPoint::default(); n];
+            CTRunGetGlyphs(run, CFRange::new(0, 0), glyphs.as_mut_ptr());
+            CTRunGetPositions(run, CFRange::new(0, 0), positions.as_mut_ptr());
+            for (g, p) in glyphs.iter().zip(&positions) {
+                // Glyphs are y up from the baseline: flipped, and put in place.
+                let m = CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: -1.0, tx: l.x + p.x, ty: l.baseline - p.y };
+                let Some(glyph) = Owned::new(CTFontCreatePathForGlyph(font, *g, &m)) else { continue };
+                CGPathApply(glyph.get(), &mut path as *mut kurbo::BezPath as *mut c_void, element);
+            }
+        });
+    }
+    path
+}
+
+/// The metrics of the font a layout's text starts in.
+pub fn metrics(layout: &TextLayout) -> Option<crate::ui::text::FontMetrics> {
+    let mut found = None;
+    unsafe {
+        runs(layout, |_, _, font| {
+            if found.is_none() && !font.is_null() {
+                found = Some(crate::ui::text::FontMetrics {
+                    ascent: CTFontGetAscent(font),
+                    descent: CTFontGetDescent(font),
+                    line_gap: CTFontGetLeading(font),
+                    cap_height: CTFontGetCapHeight(font),
+                    x_height: CTFontGetXHeight(font),
+                });
+            }
+        });
+    }
+    found
+}
+
+/// The weight (100 to 900) a Core Text weight trait stands for.
+fn css_weight(t: f64) -> f32 {
+    let marks = [(-0.8, 100.0), (-0.6, 200.0), (-0.4, 300.0), (0.0, 400.0), (0.23, 500.0), (0.3, 600.0), (0.4, 700.0), (0.56, 800.0), (0.62, 900.0)];
+    marks.iter().min_by(|a, b| (a.0 - t).abs().total_cmp(&(b.0 - t).abs())).map_or(400.0, |m| m.1)
+}
+
+/// The faces of the family `name`, lightest first.
+pub fn styles(name: &str) -> Vec<crate::ui::text::FontStyle> {
+    let mut out = Vec::new();
+    unsafe {
+        let family = cfstring(name.trim());
+        let attrs = cfdict(&[(kCTFontFamilyNameAttribute, family.get())]);
+        let Some(d) = Owned::new(CTFontDescriptorCreateWithAttributes(attrs.get())) else { return out };
+        let Some(all) = Owned::new(CTFontDescriptorCreateMatchingFontDescriptors(d.get(), std::ptr::null())) else { return out };
+        for i in 0..CFArrayGetCount(all.get()) {
+            let face = CFArrayGetValueAtIndex(all.get(), i);
+            // (Only the family's own faces, not what Core Text offers in its place.)
+            let of = Owned::new(CTFontDescriptorCopyAttribute(face, kCTFontFamilyNameAttribute)).map(|f| string_of(f.get()));
+            if !of.is_some_and(|f| f.eq_ignore_ascii_case(name.trim())) {
+                continue;
+            }
+            let style = Owned::new(CTFontDescriptorCopyAttribute(face, kCTFontStyleNameAttribute)).map(|s| string_of(s.get())).unwrap_or_default();
+            let (mut weight, mut italic) = (400.0, false);
+            if let Some(traits) = Owned::new(CTFontDescriptorCopyAttribute(face, kCTFontTraitsAttribute)) {
+                let w = CFDictionaryGetValue(traits.get(), kCTFontWeightTrait);
+                let mut t = 0.0f64;
+                if !w.is_null() && CFNumberGetValue(w, kCFNumberFloat64Type, &mut t as *mut f64 as *mut c_void) {
+                    weight = css_weight(t);
+                }
+                let s = CFDictionaryGetValue(traits.get(), kCTFontSymbolicTrait);
+                let mut bits = 0i32;
+                if !s.is_null() && CFNumberGetValue(s, kCFNumberSInt32Type, &mut bits as *mut i32 as *mut c_void) {
+                    italic = bits as u32 & kCTFontItalicTrait != 0;
+                }
+            }
+            if !style.is_empty() && !out.iter().any(|o: &crate::ui::text::FontStyle| o.name == style) {
+                out.push(crate::ui::text::FontStyle { name: style, weight, italic });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.weight.total_cmp(&b.weight).then(a.italic.cmp(&b.italic)));
+    out
 }

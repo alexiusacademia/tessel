@@ -192,7 +192,8 @@ impl Drop for Value {
 pub struct Rgba(pub [u8; 4]);
 
 /// Font weights in the order of the `Weight` enum.
-pub const WEIGHTS: [f32; 4] = [400.0, 500.0, 600.0, 700.0];
+/// `Weight`'s cases, in order (the four first, then the others).
+pub const WEIGHTS: [f32; 9] = [400.0, 500.0, 600.0, 700.0, 100.0, 200.0, 300.0, 800.0, 900.0];
 
 pub enum Kind {
     Root,

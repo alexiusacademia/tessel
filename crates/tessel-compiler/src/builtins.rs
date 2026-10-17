@@ -11,7 +11,8 @@ pub const COLORS: &[&str] = &[
 /// How an app looks: like the system (the default), or always light or dark.
 pub const APPEARANCES: &[&str] = &["system", "light", "dark"];
 
-pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold"];
+/// In this order (the runtime relies on the tags): the four first, then the others.
+pub const WEIGHTS: &[&str] = &["regular", "medium", "semibold", "bold", "thin", "ultraLight", "light", "heavy", "black"];
 
 /// In this order (the runtime relies on the tags): stacks use the first three
 /// plus `top`/`bottom`; frames and ZStacks use all of them.
@@ -636,6 +637,32 @@ impl Builtins {
             "__location" | "__satellites" | "__heading" => FnSig { params: vec![], ret: Ty::list(Ty::Float) },
             // For the prelude's `appInfo`.
             "__appInfo" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
+            // Fonts: an outline as `g.text` draws the text (`textOutline`),
+            // and for the prelude's `textGlyphs`, `fontMetrics` and
+            // `fontStyles`, numbers it makes values of.
+            "textOutline" | "__textGlyphs" => FnSig {
+                params: vec![
+                    P::unlabeled("text", Ty::Str),
+                    P::new("size", Ty::Float),
+                    P::new("weight", WEIGHT).default(),
+                    P::new("italic", Ty::Bool).default(),
+                    P::new("family", Ty::Str).default(),
+                    P::new("kerning", Ty::Bool).default(),
+                    P::new("tracking", Ty::Float).default(),
+                ],
+                ret: Ty::list(Ty::Float),
+            },
+            "__fontMetrics" => FnSig {
+                params: vec![
+                    P::new("size", Ty::Float),
+                    P::new("weight", WEIGHT).default(),
+                    P::new("italic", Ty::Bool).default(),
+                    P::new("family", Ty::Str).default(),
+                ],
+                ret: Ty::list(Ty::Float),
+            },
+            "__fontStyleNames" => FnSig { params: vec![P::unlabeled("family", Ty::Str)], ret: Ty::list(Ty::Str) },
+            "__fontStyleKinds" => FnSig { params: vec![P::unlabeled("family", Ty::Str)], ret: Ty::list(Ty::Float) },
             // For the prelude's `readImage`.
             "__imagePixels" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::list(Ty::Int) },
             // For the prelude's databases (see `Database`).
@@ -689,6 +716,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow", "dismiss", "showNotice",
+    "textOutline", "__textGlyphs", "__fontMetrics", "__fontStyleNames", "__fontStyleKinds",
     "__permission", "startLocation", "stopLocation", "__location", "__satellites", "startCompass", "stopCompass", "__heading",
 ];
 
@@ -898,6 +926,23 @@ fn graphics_method(name: &str) -> Option<Method> {
                 f("haloWidth").default(),
                 P::new("italic", Ty::Bool).default(),
                 P::new("family", Ty::Str).default(),
+                P::new("kerning", Ty::Bool).default(),
+                f("tracking").default(),
+            ],
+            Ty::Void,
+        ),
+        "textPath" => method(
+            vec![
+                P::unlabeled("text", Ty::Str),
+                f("x"),
+                f("y"),
+                f("size").default(),
+                P::new("weight", WEIGHT).default(),
+                P::new("align", ALIGNMENT).default(),
+                P::new("italic", Ty::Bool).default(),
+                P::new("family", Ty::Str).default(),
+                P::new("kerning", Ty::Bool).default(),
+                f("tracking").default(),
             ],
             Ty::Void,
         ),
@@ -908,6 +953,8 @@ fn graphics_method(name: &str) -> Option<Method> {
                 P::new("weight", WEIGHT).default(),
                 P::new("italic", Ty::Bool).default(),
                 P::new("family", Ty::Str).default(),
+                P::new("kerning", Ty::Bool).default(),
+                f("tracking").default(),
             ],
             Ty::Float,
         ),
@@ -1080,7 +1127,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         t if *t == GRAPHICS => &[
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
             "ellipse", "arc", "fill", "stroke", "line", "fillRect", "strokeRect", "fillCircle", "strokeCircle", "text",
-            "textWidth", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
+            "textWidth", "textPath", "image", "translate", "scale", "rotate", "zoom", "resetTransform", "save", "restore", "clip", "clipPath",
             "fillLinear", "fillRadial", "strokeLinear", "strokeRadial", "beginLayer", "endLayer", "svg", "newPage",
         ],
         t if *t == SCENE => &[
@@ -1224,6 +1271,11 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "undoTextEdit" => rt("tsl_undo_text_edit"),
         "redoTextEdit" => rt("tsl_redo_text_edit"),
         "quit" => rt("tsl_quit"),
+        "textOutline" => rt_d("tsl_text_outline", &[Dflt::Req, Dflt::Req, Dflt::Case(0), Dflt::Bool(false), Dflt::Str(""), Dflt::Bool(true), Dflt::Float(0.0)]),
+        "__textGlyphs" => rt_d("tsl_text_glyphs", &[Dflt::Req, Dflt::Req, Dflt::Case(0), Dflt::Bool(false), Dflt::Str(""), Dflt::Bool(true), Dflt::Float(0.0)]),
+        "__fontMetrics" => rt_d("tsl_font_metrics", &[Dflt::Req, Dflt::Case(0), Dflt::Bool(false), Dflt::Str("")]),
+        "__fontStyleNames" => rt("tsl_font_style_names"),
+        "__fontStyleKinds" => rt("tsl_font_style_kinds"),
         "__permission" => rt("tsl_permission"),
         "startLocation" => rt_d("tsl_location_start", &[Dflt::Bool(true), Dflt::Float(1.0)]),
         "stopLocation" => rt("tsl_location_stop"),
@@ -1328,9 +1380,13 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "strokeCircle" => rt_g("tsl_canvas_stroke_circle", &[Req, Req, Req, Req, Float(1.0)]),
         "text" => rt_g(
             "tsl_canvas_text",
-            &[Req, Req, Req, Float(14.0), PRIMARY, REGULAR, TOP_LEADING, Float(0.0), CLEAR, Float(0.0), Bool(false), Dflt::Str("")],
+            &[Req, Req, Req, Float(14.0), PRIMARY, REGULAR, TOP_LEADING, Float(0.0), CLEAR, Float(0.0), Bool(false), Dflt::Str(""), Bool(true), Float(0.0)],
         ),
-        "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR, Bool(false), Dflt::Str("")]),
+        "textWidth" => rt_g("tsl_canvas_text_width", &[Req, Float(14.0), REGULAR, Bool(false), Dflt::Str(""), Bool(true), Float(0.0)]),
+        "textPath" => rt_g(
+            "tsl_canvas_text_path",
+            &[Req, Req, Req, Float(14.0), REGULAR, TOP_LEADING, Bool(false), Dflt::Str(""), Bool(true), Float(0.0)],
+        ),
         "image" => rt_g("tsl_canvas_image", &[Req, Req, Req, Req, Req, Float(1.0)]),
         "image(pixels:)" => rt_g("tsl_canvas_image_pixels", &[Req, Req, Req, Req, Req, Req, Req, Float(1.0)]),
         "svg" => rt_g("tsl_canvas_svg", &[Req, Req, Req, Req, Req, PRIMARY, Float(1.0)]),

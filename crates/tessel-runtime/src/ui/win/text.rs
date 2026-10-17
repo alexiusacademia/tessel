@@ -46,10 +46,15 @@ pub struct Shaped {
     pub layout: Option<IDWriteTextLayout>,
     pub color: Rgba,
     pub colors: Vec<(DWRITE_TEXT_RANGE, Rgba)>,
+    /// The text, which glyphs are said to show (see `glyphs`).
+    pub text: String,
 }
 
 pub struct TextEngine {
     formats: HashMap<(Family, u64, u32, bool), IDWriteTextFormat>,
+    /// For the layout being built: the font's kerning left out, and room
+    /// added between letters (see `styled`).
+    spacing: (bool, f64),
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -109,7 +114,7 @@ pub fn families() -> Vec<String> {
 
 impl TextEngine {
     pub fn new() -> TextEngine {
-        TextEngine { formats: HashMap::new() }
+        TextEngine { formats: HashMap::new(), spacing: (false, 0.0) }
     }
 
     fn format(&mut self, f: Font) -> Option<IDWriteTextFormat> {
@@ -164,7 +169,7 @@ impl TextEngine {
             height: font.size * 1.2,
             lines: vec![Line { range: 0..text.len(), top: 0.0, bottom: font.size * 1.2, stops: vec![(0, 0.0)], end_x: 0.0 }],
             len: text.len(),
-            shaped: Shaped { layout: None, color, colors: Vec::new() },
+            shaped: Shaped { layout: None, color, colors: Vec::new(), text: text.to_string() },
         };
         let Some(format) = self.format(font) else { return empty(color) };
         let made = unsafe {
@@ -174,6 +179,21 @@ impl TextEngine {
                 Err(_) => return empty(color),
             };
             let _ = layout.SetWordWrapping(if wrap { DWRITE_WORD_WRAPPING_WRAP } else { DWRITE_WORD_WRAPPING_NO_WRAP });
+            let whole = DWRITE_TEXT_RANGE { startPosition: 0, length: utf16.len() as u32 };
+            // The font's kerning left out, and room added between letters.
+            if self.spacing.0 {
+                if let Ok(t) = factories().dwrite.CreateTypography() {
+                    let off = DWRITE_FONT_FEATURE { nameTag: DWRITE_FONT_FEATURE_TAG_KERNING, parameter: 0 };
+                    if t.AddFontFeature(off).is_ok() {
+                        let _ = layout.SetTypography(&t, whole);
+                    }
+                }
+            }
+            if self.spacing.1 != 0.0 {
+                if let Ok(spaced) = layout.cast::<IDWriteTextLayout1>() {
+                    let _ = spaced.SetCharacterSpacing(0.0, self.spacing.1 as f32, 0.0, whole);
+                }
+            }
             let mut colors = Vec::new();
             for span in spans {
                 let r = DWRITE_TEXT_RANGE { startPosition: unit(span.range.start), length: unit(span.range.end) - unit(span.range.start) };
@@ -279,7 +299,7 @@ impl TextEngine {
             height: m.height as f64,
             lines,
             len: text.len(),
-            shaped: Shaped { layout: Some(layout), color, colors },
+            shaped: Shaped { layout: Some(layout), color, colors, text: text.to_string() },
         }
     }
 
@@ -288,7 +308,10 @@ impl TextEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn styled(&mut self, text: &str, size: f64, weight: f32, face: Face, color: Rgba, max_w: Option<f64>, align: u8) -> TextLayout {
         let font = Font { family: face.family, size, weight, italic: face.italic };
-        self.build(text, font, color, &[], LineHeight::Natural, max_w, align)
+        self.spacing = (face.no_kerning, face.tracking());
+        let layout = self.build(text, font, color, &[], LineHeight::Natural, max_w, align);
+        self.spacing = (false, 0.0);
+        layout
     }
 
     /// Code: monospaced, not wrapped, with syntax colors.
@@ -617,4 +640,293 @@ impl IDWriteTextRenderer_Impl for GlyphCollector_Impl {
     ) -> windows::core::Result<()> {
         Ok(())
     }
+}
+
+// ===== glyphs, outlines, metrics and styles =====
+
+/// A run of glyphs as DirectWrite draws it.
+struct Run {
+    face: IDWriteFontFace,
+    size: f32,
+    /// Where it starts, on its baseline.
+    x: f32,
+    y: f32,
+    ids: Vec<u16>,
+    advances: Vec<f32>,
+    offsets: Vec<DWRITE_GLYPH_OFFSET>,
+    rtl: bool,
+    sideways: bool,
+    /// Where each glyph's text starts (UTF-16 units; none after a cluster's first).
+    at: Vec<Option<u32>>,
+}
+
+/// Collects the glyph runs a layout draws.
+#[implement(IDWriteTextRenderer)]
+struct RunCollector {
+    runs: Rc<RefCell<Vec<Run>>>,
+}
+
+impl IDWritePixelSnapping_Impl for RunCollector_Impl {
+    fn IsPixelSnappingDisabled(&self, _: *const std::ffi::c_void) -> windows::core::Result<windows::core::BOOL> {
+        Ok(true.into())
+    }
+
+    fn GetCurrentTransform(&self, _: *const std::ffi::c_void, transform: *mut DWRITE_MATRIX) -> windows::core::Result<()> {
+        unsafe { *transform = DWRITE_MATRIX { m11: 1.0, m12: 0.0, m21: 0.0, m22: 1.0, dx: 0.0, dy: 0.0 } };
+        Ok(())
+    }
+
+    fn GetPixelsPerDip(&self, _: *const std::ffi::c_void) -> windows::core::Result<f32> {
+        Ok(1.0)
+    }
+}
+
+impl IDWriteTextRenderer_Impl for RunCollector_Impl {
+    fn DrawGlyphRun(
+        &self,
+        _: *const std::ffi::c_void,
+        x: f32,
+        y: f32,
+        _: DWRITE_MEASURING_MODE,
+        run: *const DWRITE_GLYPH_RUN,
+        description: *const DWRITE_GLYPH_RUN_DESCRIPTION,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        let Some(run) = (unsafe { run.as_ref() }) else { return Ok(()) };
+        let Some(face) = run.fontFace.as_ref() else { return Ok(()) };
+        let n = run.glyphCount as usize;
+        let (ids, advances, offsets) = unsafe { (items(run.glyphIndices, n), items(run.glyphAdvances, n), items(run.glyphOffsets, n)) };
+        let mut at = vec![None; n];
+        if let Some(d) = unsafe { description.as_ref() } {
+            let map = unsafe { items(d.clusterMap, d.stringLength as usize) };
+            for (i, g) in map.iter().enumerate() {
+                if let Some(slot) = at.get_mut(*g as usize) {
+                    slot.get_or_insert(d.textPosition + i as u32);
+                }
+            }
+        }
+        self.runs.borrow_mut().push(Run {
+            face: face.clone(),
+            size: run.fontEmSize,
+            x,
+            y,
+            ids: ids.to_vec(),
+            advances: if advances.is_empty() { vec![0.0; n] } else { advances.to_vec() },
+            offsets: if offsets.is_empty() { vec![DWRITE_GLYPH_OFFSET::default(); n] } else { offsets.to_vec() },
+            rtl: run.bidiLevel & 1 == 1,
+            sideways: run.isSideways.as_bool(),
+            at,
+        });
+        Ok(())
+    }
+
+    fn DrawUnderline(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: *const DWRITE_UNDERLINE,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn DrawStrikethrough(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: *const DWRITE_STRIKETHROUGH,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn DrawInlineObject(
+        &self,
+        _: *const std::ffi::c_void,
+        _: f32,
+        _: f32,
+        _: windows::core::Ref<IDWriteInlineObject>,
+        _: windows::core::BOOL,
+        _: windows::core::BOOL,
+        _: windows::core::Ref<windows::core::IUnknown>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+}
+
+/// The glyph runs of a layout, as it draws them from its top left corner.
+fn runs_of(layout: &TextLayout) -> Vec<Run> {
+    let Some(l) = &layout.shaped.layout else { return Vec::new() };
+    let runs = Rc::new(RefCell::new(Vec::new()));
+    let renderer: IDWriteTextRenderer = RunCollector { runs: runs.clone() }.into();
+    unsafe {
+        let _ = l.Draw(None, &renderer, 0.0, 0.0);
+    }
+    runs.take()
+}
+
+/// The glyphs of a layout, as they're placed (see `PlacedGlyph`).
+pub fn glyphs(layout: &TextLayout) -> Vec<crate::ui::text::PlacedGlyph> {
+    let text = &layout.shaped.text;
+    let mut bytes: Vec<usize> = Vec::with_capacity(text.len() + 1);
+    for (i, c) in text.char_indices() {
+        for _ in 0..c.len_utf16() {
+            bytes.push(i);
+        }
+    }
+    bytes.push(text.len());
+    let (mut at, mut placed) = (Vec::new(), Vec::new());
+    for run in runs_of(layout) {
+        let mut pen = run.x;
+        let mut last = None;
+        for i in 0..run.ids.len() {
+            let advance = run.advances[i];
+            let o = run.offsets[i];
+            if run.rtl {
+                pen -= advance;
+            }
+            let x = if run.rtl { pen - o.advanceOffset } else { pen + o.advanceOffset };
+            // (A glyph after a cluster's first shows nothing of its own.)
+            let start = run.at[i].or(last).map_or(text.len(), |u| bytes.get(u as usize).copied().unwrap_or(text.len()));
+            last = run.at[i].or(last);
+            at.push(start);
+            placed.push((x as f64, (run.y - o.ascenderOffset) as f64, advance as f64));
+            if !run.rtl {
+                pen += advance;
+            }
+        }
+    }
+    let ranges = crate::ui::text::cluster_ranges(&at, text.len());
+    placed
+        .into_iter()
+        .zip(ranges)
+        .map(|((x, y, advance), mut range)| {
+            // (A line break is no glyph's text.)
+            while range.end > range.start && matches!(text.as_bytes()[range.end - 1], b'\n' | b'\r') {
+                range.end -= 1;
+            }
+            crate::ui::text::PlacedGlyph { x, y, advance, text: range }
+        })
+        .collect()
+}
+
+/// Takes the outline DirectWrite gives a run into a path.
+#[implement(windows::Win32::Graphics::Direct2D::Common::ID2D1SimplifiedGeometrySink)]
+struct OutlineSink {
+    path: Rc<RefCell<kurbo::BezPath>>,
+    x: f64,
+    y: f64,
+}
+
+impl windows::Win32::Graphics::Direct2D::Common::ID2D1SimplifiedGeometrySink_Impl for OutlineSink_Impl {
+    fn SetFillMode(&self, _: windows::Win32::Graphics::Direct2D::Common::D2D1_FILL_MODE) {}
+
+    fn SetSegmentFlags(&self, _: windows::Win32::Graphics::Direct2D::Common::D2D1_PATH_SEGMENT) {}
+
+    fn BeginFigure(&self, start: &Vector2, _: windows::Win32::Graphics::Direct2D::Common::D2D1_FIGURE_BEGIN) {
+        self.path.borrow_mut().move_to((self.x + start.X as f64, self.y + start.Y as f64));
+    }
+
+    fn AddLines(&self, points: *const Vector2, count: u32) {
+        let mut path = self.path.borrow_mut();
+        for p in unsafe { items(points, count as usize) } {
+            path.line_to((self.x + p.X as f64, self.y + p.Y as f64));
+        }
+    }
+
+    fn AddBeziers(&self, beziers: *const windows::Win32::Graphics::Direct2D::Common::D2D1_BEZIER_SEGMENT, count: u32) {
+        let mut path = self.path.borrow_mut();
+        let at = |p: &Vector2| (self.x + p.X as f64, self.y + p.Y as f64);
+        for b in unsafe { items(beziers, count as usize) } {
+            path.curve_to(at(&b.point1), at(&b.point2), at(&b.point3));
+        }
+    }
+
+    fn EndFigure(&self, _: windows::Win32::Graphics::Direct2D::Common::D2D1_FIGURE_END) {
+        self.path.borrow_mut().close_path();
+    }
+
+    fn Close(&self) -> windows::core::Result<()> {
+        Ok(())
+    }
+}
+
+/// The outline of a layout's glyphs, in its coordinates (y down from its
+/// top): the font's own curves, at the font's weight and slant.
+pub fn outline(layout: &TextLayout) -> kurbo::BezPath {
+    let path = Rc::new(RefCell::new(kurbo::BezPath::new()));
+    for run in runs_of(layout) {
+        let sink: windows::Win32::Graphics::Direct2D::Common::ID2D1SimplifiedGeometrySink =
+            OutlineSink { path: path.clone(), x: run.x as f64, y: run.y as f64 }.into();
+        unsafe {
+            let _ = run.face.GetGlyphRunOutline(
+                run.size,
+                run.ids.as_ptr(),
+                Some(run.advances.as_ptr()),
+                Some(run.offsets.as_ptr()),
+                run.ids.len() as u32,
+                run.sideways,
+                run.rtl,
+                &sink,
+            );
+        }
+    }
+    path.take()
+}
+
+/// The metrics of the font a layout's text starts in, at its size.
+pub fn metrics(layout: &TextLayout) -> Option<crate::ui::text::FontMetrics> {
+    let run = runs_of(layout).into_iter().next()?;
+    let mut m = DWRITE_FONT_METRICS::default();
+    unsafe { run.face.GetMetrics(&mut m) };
+    let scale = run.size as f64 / m.designUnitsPerEm.max(1) as f64;
+    Some(crate::ui::text::FontMetrics {
+        ascent: m.ascent as f64 * scale,
+        descent: m.descent as f64 * scale,
+        line_gap: m.lineGap as f64 * scale,
+        cap_height: m.capHeight as f64 * scale,
+        x_height: m.xHeight as f64 * scale,
+    })
+}
+
+/// A localized name, in English if there's one.
+fn english(names: &IDWriteLocalizedStrings) -> Option<String> {
+    unsafe {
+        let locale = wide("en-us");
+        let (mut at, mut exists) = (0u32, windows::core::BOOL(0));
+        if names.FindLocaleName(PCWSTR(locale.as_ptr()), &mut at, &mut exists).is_err() || !exists.as_bool() {
+            at = 0;
+        }
+        let len = names.GetStringLength(at).ok()?;
+        let mut buf = vec![0u16; len as usize + 1];
+        names.GetString(at, &mut buf).ok()?;
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
+    }
+}
+
+/// The faces of the family `name`, lightest first.
+pub fn styles(name: &str) -> Vec<crate::ui::text::FontStyle> {
+    let mut out: Vec<crate::ui::text::FontStyle> = Vec::new();
+    let Some(c) = system_fonts() else { return out };
+    unsafe {
+        let wanted = wide(name.trim());
+        let (mut index, mut exists) = (0u32, windows::core::BOOL(0));
+        if c.FindFamilyName(PCWSTR(wanted.as_ptr()), &mut index, &mut exists).is_err() || !exists.as_bool() {
+            return out;
+        }
+        let Ok(family) = c.GetFontFamily(index) else { return out };
+        for i in 0..family.GetFontCount() {
+            let Ok(font) = family.GetFont(i) else { continue };
+            let Some(style) = font.GetFaceNames().ok().and_then(|n| english(&n)) else { continue };
+            let italic = font.GetStyle() != DWRITE_FONT_STYLE_NORMAL;
+            let weight = font.GetWeight().0 as f32;
+            if !out.iter().any(|o| o.name == style) {
+                out.push(crate::ui::text::FontStyle { name: style, weight, italic });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.weight.total_cmp(&b.weight).then(a.italic.cmp(&b.italic)));
+    out
 }

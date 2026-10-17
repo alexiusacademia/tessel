@@ -14,13 +14,10 @@
 
 use crate::List;
 
-/// Element type of the `[Float]`s made here (nothing compares them).
-static FLOAT_TYPE: crate::TslType = crate::TslType { size: 8, align: 8, retain: None, release: None, eq: None, hash: None, cmp: None, kind: 0 };
-
 /// A `[Float]` of `values`.
 fn floats(values: &[f64]) -> *mut List {
     unsafe {
-        let mut list = crate::tsl_list_new(&FLOAT_TYPE, values.len() as i64);
+        let mut list = crate::tsl_list_new(&crate::codec::FLOAT_TYPE, values.len() as i64);
         for v in values {
             crate::tsl_list_push(&mut list, v as *const f64 as *const u8);
         }

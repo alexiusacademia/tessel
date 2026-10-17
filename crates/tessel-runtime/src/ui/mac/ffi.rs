@@ -307,6 +307,32 @@ unsafe extern "C" {
     pub fn CTRunGetStringIndices(run: CTRunRef, range: CFRange, out: *mut CFIndex);
     pub fn CTRunGetAttributes(run: CTRunRef) -> CFDictionaryRef;
     pub fn CTRunDraw(run: CTRunRef, c: CGContextRef, range: CFRange);
+    pub fn CTRunGetGlyphs(run: CTRunRef, range: CFRange, out: *mut u16);
+    pub fn CTRunGetStringRange(run: CTRunRef) -> CFRange;
+    pub fn CTFontGetCapHeight(font: CTFontRef) -> f64;
+    pub fn CTFontGetXHeight(font: CTFontRef) -> f64;
+    pub fn CTFontCreatePathForGlyph(font: CTFontRef, glyph: u16, matrix: *const CGAffineTransform) -> CGPathRef;
+    pub fn CTFontDescriptorCreateMatchingFontDescriptors(d: CTFontDescriptorRef, mandatory: CFTypeRef) -> CFArrayRef;
+    pub fn CTFontDescriptorCopyAttribute(d: CTFontDescriptorRef, name: CFStringRef) -> CFTypeRef;
+    pub static kCTFontStyleNameAttribute: CFStringRef;
+    pub static kCTFontSymbolicTrait: CFStringRef;
+    pub static kCTKernAttributeName: CFStringRef;
+    pub static kCTTrackingAttributeName: CFStringRef;
+}
+
+/// A part of a path, as `CGPathApply` gives it: its kind (move, line,
+/// quadratic curve, cubic curve, close) and its points.
+#[repr(C)]
+pub struct CGPathElement {
+    pub kind: i32,
+    pub points: *const CGPoint,
+}
+
+pub type CGPathRef = *const c_void;
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    pub fn CGPathApply(path: CGPathRef, info: *mut c_void, f: unsafe extern "C" fn(*mut c_void, *const CGPathElement));
 }
 
 #[link(name = "ImageIO", kind = "framework")]

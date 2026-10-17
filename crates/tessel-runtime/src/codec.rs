@@ -355,6 +355,33 @@ pub(crate) static INT_TYPE: TslType = TslType {
     kind: 1,
 };
 
+unsafe extern "C" fn float_eq(a: *const u8, b: *const u8) -> bool {
+    unsafe { *(a as *const f64) == *(b as *const f64) }
+}
+
+unsafe extern "C" fn float_hash(a: *const u8) -> u64 {
+    // (0 and -0 are equal, so they hash the same.)
+    let v = unsafe { *(a as *const f64) };
+    if v == 0.0 { 0 } else { v.to_bits() }
+}
+
+unsafe extern "C" fn float_cmp(a: *const u8, b: *const u8) -> i32 {
+    let (a, b) = unsafe { (*(a as *const f64), *(b as *const f64)) };
+    a.partial_cmp(&b).map_or(0, |o| o as i32)
+}
+
+/// Element type of `[Float]`, for lists the runtime creates.
+pub(crate) static FLOAT_TYPE: TslType = TslType {
+    size: 8,
+    align: 8,
+    retain: None,
+    release: None,
+    eq: Some(float_eq),
+    hash: Some(float_hash),
+    cmp: Some(float_cmp),
+    kind: 0,
+};
+
 // ===== the tree =====
 
 pub enum Tree {
