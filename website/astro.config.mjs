@@ -16,6 +16,16 @@ export default defineConfig({
 			description: 'A small, declarative, compiled language for building desktop apps on macOS and Windows.',
 			logo: { src: './src/assets/logo.svg' },
 			customCss: ['./src/styles/custom.css'],
+			head: [
+				{
+					tag: 'script',
+					attrs: {
+						async: true,
+						src: 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2445415508470678',
+						crossorigin: 'anonymous',
+					},
+				},
+			],
 			expressiveCode: {
 				shiki: { langs: [{ ...tessel, name: 'tessel', aliases: ['tsl'] }] },
 			},
@@ -155,6 +165,7 @@ export default defineConfig({
 						{ label: "What's new", slug: 'about/whats-new' },
 						{ label: 'Design decisions', slug: 'about/design' },
 						{ label: 'Roadmap', slug: 'about/roadmap' },
+						{ label: 'Privacy', slug: 'about/privacy' },
 						{ label: 'Syncster', link: 'https://syncster.dev/' },
 					],
 				},
