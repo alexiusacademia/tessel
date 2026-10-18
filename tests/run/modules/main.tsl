@@ -23,4 +23,5 @@ fn main() {
     print(back?.x ?? 0)
     let geometry = 5
     print(geometry + 1)
+    aliased()
 }

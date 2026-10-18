@@ -416,6 +416,26 @@ conflict.
 Each file imports what it uses. A module is loaded once, however many files
 import it.
 
+### Another name for a module
+
+`as` gives a module a shorter (or clearer) name in one file:
+
+```tessel
+import geometry as geo
+
+fn main() {
+    let shapes: [geo.Shape] = [geo.Circle(radius: 1.0)]
+    print(geo.totalArea(shapes))
+}
+```
+
+The file then uses the module only by that name: `geometry.totalArea`
+there is an error that says to write `geo.totalArea`. Other files keep
+their own names for it; what's declared in the module is the same
+whatever it's called. `as` works for a folder and for a
+[library](/guides/libraries/) too: `import "../shared/textkit" as text`,
+`import numeric as num`. Two imports in a file can't use the same name.
+
 ### Sharing a module between programs
 
 `import` also takes a path to a folder, relative to the importing file. The

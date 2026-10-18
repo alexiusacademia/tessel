@@ -40,7 +40,9 @@ HELLO!
 ```
 
 The library's `public` declarations are used by their full name,
-`textkit.shout`, as with any module. A library sees only its own code and
+`textkit.shout`, as with any module. For a long name, give it a shorter one
+in the file with [`as`](/language/programs/#another-name-for-a-module):
+`import textkit as tk`, then `tk.shout("hello")`. A library sees only its own code and
 the libraries it uses, never the program's.
 
 ### Versions

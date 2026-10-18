@@ -20,13 +20,17 @@ pub struct Program {
     pub private: std::collections::HashSet<Span>,
 }
 
-/// `import geometry` or `import "../shared/geometry"`.
+/// `import geometry` or `import "../shared/geometry"`, maybe with
+/// `as geo`.
 #[derive(Debug, Clone)]
 pub struct Import {
     /// The folder, as written (a name, or a quoted path).
     pub path: String,
     /// Written as a quoted path.
     pub quoted: bool,
+    /// The name the file uses for the module instead of its own
+    /// (`import numeric as num`).
+    pub alias: Option<String>,
     pub span: Span,
 }
 

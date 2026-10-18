@@ -195,7 +195,7 @@ pub fn analyze_repl(sources: &mut SourceMap, entry: u32, vars: &[ReplVar], show:
     let mut imports: Vec<ast::Import> = Vec::new();
     for (_, program) in &root {
         for import in &program.imports {
-            if !imports.iter().any(|i| i.path == import.path && i.quoted == import.quoted) {
+            if !imports.iter().any(|i| i.path == import.path && i.quoted == import.quoted && i.alias == import.alias) {
                 imports.push(import.clone());
             }
         }

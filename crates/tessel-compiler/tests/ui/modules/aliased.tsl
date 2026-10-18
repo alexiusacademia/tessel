@@ -1,0 +1,4 @@
+// The module under another name: here its own name is an error.
+import geometry as geo
+
+fn aliased() -> Float { geometry.total([]) } // error: `geometry` is imported as `geo` in this file

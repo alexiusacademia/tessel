@@ -53,7 +53,8 @@ pub fn resolve(sources: &mut SourceMap, root: Vec<(u32, Program)>, diags: &mut D
                 loader.diags.push(Diagnostic::error(imp.span, "a module can't import itself"));
                 continue;
             }
-            let name = loader.modules[m].name.clone();
+            // (The file uses the module by its alias, when it gives one.)
+            let name = imp.alias.clone().unwrap_or_else(|| loader.modules[m].name.clone());
             if seen.insert(name.clone(), m).is_some() {
                 loader.diags.push(Diagnostic::error(imp.span, format!("`{name}` is imported twice in this file")));
             }
@@ -362,8 +363,14 @@ impl Resolver<'_> {
     /// public `name`. Returns the full name, or None if there's no such
     /// declaration (after reporting it).
     fn qualified(&mut self, module: &str, n: &str, span: Span) -> Option<String> {
-        let full = format!("{module}.{n}");
         let Some(&m) = self.imports.get(module) else {
+            // Imported here under another name?
+            let alias = self.imports.iter().find(|(_, i)| self.modules[**i].name == module).map(|(a, _)| a.clone());
+            if let Some(alias) = alias {
+                self.error(span, format!("`{module}` is imported as `{alias}` in this file"))
+                    .help(format!("write `{alias}.{n}`"));
+                return None;
+            }
             let d = self.error(span, format!("`{module}` isn't imported in this file"));
             d.help(format!("add `import {module}` at the top of this file"));
             return None;
@@ -388,7 +395,8 @@ impl Resolver<'_> {
                 return None;
             }
         }
-        Some(full)
+        // (By the module's own name, whatever this file calls it.)
+        Some(format!("{}.{n}", self.modules[m].name))
     }
 
     /// Is `n` a module name that isn't a local variable here?
@@ -669,7 +677,8 @@ impl Resolver<'_> {
                 let ExprKind::Name(m) = &object.kind else { unreachable!() };
                 // `geometry.|` in the editor: the checker suggests the module's names.
                 if name.name == crate::check::COMPLETION_MARK {
-                    e.kind = ExprKind::Name(format!("{m}.{}", name.name));
+                    let real = self.imports.get(m).map_or(m.clone(), |&i| self.modules[i].name.clone());
+                    e.kind = ExprKind::Name(format!("{real}.{}", name.name));
                     return;
                 }
                 e.kind = match self.qualified(&m.clone(), &name.name.clone(), name.span) {

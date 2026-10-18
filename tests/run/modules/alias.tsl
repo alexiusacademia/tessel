@@ -1,0 +1,14 @@
+// The same modules under other names: in this file `geometry` is `geo`
+// and `textutil` is `t`.
+import geometry as geo
+import textutil as t
+
+fn aliased() {
+    let shapes: [geo.Shape] = [geo.Circle(radius: 1.0), geo.Rect(width: 1.0, height: 1.0)]
+    print(geo.total(shapes))
+    print(geo.kind(geo.Circle(radius: 2.0)) == geo.Kind.round)
+    var s = geo.Stack<String>()
+    s.push("top")
+    print(s.top() ?? "")
+    print(t.shout("alias"))
+}

@@ -165,7 +165,7 @@ declarations:
 ```text
 file   = NL? (entry (NL entry)*)? NL? ;
 entry  = import | visibility? item ;
-import = "import" (IDENT | STRING) ;
+import = "import" (IDENT | STRING) ("as" IDENT)? ;
 visibility = "public" | "private" ;
 item   = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl
        | const_decl ;
@@ -177,7 +177,8 @@ worked out once when the program starts.
 
 `import geometry` loads the module in the folder `geometry` next to the
 file, or else the [library](/guides/libraries/) `geometry` the project
-uses; a string is a path to the folder, relative to the file. `public`
+uses; a string is a path to the folder, relative to the file. `as` gives
+the module another name in the file: `import geometry as geo`. `public`
 makes a module's declaration usable by the code that imports the module,
 and `private` limits a declaration to its own file. An `app` can be neither.
 See [Programs and files](/language/programs/#modules).

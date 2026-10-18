@@ -285,18 +285,39 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `import geometry` or `import "../shared/geometry"`.
+    /// `import geometry` or `import "../shared/geometry"`, and `as name`.
     fn import(&mut self) -> PResult<Import> {
+        let mut import = self.import_path()?;
+        if matches!(self.peek(), Tok::Ident(w) if w == "as") {
+            self.bump();
+            match self.peek().clone() {
+                Tok::Ident(alias) => {
+                    let span = self.bump().span;
+                    import.alias = Some(alias);
+                    import.span = import.span.to(span);
+                }
+                _ => {
+                    let span = self.span();
+                    self.error(span, "expected the name to use for the module after `as`")
+                        .help("write it like `import numeric as num`");
+                    return Err(Reported);
+                }
+            }
+        }
+        Ok(import)
+    }
+
+    fn import_path(&mut self) -> PResult<Import> {
         let lo = self.bump().span; // import
         match self.peek().clone() {
             Tok::Ident(name) => {
                 let span = self.bump().span;
-                Ok(Import { path: name, quoted: false, span: lo.to(span) })
+                Ok(Import { path: name, quoted: false, alias: None, span: lo.to(span) })
             }
             Tok::Str(pieces) => {
                 let span = self.bump().span;
                 match pieces.as_slice() {
-                    [StrPiece::Text(t)] => Ok(Import { path: t.clone(), quoted: true, span: lo.to(span) }),
+                    [StrPiece::Text(t)] => Ok(Import { path: t.clone(), quoted: true, alias: None, span: lo.to(span) }),
                     _ => {
                         self.error(span, "the folder of an `import` must be plain text")
                             .help("write it like `import \"../shared/geometry\"`");
