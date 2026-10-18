@@ -15,10 +15,16 @@ pub fn get(url: &str) -> Result<Vec<u8>, String> {
 }
 
 fn get_as(url: &str, accept: &str) -> Result<Vec<u8>, String> {
-    let mut r = crate::update::agent()
-        .get(url)
-        .header("User-Agent", "tessel")
-        .header("Accept", accept)
+    let mut req = crate::update::agent().get(url).header("User-Agent", "tessel").header("Accept", accept);
+    // GitHub's API allows few requests without a login, per network address,
+    // and shared machines (like CI's) use them up: a token set for `gh` or
+    // GitHub Actions lifts that.
+    if url.starts_with("https://api.github.com/")
+        && let Some(token) = ["GH_TOKEN", "GITHUB_TOKEN"].iter().find_map(|k| std::env::var(k).ok().filter(|t| !t.is_empty()))
+    {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    let mut r = req
         .call()
         .map_err(|e| format!("can't download {url}: {e}"))?;
     let mut bytes = Vec::new();
@@ -50,14 +56,14 @@ pub fn commit_of(repository: &str, tag: &str) -> Result<String, String> {
     if local(repository).is_some() {
         return Ok("local".into());
     }
-    if let Some(repo) = github(repository) {
-        let sha = get_as(&format!("https://api.github.com/repos/{repo}/commits/{tag}"), "application/vnd.github.sha")
-            .map_err(|_| format!("{repository} has no tag `{tag}` (or GitHub can't be reached)"))?;
+    // (GitHub's API needs no `git`; when it refuses, `git` is asked.)
+    if let Some(repo) = github(repository)
+        && let Ok(sha) = get_as(&format!("https://api.github.com/repos/{repo}/commits/{tag}"), "application/vnd.github.sha")
+    {
         let sha = String::from_utf8_lossy(&sha).trim().to_string();
-        if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(format!("{repository} has no tag `{tag}`"));
+        if sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(sha);
         }
-        return Ok(sha);
     }
     let out = Command::new("git")
         .args(["ls-remote", "--tags", repository])
