@@ -1,0 +1,13 @@
+import m
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-modules-builtin-names.txt")
+    if let e = writeText(path: path, text: "hi") { print(e.message) } else { print("wrote") }
+    print(readFile(path: path) ?? "")
+    deleteFile(path: path)
+    print(m.writeText(3))
+    let ink: Color = .rgb(10, 20, 30)
+    print(ink == .rgb(10, 20, 30))
+    print(m.shade() == m.Color.green)
+    print(m.print("x"))
+}

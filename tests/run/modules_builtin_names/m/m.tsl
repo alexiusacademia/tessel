@@ -1,0 +1,13 @@
+// A module that declares names Tessel has too (issues #30 and #31): the
+// program still means Tessel's by the bare names, and the module's by
+// `m.writeText` and `m.Color`.
+public fn writeText(_ n: Int) -> String { "module {n}" }
+
+public enum Color {
+    red
+    green
+}
+
+public fn shade() -> Color { .green }
+
+public fn print(_ s: String) -> String { "not printed: {s}" }
