@@ -11,10 +11,21 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.7.0
+## 0.8.0
 
-*October 18, 2026*
+*October 18, 2026 · 0.7.0 to 0.8.0*
 
+- **Libraries.** Publish a module for anyone to use, and use other
+  people's: `tessel add textkit` adds a library to the project, and
+  `import textkit` uses it. Tessel picks versions that suit every library
+  involved, keeps them in `tessel.lock`, and checks each download against
+  what was published. `tessel publish` publishes a library from its git
+  repository to the [library index](https://github.com/alexiusacademia/tessel-packages),
+  and `tessel new --template library` starts one. See
+  [Libraries](/guides/libraries/).
+- **Tables and trees.** [`Table`](/ui/tables/) shows rows of data in
+  columns that can be sorted, resized and selected, and [`Tree`](/ui/tables/#a-tree) shows nested
+  data opened level by level.
 - **Text as a shape.** [`g.textPath`](/reference/views/#graphics) adds the
   outline of text to the path, to fill with a gradient, stroke or clip by,
   and [`textOutline`](/reference/stdlib/#textoutline) gives it as path
