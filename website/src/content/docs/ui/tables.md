@@ -142,7 +142,7 @@ app Files(title: "Files", width: 320, height: 260) {
 }
 ```
 
-![A tree of files: src is open, with main.tsl and the folder ui inside it, which is open too with list.tsl selected and detail.tsl; tests is closed; README.md](../../../assets/screens/ui-tree.png)
+![A tree of files: src is open, with main.tsl and the folder ui inside it, which is open too with list.tsl selected and detail.tsl; tests is closed; README.md](../../../assets/screens/ui-tree-view.png)
 
 - Each level is indented, and a node with children has an arrow: click it,
   or press the right arrow key to open the node and the left one to close
