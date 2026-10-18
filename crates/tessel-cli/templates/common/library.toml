@@ -1,0 +1,8 @@
+
+# What `tessel publish` publishes. Programs use the library by this name:
+# `tessel add {{lib}}`, then `import {{lib}}`.
+[library]
+name = "{{lib}}"
+version = "0.1.0"
+description = "{{title}}: what it's for, in a sentence"
+license = "MIT"

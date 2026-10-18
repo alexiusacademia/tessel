@@ -82,6 +82,27 @@ the name (alias) of the key in it. Its password comes from the environment,
 never from this file. See
 [Publishing on Google Play](/guides/android/#publishing-on-google-play).
 
+## Libraries
+
+A `[dependencies]` table lists the [libraries](/guides/libraries/) the
+project uses, and a `[library]` table makes the project a library others
+can use:
+
+```toml
+[library]
+name = "textkit"
+version = "1.2.0"
+description = "Text helpers"
+license = "MIT"
+
+[dependencies]
+geokit = "0.3"
+mine = { path = "../mine" }
+```
+
+`tessel add` and `tessel remove` edit `[dependencies]`; the versions
+they come to are kept in `tessel.lock`, next to `tessel.toml`. Commit both.
+
 ## Documents
 
 Each `[[app.documents]]` is a kind of file the app opens: its `extensions`

@@ -176,7 +176,8 @@ A `let` at the top level is a [constant](/language/basics/#constants),
 worked out once when the program starts.
 
 `import geometry` loads the module in the folder `geometry` next to the
-file; a string is a path to the folder, relative to the file. `public`
+file, or else the [library](/guides/libraries/) `geometry` the project
+uses; a string is a path to the folder, relative to the file. `public`
 makes a module's declaration usable by the code that imports the module,
 and `private` limits a declaration to its own file. An `app` can be neither.
 See [Programs and files](/language/programs/#modules).

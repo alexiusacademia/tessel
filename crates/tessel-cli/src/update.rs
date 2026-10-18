@@ -29,7 +29,7 @@ fn base() -> String {
     std::env::var("TESSEL_RELEASES").unwrap_or_else(|_| BASE.to_string()).trim_end_matches('/').to_string()
 }
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(600))).build().into()
 }
 

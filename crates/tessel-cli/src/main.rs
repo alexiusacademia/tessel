@@ -5,6 +5,7 @@ mod hot;
 mod lsp;
 mod manifest;
 mod new;
+mod packages;
 mod pin;
 mod preview;
 mod repl;
@@ -25,10 +26,11 @@ With no command, opens the Tessel IDE on the current folder.
 
 commands:
   ide [folder]   open the Tessel IDE on a folder (default: the current one)
-  new <folder> [--template app|blank|cli]
+  new <folder> [--template app|blank|cli|library]
                  start a project in a new folder: a program to build on, its
                  tessel.toml, a README and a .gitignore. Templates: app (the
-                 default; a to-do list app), blank (one window) and cli
+                 default; a to-do list app), blank (one window), cli and
+                 library (one to publish for other programs)
   check <path> [--format lines]
                  check a program for errors; <path> is a .tsl file or a folder.
                  With --format lines, prints one error per line for tools:
@@ -60,6 +62,22 @@ commands:
                  the code (<prefix>.layout.json, <prefix>.views.json); --dark
                  for the dark appearance; --text
                  reads a file's current, unsaved text from <from>
+  add <library>[@<version>]
+                 use a published library: adds it to [dependencies] in
+                 tessel.toml, works out its version (and those of the
+                 libraries it uses) into tessel.lock, and downloads it. Then
+                 `import <library>` in the code. --git <url> --tag <tag> takes
+                 it from a git repository; --path <folder> from a folder
+  remove <library>
+                 stop using a library
+  deps [update [library...]]
+                 list the libraries the project uses; with update, move them
+                 (or the ones named) to the newest versions tessel.toml allows
+  search [words] list the published libraries (that match the words)
+  publish [--dry-run]
+                 publish the library in this folder (its tessel.toml has a
+                 [library] table): checks it, tags its git commit v<version>,
+                 pushes the tag and proposes it to the library index
   update [version] [--check]
                  update Tessel to the latest release (or to <version>, like
                  v0.1.2); with --check, only say whether there's a newer one
@@ -111,6 +129,8 @@ fn main() -> ExitCode {
     if let Some(code) = pin::hand_on(&mut args) {
         return code;
     }
+    // `import name` finds the libraries a project lists in its tessel.toml.
+    tessel_compiler::set_package_finder(packages::find);
     // (Once a day, when Tessel is used, the count of installations in use
     // is told: see `telemetry`. Not by what editors run on every key.)
     if !matches!(args.first().map(String::as_str), Some("telemetry" | "complete" | "preview" | "help" | "--help" | "-h" | "version" | "--version" | "-V")) {
@@ -209,6 +229,11 @@ fn main() -> ExitCode {
             }
         }
         (Some("update"), _) => update::run(&args[1..]),
+        (Some("add"), _) => packages::add(&args[1..]),
+        (Some("remove"), _) => packages::remove(&args[1..]),
+        (Some("deps"), _) => packages::deps(&args[1..]),
+        (Some("search"), _) => packages::search(&args[1..]),
+        (Some("publish"), _) => packages::publish(&args[1..]),
         (Some("pin"), _) => pin::run(&args[1..]),
         (Some("new"), _) => new::run(&args[1..]),
         (Some("lsp"), _) => match lsp::run() {
@@ -320,7 +345,9 @@ fn check(path: &Path, lines: bool) -> ExitCode {
         Ok(s) => s,
         Err(code) => return code,
     };
-    let analysis = tessel_compiler::analyze(&mut sources, true);
+    // (A library has no `main` or `app`: the programs that use it do.)
+    let library = manifest::find(path).ok().flatten().is_some_and(|f| f.manifest.library.is_some());
+    let analysis = tessel_compiler::analyze(&mut sources, !library);
     if lines {
         for d in &analysis.diags.list {
             let file = sources.file(d.span().file);

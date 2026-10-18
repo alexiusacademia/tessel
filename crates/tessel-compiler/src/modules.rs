@@ -37,7 +37,8 @@ struct Decl {
 pub fn resolve(sources: &mut SourceMap, root: Vec<(u32, Program)>, diags: &mut Diagnostics, next_id: &mut ExprId) -> Program {
     let root_dirs: HashSet<PathBuf> =
         root.iter().filter_map(|(id, _)| folder_of(&sources.file(*id).name).canonicalize().ok()).collect();
-    let mut loader = Loader { modules: Vec::new(), by_dir: HashMap::new(), root_dirs, diags, next_id };
+    let program = root.first().map(|(id, _)| folder_of(&sources.file(*id).name));
+    let mut loader = Loader { modules: Vec::new(), by_dir: HashMap::new(), root_dirs, program, diags, next_id };
     // (file, its parse, its module; None for the program's own files)
     let mut files: Vec<(u32, Program, Option<usize>)> = root.into_iter().map(|(id, p)| (id, p, None)).collect();
     let mut imports: HashMap<u32, HashMap<String, usize>> = HashMap::new();
@@ -148,6 +149,8 @@ struct Loader<'a> {
     modules: Vec<Module>,
     by_dir: HashMap<PathBuf, usize>,
     root_dirs: HashSet<PathBuf>,
+    /// The program's folder, for finding the libraries it depends on.
+    program: Option<PathBuf>,
     diags: &'a mut Diagnostics,
     next_id: &'a mut ExprId,
 }
@@ -166,15 +169,37 @@ impl Loader<'_> {
         sources: &mut SourceMap,
         files: &mut Vec<(u32, Program, Option<usize>)>,
     ) -> Option<usize> {
-        let dir = base.join(&imp.path);
-        let shown = dir.display().to_string();
-        let Ok(canon) = dir.canonicalize().and_then(|c| if c.is_dir() { Ok(c) } else { Err(std::io::ErrorKind::NotFound.into()) }) else {
+        let mut dir = base.join(&imp.path);
+        let mut shown = dir.display().to_string();
+        let mut found = dir.canonicalize().ok().filter(|c| c.is_dir());
+        // A name that isn't a folder here may be a library the program uses.
+        if found.is_none()
+            && !imp.quoted
+            && let (Some(find), Some(program)) = (crate::package_finder(), &self.program)
+        {
+            match find(program, base, &imp.path) {
+                Ok(Some(lib)) => {
+                    shown = lib.display().to_string();
+                    found = lib.canonicalize().ok();
+                    dir = lib;
+                }
+                Ok(None) => {}
+                Err(msg) => {
+                    self.diags.push(Diagnostic::error(imp.span, msg));
+                    return None;
+                }
+            }
+        }
+        let Some(canon) = found else {
             let (msg, help) = if imp.quoted {
                 (format!("can't find the folder `{shown}`"), "the path is relative to the folder of this file".to_string())
             } else {
                 (
                     format!("can't find module `{}`", imp.path),
-                    format!("a module is a folder of .tsl files; `import {}` looks for the folder `{shown}`", imp.path),
+                    format!(
+                        "a module is a folder of .tsl files; `import {}` looks for the folder `{shown}`, or a library the project uses (`tessel add {}` adds one)",
+                        imp.path, imp.path
+                    ),
                 )
             };
             self.error(imp.span, msg, help);

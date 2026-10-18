@@ -16,7 +16,7 @@ error: can't find module `nothing`
 1 | import nothing
   | ^^^^^^^^^^^^^^
   |
-  = help: a module is a folder of .tsl files; `import nothing` looks for the folder `./nothing`
+  = help: a module is a folder of .tsl files; `import nothing` looks for the folder `./nothing`, or a library the project uses (`tessel add nothing` adds one)
 
 note: `c` is gone, because the files of an imported module changed
 note: `p` is gone, because the files of an imported module changed

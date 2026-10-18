@@ -32,6 +32,25 @@ pub struct Manifest {
     pub app: App,
     #[serde(default)]
     pub android: Android,
+    /// What a library says about itself (see `packages`).
+    pub library: Option<Library>,
+    /// The libraries the project uses, read by `packages::deps_of`.
+    #[serde(default)]
+    pub dependencies: std::collections::BTreeMap<String, toml::Value>,
+}
+
+/// A library's `[library]` table: what `tessel publish` publishes.
+#[derive(Deserialize, Default, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Library {
+    /// Its name, as programs import it.
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    /// The licence its code is under, like "MIT".
+    pub license: Option<String>,
+    /// Its git repository (otherwise the folder's `origin` remote).
+    pub repository: Option<String>,
 }
 
 /// What an Android package needs besides `[app]` (`[android]`).
@@ -95,12 +114,17 @@ pub fn find(path: &Path) -> Result<Option<Found>, String> {
     let cwd = std::env::current_dir().ok().and_then(|d| d.canonicalize().ok());
     let shown = cwd.and_then(|d| file.strip_prefix(d).ok().map(Path::to_path_buf)).unwrap_or_else(|| file.clone());
     let text = std::fs::read_to_string(&file).map_err(|e| format!("can't read {}: {e}", shown.display()))?;
-    let manifest: Manifest = toml::from_str(&text).map_err(|e| format!("{}: {e}", shown.display()))?;
+    let manifest = parse(&text).map_err(|e| format!("{}: {e}", shown.display()))?;
     let problems = check(&manifest.app);
     if !problems.is_empty() {
         return Err(format!("{}: {}", shown.display(), problems.join("; ")));
     }
     Ok(Some(Found { file, manifest }))
+}
+
+/// A `tessel.toml`'s text, read.
+pub fn parse(text: &str) -> Result<Manifest, String> {
+    toml::from_str(text).map_err(|e| e.to_string())
 }
 
 /// What's wrong with an `[app]` table's values (the format itself is

@@ -1,0 +1,10 @@
+// The library's code. What's `public` here is what a program that
+// imports it can use: `{{lib}}.greet("Ann")`. The rest stays inside.
+
+public fn greet(_ name: String) -> String {
+    return "Hello, {name}{punctuation()}"
+}
+
+fn punctuation() -> String {
+    return "!"
+}

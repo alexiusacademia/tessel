@@ -1,10 +1,12 @@
-//! `tessel new <folder> [--template app|blank|cli]`: a project to start
-//! from, with its `tessel.toml` (this version of Tessel, and for apps their
-//! name and identifier), a README and a `.gitignore`.
+//! `tessel new <folder> [--template app|blank|cli|library]`: a project to
+//! start from, with its `tessel.toml` (this version of Tessel, and for apps
+//! their name and identifier, for a library its `[library]` table), a README
+//! and a `.gitignore`.
 //!
 //! The templates are in `templates/`, with `{{…}}` for what depends on the
 //! project: `{{Name}}` (the `app`'s name in the code), `{{title}}` (its name
-//! for people), `{{folder}}`, `{{id}}`, `{{tessel}}`, `{{year}}`.
+//! for people), `{{folder}}`, `{{id}}`, `{{lib}}` (a library's name),
+//! `{{tessel}}`, `{{year}}`. A library's `lib.tsl` is named after it.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -18,6 +20,7 @@ struct Template {
     about: &'static str,
     files: &'static [(&'static str, &'static str)],
     app: Option<&'static str>,
+    library: bool,
 }
 
 const TEMPLATES: &[Template] = &[
@@ -31,6 +34,7 @@ const TEMPLATES: &[Template] = &[
             ("README.md", include_str!("../templates/app/README.md")),
         ],
         app: Some("productivity"),
+        library: false,
     },
     Template {
         name: "blank",
@@ -40,6 +44,7 @@ const TEMPLATES: &[Template] = &[
             ("README.md", include_str!("../templates/blank/README.md")),
         ],
         app: Some("utilities"),
+        library: false,
     },
     Template {
         name: "cli",
@@ -49,11 +54,23 @@ const TEMPLATES: &[Template] = &[
             ("README.md", include_str!("../templates/cli/README.md")),
         ],
         app: None,
+        library: false,
+    },
+    Template {
+        name: "library",
+        about: "a library for other programs to use, ready to publish",
+        files: &[
+            ("lib.tsl", include_str!("../templates/library/lib.tsl")),
+            ("README.md", include_str!("../templates/library/README.md")),
+        ],
+        app: None,
+        library: true,
     },
 ];
 
 const TESSEL_TOML: &str = include_str!("../templates/common/tessel.toml");
 const APP_TOML: &str = include_str!("../templates/common/app.toml");
+const LIBRARY_TOML: &str = include_str!("../templates/common/library.toml");
 const GITIGNORE: &str = include_str!("../templates/common/gitignore");
 
 /// The templates, for `tessel help` and the IDE: `name  about` lines.
@@ -70,6 +87,8 @@ struct Names {
     /// The app's identifier: `com.example.my-tasks`.
     id: String,
     folder: String,
+    /// A library's name: `my_tasks`.
+    lib: String,
 }
 
 fn names(folder: &str) -> Names {
@@ -95,7 +114,19 @@ fn names(folder: &str) -> Names {
     if id.is_empty() {
         id = code.to_lowercase();
     }
-    Names { code, title, id: format!("com.example.{id}"), folder: folder.to_string() }
+    let mut lib: String = folder
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    if !lib.starts_with(|c: char| c.is_ascii_lowercase()) {
+        lib = format!("lib{lib}");
+    }
+    Names { code, title, id: format!("com.example.{id}"), folder: folder.to_string(), lib }
 }
 
 fn fill(text: &str, n: &Names, code: &str, category: &str) -> String {
@@ -104,6 +135,7 @@ fn fill(text: &str, n: &Names, code: &str, category: &str) -> String {
         .replace("{{title}}", &n.title)
         .replace("{{folder}}", &n.folder)
         .replace("{{id}}", &n.id)
+        .replace("{{lib}}", &n.lib)
         .replace("{{tessel}}", tessel_compiler::VERSION)
         .replace("{{year}}", &year.to_string())
         .replace("{{category}}", category)
@@ -127,8 +159,10 @@ fn chrono_year() -> i64 {
 fn files(t: &Template, n: &Names, code: &str) -> Vec<(String, String)> {
     let category = t.app.unwrap_or("");
     let app = t.app.map_or(String::new(), |_| fill(APP_TOML, n, code, category));
+    let app = if t.library { fill(LIBRARY_TOML, n, code, category) } else { app };
     let toml = fill(TESSEL_TOML, n, code, category).replace("{{app}}\n", &app);
-    let mut out: Vec<(String, String)> = t.files.iter().map(|(f, text)| (f.to_string(), fill(text, n, code, category))).collect();
+    let file_name = |f: &str| if t.library && f == "lib.tsl" { format!("{}.tsl", n.lib) } else { f.to_string() };
+    let mut out: Vec<(String, String)> = t.files.iter().map(|(f, text)| (file_name(f), fill(text, n, code, category))).collect();
     out.push(("tessel.toml".into(), toml));
     out.push((".gitignore".into(), fill(GITIGNORE, n, code, category)));
     out
@@ -136,12 +170,14 @@ fn files(t: &Template, n: &Names, code: &str) -> Vec<(String, String)> {
 
 /// Whether the program in `files` checks without errors (its app's name
 /// could be one Tessel or the template already uses, like `Text` or `Task`).
+/// A library has no entry point.
 fn checks(files: &[(String, String)]) -> bool {
+    let library = files.iter().any(|(f, t)| f == "tessel.toml" && t.contains("[library]"));
     let mut sources = SourceMap::new();
     for (name, text) in files.iter().filter(|(f, _)| f.ends_with(".tsl")) {
         sources.add(name.clone(), text.clone());
     }
-    tessel_compiler::analyze(&mut sources, true).diags.is_empty()
+    tessel_compiler::analyze(&mut sources, !library).diags.is_empty()
 }
 
 pub fn run(args: &[String]) -> ExitCode {
@@ -155,7 +191,7 @@ pub fn run(args: &[String]) -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--template" | "-t" => {
-                let Some(t) = args.get(i + 1) else { return fail("`--template` needs a name: app, blank or cli".into()) };
+                let Some(t) = args.get(i + 1) else { return fail("`--template` needs a name: app, blank, cli or library".into()) };
                 template = t;
                 i += 1;
             }
@@ -212,6 +248,11 @@ pub fn run(args: &[String]) -> ExitCode {
         println!("  kept the {name} that was there");
     }
     let go = if folder == "." { String::new() } else { format!("cd {}\n  ", quote(folder)) };
+    if t.library {
+        let go = if folder == "." { String::new() } else { format!("cd {}\n  ", quote(folder)) };
+        println!("\nNext:\n  {go}tessel check .\n  tessel publish --dry-run\n\nThe README says how to publish it, and how programs use it.");
+        return ExitCode::SUCCESS;
+    }
     let run = if t.app.is_none() { "tessel run . Ana" } else { "tessel run ." };
     println!("\nNext:\n  {go}{run}\n\nor open it in the IDE with `tessel ide {}`.", quote(folder));
     ExitCode::SUCCESS

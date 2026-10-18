@@ -429,8 +429,9 @@ fn main() {
 }
 ```
 
-This way several programs can use one copy of the code. (There's no
-package manager yet: the folder is found on disk.)
+This way several programs can use one copy of the code. To share a module
+with anyone, publish it as a [library](/guides/libraries/): then a
+program uses it with `tessel add textkit` and `import textkit`.
 
 A module can't have an `app`: that belongs to the program. Put the views
 the program needs in the module, mark them `public`, and show them from the

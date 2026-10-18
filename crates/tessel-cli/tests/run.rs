@@ -598,3 +598,86 @@ fn apps_name_no_private_functions() {
     let private: Vec<&str> = names.lines().map(str::trim).filter(|n| n.starts_with("_CGS") && *n != "_CGShieldingWindowLevel").collect();
     assert!(private.is_empty(), "the app names private functions: {private:?}");
 }
+
+/// Libraries: publishing two (one using the other) to an index in a
+/// folder, using them from a program, and what goes wrong.
+#[test]
+fn libraries() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-libraries-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write = |path: &str, text: &str| {
+        let p = dir.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    };
+    std::fs::create_dir_all(dir.join("index/packages")).unwrap();
+    let tessel = |folder: &str, args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+            .args(args)
+            .current_dir(dir.join(folder))
+            .env("TESSEL_HOME", dir.join("home"))
+            .env("TESSEL_INDEX", dir.join("index"))
+            .env_remove("TESSEL_VERSION")
+            .output()
+            .unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        (out.status.success(), text.replace('\\', "/"))
+    };
+    write("geokit/tessel.toml", "[library]\nname = \"geokit\"\nversion = \"0.3.1\"\ndescription = \"Areas\"\nlicense = \"MIT\"\nrepository = \".\"\n");
+    write("geokit/area.tsl", "public fn circleArea(_ r: Float) -> Float {\n    return 3.0 * r * r\n}\n");
+    write(
+        "textkit/tessel.toml",
+        "[library]\nname = \"textkit\"\nversion = \"1.2.0\"\ndescription = \"Text helpers\"\nlicense = \"MIT\"\nrepository = \".\"\n\n[dependencies]\ngeokit = \"0.3\"\n",
+    );
+    write(
+        "textkit/text.tsl",
+        "import geokit\n\npublic fn shout(_ s: String) -> String {\n    return s.uppercase() + \"!\"\n}\n\npublic fn area(_ r: Float) -> Float {\n    return geokit.circleArea(r)\n}\n",
+    );
+    write("app/main.tsl", "import textkit\n\nfn main() {\n    print(textkit.shout(\"hi\"))\n    print(textkit.area(2.0))\n}\n");
+
+    // Publishing: textkit needs geokit published first.
+    let (ok, out) = tessel("textkit", &["publish"]);
+    assert!(!ok && out.contains("there's no library `geokit` in the index"), "{out}");
+    assert!(tessel("geokit", &["publish"]).0);
+    let (ok, out) = tessel("textkit", &["publish"]);
+    assert!(ok && out.contains("Published textkit 1.2.0"), "{out}");
+    let (ok, out) = tessel("textkit", &["publish"]);
+    assert!(!ok && out.contains("textkit 1.2.0 is published already"), "{out}");
+    let (_, out) = tessel("app", &["search", "text"]);
+    assert_eq!(out, "textkit 1.2.0  Text helpers\n");
+
+    // Using them.
+    let (ok, out) = tessel("app", &["add", "textkit"]);
+    assert!(ok && out.contains("Added textkit 1.2.0"), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("app/tessel.toml")).unwrap(), "[dependencies]\ntextkit = \"1.2\"\n");
+    let lock = std::fs::read_to_string(dir.join("app/tessel.lock")).unwrap();
+    assert!(lock.contains("name = \"geokit\"") && lock.contains("name = \"textkit\""), "{lock}");
+    let (ok, out) = tessel("app", &["run", "."]);
+    assert!(ok, "{out}");
+    assert_eq!(out, "HI!\n12.0\n");
+    let (_, out) = tessel("app", &["deps"]);
+    assert_eq!(out, "textkit 1.2.0\n  └─ geokit 0.3.1\n");
+
+    // Only what the program lists is its to import.
+    write("app/more.tsl", "import geokit\n\nfn twice() -> Float {\n    return geokit.circleArea(1.0)\n}\n");
+    let (ok, out) = tessel("app", &["check", "."]);
+    assert!(!ok && out.contains("`geokit` is a library that another library uses, not one this project depends on"), "{out}");
+    std::fs::remove_file(dir.join("app/more.tsl")).unwrap();
+
+    // Asking for what doesn't exist changes nothing.
+    let (ok, out) = tessel("app", &["add", "geokit@0.2"]);
+    assert!(!ok && out.contains("no version of `geokit` is what everyone asks for"), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("app/tessel.toml")).unwrap(), "[dependencies]\ntextkit = \"1.2\"\n");
+
+    // Code changed after publishing isn't used.
+    for e in std::fs::read_dir(dir.join("home/packages")).unwrap() {
+        std::fs::remove_dir_all(e.unwrap().path()).unwrap();
+    }
+    write("geokit/area.tsl", "public fn circleArea(_ r: Float) -> Float {\n    return 4.0 * r * r\n}\n");
+    let (ok, out) = tessel("app", &["run", "."]);
+    assert!(!ok && out.contains("the code of geokit 0.3.1 isn't what was published"), "{out}");
+
+    let (ok, _) = tessel("app", &["remove", "textkit"]);
+    assert!(ok && !dir.join("app/tessel.lock").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

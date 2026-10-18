@@ -13,10 +13,11 @@ With no command, opens the Tessel IDE on the current folder.
 
 commands:
   ide [folder]   open the Tessel IDE on a folder (default: the current one)
-  new <folder> [--template app|blank|cli]
+  new <folder> [--template app|blank|cli|library]
                  start a project in a new folder: a program to build on, its
                  tessel.toml, a README and a .gitignore. Templates: app (the
-                 default; a to-do list app), blank (one window) and cli
+                 default; a to-do list app), blank (one window), cli and
+                 library (one to publish for other programs)
   check <path> [--format lines]
                  check a program for errors; <path> is a .tsl file or a folder.
                  With --format lines, prints one error per line for tools:
@@ -29,6 +30,22 @@ commands:
                  build and run a program; with --hot, an app takes its new
                  code when its files change, and keeps its state
   repl           type code and see what it does, a line at a time
+  add <library>[@<version>]
+                 use a published library: adds it to [dependencies] in
+                 tessel.toml, works out its version (and those of the
+                 libraries it uses) into tessel.lock, and downloads it. Then
+                 `import <library>` in the code. --git <url> --tag <tag> takes
+                 it from a git repository; --path <folder> from a folder
+  remove <library>
+                 stop using a library
+  deps [update [library...]]
+                 list the libraries the project uses; with update, move them
+                 (or the ones named) to the newest versions tessel.toml allows
+  search [words] list the published libraries (that match the words)
+  publish [--dry-run]
+                 publish the library in this folder (its tessel.toml has a
+                 [library] table): checks it, tags its git commit v<version>,
+                 pushes the tag and proposes it to the library index
   lsp            start the language server (used by editors)
   help           show this help
   version        print the compiler version
@@ -50,6 +67,7 @@ or a `fn main()` (a program that runs in the terminal).
 tessel new my-tasks                      # a to-do list app to build on
 tessel new my-app --template blank       # an app with one window
 tessel new tool --template cli           # a command-line program
+tessel new textkit --template library    # a library to publish
 ```
 
 Starts a project in a new folder (or in a folder without a program yet, like
@@ -60,6 +78,7 @@ Starts a project in a new folder (or in a folder without a program yet, like
 | `app` (the default) | A small to-do list app, split the way a bigger app is: `main.tsl` (the window, a menu, what the buttons do), `task.tsl` (the data, and saving it as JSON between runs) and `views.tsl` (a view of its own). |
 | `blank` | An app with one window, a text and a button, in `main.tsl`. |
 | `cli` | A program with `fn main` that greets the names it's given: `tessel run . Ana Ben`. |
+| `library` | A [library](/guides/libraries/) for other programs: its code, and a `[library]` table ready for `tessel publish`. |
 
 Each also gets:
 
@@ -370,6 +389,45 @@ you name. The first time, `tessel` compiles the IDE and caches it in your
 system's temporary folder; it's compiled again only when `tessel` itself
 changes.
 
+## `tessel add`, `remove` and `deps`
+
+```sh
+tessel add textkit                    # the newest published textkit
+tessel add textkit@1.2                # 1.2 or a later 1.x
+tessel add geokit --git https://github.com/someone/geokit --tag v0.3.0
+tessel add mine --path ../mine
+tessel remove textkit
+tessel deps                           # what the project uses
+tessel deps update [library…]         # newer versions, as tessel.toml allows
+```
+
+Manage the [libraries](/guides/libraries/) a project uses: `add` and
+`remove` change the `[dependencies]` of its `tessel.toml`, and Tessel
+works out their versions into `tessel.lock` and downloads them. `check`,
+`build`, `run` and the editors do the same when `tessel.toml` and
+`tessel.lock` don't match, so a fresh copy of a project builds as it is.
+
+## `tessel search`
+
+```sh
+tessel search            # every published library
+tessel search text       # those whose name or description has "text"
+```
+
+Lists the libraries in the index, each with its newest version and its
+description.
+
+## `tessel publish`
+
+```sh
+tessel publish --dry-run
+tessel publish
+```
+
+Publishes the library in the current folder: checks it, tags its commit
+`v<version>`, pushes the tag, and opens the page that proposes it to the
+library index. See [Publishing](/guides/libraries/#publishing).
+
 ## `tessel update`
 
 ```sh
@@ -544,7 +602,8 @@ summary and exits with status 1.
 | `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
 | `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |
 | `TESSEL_ANDROID_KEYSTORE_PASSWORD` | `tessel build --android` | The password of the keystore `tessel.toml` names; `TESSEL_ANDROID_KEY_PASSWORD` is the key's, if it differs. See [Publishing on Google Play](/guides/android/#publishing-on-google-play). |
-| `TESSEL_HOME` | `tessel pin` | Tessel's folder, where other versions are installed (in `versions/`). The install scripts use it too. |
+| `TESSEL_HOME` | `tessel pin`, libraries | Tessel's folder, where other versions are installed (in `versions/`) and libraries are downloaded (in `packages/`). The install scripts use it too. |
+| `TESSEL_INDEX` | Libraries | Another [library index](/guides/libraries/) instead of the public one: a folder on this computer (then `tessel publish` writes its entries there, for trying libraries out) or the address of a `.tar.gz` of one. |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |
 | `TESSEL_DEBUG_EVENTS` | Built apps | When set, an app prints every window event it receives (mouse, keyboard, resizing) to standard error. Useful when something doesn't react to input. |
 | `LLVM_SYS_221_PREFIX` | Building Tessel | Where LLVM 22 is installed; see [Installation](/start/installation/). |

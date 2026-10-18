@@ -50,6 +50,24 @@ pub(crate) fn app_info() -> AppInfo {
     APP_INFO.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// Finds a library a program depends on: given the program's folder, the
+/// folder of the file that imports it and its name, the library's folder,
+/// or `None` when the program has no such library. `tessel` sets it: it
+/// reads the project's `tessel.toml` and `tessel.lock`, and downloads what's
+/// missing.
+pub type PackageFinder = fn(program: &std::path::Path, from: &std::path::Path, name: &str) -> Result<Option<std::path::PathBuf>, String>;
+
+static PACKAGE_FINDER: std::sync::Mutex<Option<PackageFinder>> = std::sync::Mutex::new(None);
+
+/// Sets how `import name` finds a library when there's no folder `name`.
+pub fn set_package_finder(f: PackageFinder) {
+    *PACKAGE_FINDER.lock().unwrap() = Some(f);
+}
+
+pub(crate) fn package_finder() -> Option<PackageFinder> {
+    *PACKAGE_FINDER.lock().unwrap()
+}
+
 /// The bundle identifier an app has when its manifest doesn't give one.
 pub fn default_app_id(name: &str) -> String {
     let id: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
