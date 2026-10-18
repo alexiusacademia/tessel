@@ -304,6 +304,9 @@ it's opened. When a group closes, the groups inside it go away with their
 state; keep what's open in your own data (a `Set` of paths, say) to
 remember it.
 
+For a tree with selection, the keyboard and many nodes, there's
+[`Tree`](/ui/tables/#a-tree), which does all of this itself.
+
 ## A complete example
 
 Here is a small to-do app that puts it all together: a text field to add
