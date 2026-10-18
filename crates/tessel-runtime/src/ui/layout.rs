@@ -228,6 +228,8 @@ const POPOVER_GAP: f64 = 6.0;
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
     pub scroll: &'a HashMap<u64, f64>,
+    /// The widths of the columns of the tables being laid out (innermost last).
+    pub columns: Vec<Vec<f64>>,
     /// Text an input method is composing: the view it's for, the part of the
     /// view's text it will replace, and the text so far.
     pub composing: Option<(u64, std::ops::Range<usize>, &'a str)>,
@@ -627,6 +629,36 @@ impl Layouter<'_> {
                 }
                 size
             }
+            Kind::Table(spec) => {
+                // As large as it's let be; its header's titles, and its rows
+                // in columns as wide as they're given.
+                let spec = spec.clone();
+                let w = if avail.w.is_finite() { avail.w } else { 480.0 };
+                let header = if spec.tree.is_some() { 0.0 } else { super::table::HEADER };
+                let tall = header + spec.count as f64 * spec.row_height;
+                let h = if avail.h.is_finite() { avail.h } else { tall.min(320.0) };
+                let titles = Style { size: (style.size - 1.0).max(9.0), weight: 600.0, ..*style };
+                n.layout.tabs = spec
+                    .columns
+                    .iter()
+                    .map(|c| Tab { title: self.text_layout(&c.title, &titles, None), rect: Rect::default(), close: None })
+                    .collect();
+                self.columns.push(super::table::widths(&spec, n.key, w));
+                for c in &mut n.children {
+                    self.measure(c, Size { w, h: (h - header).max(0.0) }, style);
+                }
+                self.columns.pop();
+                Size { w, h }
+            }
+            Kind::TableRow(row) => {
+                let indent = if row.path.is_some() { (row.depth + 1) as f64 * super::table::INDENT } else { 0.0 };
+                let widths = self.columns.last().cloned().unwrap_or_default();
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let w = widths.get(i).copied().unwrap_or(avail.w) - 2.0 * super::table::CELL_PAD - if i == 0 { indent } else { 0.0 };
+                    self.measure(c, Size { w: w.max(0.0), h: avail.h }, style);
+                }
+                Size { w: if avail.w.is_finite() { avail.w } else { widths.iter().sum() }, h: avail.h }
+            }
             Kind::Scroll => {
                 // Several children are stacked downwards, like a VStack.
                 let mut content_h: f64 = 0.0;
@@ -744,6 +776,35 @@ impl Layouter<'_> {
                     let h = if flex(c, Axis::Y, None) { content.h } else { c.layout.size.h.min(content.h) };
                     let r = aligned(content, Size { w, h }, align);
                     self.place(c, r);
+                }
+            }
+            Kind::Table(spec) => {
+                let spec = spec.clone();
+                let header = if spec.tree.is_some() { 0.0 } else { super::table::HEADER };
+                let widths = super::table::widths(&spec, n.key, content.w);
+                let mut x = content.x;
+                for (t, w) in n.layout.tabs.iter_mut().zip(&widths) {
+                    t.rect = Rect { x, y: content.y, w: *w, h: header };
+                    x += w;
+                }
+                self.columns.push(widths);
+                // (Inside the table's border.)
+                let body = Rect { x: content.x + 1.0, y: content.y + header, w: (content.w - 2.0).max(0.0), h: (content.h - header - 1.0).max(0.0) };
+                for c in &mut n.children {
+                    self.place(c, body);
+                }
+                self.columns.pop();
+            }
+            Kind::TableRow(row) => {
+                let indent = if row.path.is_some() { (row.depth + 1) as f64 * super::table::INDENT } else { 0.0 };
+                let widths = self.columns.last().cloned().unwrap_or_default();
+                let pad = super::table::CELL_PAD;
+                let mut x = content.x;
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let w = widths.get(i).copied().unwrap_or(content.w);
+                    let inset = if i == 0 { indent } else { 0.0 };
+                    self.place(c, Rect { x: x + pad + inset, y: content.y, w: (w - 2.0 * pad - inset).max(0.0), h: content.h });
+                    x += w;
                 }
             }
             Kind::Scroll => {
@@ -965,7 +1026,8 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } | Kind::Ribbon { .. } => axis == Axis::X,
         Kind::Disclosure { .. } => axis == Axis::X,
-        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } => true,
+        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
+        Kind::TableRow(_) => axis == Axis::X,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),
         Kind::VStack(..) | Kind::Group => n.children.iter().any(|c| flex(c, axis, Some(Axis::Y))),

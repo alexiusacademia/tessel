@@ -39,7 +39,7 @@ the space they are offered.
 | Flexible… | Views |
 |---|---|
 | horizontally only | `TextField`, `Slider`, `DisclosureGroup`, `LazyVStack` |
-| in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas`, `Scene3D` |
+| in both directions | `Scroll`, `CodeEditor`, `TabView`, `Canvas`, `Scene3D`, `Table`, `Tree` |
 | along its stack's direction | `Spacer` |
 | across its stack | `Divider` |
 | when a child is flexible | `VStack`, `HStack`, `ZStack`, custom views |
@@ -577,6 +577,63 @@ Scroll {
 - The list is as tall as all its rows, and flexible horizontally.
 - In a [headless run](/ui/testing/), `tree` shows only the rows built:
   `LazyVStack 100000 rows, built 1990..2020`.
+
+## Table
+
+```text
+Table(rows: Int, rowHeight: Float = 24, selection: bind [Int] = …, sortColumn: bind Int = …,
+      ascending: bind Bool = …, onSort: fn() = …, multiple: Bool = true, onOpen: fn(Int) = …,
+      columns: View)
+```
+
+Rows of the program's data in columns, under a header. The block gives the
+columns, as [`TableColumn`](#tablecolumn)s (and nothing else). See
+[Tables and trees](/ui/tables/).
+
+- `rows` rows of `rowHeight` points are shown, of which only those near
+  what shows are built, as in a [`LazyVStack`](#lazyvstack).
+- `selection` holds the numbers of the rows selected, in order: a click
+  selects a row, Shift-click a range, Cmd-click (Ctrl on Windows) adds or
+  takes one out; the arrow keys, Home, End, Page Up and Page Down move it.
+  `multiple: false` allows one row only.
+- A click on a column's title sets `sortColumn` (its number from 0) and
+  `ascending` (again: the other way), shows an arrow by it, and runs
+  `onSort`, which puts the program's rows in that order. Without
+  `sortColumn`, titles aren't clicked.
+- A double-click on a row, or Enter, runs `onOpen` with its number.
+- The user can drag the edge between two titles to resize a column.
+- A table is flexible in both directions, and scrolls its rows; it's 320
+  points tall when nothing limits it.
+
+## TableColumn
+
+```text
+TableColumn(_ title: String, width: Float = …, alignment: Alignment = .leading, cells: fn(Int) -> View)
+```
+
+A column of a [`Table`](#table): `cells` builds its cell in row `i`.
+Without `width`, the columns that have none share the room the others
+leave (each at least 80 points). `alignment` (`.leading`, `.center` or
+`.trailing`) lines up its cells and its title.
+
+## Tree
+
+```text
+Tree(children: fn([Int]) -> Int, rowHeight: Float = 24, selection: bind [Int] = …,
+     onOpen: fn([Int]) = …, rows: fn([Int]) -> View)
+```
+
+The program's nested data, a level at a time. Each node is known by its
+path, the place of it and of the nodes above it (`[1, 0]`: the first child
+of the second node at the top). `children` says how many children the node
+at a path has (`[]`: the top); `rows` builds the row of the node at a path.
+See [Tables and trees](/ui/tables/#a-tree).
+
+- A node with children has an arrow that opens and closes it; the right
+  and left arrow keys do too (left on a closed node goes to its parent).
+- `selection` holds the selected node's path (`[]` for none), and
+  `onOpen` is given it on a double-click or Enter.
+- Only the rows near what shows are built.
 
 ## Image
 

@@ -1,0 +1,26 @@
+tree
+click "Age"
+click "Linus"
+click shift "Grace"
+tree
+click cmd "Ada"
+click "Name"
+key down
+key shift+down
+key end
+key up
+key enter
+tree
+click "Alan"
+click "Alan"
+click "src"
+key right
+key down
+key down
+key right
+key enter
+key left
+key left
+key left
+tree
+accessibility

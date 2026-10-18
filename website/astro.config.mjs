@@ -113,6 +113,7 @@ export default defineConfig({
 						{ label: 'Text and styling', slug: 'ui/styling' },
 						{ label: 'Controls', slug: 'ui/controls' },
 						{ label: 'Lists and identity', slug: 'ui/lists' },
+						{ label: 'Tables and trees', slug: 'ui/tables' },
 						{ label: 'Tabs', slug: 'ui/tabs' },
 						{ label: 'Icons, SVG and images', slug: 'ui/icons' },
 						{ label: 'Drawing and the mouse', slug: 'ui/drawing' },

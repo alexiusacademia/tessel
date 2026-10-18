@@ -540,6 +540,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
     }
 
+    /// A closure's `fn` and `env`, whose reference passes to the runtime;
+    /// two nulls for none.
+    fn closure_parts(&mut self, closure: Option<Val<'ctx>>) -> Vec<Val<'ctx>> {
+        match closure {
+            Some(c) => {
+                let s = c.into_struct_value();
+                vec![self.b.build_extract_value(s, 0, "").unwrap(), self.b.build_extract_value(s, 1, "").unwrap()]
+            }
+            None => vec![self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()],
+        }
+    }
+
     /// Calls a runtime function with some leading arguments, then a closure
     /// `{fn, env}` whose reference passes to the runtime.
     pub(super) fn pass_closure(&mut self, rt: &str, leading: &[Val<'ctx>], closure: Val<'ctx>) {
@@ -865,6 +877,66 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_lazy", &[count, height], rows);
     }
 
+            "Table" => {
+                // The columns are added by the block, then the table is built.
+                self.call_rt("tsl_ui_table_begin", &[]);
+                self.content_inline(a(8).unwrap());
+                let rows = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
+                let height = match a(1) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_float(24.0).into(),
+                };
+                let mut all = vec![rows, height];
+                for i in 2..5 {
+                    let loc = a(i).map(|x| self.locator(x));
+                    all.extend(self.closure_parts(loc));
+                }
+                let sorted = a(5).map(|x| self.expr_as(x, &Ty::func(vec![], Ty::Void)).unwrap());
+                all.extend(self.closure_parts(sorted));
+                let multiple = match a(6) {
+                    Some(x) => {
+                        let v = self.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(v)
+                    }
+                    None => self.i8().const_int(1, false).into(),
+                };
+                all.push(multiple);
+                let open = a(7).map(|x| self.expr_as(x, &Ty::func(vec![Ty::Int], Ty::Void)).unwrap());
+                all.extend(self.closure_parts(open));
+                self.call_rt("tsl_ui_table_end", &all);
+            }
+            "TableColumn" => {
+                let title = string(self, a(0));
+                let (has, width): (Val, Val) = match a(1) {
+                    Some(x) => (self.i8().const_int(1, false).into(), self.expr_as(x, &Ty::Float).unwrap()),
+                    None => (self.i8().const_zero().into(), self.ctx.f64_type().const_zero().into()),
+                };
+                let align = match a(2) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                let ExprKind::Closure { params, body } = &a(3).unwrap().kind else { unreachable!("checked: the cells are a block") };
+                let cells = self.make_closure(Body::Rows(&params[0], body), &Ty::View);
+                self.pass_closure("tsl_ui_table_column", &[title, has, width, align], cells);
+                self.release(title, &Ty::Str);
+            }
+            "Tree" => {
+                let path = Ty::list(Ty::Int);
+                let children = self.expr_as(a(0).unwrap(), &Ty::func(vec![path.clone()], Ty::Int)).unwrap();
+                let mut all = self.closure_parts(Some(children));
+                all.push(match a(1) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_float(24.0).into(),
+                });
+                let loc = a(2).map(|x| self.locator(x));
+                all.extend(self.closure_parts(loc));
+                let open = a(3).map(|x| self.expr_as(x, &Ty::func(vec![path], Ty::Void)).unwrap());
+                all.extend(self.closure_parts(open));
+                let ExprKind::Closure { params, body } = &a(4).unwrap().kind else { unreachable!("checked: the rows are a block") };
+                let rows = self.make_closure(Body::PathRows(&params[0], body), &Ty::View);
+                all.extend(self.closure_parts(Some(rows)));
+                self.call_rt("tsl_ui_tree", &all);
+            }
             "MenuItem" => {
                 let label = string(self, a(0));
                 let shortcut = string(self, a(1));

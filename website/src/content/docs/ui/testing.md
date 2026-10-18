@@ -71,6 +71,7 @@ opens a window as usual.
 | `size 400 300` | Sets the window size, in points. The app starts at the size its `app` declaration gives. |
 | `click "Save"` | Clicks the first view with this label (see below). |
 | `click 40 60` | Clicks at a point, in points from the window's top left corner. |
+| `click shift "Alan"` | Clicks with Shift held (or `cmd`): for selecting a [table](/ui/tables/)'s rows. |
 | `click button 2` | Clicks the 2nd view of a kind: `button`, `toggle`, `field`, `text`, `editor`, `slider`, `stepper` or `colorpicker`. Counting starts at 1. |
 | `hover "Save"` | Moves the mouse pointer over the first view with this label, to show [hover backgrounds](/ui/styling/#hover-backgrounds). |
 | `hover 40 60` | Moves the pointer to a point. |

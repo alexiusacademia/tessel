@@ -11,6 +11,7 @@ mod anim;
 mod app;
 mod canvas;
 mod scene3d;
+mod table;
 mod controls;
 mod draw;
 mod edit;
@@ -99,6 +100,12 @@ impl Callback {
     pub fn call_with_int(&self, arg: i64) {
         let f: extern "C" fn(*mut Header, i64) = unsafe { std::mem::transmute(self.f) };
         f(self.env, arg);
+    }
+
+    /// Runs a closure taking a pointer and giving an `Int`: `i64 fn(env, ptr)`.
+    pub fn call_ptr_to_int(&self, arg: *mut u8) -> i64 {
+        let f: extern "C" fn(*mut Header, *mut u8) -> i64 = unsafe { std::mem::transmute(self.f) };
+        f(self.env, arg)
     }
 
     /// Runs a closure taking two `Float`s: `void fn(env, f64, f64)`.
@@ -250,6 +257,11 @@ pub enum Kind {
     /// A scene in three dimensions: `draw` is called with the view's size,
     /// and says what's in it (see `scene3d`).
     Scene3D { draw: Callback, redraw: Option<i64> },
+    /// `Table` and `Tree` (see `table`): the header, drawn by itself, over
+    /// its one child, a scroll view of its rows.
+    Table(std::rc::Rc<table::Spec>),
+    /// A row of a table: a cell (`VStack`) for each column.
+    TableRow(table::Row),
     /// `Slider(value:from:to:step:onChange:)`: `value` locates a `Float`;
     /// a `step` of 0 means any value.
     Slider { value: Callback, from: f64, to: f64, step: f64, on_change: Option<Callback> },
@@ -581,6 +593,8 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::RibbonGroup { .. } => 34,
         Kind::RibbonItem { .. } => 35,
         Kind::Scene3D { .. } => 36,
+        Kind::Table(_) => 37,
+        Kind::TableRow(_) => 38,
     }
 }
 
@@ -592,7 +606,7 @@ fn child_key(parent: u64, index: usize, salt: u64) -> u64 {
 
 // ===== building =====
 
-struct Builder {
+pub(super) struct Builder {
     /// Open containers, innermost last. The root is at the bottom.
     stack: Vec<Node>,
     /// Set by `.id(…)`: the identity of the next view, instead of its position.
@@ -610,7 +624,7 @@ struct Builder {
 }
 
 impl Builder {
-    fn parent(&mut self) -> &mut Node {
+    pub(super) fn parent(&mut self) -> &mut Node {
         self.stack.last_mut().expect("no open view")
     }
 
@@ -634,7 +648,7 @@ impl Builder {
         self.stack.push(Node::new(kind, key));
     }
 
-    fn end(&mut self) {
+    pub(super) fn end(&mut self) {
         let mut node = self.stack.pop().expect("unbalanced end");
         lift_ribbon_parts(&mut node);
         self.parent().children.push(node);
@@ -643,6 +657,18 @@ impl Builder {
     /// The most recently finished node, which modifiers apply to.
     fn last(&mut self) -> Option<&mut Node> {
         self.parent().children.last_mut()
+    }
+
+    /// The identity the table about to be begun (`Kind::Table`) will have.
+    fn next_table_key(&mut self) -> u64 {
+        let salt = 37;
+        if let Some(id) = self.pending_id {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (self.parent().key, "id", id, salt).hash(&mut h);
+            return h.finish();
+        }
+        let p = self.parent();
+        child_key(p.key, p.children.len(), salt)
     }
 
     /// Opens a container with its own identity (rather than a position).
@@ -1526,7 +1552,7 @@ mod tests {
         let mut tree = build(&root);
         let mut text = render::TextEngine::new();
         let scroll = HashMap::new();
-        layout::Layouter { text: &mut text, scroll: &scroll, composing: None }.run_below(&mut tree, 320.0, 260.0, 0.0);
+        layout::Layouter { text: &mut text, scroll: &scroll, columns: Vec::new(), composing: None }.run_below(&mut tree, 320.0, 260.0, 0.0);
         let vstack = &tree.children[0];
         assert!(matches!(vstack.kind, Kind::VStack(..)));
         // Centered horizontally in the window, and the text field stretches.

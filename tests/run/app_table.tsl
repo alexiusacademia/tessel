@@ -1,0 +1,64 @@
+// `Table`: rows in columns, sorted by a column's title, selected with the
+// mouse (Shift and Cmd for more) and the keyboard, opened with Enter or a
+// double click. `Tree`: a tree's nodes, opened and closed.
+
+struct Person {
+    name: String
+    age: Int
+}
+
+struct Item {
+    name: String
+    children: [Item] = []
+}
+
+fn itemAt(_ items: [Item], _ path: [Int]) -> Item {
+    var level = items
+    var found = Item(name: "")
+    for i in path {
+        found = level[i]
+        level = found.children
+    }
+    found
+}
+
+app People(width: 480, height: 520) {
+    state people = [Person(name: "Grace", age: 85), Person(name: "Ada", age: 36), Person(name: "Linus", age: 54), Person(name: "Alan", age: 41)]
+    // The rows in the order they show: sorting doesn't move the data.
+    state order = [0, 1, 2, 3]
+    state picked: [Int] = []
+    state column = -1
+    state up = true
+    state opened = "nothing"
+    state files = [
+        Item(name: "src", children: [Item(name: "main.tsl"), Item(name: "ui", children: [Item(name: "view.tsl")])]),
+        Item(name: "README.md"),
+    ]
+    state chosen: [Int] = []
+    state shown = ""
+
+    VStack(spacing: 8) {
+        Table(rows: order.count, selection: picked, sortColumn: column, ascending: up, onSort: { sort() },
+              onOpen: { i in opened = people[order[i]].name }) {
+            TableColumn("Name", width: 140) { i in Text(people[order[i]].name) }
+            TableColumn("Age", width: 60, alignment: .trailing) { i in Text("{people[order[i]].age}") }
+        }
+        .frame(height: 160)
+        Text("picked {picked.map { i in people[order[i]].name }}, opened {opened}")
+        Tree(children: { path in if path.isEmpty { files.count } else { itemAt(files, path).children.count } },
+             selection: chosen, onOpen: { path in shown = itemAt(files, path).name }) { path in
+            Text(itemAt(files, path).name)
+        }
+        .frame(height: 140)
+        Text("chosen {chosen}, shown {shown}")
+    }
+    .padding(12)
+
+    fn sort() {
+        order = [0, 1, 2, 3].sorted { a, b in
+            let (x, y) = if up { (people[a], people[b]) } else { (people[b], people[a]) }
+            if column == 1 { x.age < y.age } else { x.name < y.name }
+        }
+        picked = []
+    }
+}

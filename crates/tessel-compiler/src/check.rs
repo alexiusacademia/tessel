@@ -188,6 +188,8 @@ enum Content {
     Ribbon,
     /// A `RibbonTab`'s groups.
     RibbonTab,
+    /// A `Table`'s columns.
+    Table,
 }
 
 /// What a call expression resolved to.
@@ -717,7 +719,7 @@ impl Checker<'_> {
         for item in items {
             let name = item.name();
             let builtin = PRIMITIVES.contains(&name.name.as_str())
-                || builtins::VIEW_NAMES.contains(&name.name.as_str())
+                || (builtins::VIEW_NAMES.contains(&name.name.as_str()) && !builtins::YIELDING_VIEWS.contains(&name.name.as_str()))
                 || builtins::FUNCTION_NAMES.contains(&name.name.as_str())
                 || (self.globals.contains_key(&name.name) && !self.user_spans.contains_key(&name.name));
             if builtin {
@@ -2084,6 +2086,13 @@ impl Checker<'_> {
             _ if name == "RibbonGroup" && !matches!(self.content, Content::RibbonTab | Content::View) => {
                 self.error(e.span, "a `RibbonGroup` can only go in a `RibbonTab`");
             }
+            Content::Table if name != "TableColumn" => {
+                self.error(e.span, format!("a `Table` holds columns, so `{name}` can't go there"))
+                    .help("put it in a column's cells: `TableColumn(\"Name\") { i in … }`");
+            }
+            _ if name == "TableColumn" && !matches!(self.content, Content::Table | Content::View) => {
+                self.error(e.span, "a `TableColumn` can only go in a `Table`");
+            }
             Content::View | Content::Layout if name == "Window" => {
                 self.error(e.span, "a `Window` can only be declared in the `app`")
                     .help("declare it in the app's body, next to the main window's views");
@@ -3417,6 +3426,7 @@ impl Checker<'_> {
                         "Menu" | "RibbonMenu" => Content::Menu,
                         "Ribbon" => Content::Ribbon,
                         "RibbonTab" => Content::RibbonTab,
+                        "Table" => Content::Table,
                         _ => Content::Layout,
                     });
                     self.args(&what, &params, args, trailing, span);
@@ -4443,7 +4453,10 @@ impl Checker<'_> {
                 match &v.kind {
                     ExprKind::Closure { params, body } if params.len() == 1 => self.with_scope(|c| {
                         c.declare(&params[0], pt, Kind::Let);
+                        // (Rows lay out views, wherever the view with them is.)
+                        let outer = std::mem::replace(&mut c.content, Content::Layout);
                         c.content_block(body, false);
+                        c.content = outer;
                     }),
                     ExprKind::Closure { .. } => {
                         self.error(v.span, "this block gets each row's number; name it at the start, like `{ i in … }`");

@@ -1,0 +1,18 @@
+app Main {
+    state picked: [Int] = []
+    state rows: [String] = []
+    state count = 0
+    Table(rows: rows.count, selection: picked) {
+        TableColumn("Name") { i in Text(rows[i]) }
+        Text("loose") // error: a `Table` holds columns, so `Text` can't go there
+    }
+    TableColumn("Alone") { i in Text("") } // error: a `TableColumn` can only go in a `Table`
+    Table(rows: "many") { // error: expected `Int`
+        TableColumn("A") { Text("") } // error: this block gets each row's number
+    }
+    Table(rows: 1, selection: count) { // error: expected `[Int]`
+        TableColumn("A", width: "wide") { i in Text("") } // error: expected `Float`
+    }
+    Tree(children: { path in path.count }, selection: picked) { path in Text("{path}") }
+    Tree(children: { path in "none" }) { path in Text("") } // error: expected `Int`
+}

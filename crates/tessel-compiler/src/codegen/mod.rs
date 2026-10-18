@@ -302,6 +302,9 @@ enum Body<'b> {
     /// Content built for a number (`LazyVStack`'s rows, `{ i in … }`):
     /// calling it with the number emits the views.
     Rows(&'b Ident, &'b Block),
+    /// The same for a path (`Tree`'s rows, `{ path in … }`): called with an
+    /// `[Int]` (which it takes).
+    PathRows(&'b Ident, &'b Block),
 }
 
 /// How a closure captures a variable.
@@ -1613,6 +1616,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_color_picker" | "tsl_ui_drop_target" => (vec![p, p, p, p], None),
             "tsl_ui_begin_disclosure" => (vec![p, p, p], Some(i8t)),
             "tsl_ui_lazy" => (vec![i, f64t, p, p], None),
+            "tsl_ui_table_begin" => (vec![], None),
+            "tsl_ui_table_column" => (vec![p, i8t, f64t, self.ctx.i32_type().into(), p, p], None),
+            "tsl_ui_table_end" => (vec![i, f64t, p, p, p, p, p, p, p, p, i8t, p, p], None),
+            "tsl_ui_tree" => (vec![p, p, f64t, p, p, p, p, p, p], None),
             "tsl_ui_draggable" => (vec![p], None),
             "tsl_ui_cursor" => (vec![i32t], None),
             "tsl_ui_offset" => (vec![f64t, f64t], None),
@@ -4187,6 +4194,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             (Body::Rows(..), _) => {
                 (self.ctx.void_type().fn_type(&[self.ptr_ty().into(), self.i64().into()], false), vec![Ty::Int], Ty::Void)
             }
+            (Body::PathRows(..), _) => (
+                self.ctx.void_type().fn_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false),
+                vec![Ty::list(Ty::Int)],
+                Ty::Void,
+            ),
             _ => (self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
         };
         self.closures += 1;
@@ -4199,7 +4211,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 free_block(b, &mut bound, &mut free);
             }
             Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
-            Body::Rows(p, b) => free_block(b, &mut vec![p.name.clone()], &mut free),
+            Body::Rows(p, b) | Body::PathRows(p, b) => free_block(b, &mut vec![p.name.clone()], &mut free),
             Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
             Body::ViewFnRef(name) => {
                 free.insert(name.clone());
@@ -4379,7 +4391,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
         }
         let boxed = match &body {
-            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => self.boxed_vars(b),
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) | Body::PathRows(_, b) => self.boxed_vars(b),
             Body::LocalFn(d) => self.boxed_vars(&d.body),
             _ => HashSet::new(),
         };
@@ -4396,7 +4408,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         };
         // What the debugger calls it, and where it is.
         let named = match &body {
-            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) => Some((self.debug_block_name(), b.span)),
+            Body::Fn(_, b) | Body::Content(b) | Body::Rows(_, b) | Body::PathRows(_, b) => Some((self.debug_block_name(), b.span)),
             Body::LocalFn(d) => Some((d.name.name.clone(), d.name.span)),
             _ => None,
         };
@@ -4443,6 +4455,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Body::Rows(p, b) => {
                 let v = f.get_nth_param(1).unwrap();
                 self.declare_value(&p.name, &Ty::Int, Some(v));
+                self.content_block(b, false);
+                self.finish_function(None);
+            }
+            Body::PathRows(p, b) => {
+                let v = f.get_nth_param(1).unwrap();
+                self.declare_value(&p.name, &Ty::list(Ty::Int), Some(v));
                 self.content_block(b, false);
                 self.finish_function(None);
             }

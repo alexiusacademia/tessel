@@ -38,6 +38,11 @@ pub enum Role {
     /// Text with headings, lists and links (`Markdown`).
     Document,
     Canvas,
+    /// A `Table` and its rows (each selected or not), a `Tree` and its nodes.
+    Table,
+    Row,
+    Tree,
+    TreeItem,
 }
 
 /// A view, as a screen reader is told of it.
@@ -195,6 +200,12 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
         Kind::Picker { .. } => Some(item(Role::Options, called(""))),
         Kind::TabView { .. } => Some(item(Role::Tabs, called(""))),
         Kind::Scroll => Some(item(Role::Scroll, called(""))),
+        Kind::Table(spec) => Some(item(if spec.tree.is_some() { Role::Tree } else { Role::Table }, called(""))),
+        Kind::TableRow(row) => {
+            let role = if row.path.is_some() { Role::TreeItem } else { Role::Row };
+            let cells: Vec<&Node> = n.children.iter().collect();
+            Some(Item { on: Some(row.selected), press: true, ..item(role, called_by(&cells)) })
+        }
         _ => None,
     };
     // A view that's pressed (`.onTap`) is a button, called what's in it.
@@ -378,6 +389,10 @@ pub mod system {
                     Role::Option => accesskit::Role::RadioButton,
                     Role::Tabs => accesskit::Role::Group,
                     Role::Tab => accesskit::Role::Tab,
+                    Role::Table => accesskit::Role::Table,
+                    Role::Row => accesskit::Role::Row,
+                    Role::Tree => accesskit::Role::Tree,
+                    Role::TreeItem => accesskit::Role::TreeItem,
                     Role::Slider => accesskit::Role::Slider,
                     Role::Stepper => accesskit::Role::SpinButton,
                     Role::ColorWell => accesskit::Role::ColorWell,

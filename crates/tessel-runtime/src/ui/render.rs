@@ -73,6 +73,15 @@ pub struct Interaction {
     pub menus: Vec<super::menu::Panel>,
     /// The menu bar, when it's drawn in the window.
     pub menu_bar: Option<super::menu::Bar>,
+    /// For each table: the row selecting started from (Shift extends from
+    /// it), and the row the keyboard is on.
+    pub table_at: HashMap<u64, (usize, usize)>,
+    /// Shift, and Cmd (Ctrl), held for the click being handled.
+    pub click_mods: (bool, bool),
+    /// Shift held for the key being handled.
+    pub key_shift: bool,
+    /// The last click on a table's row, when (a second soon after opens it).
+    pub last_row_click: Option<(std::time::Instant, u64, usize)>,
 }
 
 /// A view being dragged (`.draggable`): it follows the pointer.
@@ -870,6 +879,59 @@ impl Painter<'_> {
                     self.stroke(content.inset(-1.5), 5.0, 1.5, theme().colors[theme::PRIMARY]);
                 }
             }
+            Kind::Table(spec) => {
+                let t = theme();
+                self.fill(content, 6.0, t.field);
+                self.stroke(content, 6.0, 1.0, t.field_border);
+                if spec.tree.is_none() {
+                    // The header: each column's title (lined up as its cells
+                    // are), the arrow of the column sorted by, the edges.
+                    let bar = Rect { x: content.x, y: content.y, w: content.w, h: super::table::HEADER };
+                    self.fill(bar, 6.0, t.control);
+                    self.fill(Rect { y: bar.y + 6.0, h: bar.h - 6.0, ..bar }, 0.0, t.control);
+                    self.fill(Rect { y: bar.y + bar.h - 1.0, h: 1.0, ..bar }, 0.0, t.field_border);
+                    let sorted = spec.sort.as_ref().map(|(by, up)| unsafe { (*(by.locate() as *const i64), *up.locate() & 1 != 0) });
+                    let pad = super::table::CELL_PAD;
+                    let t_scene = self.t();
+                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(bar, 0.0));
+                    for (i, (tab, column)) in n.layout.tabs.iter().zip(&spec.columns).enumerate() {
+                        let r = tab.rect;
+                        let arrow = matches!(sorted, Some((c, _)) if c == i as i64);
+                        let room = if arrow { 14.0 } else { 0.0 };
+                        let w = tab.title.width();
+                        let x = match column.align {
+                            1 => r.x + (r.w - w - room) / 2.0,
+                            2 => r.x + r.w - pad - w - room,
+                            _ => r.x + pad,
+                        };
+                        self.text(&tab.title, x, r.y + (r.h - tab.title.height()) / 2.0, Some(t.colors[theme::SECONDARY]));
+                        if let (true, Some((_, up))) = (arrow, sorted) {
+                            let a = Rect { x: x + w + 4.0, y: r.y + (r.h - 10.0) / 2.0, w: 10.0, h: 10.0 };
+                            self.svg(if up { "chevronUp" } else { "chevronDown" }, a, t.colors[theme::SECONDARY]);
+                        }
+                        if i > 0 {
+                            self.fill(Rect { x: r.x - 0.5, y: r.y + 6.0, w: 1.0, h: r.h - 12.0 }, 0.0, t.field_border);
+                        }
+                    }
+                    self.scene.pop();
+                }
+            }
+            Kind::TableRow(row) => {
+                let t = theme();
+                if row.selected {
+                    // (Brighter while the keyboard is on the table.)
+                    let focused = self.ui.focused == Some(row.table);
+                    self.fill(content, 0.0, if focused { t.selection } else { t.control_pressed });
+                } else if row.index % 2 == 1 {
+                    let c = t.control;
+                    self.fill(content, 0.0, Rgba([c.0[0], c.0[1], c.0[2], c.0[3] / 2]));
+                }
+                if row.expandable {
+                    let x = content.x + super::table::CELL_PAD + row.depth as f64 * super::table::INDENT;
+                    let a = Rect { x: x + 2.0, y: content.y + (content.h - 11.0) / 2.0, w: 11.0, h: 11.0 };
+                    self.svg(if row.expanded { "chevronDown" } else { "chevronRight" }, a, t.colors[theme::SECONDARY]);
+                }
+            }
             Kind::Disclosure { expanded, .. } => {
                 let open = unsafe { *expanded.locate() } & 1 != 0;
                 if let Some(header) = n.layout.segments.first().copied() {
@@ -930,6 +992,7 @@ impl Painter<'_> {
             let (ring, radius) = match &n.kind {
                 Kind::Disclosure { .. } => (n.layout.segments.first().copied().unwrap_or(content), 5.0),
                 Kind::Slider { .. } => (content.inset(2.0), 11.0),
+                Kind::Table(_) => (content, 6.0),
                 // (Tabs: the one that's selected.)
                 Kind::TabView { .. } => (n.layout.tabs.get(n.selected_tab()).map_or(content, |t| t.rect.inset(4.0)), 3.0),
                 _ => (content, 7.0),

@@ -29,7 +29,7 @@ its first releases came so quickly. The dates on
   location, satellites and compass. There's no Linux or iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
-  `CodeEditor` with syntax colors, `Divider`, over 100 built-in icons, SVG,
+  `CodeEditor` with syntax colors, `Table` and `Tree`, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
   and pressed states, and the layout and styling modifiers. Every control
   works from the keyboard, and screen readers are told what's in a window. Drawing of your

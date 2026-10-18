@@ -215,8 +215,13 @@ pub const VIEW_NAMES: &[&str] =
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
         "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Scene3D", "Slider", "Stepper", "ColorPicker",
         "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
-        "RibbonButton", "RibbonToggle", "RibbonMenu",
+        "RibbonButton", "RibbonToggle", "RibbonMenu", "Table", "TableColumn", "Tree",
     ];
+
+/// Built-in views whose names a program may take for its own types (a
+/// program's `struct Tree` was there first): the program's own is meant
+/// then, and the view isn't to be had in it.
+pub const YIELDING_VIEWS: &[&str] = &["Table", "TableColumn", "Tree"];
 
 /// Views that only go in menus (`.contextMenu`, `.menuBar`, `Menu`).
 pub const MENU_VIEWS: &[&str] = &["MenuItem", "MenuDivider", "Menu"];
@@ -296,6 +301,38 @@ impl Builtins {
             "ColorPicker" => vec![P::new("color", self.color.clone()).bind(), P::new("onChange", Ty::func(vec![], Ty::Void)).default()],
             "DisclosureGroup" => vec![P::unlabeled("title", Ty::Str), P::new("isExpanded", Ty::Bool).bind(), content()],
             // The content block gets each row's number: `{ i in … }`.
+            // Rows in columns: the block adds the `TableColumn`s, each of
+            // which builds its cell in row `i` (see the runtime's `table`).
+            "Table" => vec![
+                P::new("rows", Ty::Int),
+                P::new("rowHeight", Ty::Float).default(),
+                P::new("selection", Ty::list(Ty::Int)).bind().default(),
+                P::new("sortColumn", Ty::Int).bind().default(),
+                P::new("ascending", Ty::Bool).bind().default(),
+                P::new("onSort", Ty::func(vec![], Ty::Void)).default(),
+                P::new("multiple", Ty::Bool).default(),
+                P::new("onOpen", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                content(),
+            ],
+            "TableColumn" => {
+                let mut cells = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
+                cells.rows = true;
+                vec![P::unlabeled("title", Ty::Str), P::new("width", Ty::Float).default(), P::new("alignment", self.alignment.clone()).default(), cells]
+            }
+            // The program's tree: how many children a node has (by its path,
+            // `[]` for the top), and the row of each that shows.
+            "Tree" => {
+                let path = Ty::list(Ty::Int);
+                let mut rows = P::new("content", Ty::func(vec![path.clone()], Ty::View));
+                rows.rows = true;
+                vec![
+                    P::new("children", Ty::func(vec![path.clone()], Ty::Int)),
+                    P::new("rowHeight", Ty::Float).default(),
+                    P::new("selection", path.clone()).bind().default(),
+                    P::new("onOpen", Ty::func(vec![path], Ty::Void)).default(),
+                    rows,
+                ]
+            }
             "LazyVStack" => {
                 let mut rows = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
                 rows.rows = true;

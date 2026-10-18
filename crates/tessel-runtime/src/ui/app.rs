@@ -800,6 +800,13 @@ enum Hit {
     Disclosure(u64),
     /// A ribbon's menu item (`RibbonMenu`): it opens its menu.
     RibbonMenu(u64),
+    /// A table's header over a column, or the edge between a column and
+    /// the next (to resize it); a row (by its place among the rows), or the
+    /// arrow that opens a tree's node. All by the table.
+    TableHeader(u64, usize),
+    TableResize(u64, usize),
+    TableRow(u64, usize),
+    TreeArrow(u64, usize),
 }
 
 impl Hit {
@@ -810,6 +817,7 @@ impl Hit {
             Hit::RibbonMenu(k) => k,
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
+            Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _) => k,
         }
     }
 }
@@ -826,6 +834,7 @@ fn focusable(n: &Node) -> bool {
             | Kind::Toggle { .. }
             | Kind::Picker { .. }
             | Kind::TabView { .. }
+            | Kind::Table(_)
     )
 }
 
@@ -1186,7 +1195,7 @@ impl App {
             self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
         let top = if self.bar_drawn() { menu::BAR_H } else { 0.0 };
         let Some(tree) = self.tree.as_mut() else { return };
-        Layouter { text: &mut self.text, scroll: &self.ui.scroll, composing }.run_below(tree, self.width, self.height, top);
+        Layouter { text: &mut self.text, scroll: &self.ui.scroll, columns: Vec::new(), composing }.run_below(tree, self.width, self.height, top);
     }
 
     /// Whether the current window shows a menu bar drawn in it.
@@ -2256,6 +2265,7 @@ impl App {
         self.keys = keys;
         super::canvas::keep_only(&self.keys);
         super::scene3d::keep_only(&self.keys);
+        super::table::keep_only(&self.keys);
         let back = self.current;
         for (window, (key, text)) in focus {
             if self.enter(window) {
@@ -2583,6 +2593,22 @@ impl App {
                     return Some(Hit::Disclosure(n.key));
                 }
             }
+            // A table's header: its columns, and the edges between them.
+            if let Kind::Table(_) = n.kind {
+                let last = n.layout.tabs.len().saturating_sub(1);
+                for (i, t) in n.layout.tabs.iter().enumerate() {
+                    if t.rect.h <= 0.0 || !t.rect.contains(x, y) {
+                        continue;
+                    }
+                    if x >= t.rect.x + t.rect.w - 4.0 && i < last {
+                        return Some(Hit::TableResize(n.key, i));
+                    }
+                    if x <= t.rect.x + 4.0 && i > 0 {
+                        return Some(Hit::TableResize(n.key, i - 1));
+                    }
+                    return Some(Hit::TableHeader(n.key, i));
+                }
+            }
             for c in n.children.iter().rev() {
                 if let Some(h) = visit(c, x, y) {
                     return Some(h);
@@ -2609,6 +2635,15 @@ impl App {
                     Some(Hit::Stepper(n.key, dir))
                 }
                 Kind::Swatch(_) => Some(Hit::Swatch(n.key)),
+                Kind::TableRow(ref row) => {
+                    let c = n.layout.content;
+                    let arrow = c.x + super::table::CELL_PAD + row.depth as f64 * super::table::INDENT;
+                    if row.expandable && x >= arrow - 2.0 && x < arrow + super::table::INDENT {
+                        Some(Hit::TreeArrow(row.table, row.index))
+                    } else {
+                        Some(Hit::TableRow(row.table, row.index))
+                    }
+                }
                 _ if n.mods.on_pointer.is_some() => Some(Hit::Pointer(n.key)),
                 _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
@@ -3098,6 +3133,7 @@ impl App {
             if mods.primary && self.run_shortcut(name, mods) {
                 return;
             }
+            self.ui.key_shift = mods.shift;
             if plain && self.control_key(name) {
                 return;
             }
@@ -3130,6 +3166,160 @@ impl App {
         })
     }
 
+    // ===== tables and trees =====
+
+    /// A table's spec, and its scroll view's identity.
+    fn table_parts(&self, table: u64) -> Option<(std::rc::Rc<super::table::Spec>, Option<u64>)> {
+        let n = self.node(table)?;
+        let Kind::Table(spec) = &n.kind else { return None };
+        Some((spec.clone(), n.children.first().map(|c| c.key)))
+    }
+
+    /// Selects a table's row (a tree's node, by its place among those that
+    /// show): only it, or with Shift the rows from where selecting started,
+    /// or with Cmd (Ctrl) it too, or not any more. It's scrolled into view.
+    fn select_row(&mut self, table: u64, row: usize, shift: bool, toggle: bool) {
+        let Some((spec, scroll)) = self.table_parts(table) else { return };
+        if spec.count == 0 {
+            return;
+        }
+        let row = row.min(spec.count - 1);
+        let anchor = self.ui.table_at.get(&table).map_or(row, |a| a.0);
+        let anchor = if shift && spec.multiple { anchor } else { row };
+        self.ui.table_at.insert(table, (anchor, row));
+        if let Some(selection) = &spec.selection {
+            if spec.tree.is_some() {
+                let path = super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.get(row)).map(|p| p.0.clone()));
+                if let Some(path) = path {
+                    super::table::write_ints(selection, &path);
+                }
+            } else {
+                let mut chosen = super::table::read_ints(selection);
+                if spec.multiple && toggle {
+                    match chosen.iter().position(|&r| r == row as i64) {
+                        Some(i) => {
+                            chosen.remove(i);
+                        }
+                        None => chosen.push(row as i64),
+                    }
+                } else if spec.multiple && shift {
+                    chosen = (anchor.min(row)..=anchor.max(row)).map(|r| r as i64).collect();
+                } else {
+                    chosen = vec![row as i64];
+                }
+                chosen.sort_unstable();
+                chosen.dedup();
+                super::table::write_ints(selection, &chosen);
+            }
+        }
+        // Into view: the scroll view moves as little as it takes.
+        if let (Some(scroll), Some(view)) = (scroll, scroll.and_then(|s| self.node(s)).map(|n| n.layout.rect.h)) {
+            let (top, bottom) = (row as f64 * spec.row_height, (row + 1) as f64 * spec.row_height);
+            let at = self.ui.scroll.entry(scroll).or_insert(0.0);
+            if top < *at {
+                *at = top;
+            } else if bottom > *at + view {
+                *at = bottom - view;
+            }
+        }
+        self.dirty = true;
+    }
+
+    /// `onOpen` with a row (of a tree, with its node's path).
+    fn open_row(&mut self, table: u64, row: usize) {
+        let Some((spec, _)) = self.table_parts(table) else { return };
+        let Some(open) = &spec.on_open else { return };
+        if spec.tree.is_some() {
+            let path = super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.get(row)).map(|p| p.0.clone()));
+            if let Some(path) = path {
+                open.call_with(super::table::ints(&path) as *mut u8);
+            }
+        } else if row < spec.count {
+            open.call_with_int(row as i64);
+        }
+        self.dirty = true;
+    }
+
+    /// Opens a tree's node (by its place among those that show), or closes
+    /// it; `open` says which (none: the other way from how it is).
+    fn toggle_node(&mut self, table: u64, row: usize, open: Option<bool>) {
+        let Some(node) = super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.get(row)).cloned()) else { return };
+        let (path, _, has) = node;
+        if !has {
+            return;
+        }
+        super::table::OPEN.with(|o| {
+            let mut o = o.borrow_mut();
+            let set = o.entry(table).or_default();
+            let now = set.contains(&path);
+            if open.unwrap_or(!now) {
+                set.insert(path);
+            } else {
+                set.remove(&path);
+            }
+        });
+        self.dirty = true;
+    }
+
+    /// The keys on a table the keyboard is on: the arrows (with Shift, to
+    /// select more), Home, End, Page Up and Down, Enter to open; in a tree,
+    /// right and left open and close (or go to the first child, and the parent).
+    fn table_key(&mut self, table: u64, name: &str) -> bool {
+        let Some((spec, scroll)) = self.table_parts(table) else { return false };
+        let tree = spec.tree.is_some();
+        let selected = spec.selection.as_ref().map(super::table::read_ints).unwrap_or_default();
+        let current = match self.ui.table_at.get(&table) {
+            Some(&(_, at)) => Some(at),
+            None if tree => {
+                super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.iter().position(|p| p.0 == selected)))
+            }
+            None => selected.first().map(|&r| r.max(0) as usize),
+        };
+        let page = scroll.and_then(|s| self.node(s)).map_or(10, |n| ((n.layout.rect.h / spec.row_height).floor() as usize).max(1));
+        let last = spec.count.saturating_sub(1);
+        let shift = self.ui.key_shift;
+        let to = match (name, current) {
+            ("down", None) | ("up", None) | ("home", _) => Some(0),
+            ("end", _) => Some(last),
+            ("down", Some(c)) => Some((c + 1).min(last)),
+            ("up", Some(c)) => Some(c.saturating_sub(1)),
+            ("pagedown", c) => Some((c.unwrap_or(0) + page).min(last)),
+            ("pageup", c) => Some(c.unwrap_or(0).saturating_sub(page)),
+            ("enter", Some(c)) => {
+                self.ui.focus_ring = true;
+                self.open_row(table, c);
+                return true;
+            }
+            ("right" | "left", Some(c)) if tree => {
+                self.ui.focus_ring = true;
+                let node = super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.get(c)).cloned());
+                let Some((path, _, has)) = node else { return true };
+                let open = super::table::OPEN.with(|o| o.borrow().get(&table).is_some_and(|s| s.contains(&path)));
+                match (name, has, open) {
+                    ("right", true, false) => self.toggle_node(table, c, Some(true)),
+                    ("right", true, true) => self.select_row(table, c + 1, false, false),
+                    ("left", true, true) => self.toggle_node(table, c, Some(false)),
+                    ("left", _, _) if path.len() > 1 => {
+                        let parent = &path[..path.len() - 1];
+                        let at = super::table::VISIBLE.with(|v| v.borrow().get(&table).and_then(|s| s.iter().position(|p| p.0 == parent)));
+                        if let Some(at) = at {
+                            self.select_row(table, at, false, false);
+                        }
+                    }
+                    _ => {}
+                }
+                return true;
+            }
+            _ => None,
+        };
+        let Some(to) = to else { return false };
+        if spec.count > 0 {
+            self.ui.focus_ring = true;
+            self.select_row(table, to, shift, false);
+        }
+        true
+    }
+
     /// A completed click at (x, y).
     fn click(&mut self, x: f64, y: f64) {
         if self.popup_click(x, y) {
@@ -3143,6 +3333,7 @@ impl App {
         // The keyboard goes to the control clicked.
         self.ui.focused = match &hit {
             Some(Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Disclosure(k)) => Some(*k),
+            Some(Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _)) => Some(*k),
             _ if on_palette => self.ui.focused,
             _ => None,
         };
@@ -3171,6 +3362,38 @@ impl App {
             (Hit::Disclosure(_), Kind::Disclosure { expanded, .. }) => {
                 let p = expanded.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+            }
+            // A column's title sorts by it; again, the other way.
+            (Hit::TableHeader(_, column), Kind::Table(spec)) => {
+                if let Some((by, up)) = &spec.sort {
+                    unsafe {
+                        let (by, up) = (by.locate() as *mut i64, up.locate());
+                        if *by == *column as i64 {
+                            *up = (*up & 1) ^ 1;
+                        } else {
+                            *by = *column as i64;
+                            *up = 1;
+                        }
+                    }
+                    if let Some(sorted) = spec.on_sort.clone() {
+                        sorted.call();
+                    }
+                }
+            }
+            (Hit::TableRow(table, row), Kind::Table(_)) => {
+                let (table, row) = (*table, *row);
+                let (shift, toggle) = self.ui.click_mods;
+                let now = std::time::Instant::now();
+                let again = self.ui.last_row_click.is_some_and(|(t, k, r)| k == table && r == row && now.duration_since(t).as_millis() < 450);
+                self.ui.last_row_click = if again { None } else { Some((now, table, row)) };
+                self.select_row(table, row, shift, toggle);
+                if again {
+                    self.open_row(table, row);
+                }
+            }
+            (Hit::TreeArrow(table, row), Kind::Table(_)) => {
+                let (table, row) = (*table, *row);
+                self.toggle_node(table, row, None);
             }
             (Hit::Button(_), Kind::Button { action, .. } | Kind::RibbonItem { role: super::RibbonRole::Button(action), .. }) => {
                 let action = action.clone();
@@ -3363,6 +3586,9 @@ impl App {
             self.ui.focused = None;
             return false;
         };
+        if let Kind::Table(_) = n.kind {
+            return self.table_key(key, name);
+        }
         // Using the keyboard on it shows which control it's on.
         let took = matches!(
                 (&n.kind, name),
@@ -3803,6 +4029,13 @@ impl App {
         // `named`: a view's accessibility label or tooltip counts too (only
         // when no view says the label: those come first).
         fn visit(n: &Node, label: &str, named: bool) -> Option<(f64, f64)> {
+            // A table's column, by its title.
+            if let (Kind::Table(spec), false) = (&n.kind, n.mods.hidden) {
+                let found = spec.columns.iter().position(|c| c.title == label).and_then(|i| n.layout.tabs.get(i)).filter(|t| t.rect.h > 0.0);
+                if let Some(t) = found {
+                    return Some((t.rect.x + t.rect.w / 2.0, t.rect.y + t.rect.h / 2.0));
+                }
+            }
             if let Kind::TabView { .. } = n.kind {
                 for (i, tab) in n.layout.tabs.iter().enumerate() {
                     if n.children.get(i).and_then(|c| c.mods.tab_title.as_deref()) == Some(label) {
@@ -4005,6 +4238,36 @@ impl App {
                 Kind::Lazy { count, first, .. } => {
                     format!("LazyVStack {count} rows, built {}..{}", first, first + n.children.len())
                 }
+                Kind::Table(spec) => {
+                    let mut out = match spec.tree {
+                        Some(_) => format!("Tree {} rows", spec.count),
+                        None => {
+                            let titles: Vec<&str> = spec.columns.iter().map(|c| c.title.as_str()).collect();
+                            format!("Table {titles:?} {} rows", spec.count)
+                        }
+                    };
+                    if let Some((column, up)) = &spec.sort {
+                        let (c, u) = unsafe { (*(column.locate() as *const i64), *up.locate() & 1 != 0) };
+                        if let Some(title) = usize::try_from(c).ok().and_then(|c| spec.columns.get(c)) {
+                            out += &format!(", sorted by {:?} {}", title.title, if u { "up" } else { "down" });
+                        }
+                    }
+                    if let Some(s) = &spec.selection {
+                        out += &format!(", selected {:?}", super::table::read_ints(s));
+                    }
+                    out
+                }
+                Kind::TableRow(row) => {
+                    let mut out = match (&row.path, row.expandable) {
+                        (Some(p), true) => format!("Row {p:?} {}", if row.expanded { "open" } else { "closed" }),
+                        (Some(p), false) => format!("Row {p:?}"),
+                        (None, _) => format!("Row {}", row.index),
+                    };
+                    if row.selected {
+                        out += " selected";
+                    }
+                    out
+                }
                 Kind::MenuItem { label, .. } => format!("MenuItem {label:?}"),
                 Kind::MenuDivider => "MenuDivider".to_string(),
                 Kind::Menu { title } => format!("Menu {title:?}"),
@@ -4111,6 +4374,14 @@ impl App {
                 Kind::Swatch(_) => "Swatch",
                 Kind::Disclosure { .. } => "DisclosureGroup",
                 Kind::Lazy { .. } => "LazyVStack",
+                Kind::Table(spec) => {
+                    if spec.tree.is_some() {
+                        "Tree"
+                    } else {
+                        "Table"
+                    }
+                }
+                Kind::TableRow(_) => "TableRow",
                 Kind::MenuItem { .. } => "MenuItem",
                 Kind::MenuDivider => "MenuDivider",
                 Kind::Menu { .. } => "Menu",
@@ -4278,6 +4549,19 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "click" => {
                 app.tip_hide();
+                // `click shift "…"`, `click cmd "…"`: with the key held (a table's rows).
+                let mut rest = rest;
+                let mut held = (false, false);
+                loop {
+                    if let Some(r) = rest.strip_prefix("shift ") {
+                        (held.0, rest) = (true, r);
+                    } else if let Some(r) = rest.strip_prefix("cmd ") {
+                        (held.1, rest) = (true, r);
+                    } else {
+                        break;
+                    }
+                }
+                app.ui.click_mods = held;
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
@@ -4306,6 +4590,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                         return 2;
                     }
                 }
+                app.ui.click_mods = (false, false);
             }
             "rightclick" | "doubleclick" => {
                 let n = match rest.starts_with('"') {
@@ -4886,6 +5171,9 @@ struct WindowApp {
     pointing: Option<(u64, i32)>,
     /// The slider whose knob follows the mouse.
     sliding: Option<u64>,
+    /// The table column being widened or narrowed: the table, the column,
+    /// where the mouse was pressed and how wide the column was then.
+    resizing: Option<(u64, usize, f64, f64)>,
     /// A view with `.draggable` the mouse is pressed on, and where: it's
     /// dragged once the mouse moves far enough.
     drag_start: Option<(u64, (f64, f64))>,
@@ -4916,6 +5204,7 @@ struct Win {
     scrolling: Option<(u64, bool, f64)>,
     pointing: Option<(u64, i32)>,
     sliding: Option<u64>,
+    resizing: Option<(u64, usize, f64, f64)>,
     drag_start: Option<(u64, (f64, f64))>,
     pointer: winit::window::CursorIcon,
     last_click: Option<(Instant, (f64, f64), u32)>,
@@ -4937,6 +5226,7 @@ impl Win {
             scrolling: None,
             pointing: None,
             sliding: None,
+            resizing: None,
             drag_start: None,
             pointer: winit::window::CursorIcon::Default,
             last_click: None,
@@ -4988,6 +5278,7 @@ fn run_window(app: App) -> i32 {
         scrolling: None,
         pointing: None,
         sliding: None,
+        resizing: None,
         drag_start: None,
         pointer: winit::window::CursorIcon::Default,
         last_click: None,
@@ -5031,6 +5322,7 @@ impl WindowApp {
         std::mem::swap(&mut self.scrolling, &mut w.scrolling);
         std::mem::swap(&mut self.pointing, &mut w.pointing);
         std::mem::swap(&mut self.sliding, &mut w.sliding);
+        std::mem::swap(&mut self.resizing, &mut w.resizing);
         std::mem::swap(&mut self.drag_start, &mut w.drag_start);
         std::mem::swap(&mut self.pointer, &mut w.pointer);
         std::mem::swap(&mut self.last_click, &mut w.last_click);
@@ -5758,6 +6050,22 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                     return;
                 }
+                // A table's column follows the mouse as it's widened or narrowed.
+                if let Some((table, column, x0, w0)) = self.resizing {
+                    let width = (w0 + self.cursor.0 - x0).max(super::table::MIN_WIDTH);
+                    let count = self.app.table_parts(table).map_or(0, |(s, _)| s.columns.len());
+                    super::table::WIDTHS.with(|w| {
+                        let mut w = w.borrow_mut();
+                        let set = w.entry(table).or_default();
+                        set.resize(count.max(set.len()), None);
+                        if let Some(slot) = set.get_mut(column) {
+                            *slot = Some(width);
+                        }
+                    });
+                    self.app.dirty = true;
+                    self.request_redraw();
+                    return;
+                }
                 // A view with `.draggable` starts moving once the mouse has
                 // gone a few points (less is a click).
                 if let (Some((key, (sx, sy))), None) = (self.drag_start, &self.app.ui.dragging) {
@@ -5782,7 +6090,8 @@ impl ApplicationHandler for WindowApp {
                         self.request_redraw();
                     }
                     let (x, y) = self.cursor;
-                    let pointer = self.app.cursor_at(x, y).or_else(|| self.app.drag_cursor(x, y)).unwrap_or_default();
+                    let resize = matches!(self.app.hit(x, y), Some(Hit::TableResize(..))).then_some(winit::window::CursorIcon::ColResize);
+                    let pointer = resize.or_else(|| self.app.cursor_at(x, y)).or_else(|| self.app.drag_cursor(x, y)).unwrap_or_default();
                     if pointer != self.pointer {
                         self.pointer = pointer;
                         if let Some(w) = &self.window {
@@ -5893,6 +6202,10 @@ impl ApplicationHandler for WindowApp {
                         if let Some(Hit::Drag(key)) = hit {
                             self.dragging = Some(key);
                         }
+                        if let Some(Hit::TableResize(table, column)) = hit {
+                            let width = self.app.node(table).and_then(|n| n.layout.tabs.get(column)).map_or(100.0, |t| t.rect.w);
+                            self.resizing = Some((table, column, x, width));
+                        }
                         if let Some(Hit::Slider(key)) = hit {
                             self.sliding = Some(key);
                             self.app.ui.focused = Some(key);
@@ -5928,7 +6241,9 @@ impl ApplicationHandler for WindowApp {
                         self.selecting = false;
                         self.dragging = None;
                         self.sliding = None;
+                        self.resizing = None;
                         self.drag_start = None;
+                        self.app.ui.click_mods = (self.mods.shift, self.mods.primary);
                         let pressed = self.app.ui.pressed.take();
                         let here = self.app.hit(x, y).map(|h| h.key());
                         if pressed.is_some() && pressed == here {

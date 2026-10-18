@@ -1,0 +1,171 @@
+Root
+  View
+    VStack
+      Table ["Name", "Age"] 4 rows, selected []
+        Scroll
+          LazyVStack 4 rows, built 0..4
+            Row 0
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+            Row 1
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+            Row 2
+              VStack
+                Text "Linus"
+              VStack
+                Text "54"
+            Row 3
+              VStack
+                Text "Alan"
+              VStack
+                Text "41"
+      Text "picked [], opened nothing"
+      Tree 2 rows, selected []
+        Scroll
+          LazyVStack 2 rows, built 0..2
+            Row [0] closed
+              VStack
+                Text "src"
+            Row [1]
+              VStack
+                Text "README.md"
+      Text "chosen [], shown "
+Root
+  View
+    VStack
+      Table ["Name", "Age"] 4 rows, sorted by "Age" up, selected [2, 3] focused
+        Scroll
+          LazyVStack 4 rows, built 0..4
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+            Row 1
+              VStack
+                Text "Alan"
+              VStack
+                Text "41"
+            Row 2 selected
+              VStack
+                Text "Linus"
+              VStack
+                Text "54"
+            Row 3 selected
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+      Text "picked [\"Linus\", \"Grace\"], opened nothing"
+      Tree 2 rows, selected []
+        Scroll
+          LazyVStack 2 rows, built 0..2
+            Row [0] closed
+              VStack
+                Text "src"
+            Row [1]
+              VStack
+                Text "README.md"
+      Text "chosen [], shown "
+Root
+  View
+    VStack
+      Table ["Name", "Age"] 4 rows, sorted by "Name" up, selected [2] focused
+        Scroll
+          LazyVStack 4 rows, built 0..4
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+            Row 1
+              VStack
+                Text "Alan"
+              VStack
+                Text "41"
+            Row 2 selected
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+            Row 3
+              VStack
+                Text "Linus"
+              VStack
+                Text "54"
+      Text "picked [\"Grace\"], opened Grace"
+      Tree 2 rows, selected []
+        Scroll
+          LazyVStack 2 rows, built 0..2
+            Row [0] closed
+              VStack
+                Text "src"
+            Row [1]
+              VStack
+                Text "README.md"
+      Text "chosen [], shown "
+Root
+  View
+    VStack
+      Table ["Name", "Age"] 4 rows, sorted by "Name" up, selected [1]
+        Scroll
+          LazyVStack 4 rows, built 0..4
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+            Row 1 selected
+              VStack
+                Text "Alan"
+              VStack
+                Text "41"
+            Row 2
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+            Row 3
+              VStack
+                Text "Linus"
+              VStack
+                Text "54"
+      Text "picked [\"Alan\"], opened Alan"
+      Tree 2 rows, selected [0] focused
+        Scroll
+          LazyVStack 2 rows, built 0..2
+            Row [0] closed selected
+              VStack
+                Text "src"
+            Row [1]
+              VStack
+                Text "README.md"
+      Text "chosen [0], shown ui"
+Window
+  Table
+    Scroll
+      Row "Ada 36"
+        Text = "Ada"
+        Text = "36"
+      Row "Alan 41" (chosen)
+        Text = "Alan"
+        Text = "41"
+      Row "Grace 85"
+        Text = "Grace"
+        Text = "85"
+      Row "Linus 54"
+        Text = "Linus"
+        Text = "54"
+  Text = "picked [\"Alan\"], opened Alan"
+  Tree
+    Scroll
+      TreeItem "src" (chosen)
+        Text = "src"
+      TreeItem "README.md"
+        Text = "README.md"
+  Text = "chosen [0], shown ui"
