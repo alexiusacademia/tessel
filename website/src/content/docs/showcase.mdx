@@ -9,6 +9,7 @@ import tally from '../../assets/showcase/tally.png';
 import quill from '../../assets/showcase/quill.png';
 import slope from '../../assets/showcase/slope.jpg';
 import flume from '../../assets/showcase/flume.webp';
+import forebay from '../../assets/showcase/forebay.jpg';
 import girder from '../../assets/showcase/girder.jpg';
 import ide from '../../assets/screens/ide.png';
 
@@ -86,6 +87,29 @@ rectangular, trapezoidal, circular, parabolic and surveyed sections, draws the
 channel as it goes, and writes the calculation up as a PDF report.
 
 <LinkButton href="https://flume.syncster.dev/" icon="external">flume.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={forebay} loading="eager" alt="Forebay showing a reservoir's level over thirty years, its inflows and releases, and how well each of its four uses was served" />
+
+## Forebay
+
+An engineering app for reservoir operation studies. From a record of the
+flows into a reservoir, Forebay works out period by period what it could have
+supplied to water supply, environmental flow, irrigation and hydropower, where
+its level would have stood and what it would have spilled, with rule curves
+and a flood control level. It finds the firm yield and yield against storage,
+searches for rule curves, makes synthetic inflow records, and routes floods
+through the spillway.
+
+The operation study, the rule curve search (differential evolution over
+many runs of the study) and the synthetic records are Tessel code; the long
+ones run on a background thread, with their progress shown, while the window
+stays responsive.
+
+<LinkButton href="https://forebay.syncster.dev/" icon="external">forebay.syncster.dev</LinkButton>
 
 </section>
 
