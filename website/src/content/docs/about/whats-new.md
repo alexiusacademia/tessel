@@ -11,6 +11,21 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.9.0
+
+*October 19, 2026*
+
+- **Another name for a module.** `import numeric as num` lets a file use a
+  module or library by a shorter name: `num.brent(…)`. It works for
+  folders too: `import "../shared/textkit" as text`. See
+  [Another name for a module](/language/programs/#another-name-for-a-module).
+
+Fixed:
+
+- The library index's check of a proposed version could fail to find its
+  tag, because GitHub limits lookups made without logging in. It now logs
+  in when it can, and asks `git` when GitHub refuses.
+
 ## 0.8.0
 
 *October 18, 2026 · 0.7.0 to 0.8.0*
