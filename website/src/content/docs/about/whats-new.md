@@ -11,9 +11,9 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.9.0
+## 0.9.1
 
-*October 19, 2026*
+*October 19, 2026 · 0.9.0 to 0.9.1*
 
 - **Another name for a module.** `import numeric as num` lets a file use a
   module or library by a shorter name: `num.brent(…)`. It works for
@@ -25,6 +25,13 @@ Fixed:
 - The library index's check of a proposed version could fail to find its
   tag, because GitHub limits lookups made without logging in. It now logs
   in when it can, and asks `git` when GitHub refuses.
+- A module or library that declares a name Tessel has too, like `Color` or
+  `writeText`, no longer hides Tessel's in the programs that import it;
+  its own is `m.Color`.
+- `dict[key]?.append(x)` changes the list where it is: it took longer the
+  longer the list was, copying it whole each time.
+- `g.text` turns with `g.rotate`, as lines do. Its size stays in points
+  whatever `g.scale` says, and a flip doesn't mirror it.
 
 ## 0.8.0
 
