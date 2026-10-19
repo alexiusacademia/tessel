@@ -856,8 +856,13 @@ pub unsafe extern "C" fn tsl_canvas_text(
         let (h, v) = super::align_2d(align.clamp(0, 8) as u8);
         let (w, ht) = (layout.width(), layout.height());
         let anchor = c.transform * Point::new(x, y);
+        // The text turns with the transform (`g.rotate`): along the way it
+        // takes the x axis. It isn't stretched by `g.scale`, being sized in
+        // points, nor mirrored by a flip (a y-up chart's `g.scale(1, -1)`).
+        let [a, b, ..] = c.transform.as_coeffs();
+        let turned = if a == 0.0 && b == 0.0 { 0.0 } else { b.atan2(a) };
         let t = Affine::translate(anchor.to_vec2())
-            * Affine::rotate(angle)
+            * Affine::rotate(turned + angle)
             * Affine::translate(Vec2::new(-w * h as f64 / 2.0, -ht * v as f64 / 2.0));
         // The halo first, under the text.
         let halo = (halo_width > 0.0).then_some((halo, halo_width * 2.0));

@@ -1,0 +1,40 @@
+// g.text turns with g.rotate, as lines do (issue #28), and isn't stretched
+// by g.scale or mirrored by a flip: its size is in points.
+
+fn dark(_ pixels: [Int], _ width: Int, x0: Int, y0: Int, x1: Int, y1: Int) -> Int {
+    var n = 0
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if pixels[y * width + x] / 16777216 < 128 {
+                n += 1
+            }
+        }
+    }
+    n
+}
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-canvas-text-turns.png")
+    let ok = renderImage(path: path, width: 200, height: 200) { g in
+        g.fillRect(x: 0, y: 0, width: 200, height: 200, color: .white)
+        g.save()
+        g.translate(100, 100)
+        g.rotate(-pi / 2.0)
+        g.text("MMMMMM", x: 0, y: 0, size: 20, color: .black)
+        g.restore()
+        g.save()
+        g.translate(10, 170)
+        g.scale(4, -4)
+        g.text("MM", x: 0, y: 0, size: 12, color: .black)
+        g.restore()
+    }
+    let (w, _, pixels) = readImage(path) ?? (0, 0, [])
+    deleteFile(path: path)
+    print(ok)
+    // Turned a quarter: the letters run up from (100, 100), not to its right.
+    print("up: {dark(pixels, w, x0: 100, y0: 20, x1: 130, y1: 100) > 100}")
+    print("right: {dark(pixels, w, x0: 105, y0: 100, x1: 190, y1: 130) == 0}")
+    // Scaled four times and flipped: still 12 points, upright, below (10, 170).
+    print("small: {dark(pixels, w, x0: 50, y0: 150, x1: 200, y1: 200) == 0}")
+    print("below: {dark(pixels, w, x0: 10, y0: 170, x1: 45, y1: 190) > 20}")
+}
