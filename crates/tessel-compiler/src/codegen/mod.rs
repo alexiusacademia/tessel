@@ -1577,6 +1577,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_dict_new" | "tsl_set_from_list" => (vec![p, p], Some(p)),
             "tsl_dict_get" | "tsl_dict_remove" => (vec![p, p, p], Some(i8t)),
             "tsl_dict_set" => (vec![p, p, p], None),
+            "tsl_dict_value_slot" => (vec![p, p], Some(p)),
             "tsl_after" => (vec![f64t, p, p], None),
             "tsl_read_file" | "tsl_list_folder" | "tsl_environment" | "tsl_str_lines" => (vec![p], Some(p)),
             "tsl_write_file" => (vec![p, p], Some(i8t)),
@@ -3898,6 +3899,32 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.b.build_store(slot, none).unwrap();
             Some(slot)
         };
+        // `dict[key]?.append(x)`: changed where it is in the dictionary. A
+        // copy would share the value with the dictionary, so changing it
+        // would copy it whole each time (issue #29).
+        if let ExprKind::Index(dict, key) = &object.kind
+            && let Ty::Dict(kt, _) = self.ty(dict)
+            && self.stays_put(dict, false)
+        {
+            let k = self.expr_as(key, &kt).unwrap();
+            let slot = self.write_ptr(dict);
+            let kp = self.spill(&kt, k);
+            let vp = self.call_rt("tsl_dict_value_slot", &[slot.into(), kp.into()]).unwrap().into_pointer_value();
+            let k = self.load(&kt, kp);
+            self.release(k, &kt);
+            let present = self.b.build_is_not_null(vp, "present").unwrap();
+            let (some_bb, done) = (self.block_named("some"), self.block_named("done"));
+            self.b.build_conditional_branch(present, some_bb, done).unwrap();
+            self.b.position_at_end(some_bb);
+            let r = f(self, vp);
+            if let (Some(slot), Some(r)) = (out, r) {
+                let r = if Some(r.get_type()) == self.llty(result) { r } else { self.some(result, r) };
+                self.b.build_store(slot, r).unwrap();
+            }
+            self.br(done);
+            self.b.position_at_end(done);
+            return out.map(|slot| self.load(result, slot));
+        }
         let ov = self.expr(object).unwrap().into_struct_value();
         let flag = self.b.build_extract_value(ov, 0, "").unwrap().into_int_value();
         let (some_bb, done) = (self.block_named("some"), self.block_named("done"));

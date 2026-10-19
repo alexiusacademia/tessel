@@ -1434,6 +1434,22 @@ pub unsafe extern "C" fn tsl_dict_set(slot: *mut *mut Dict, key: *mut u8, value:
     }
 }
 
+/// Where the value for `key` is, to change it in place (`dict[key]?.append(x)`),
+/// in a dictionary made unique first; null if `key` is absent. The pointer
+/// lasts until the dictionary next changes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_dict_value_slot(slot: *mut *mut Dict, key: *const u8) -> *mut u8 {
+    unsafe {
+        if dict_find(*slot, key).is_none() {
+            return ptr::null_mut();
+        }
+        let d = dict_unique(slot);
+        let i = dict_find(d, key).unwrap();
+        let vs = (*(*d).value).size as usize;
+        (*(*d).inner).values.as_mut_ptr().add(i * vs)
+    }
+}
+
 /// Removes `key`, moving its value to `out`; returns false if absent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_dict_remove(slot: *mut *mut Dict, key: *const u8, out: *mut u8) -> bool {

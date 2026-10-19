@@ -1,0 +1,40 @@
+// A changing method on a dictionary's value through `?.` changes it where
+// it is (issue #29): appending isn't slower the longer the list gets, and
+// a copy of the dictionary keeps what it had.
+
+struct Bag {
+    groups: [String: [Int]] = [:]
+}
+
+fn main() {
+    // 200,000 appends: well under a second, where copying the list each
+    // time took several.
+    let start = now()
+    var d: [Int: [Int]] = [1: []]
+    for i in 0..200000 {
+        d[1]?.append(i)
+    }
+    print("{d[1]?.count ?? 0} items, fast: {now() - start < 1.0}")
+
+    var a: [String: [Int]] = ["x": [1, 2]]
+    let b = a
+    a["x"]?.append(3)
+    print("{a["x"] ?? []} {b["x"] ?? []}")
+    a["nope"]?.append(9)
+    print(a.count)
+    let last = a["x"]?.removeLast()
+    print("{last ?? -1} {a["x"] ?? []}")
+    print(a["nope"]?.removeLast() ?? -1)
+
+    var bag = Bag(groups: ["g": []])
+    for i in 0..5 {
+        bag.groups["g"]?.append(i)
+    }
+    bag.groups["g"]?.appendAll([10, 11])
+    print(bag.groups["g"] ?? [])
+
+    var names: [Int: [String]] = [0: ["a"]]
+    names[0]?.append("b")
+    names[0]?.insert("z", at: 0)
+    print(names[0] ?? [])
+}
