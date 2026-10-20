@@ -11,6 +11,15 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.10.0
+
+*October 20, 2026*
+
+- **Windows apps, built on a Mac.** `tessel build todos --windows` makes
+  `todos.exe`, the same app the Windows version of Tessel makes, icon and
+  details included. What it's built with is downloaded the first time. See
+  [For Windows, on a Mac](/start/cli/#for-windows-on-a-mac).
+
 ## 0.9.1
 
 *October 19, 2026 · 0.9.0 to 0.9.1*
