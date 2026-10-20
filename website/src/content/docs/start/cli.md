@@ -323,6 +323,26 @@ installed.
 On Windows, apps (programs with an `app`) are built without a console
 window.
 
+### For Windows, on a Mac
+
+```sh
+tessel build <path> --windows [-o <output>]
+```
+
+On a Mac, `--windows` builds the program for Windows: an `.exe` for 64-bit
+Windows 10 and 11, named after the program (`tessel build todos --windows`
+makes `todos.exe`). It's the same app the Windows version of Tessel makes,
+with its icon and the details from [`tessel.toml`](/start/project/) inside,
+and needs nothing installed on the computer it runs on.
+
+What Windows apps are built with (Tessel's runtime for Windows and the
+Windows libraries it links with, about 45 MB) isn't in the Mac's package:
+the first `--windows` build downloads it, once for each version of Tessel.
+
+The app isn't signed, so Windows may say it's from an unknown publisher the
+first time it's opened (**More info**, then **Run anyway**). Signing a
+Windows app needs a code-signing certificate and is done on Windows.
+
 ### For Android
 
 ```sh
@@ -602,6 +622,7 @@ summary and exits with status 1.
 | `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
 | `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |
 | `TESSEL_ANDROID_KEYSTORE_PASSWORD` | `tessel build --android` | The password of the keystore `tessel.toml` names; `TESSEL_ANDROID_KEY_PASSWORD` is the key's, if it differs. See [Publishing on Google Play](/guides/android/#publishing-on-google-play). |
+| `TESSEL_WINDOWS_PARTS` | `tessel build --windows` | A folder with Tessel's runtime for Windows (`libtessel_runtime.a`) and the Windows libraries (`sdk/`) to build with, instead of downloading them. |
 | `TESSEL_HOME` | `tessel pin`, libraries | Tessel's folder, where other versions are installed (in `versions/`) and libraries are downloaded (in `packages/`). The install scripts use it too. |
 | `TESSEL_INDEX` | Libraries | Another [library index](/guides/libraries/) instead of the public one: a folder on this computer (then `tessel publish` writes its entries there, for trying libraries out) or the address of a `.tar.gz` of one. |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |

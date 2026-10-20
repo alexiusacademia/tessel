@@ -210,8 +210,10 @@ fn main() {
         build.flag(flag);
     }
     let libs: &[&str] = if target_os == "macos" {
+        // (And Windows's, for `tessel build --windows`.)
         build.define("TESSEL_LLD_MACHO", None);
-        &["lldMachO", "lldCommon"]
+        build.define("TESSEL_LLD_COFF", None);
+        &["lldMachO", "lldCOFF", "lldMinGW", "lldCommon"]
     } else {
         build.define("TESSEL_LLD_COFF", None);
         &["lldCOFF", "lldMinGW", "lldCommon"]

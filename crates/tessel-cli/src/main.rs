@@ -39,6 +39,9 @@ commands:
                  compile a program to a native executable; with --bundle,
                  an app bundle you can double-click (macOS: Name.app).
                  An icon.png next to the program is the app's icon
+  build <path> --windows [-o <output>]
+                 on a Mac: a Windows app (.exe), for 64-bit Windows 10 and 11.
+                 What it's built with is downloaded the first time
   build <path> --android [--bundle] [-o <output>]
                  an app as an Android package: an .apk to install, or with
                  --bundle an .aab for Google Play (needs the Android SDK and NDK)
@@ -170,8 +173,29 @@ fn main() -> ExitCode {
                     Err(code) => code,
                 };
             }
-            let mut out = out.unwrap_or_else(|| default_output(Path::new(path)));
-            if cfg!(windows) && out.extension().is_none() {
+            // `--windows`: a Windows app, built on a Mac.
+            let windows = rest.iter().any(|a| a == "--windows");
+            if windows && !cfg!(windows) {
+                if !cfg!(target_os = "macos") {
+                    eprintln!("tessel: --windows builds Windows apps on a Mac");
+                    return ExitCode::FAILURE;
+                }
+                if !cfg!(feature = "bundled-linker") {
+                    eprintln!("tessel: --windows needs Tessel's built-in linker, which the installed Tessel has (this is a development build)");
+                    return ExitCode::FAILURE;
+                }
+                WINDOWS_BUILD.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            let mut out = out.unwrap_or_else(|| match windows {
+                // (`todos.exe` can sit next to the folder `todos`.)
+                true => {
+                    let full = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+                    let stem = if full.is_dir() { full.file_name() } else { full.file_stem() };
+                    PathBuf::from(stem.unwrap_or_else(|| "app".as_ref())).with_extension("exe")
+                }
+                false => default_output(Path::new(path)),
+            });
+            if (cfg!(windows) || windows) && out.extension().is_none() {
                 out.set_extension("exe");
             }
             // (For `tessel debug`: the program says where it is as it runs.)
@@ -390,11 +414,54 @@ fn default_output(path: &Path) -> PathBuf {
 /// Whether `build` compiles for the debugger (`tessel build --debug`).
 static DEBUG_BUILD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether `build` makes a Windows app on a Mac (`tessel build --windows`).
+static WINDOWS_BUILD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn cross_windows() -> bool {
+    WINDOWS_BUILD.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// What building Windows apps on a Mac needs from the Windows build of
+/// Tessel: its runtime library (MinGW) and the Windows libraries it links
+/// with (`sdk/`). They aren't in the Mac's package (most people never need
+/// them): they're downloaded the first time, once for each version of
+/// Tessel, into `windows/<version>/` in Tessel's folder. TESSEL_WINDOWS_PARTS
+/// names a folder that has them instead.
+fn windows_parts() -> Result<PathBuf, String> {
+    let has = |d: &Path| d.join("libtessel_runtime.a").is_file() && d.join("sdk").join("crt2.o").is_file();
+    if let Some(d) = std::env::var_os("TESSEL_WINDOWS_PARTS").map(PathBuf::from) {
+        return if has(&d) { Ok(d) } else { Err(format!("TESSEL_WINDOWS_PARTS: `{}` has no libtessel_runtime.a and sdk/", d.display())) };
+    }
+    let dir = update::home()?.join("windows").join(tessel_compiler::VERSION);
+    if has(&dir) {
+        return Ok(dir);
+    }
+    eprintln!("Getting what Windows apps are built with (once for each version of Tessel)…");
+    let version = format!("v{}", tessel_compiler::VERSION);
+    let package = format!("tessel-{version}-windows-x64-parts.tar.gz");
+    let staging = dir.with_extension("download");
+    let _ = std::fs::remove_dir_all(&staging);
+    update::fetch_part(&version, &package, &staging).map_err(|e| format!("can't get what Windows apps are built with: {e}"))?;
+    let _ = std::fs::remove_file(staging.join(&package));
+    if !has(&staging) {
+        return Err(format!("`{package}` doesn't have what Windows apps are built with"));
+    }
+    // (Another `tessel` may have put them there meanwhile: as good.)
+    if std::fs::rename(&staging, &dir).is_err() && !has(&dir) {
+        return Err(format!("can't write {}", dir.display()));
+    }
+    let _ = std::fs::remove_dir_all(&staging);
+    Ok(dir)
+}
+
 /// File name of the runtime static library on this platform.
 const RUNTIME_LIB: &str = if cfg!(target_env = "msvc") { "tessel_runtime.lib" } else { "libtessel_runtime.a" };
 
 /// The runtime library, found next to the `tessel` executable.
 fn runtime_lib() -> Result<PathBuf, String> {
+    if cross_windows() {
+        return Ok(windows_parts()?.join("libtessel_runtime.a"));
+    }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // `tessel` may be a symlink (e.g. in /usr/local/bin) to the real one.
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
@@ -507,6 +574,9 @@ fn target_triple() -> Option<String> {
     if let Ok(t) = std::env::var("TESSEL_TARGET") {
         return Some(t);
     }
+    if cross_windows() {
+        return Some("x86_64-pc-windows-gnu".to_string());
+    }
     (cfg!(windows) && bundled_sdk().is_some()).then(|| "x86_64-pc-windows-gnu".to_string())
 }
 
@@ -514,6 +584,9 @@ fn target_triple() -> Option<String> {
 /// this `tessel` has one, otherwise with the system's. `resources` is a
 /// Windows resource file (the app's icon) to link in.
 fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
+    if cross_windows() {
+        return bundled::link(obj, runtime, out, &windows_parts()?.join("sdk"), gui, resources);
+    }
     if let Some(sdk) = bundled_sdk() {
         return bundled::link(obj, runtime, out, &sdk, gui, resources);
     }
@@ -560,11 +633,9 @@ mod bundled {
     }
 
     pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
+        // (On a Mac, a Windows app for `tessel build --windows`.)
         #[cfg(target_os = "macos")]
-        let args = {
-            let _ = (gui, resources);
-            macos_args(obj, runtime, out, sdk)?
-        };
+        let args = if super::cross_windows() { mingw_args(obj, runtime, out, sdk, gui, resources) } else { macos_args(obj, runtime, out, sdk)? };
         #[cfg(not(target_os = "macos"))]
         let args = mingw_args(obj, runtime, out, sdk, gui, resources);
         let args: Vec<CString> = args.into_iter().map(|a| CString::new(a).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
@@ -621,7 +692,6 @@ mod bundled {
     /// ld.lld arguments in MinGW mode (Windows): the program and the runtime
     /// with MinGW-w64's C runtime and Windows import libraries from `sdk/`,
     /// in the order clang's MinGW driver uses.
-    #[cfg(not(target_os = "macos"))]
     fn mingw_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool, resources: Option<&Path>) -> Vec<String> {
         let path = |p: &Path| p.to_string_lossy().into_owned();
         let file = |name: &str| path(&sdk.join(name));
@@ -665,7 +735,7 @@ fn version_info(found: Option<&manifest::Found>, app_name: Option<&str>, program
 }
 
 fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
-    if !cfg!(target_os = "macos") {
+    if !cfg!(target_os = "macos") || cross_windows() {
         // Windows apps are already a single double-clickable .exe, with the icon inside.
         return Ok(exe.to_path_buf());
     }

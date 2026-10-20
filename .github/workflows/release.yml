@@ -325,6 +325,9 @@ jobs:
           cd dist/pkg
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             7z a "../tessel-$VERSION-${{ matrix.name }}.zip" . > /dev/null
+            # What `tessel build --windows` builds Windows apps with on a Mac:
+            # the runtime and the Windows libraries, downloaded the first time.
+            tar -czf "../tessel-$VERSION-${{ matrix.name }}-parts.tar.gz" libtessel_runtime.a sdk
           else
             tar -czf "../tessel-$VERSION-${{ matrix.name }}.tar.gz" .
           fi
@@ -384,6 +387,16 @@ jobs:
           mkdir -p dist
           gcloud storage cp "gs://tessel-releases/staging/$version/*" dist/
           ls -la dist
+          # The Mac's tessel builds a Windows app with the Windows parts
+          # (`tessel build --windows`), before anything is published.
+          if ls dist/tessel-*-macos-arm64.tar.gz dist/tessel-*-windows-x64-parts.tar.gz > /dev/null 2>&1; then
+            mkdir -p dist/check/mac dist/check/windows
+            tar -xzf dist/tessel-*-macos-arm64.tar.gz -C dist/check/mac
+            tar -xzf dist/tessel-*-windows-x64-parts.tar.gz -C dist/check/windows
+            TESSEL_WINDOWS_PARTS="$PWD/dist/check/windows" dist/check/mac/tessel build examples/todos --windows -o dist/check/todos.exe
+            file dist/check/todos.exe | grep -q "PE32+ executable (GUI) x86-64" || { echo "::error::tessel build --windows didn't make a Windows app"; exit 1; }
+            rm -rf dist/check
+          fi
           (cd dist && shasum -a 256 tessel-* > SHA256SUMS)
           gcloud storage cp dist/* "gs://tessel-releases/$version/"
           # The newest version for each platform built this time, and the
