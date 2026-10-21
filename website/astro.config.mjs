@@ -15,6 +15,8 @@ export default defineConfig({
 			title: 'Tessel',
 			description: 'A small, declarative, compiled language for building desktop apps on macOS and Windows.',
 			logo: { src: './src/assets/logo.svg' },
+			// The GitHub link at the top right of every page.
+			social: [{ icon: 'github', label: 'Tessel on GitHub', href: 'https://github.com/alexiusacademia/tessel' }],
 			customCss: ['./src/styles/custom.css'],
 			head: [
 				{
