@@ -195,20 +195,13 @@ pub fn image_size(path: &str) -> Option<(u32, u32)> {
 
 // ===== the screen =====
 
-/// ARM's graphics cards (Mali), by the number their maker has.
-const ARM: u32 = 0x13B5;
-
 fn renderer(dev: &vello::util::DeviceHandle) -> Renderer {
-    // The renderer does most of its work on the graphics card, in steps.
-    // On a Mali (most Android phones: a Pixel 10a's G715 was tried), one of
-    // them, `tile_alloc`, makes the driver give the card up, and nothing
-    // more can be drawn. There the steps before the last one are done by
-    // the processor instead: slower (some 20 to 70 ms a frame), but drawn.
-    let slow = dev.adapter().get_info().vendor == ARM;
+    // (vello's shaders are patched to run on ARM Mali cards, as on most
+    // Android phones: see vendor/vello_shaders/TESSEL.md.)
     Renderer::new(
         &dev.device,
         RendererOptions {
-            use_cpu: slow,
+            use_cpu: false,
             antialiasing_support: AaSupport::area_only(),
             num_init_threads: NonZeroUsize::new(1),
             pipeline_cache: None,

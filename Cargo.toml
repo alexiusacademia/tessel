@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# (Patched copies of other crates: see [patch.crates-io].)
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.11.0"
@@ -18,3 +20,8 @@ collapsible_if = "allow"
 lto = true
 panic = "abort"
 codegen-units = 1
+
+# vello's shaders, changed so they run on ARM Mali GPUs (most Android
+# phones): see vendor/vello_shaders/TESSEL.md.
+[patch.crates-io]
+vello_shaders = { path = "vendor/vello_shaders" }

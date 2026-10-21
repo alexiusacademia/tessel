@@ -262,10 +262,6 @@ a PDF can't carry as it is.) Emoji in color are left out.
 - **Choosing a folder** (`chooseFolder`): see above.
 - **The location in the background**, and other sensors and permissions
   (the camera, the microphone, notifications).
-- **Speed on phones with a Mali graphics card** (most Android phones that
-  aren't Snapdragon ones). Their driver fails on one step of Tessel's
-  drawing, so part of each frame is worked out by the processor instead:
-  apps run, but a busy screen scrolls at 15 to 30 frames a second.
 - Apps have run on the emulator and on one phone (a Pixel 10a), built
   from macOS. Building from Windows hasn't been tried.
 
