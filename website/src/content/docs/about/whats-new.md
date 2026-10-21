@@ -11,6 +11,16 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.11.0
+
+*October 21, 2026*
+
+- **Tests.** Write `test "what it checks" { … }` next to your code, with
+  `expect(…)` for what must be true, and run them with `tessel test`. A
+  failed comparison shows both sides; each test runs in a process of its
+  own, so a crash or a hang fails only that test. See
+  [Testing your code](/guides/testing/).
+
 ## 0.10.0
 
 *October 20, 2026*
