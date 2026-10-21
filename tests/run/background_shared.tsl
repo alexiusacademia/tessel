@@ -1,0 +1,76 @@
+// `background` work uses the values it captures without copying them, and
+// hands its result back the same way. Each side changing a value it shares
+// with the other changes only its own copy.
+
+struct Item {
+    name: String
+    pts: [Float]
+    tags: [String: String]
+}
+
+enum Shape {
+    circle(r: Float)
+    poly(points: [Float])
+    none
+}
+
+interface Named {
+    fn title() -> String
+}
+
+struct Tag: Named {
+    text: String
+    fn title() -> String { "#{self.text}" }
+}
+
+fn makeItems(n: Int) -> [Item] {
+    var out: [Item] = []
+    for i in 0..n { out.append(Item(name: "item {i}", pts: [Float(i), 1, 2], tags: ["layer": "A{i % 3}"])) }
+    out
+}
+
+fn main() {
+    var items = makeItems(n: 1000)
+    let shapes = [Shape.circle(r: 2), Shape.poly(points: [1, 2, 3]), Shape.none]
+    let label: String? = "label"
+    let words: Set<String> = ["a", "b"]
+    // (An interface value can't be shared: it's copied, as before.)
+    let named: Named = Tag(text: "tag")
+    background(work: {
+        // The work's own changes don't reach the program's values...
+        var mine = items
+        mine[0].name = "changed by the work"
+        mine[1].pts.append(99)
+        mine.append(Item(name: "added by the work", pts: [], tags: [:]))
+        var total = 0.0
+        for item in items { total += item.pts[0] }
+        var poly = 0
+        for s in shapes {
+            match s {
+                .poly(points) -> { poly = points.count }
+                _ -> {}
+            }
+        }
+        "{mine.count} {mine[0].name} {mine[1].pts} | {items.count} {items[0].name} {items[1].pts} | {total} {poly} {label ?? "-"} {words.count} {named.title()}"
+    }) { seen in
+        print(seen)
+        // ...nor do the program's changes after the work began.
+        print(items[0].name)
+        background(work: { makeItems(n: 3) }) { made in
+            var mine = made
+            mine[2].tags["layer"] = "Z"
+            mine.append(Item(name: "added here", pts: [], tags: [:]))
+            print("{made.count} {made[2].tags} {mine.count} {mine[2].tags}")
+            // A result that's never delivered (its job is cancelled) is freed.
+            let job = background(work: { job in
+                while !job.isCancelled() {}
+                makeItems(n: 10)
+            }) { never in
+                print("not printed {never.count}")
+            }
+            job.cancel()
+        }
+    }
+    items[0].name = "changed by main"
+    items[1].pts.append(7)
+}

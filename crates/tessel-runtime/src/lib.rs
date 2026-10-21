@@ -28,6 +28,7 @@ pub mod ui;
 use std::ffi::{c_char, CStr};
 use std::io::Write;
 use std::ptr;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 // ===== objects =====
 
@@ -74,46 +75,93 @@ unsafe fn new_object(size: usize, drop: unsafe extern "C" fn(*mut Header)) -> *m
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_retain(obj: *mut Header) {
-    if !obj.is_null() && unsafe { (*obj).rc } >= 0 {
-        unsafe { (*obj).rc += 1 };
+    if obj.is_null() {
+        return;
+    }
+    let c = unsafe { count(obj) };
+    let rc = c.load(Ordering::Relaxed);
+    if rc < 0 {
+        return;
+    }
+    if rc & SHARED != 0 {
+        c.fetch_add(1, Ordering::Relaxed);
+    } else {
+        c.store(rc + 1, Ordering::Relaxed);
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_release(obj: *mut Header) {
-    if obj.is_null() || unsafe { (*obj).rc } < 0 {
+    if obj.is_null() {
         return;
     }
-    unsafe {
-        (*obj).rc -= 1;
-        if (*obj).rc == 0 {
-            ((*obj).drop)(obj);
+    let c = unsafe { count(obj) };
+    let rc = c.load(Ordering::Relaxed);
+    if rc < 0 {
+        return;
+    }
+    if rc & SHARED != 0 {
+        if c.fetch_sub(1, Ordering::Release) == SHARED + 1 {
+            std::sync::atomic::fence(Ordering::Acquire);
+            unsafe { ((*obj).drop)(obj) };
+        }
+    } else {
+        c.store(rc - 1, Ordering::Relaxed);
+        if rc == 1 {
+            unsafe { ((*obj).drop)(obj) };
         }
     }
 }
 
-// ===== constants and waiting functions =====
+// ===== reference counts across threads =====
+//
+// An object's count is plain while one thread has it. Values handed to
+// `background` work (and its result, handed back) are marked `SHARED`
+// first, with all they hold: from then on their counts change atomically,
+// and as their count never reads 1 again, they're never changed in place
+// (a change copies them first, as for any value held twice). A negative
+// count is an immortal object's, which is never counted.
 
-/// Makes an object immortal: a constant's value, which is never freed, and
-/// which every thread may then read (reference counts aren't atomic, and an
-/// immortal object's is never written).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_immortal(obj: *mut Header) {
-    // (What's immortal already may be in read-only memory: a literal.)
-    if !obj.is_null() && unsafe { (*obj).rc } >= 0 {
-        unsafe { (*obj).rc = -1 };
-    }
+/// The mark of an object more than one thread may hold.
+const SHARED: i64 = 1 << 62;
+
+/// The count of `obj`.
+unsafe fn count<'a>(obj: *mut Header) -> &'a AtomicI64 {
+    unsafe { AtomicI64::from_ptr(&raw mut (*obj).rc) }
 }
 
-/// Makes a list immortal, and (with `each`, which is given each item's
-/// address) what its items hold.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_list_immortal(l: *mut List, each: Option<unsafe extern "C" fn(*mut u8)>) {
+/// Whether `obj` is held once, so it can be changed in place.
+pub(crate) unsafe fn unique(obj: *mut Header) -> bool {
+    unsafe { count(obj) }.load(Ordering::Relaxed) == 1
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    Immortal,
+    Shared,
+}
+
+/// Marks `obj`. Whether it wasn't already (when it was, so is what it holds).
+unsafe fn mark(obj: *mut Header, how: Mark) -> bool {
+    if obj.is_null() {
+        return false;
+    }
+    let c = unsafe { count(obj) };
+    let rc = c.load(Ordering::Relaxed);
+    // (What's immortal already may be in read-only memory: a literal. What's
+    // shared already another thread may be counting: it stays shared.)
+    if rc < 0 || rc & SHARED != 0 {
+        return false;
+    }
+    c.store(if how == Mark::Immortal { -1 } else { rc | SHARED }, Ordering::Relaxed);
+    true
+}
+
+unsafe fn mark_list(l: *mut List, each: Option<unsafe extern "C" fn(*mut u8)>, how: Mark) {
     unsafe {
-        if l.is_null() || (*l).h.rc < 0 {
+        if !mark(l as *mut Header, how) {
             return;
         }
-        (*l).h.rc = -1;
         if let Some(each) = each {
             for i in 0..(*l).len {
                 each(elem_at(l, i));
@@ -122,18 +170,16 @@ pub unsafe extern "C" fn tsl_list_immortal(l: *mut List, each: Option<unsafe ext
     }
 }
 
-/// Makes a dictionary (or set) immortal, and what its keys and values hold.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_dict_immortal(
+unsafe fn mark_dict(
     d: *mut Dict,
     key: Option<unsafe extern "C" fn(*mut u8)>,
     value: Option<unsafe extern "C" fn(*mut u8)>,
+    how: Mark,
 ) {
     unsafe {
-        if d.is_null() || (*d).h.rc < 0 {
+        if !mark(d as *mut Header, how) {
             return;
         }
-        (*d).h.rc = -1;
         let (ks, vs) = ((*(*d).key).size as usize, (*(*d).value).size as usize);
         let inner = &mut *(*d).inner;
         for i in (0..inner.used()).filter(|&i| inner.live[i]).collect::<Vec<_>>() {
@@ -145,6 +191,56 @@ pub unsafe extern "C" fn tsl_dict_immortal(
             }
         }
     }
+}
+
+/// Marks an object shared (see above); its contents aren't followed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_share(obj: *mut Header) {
+    unsafe { mark(obj, Mark::Shared) };
+}
+
+/// Marks a list shared, and (with `each`, which is given each item's
+/// address) what its items hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_share(l: *mut List, each: Option<unsafe extern "C" fn(*mut u8)>) {
+    unsafe { mark_list(l, each, Mark::Shared) }
+}
+
+/// Marks a dictionary (or set) shared, and what its keys and values hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_dict_share(
+    d: *mut Dict,
+    key: Option<unsafe extern "C" fn(*mut u8)>,
+    value: Option<unsafe extern "C" fn(*mut u8)>,
+) {
+    unsafe { mark_dict(d, key, value, Mark::Shared) }
+}
+
+// ===== constants and waiting functions =====
+
+/// Makes an object immortal: a constant's value, which is never freed, and
+/// which every thread may then read (reference counts aren't atomic, and an
+/// immortal object's is never written).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_immortal(obj: *mut Header) {
+    unsafe { mark(obj, Mark::Immortal) };
+}
+
+/// Makes a list immortal, and (with `each`, which is given each item's
+/// address) what its items hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_immortal(l: *mut List, each: Option<unsafe extern "C" fn(*mut u8)>) {
+    unsafe { mark_list(l, each, Mark::Immortal) }
+}
+
+/// Makes a dictionary (or set) immortal, and what its keys and values hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_dict_immortal(
+    d: *mut Dict,
+    key: Option<unsafe extern "C" fn(*mut u8)>,
+    value: Option<unsafe extern "C" fn(*mut u8)>,
+) {
+    unsafe { mark_dict(d, key, value, Mark::Immortal) }
 }
 
 /// Memory for what a function that waits (`await`) keeps while it does.
@@ -227,7 +323,7 @@ pub unsafe extern "C" fn tsl_box_eq(a: *mut Header, b: *mut Header) -> bool {
 pub unsafe extern "C" fn tsl_box_unique(slot: *mut *mut Header) -> *mut Header {
     unsafe {
         let b = *slot;
-        if (*b).rc == 1 {
+        if unique(b) {
             return b;
         }
         let ty = (*(b as *mut BoxObj)).ty;
@@ -949,7 +1045,7 @@ unsafe fn list_clone(l: *const List) -> *mut List {
 pub unsafe extern "C" fn tsl_list_unique(slot: *mut *mut List) -> *mut List {
     unsafe {
         let l = *slot;
-        if (*l).h.rc != 1 {
+        if !unique(l as *mut Header) {
             let copy = list_clone(l);
             tsl_release(l as *mut Header);
             *slot = copy;
@@ -1354,7 +1450,7 @@ unsafe fn dict_rebuild(d: *mut Dict, extra: usize) {
 unsafe fn dict_unique(slot: *mut *mut Dict) -> *mut Dict {
     unsafe {
         let d = *slot;
-        if (*d).h.rc == 1 {
+        if unique(d as *mut Header) {
             return d;
         }
         let copy = tsl_dict_new((*d).key, (*d).value);

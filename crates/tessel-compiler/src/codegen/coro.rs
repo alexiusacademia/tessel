@@ -186,12 +186,49 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// the runtime's `tsl_immortal`). None if it holds nothing counted, or
     /// only what can't be followed (functions, interface values), which
     /// stays counted.
-    fn immortal_helper(&mut self, t: &Ty) -> Option<FunctionValue<'ctx>> {
+    pub(super) fn immortal_helper(&mut self, t: &Ty) -> Option<FunctionValue<'ctx>> {
+        self.mark_helper(t, false)
+    }
+
+    /// `void helper(ptr)`: marks what the value at `ptr` holds shared, so
+    /// another thread may hold it too (see the runtime's `tsl_share`). None
+    /// if it holds nothing counted. Only for values `shareable` says.
+    pub(super) fn share_helper(&mut self, t: &Ty) -> Option<FunctionValue<'ctx>> {
+        self.mark_helper(t, true)
+    }
+
+    /// Whether every counted thing in a value of `t` can be marked shared:
+    /// nothing in it is a function, a view or an interface value.
+    pub(super) fn shareable(&self, t: &Ty) -> bool {
+        fn walk(g: &Gen<'_, '_>, t: &Ty, seen: &mut Vec<Ty>) -> bool {
+            if seen.contains(t) {
+                return true;
+            }
+            match t {
+                Ty::Fn(..) | Ty::View | Ty::Iface(_) => false,
+                Ty::List(e) | Ty::Set(e) | Ty::Opt(e) => walk(g, e, seen),
+                Ty::Dict(k, v) => walk(g, k, seen) && walk(g, v, seen),
+                Ty::Struct(id) => {
+                    seen.push(t.clone());
+                    g.checked.structs[*id].fields.iter().all(|f| walk(g, &f.ty, seen))
+                }
+                Ty::Enum(id) => {
+                    seen.push(t.clone());
+                    g.checked.enums[*id].cases.iter().all(|c| c.fields.iter().all(|f| walk(g, &f.ty, seen)))
+                }
+                _ => true,
+            }
+        }
+        walk(self, t, &mut Vec::new())
+    }
+
+    fn mark_helper(&mut self, t: &Ty, share: bool) -> Option<FunctionValue<'ctx>> {
         let follows = |g: &Self, t: &Ty| g.needs_rc(t) && !matches!(t, Ty::Fn(..) | Ty::View | Ty::Iface(_));
         if !follows(self, t) {
             return None;
         }
-        let name = format!("tsl_h_immortal_{}", self.key(t));
+        let what = if share { "share" } else { "immortal" };
+        let name = format!("tsl_h_{what}_{}", self.key(t));
         if let Some(f) = self.helpers.get(&name) {
             return Some(*f);
         }
@@ -199,7 +236,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let f = self.module.add_function(&name, self.ctx.void_type().fn_type(&[p.into()], false), Some(Linkage::Internal));
         self.helpers.insert(name, f);
         let t = t.clone();
-        let fn_or_null = |g: &mut Self, t: &Ty| match g.immortal_helper(t) {
+        let fn_or_null = |g: &mut Self, t: &Ty| match g.mark_helper(t, share) {
             Some(h) => h.as_global_value().as_pointer_value(),
             None => g.ptr_ty().const_null(),
         };
@@ -208,13 +245,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             match &t {
                 Ty::Str | Ty::Data => {
                     let obj = g.b.build_load(p, at, "").unwrap();
-                    let rt = g.declare_rt("tsl_immortal", &[p.into()], None);
+                    let rt = g.declare_rt(if share { "tsl_share" } else { "tsl_immortal" }, &[p.into()], None);
                     g.b.build_call(rt, &[obj.into()], "").unwrap();
                 }
                 Ty::List(elem) => {
                     let obj = g.b.build_load(p, at, "").unwrap();
                     let each = fn_or_null(g, elem);
-                    let rt = g.declare_rt("tsl_list_immortal", &[p.into(), p.into()], None);
+                    let rt = g.declare_rt(if share { "tsl_list_share" } else { "tsl_list_immortal" }, &[p.into(), p.into()], None);
                     g.b.build_call(rt, &[obj.into(), each.into()], "").unwrap();
                 }
                 Ty::Dict(..) | Ty::Set(_) => {
@@ -224,21 +261,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         _ => unreachable!(),
                     };
                     let obj = g.b.build_load(p, at, "").unwrap();
-                    let rt = g.declare_rt("tsl_dict_immortal", &[p.into(), p.into(), p.into()], None);
+                    let rt = g.declare_rt(if share { "tsl_dict_share" } else { "tsl_dict_immortal" }, &[p.into(), p.into(), p.into()], None);
                     g.b.build_call(rt, &[obj.into(), k.into(), v.into()], "").unwrap();
                 }
                 Ty::Struct(id) => {
                     let st = g.struct_ty(*id);
                     let fields: Vec<Ty> = g.checked.structs[*id].fields.iter().map(|f| f.ty.clone()).collect();
                     for (i, ft) in fields.iter().enumerate() {
-                        if let Some(h) = g.immortal_helper(ft) {
+                        if let Some(h) = g.mark_helper(ft, share) {
                             let fp = g.b.build_struct_gep(st, at, i as u32, "").unwrap();
                             g.b.build_call(h, &[fp.into()], "").unwrap();
                         }
                     }
                 }
                 Ty::Opt(inner) => {
-                    if let Some(h) = g.immortal_helper(inner) {
+                    if let Some(h) = g.mark_helper(inner, share) {
                         let st = g.llty(&t).unwrap().into_struct_type();
                         let flag = g.b.build_struct_gep(st, at, 0, "").unwrap();
                         let present = g.b.build_load(g.ctx.bool_type(), flag, "").unwrap().into_int_value();
@@ -271,12 +308,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         let pt = g.payload_ty(*id, ci);
                         let data = g.box_data(bx);
                         for (fi, field) in case.fields.iter().enumerate() {
-                            if let Some(h) = g.immortal_helper(&field.ty) {
+                            if let Some(h) = g.mark_helper(&field.ty, share) {
                                 let fp = g.b.build_struct_gep(pt, data, fi as u32, "").unwrap();
                                 g.b.build_call(h, &[fp.into()], "").unwrap();
                             }
                         }
-                        let rt = g.declare_rt("tsl_immortal", &[p.into()], None);
+                        let rt = g.declare_rt(if share { "tsl_share" } else { "tsl_immortal" }, &[p.into()], None);
                         g.b.build_call(rt, &[bx.into()], "").unwrap();
                         g.b.build_unconditional_branch(done).unwrap();
                     }

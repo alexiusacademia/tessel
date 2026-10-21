@@ -127,7 +127,7 @@ unsafe fn append_bytes(slot: *mut *mut Str, bytes: &[u8]) {
         let d = *slot;
         let len = (*d).len as usize;
         let new_len = len + bytes.len();
-        if is_growable(d) && (*d).h.rc == 1 {
+        if is_growable(d) && crate::unique(d as *mut crate::Header) {
             let cap = grow_capacity(len);
             let d = if new_len > cap {
                 let grown = crate::realloc(d as *mut u8, size_of::<Str>() + grow_capacity(new_len)) as *mut Str;

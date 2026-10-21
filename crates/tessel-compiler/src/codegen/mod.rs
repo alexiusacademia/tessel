@@ -1470,13 +1470,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.list_elem_addr(l, i)
     }
 
+    /// The reference count of the object at `obj` (read atomically: another
+    /// thread may be changing a shared one's, see the runtime's `SHARED`).
+    fn load_count(&mut self, obj: PointerValue<'ctx>) -> IntValue<'ctx> {
+        let rc = self.b.build_load(self.i64(), obj, "rc").unwrap();
+        rc.into_int_value().as_instruction().unwrap().set_atomic_ordering(inkwell::AtomicOrdering::Monotonic).unwrap();
+        rc.into_int_value()
+    }
+
     /// Appends `v` (of type `elem`, moved in) to the list in `slot`. When
     /// the list isn't shared and has room, it's stored in place; otherwise
     /// the runtime grows (or copies) the list first.
     pub(super) fn push_item(&mut self, slot: PointerValue<'ctx>, v: Val<'ctx>, elem: &Ty) {
         let (i, p) = (self.i64().into(), self.ptr_ty().into());
         let l = self.b.build_load(self.ptr_ty(), slot, "list").unwrap().into_pointer_value();
-        let rc = self.b.build_load(self.i64(), l, "rc").unwrap().into_int_value();
+        let rc = self.load_count(l);
         let len = self.list_len_inline(l);
         let cap = self.list_field(l, 24, i).into_int_value();
         let unique = self.b.build_int_compare(IntPredicate::EQ, rc, self.i64().const_int(1, false), "").unwrap();
@@ -1512,7 +1520,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let f = g.rt("tsl_list_elem_mut");
             g.b.build_call(f, &[args[0].into(), args[1].into(), args[2].into()], "").unwrap();
         });
-        let rc = self.b.build_load(self.i64(), l, "rc").unwrap().into_int_value();
+        let rc = self.load_count(l);
         let unique = self.b.build_int_compare(IntPredicate::EQ, rc, self.i64().const_int(1, false), "").unwrap();
         let here = self.b.get_insert_block().unwrap();
         let (copy, done) = (self.block_named("copy"), self.block_named("unique"));
@@ -5692,31 +5700,56 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let ExprKind::Closure { body, params } = &work.kind else { unreachable!("checked: `work` is a block") };
         let Ty::Fn(_, result) = self.ty(work) else { unreachable!() };
         let result = *result;
-        // What `work` uses from here, into one tree.
+        // What `work` uses from here, in a cell: `{ tree, values… }`. Values
+        // go as they are, marked shared (so both threads may hold them, see
+        // the runtime's `SHARED`); values holding functions or interface
+        // values can't be, and go as copies, in the tree.
         let mut free = BTreeSet::new();
         free_block(body, &mut params.iter().map(|p| p.name.clone()).collect(), &mut free);
         let captures: Vec<Var<'ctx>> = free.iter().filter_map(|n| self.lookup(n)).collect();
-        let input = self.tree_call("tsl_tree_array", &[], Some("ptr"), &[]).unwrap().into_pointer_value();
-        for v in &captures {
+        let (shared, copied): (Vec<&Var<'ctx>>, Vec<&Var<'ctx>>) = captures.iter().partition(|v| self.goes_shared(&v.ty));
+        let p = self.ptr_ty();
+        let i64t = self.i64();
+        let tree = self.tree_call("tsl_tree_array", &[], Some("ptr"), &[]).unwrap().into_pointer_value();
+        for v in &copied {
             let vp = self.var_read_ptr(v, span);
             let enc = self.enc_helper(&v.ty);
             let item = self.b.build_call(enc, &[vp.into()], "").unwrap().try_as_basic_value().basic().unwrap();
-            self.tree_call("tsl_tree_push", &["ptr", "ptr"], None, &[input.into(), item]);
+            self.tree_call("tsl_tree_push", &["ptr", "ptr"], None, &[tree.into(), item]);
+        }
+        let mut cell_fields: Vec<BasicTypeEnum<'ctx>> = vec![p.into()];
+        cell_fields.extend(shared.iter().map(|v| self.llty(&v.ty).unwrap()));
+        let cell_st = self.ctx.struct_type(&cell_fields, false);
+        let new_cell = self.declare_rt("tsl_frame_new", &[i64t.into()], Some(p.into()));
+        let input = self.b.build_call(new_cell, &[cell_st.size_of().unwrap().into()], "").unwrap().try_as_basic_value().basic().unwrap().into_pointer_value();
+        let tp = self.b.build_struct_gep(cell_st, input, 0, "").unwrap();
+        self.b.build_store(tp, tree).unwrap();
+        for (i, v) in shared.iter().enumerate() {
+            let vp = self.var_read_ptr(v, span);
+            let val = self.load(&v.ty, vp);
+            self.retain(val, &v.ty);
+            let fp = self.b.build_struct_gep(cell_st, input, i as u32 + 1, "").unwrap();
+            self.store(&v.ty, fp, val);
+            if let Some(h) = self.share_helper(&v.ty) {
+                self.b.build_call(h, &[fp.into()], "").unwrap();
+            }
         }
 
         // The worker: `ptr tsl_bg_N(ptr input, i64 job)`.
         self.closures += 1;
-        let p = self.ptr_ty();
-        let i64t = self.i64();
         let worker =
             self.module.add_function(&format!("tsl_bg_{}", self.closures), p.fn_type(&[p.into(), i64t.into()], false), Some(Linkage::Internal));
-        let names: Vec<(String, Ty)> = captures.iter().map(|v| (v.name.clone(), v.ty.clone())).collect();
+        let copied_names: Vec<(String, Ty)> = copied.iter().map(|v| (v.name.clone(), v.ty.clone())).collect();
+        let shared_names: Vec<(String, Ty)> = shared.iter().map(|v| (v.name.clone(), v.ty.clone())).collect();
         let takes_job = !params.is_empty();
         let work_t = Ty::func(if takes_job { vec![builtins::JOB] } else { vec![] }, result.clone());
         let job_st = self.llty(&builtins::JOB).unwrap().into_struct_type();
+        let result_shared = self.goes_shared(&result);
         self.in_helper(worker, |g| {
-            let tree = worker.get_nth_param(0).unwrap().into_pointer_value();
-            for (i, (name, ty)) in names.iter().enumerate() {
+            let cell = worker.get_nth_param(0).unwrap().into_pointer_value();
+            let tp = g.b.build_struct_gep(cell_st, cell, 0, "").unwrap();
+            let tree = g.b.build_load(p, tp, "tree").unwrap().into_pointer_value();
+            for (i, (name, ty)) in copied_names.iter().enumerate() {
                 let item = g.tree_call("tsl_tree_at", &["ptr", "i64"], Some("ptr"), &[tree.into(), g.i64().const_int(i as u64, false).into()]);
                 let lt = g.llty(ty).unwrap();
                 let out = g.alloca(lt, name);
@@ -5726,6 +5759,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
             g.b.build_call(free, &[tree.into()], "").unwrap();
+            for (i, (name, ty)) in shared_names.iter().enumerate() {
+                let fp = g.b.build_struct_gep(cell_st, cell, i as u32 + 1, "").unwrap();
+                let v = g.load(ty, fp);
+                g.declare_value(name, ty, Some(v));
+            }
+            let free_cell = g.declare_rt("tsl_frame_free", &[p.into()], None);
+            g.b.build_call(free_cell, &[cell.into()], "").unwrap();
             // `work` as a closure over those copies, so `return` works as in any block.
             let f = g.closure(params, body, &work_t);
             let job_args: Vec<Val<'ctx>> = if takes_job {
@@ -5736,10 +5776,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             };
             let v = g.call_fn_value(f, &work_t, &job_args).unwrap();
             g.release(f, &work_t);
-            let vp = g.spill(&result, v);
-            let enc = g.enc_helper(&result);
-            let out = g.b.build_call(enc, &[vp.into()], "").unwrap().try_as_basic_value().basic().unwrap();
-            g.release(v, &result);
+            let out = if result_shared {
+                // The result, moved into a cell of its own, and marked shared.
+                let lt = g.llty(&result).unwrap();
+                let new_cell = g.declare_rt("tsl_frame_new", &[g.i64().into()], Some(p.into()));
+                let out = g.b.build_call(new_cell, &[lt.size_of().unwrap().into()], "").unwrap().try_as_basic_value().basic().unwrap();
+                g.store(&result, out.into_pointer_value(), v);
+                if let Some(h) = g.share_helper(&result) {
+                    g.b.build_call(h, &[out.into()], "").unwrap();
+                }
+                out
+            } else {
+                let vp = g.spill(&result, v);
+                let enc = g.enc_helper(&result);
+                let out = g.b.build_call(enc, &[vp.into()], "").unwrap().try_as_basic_value().basic().unwrap();
+                g.release(v, &result);
+                out
+            };
             g.finish_function(Some(out));
         });
 
@@ -5748,6 +5801,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let closure = self.expr_as(done, &dt).unwrap();
         let bx = self.box_closure(&dt, closure);
         let adapter = self.background_adapter(&result);
+        let discard = self.background_discard(&result);
         // The progress block, `void fn(env, Float, String)`, or null.
         let (pf, penv): (Val, Val) = match progress {
             Some(x) => {
@@ -5756,11 +5810,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             None => (p.const_null().into(), p.const_null().into()),
         };
-        let f = self.declare_rt("tsl_background", &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], Some(i64t.into()));
+        let f = self.declare_rt("tsl_background", &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], Some(i64t.into()));
         let wp = worker.as_global_value().as_pointer_value();
         let id = self
             .b
-            .build_call(f, &[wp.into(), input.into(), adapter.into(), bx.into(), pf.into(), penv.into()], "")
+            .build_call(f, &[wp.into(), input.into(), adapter.into(), bx.into(), pf.into(), penv.into(), discard.into()], "")
             .unwrap()
             .try_as_basic_value()
             .basic()
@@ -5779,17 +5833,57 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.helpers.insert(name, f);
         let ft = Ty::func(vec![t.clone()], Ty::Void);
         let t = t.clone();
+        let shared = self.goes_shared(&t);
         self.in_helper(f, |g| {
             let bx = f.get_nth_param(0).unwrap().into_pointer_value();
             let tree = f.get_nth_param(1).unwrap().into_pointer_value();
             let closure = g.load(&ft, g.box_data(bx));
-            let lt = g.llty(&t).unwrap();
-            let out = g.alloca(lt, "result");
-            g.decode_via(&t, tree, out);
-            let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
-            g.b.build_call(free, &[tree.into()], "").unwrap();
-            let v = g.load(&t, out);
+            let v = if shared {
+                // (A cell, not a tree: see `background`.)
+                let v = g.load(&t, tree);
+                let free = g.declare_rt("tsl_frame_free", &[p.into()], None);
+                g.b.build_call(free, &[tree.into()], "").unwrap();
+                v
+            } else {
+                let lt = g.llty(&t).unwrap();
+                let out = g.alloca(lt, "result");
+                g.decode_via(&t, tree, out);
+                let free = g.declare_rt("tsl_tree_free", &[p.into()], None);
+                g.b.build_call(free, &[tree.into()], "").unwrap();
+                g.load(&t, out)
+            };
             g.call_fn_value(closure, &ft, &[v]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
+    /// Whether a `background` job's value of type `t` (a value it uses, or
+    /// its result) goes to the other thread as it is, marked shared, rather
+    /// than copied.
+    fn goes_shared(&mut self, t: &Ty) -> bool {
+        self.shareable(t) && self.llty(t).is_some()
+    }
+
+    /// `void discard(ptr)`: frees a `background` result its block won't get.
+    fn background_discard(&mut self, t: &Ty) -> PointerValue<'ctx> {
+        let p = self.ptr_ty();
+        if !self.goes_shared(t) {
+            return self.declare_rt("tsl_tree_free", &[p.into()], None).as_global_value().as_pointer_value();
+        }
+        let name = format!("tsl_h_bg_discard_{}", self.key(t));
+        if let Some(f) = self.helpers.get(&name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let f = self.module.add_function(&name, self.ctx.void_type().fn_type(&[p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name, f);
+        let t = t.clone();
+        self.in_helper(f, |g| {
+            let cell = f.get_nth_param(0).unwrap().into_pointer_value();
+            let v = g.load(&t, cell);
+            g.release(v, &t);
+            let free = g.declare_rt("tsl_frame_free", &[p.into()], None);
+            g.b.build_call(free, &[cell.into()], "").unwrap();
             g.b.build_return(None).unwrap();
         });
         f.as_global_value().as_pointer_value()

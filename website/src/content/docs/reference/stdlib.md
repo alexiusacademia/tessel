@@ -2529,9 +2529,9 @@ background(work: { primesBelow(limit: n) }) { primes in
 }
 ```
 
-The two threads share nothing: `work` gets its own copies of the values it
-uses, and `done` gets a copy of the result. That's what makes it safe, and
-it leads to a few rules, which `tessel check` enforces:
+The two threads share nothing they can change: `work` gets its own copies
+of the values it uses, and `done` gets a copy of the result. That's what
+makes it safe, and it leads to a few rules, which `tessel check` enforces:
 
 - `work` can use local values, and call top-level functions (`fn`s outside
   any app, view or struct) and methods of the values it has.
@@ -2543,7 +2543,10 @@ it leads to a few rules, which `tessel check` enforces:
 - `work` must end with a value. `return` works inside it too.
 
 Values are copied when `background` is called, so changes made afterwards
-don't reach `work`. See [Heavy work in the background](/ui/async/#heavy-work-in-the-background)
+don't reach `work`. Handing them over is quick even for big ones: until
+one side changes a value, both use the same memory, and the side that
+changes it gets a copy of its own then (an interface value is copied
+straight away). See [Heavy work in the background](/ui/async/#heavy-work-in-the-background)
 for a complete app.
 
 A runtime error in `work` (like an index out of range) stops the program,

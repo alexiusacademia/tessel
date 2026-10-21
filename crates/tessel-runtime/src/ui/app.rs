@@ -279,7 +279,7 @@ thread_local! {
     static COMMANDS: RefCell<HashMap<u64, (Callback, Callback)>> = RefCell::new(HashMap::new());
     /// `background` work still running: the blocks that get its result and
     /// its progress.
-    static COMPUTING: RefCell<HashMap<u64, (Callback, Option<Callback>)>> = RefCell::new(HashMap::new());
+    static COMPUTING: RefCell<HashMap<u64, (Callback, Option<Callback>, Discard)>> = RefCell::new(HashMap::new());
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -422,11 +422,17 @@ pub extern "C" fn tsl_stop_command(id: i64) {
     }
 }
 
+/// Frees the result of `background` work that won't be delivered.
+type Discard = unsafe extern "C" fn(*mut u8);
+
 /// `background(work:progress:) { result in … }`: runs `worker(input, id)`
-/// on another thread, then `done(result)` on the UI thread. `input` and the
-/// result are codec trees, so the two threads share no values: the worker
-/// owns (and frees) `input`, and `done` owns the result. Returns the job's
-/// id, for `BackgroundJob`'s methods.
+/// on another thread, then `done(result)` on the UI thread. The compiler
+/// decides what `input` and the result are: the values themselves, marked
+/// shared (see `SHARED` in the runtime), or codec trees of copies (for
+/// values holding functions). The worker owns (and frees) `input`, and
+/// `done` owns the result; `discard` frees a result `done` doesn't get
+/// (the job was cancelled). Returns the job's id, for `BackgroundJob`'s
+/// methods.
 ///
 /// The work reports progress with `tsl_job_progress`; the `progress` block
 /// (`void fn(env, Float, String)`, or null) gets the latest on the UI thread,
@@ -440,10 +446,11 @@ pub unsafe extern "C" fn tsl_background(
     done_env: *mut crate::Header,
     progress_f: *const std::ffi::c_void,
     progress_env: *mut crate::Header,
+    discard: Discard,
 ) -> i64 {
     let id = next_id();
     let progress = (!progress_f.is_null()).then(|| Callback::new(progress_f, progress_env));
-    COMPUTING.with(|c| c.borrow_mut().insert(id, (Callback::new(done_f, done_env), progress)));
+    COMPUTING.with(|c| c.borrow_mut().insert(id, (Callback::new(done_f, done_env), progress, discard)));
     JOBS.lock().unwrap().insert(id, JobShared::default());
     let input = input as usize;
     std::thread::spawn(move || {
@@ -529,7 +536,7 @@ fn deliver_background() -> bool {
                 }
             }
             Event::JobProgress(id) => {
-                let cb = COMPUTING.with(|c| c.borrow().get(&id).and_then(|(_, p)| p.clone()));
+                let cb = COMPUTING.with(|c| c.borrow().get(&id).and_then(|(_, p, _)| p.clone()));
                 if let (Some(cb), Some((fraction, note))) = (cb, take_progress(id)) {
                     cb.call_with_float_ptr(fraction, crate::str_new(&note) as *mut u8);
                 }
@@ -547,13 +554,14 @@ fn deliver_background() -> bool {
                     cancelled
                 };
                 match COMPUTING.with(|c| c.borrow_mut().remove(&id)) {
-                    Some((done, progress)) if !cancelled => {
+                    Some((done, progress, _)) if !cancelled => {
                         if let (Some(cb), Some((fraction, note))) = (progress, latest) {
                             cb.call_with_float_ptr(fraction, crate::str_new(&note) as *mut u8);
                         }
                         done.call_with(tree as *mut u8);
                     }
-                    _ => unsafe { crate::codec::tsl_tree_free(tree as *mut _) },
+                    Some((_, _, discard)) => unsafe { discard(tree as *mut u8) },
+                    None => {}
                 }
             }
             Event::Call(address) => {
