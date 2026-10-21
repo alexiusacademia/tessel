@@ -1,0 +1,6 @@
+import m
+
+fn main() {
+    let t = m.T()
+    print(t.view)
+}

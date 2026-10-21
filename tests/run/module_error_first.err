@@ -1,0 +1,17 @@
+error: `view` is a keyword and can't be used as a field name
+ --> tests/run/module_error_first/m/m.tsl:1:19
+  |
+1 | public struct T { view: Int = 0 }
+  |                   ^^^^
+  |
+  = help: choose another name, like `viewValue`
+
+error: `view` is a keyword and can't be used as a member name after `.`
+ --> tests/run/module_error_first/main.tsl:5:13
+  |
+5 |     print(t.view)
+  |             ^^^^
+  |
+  = help: choose another name, like `viewValue`
+
+2 errors found

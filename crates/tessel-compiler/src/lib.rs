@@ -111,7 +111,10 @@ pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     lower_statics(&mut program);
     program.next_id = next_id;
     let checked = check::check_program(&program, &mut diags, require_entry);
-    diags.list.sort_by_key(|d| (d.span().file, d.span().lo));
+    // Imported modules' mistakes come first: a mistake in a module often
+    // shows up again where the program uses it, and the cause should be read
+    // before the symptom.
+    diags.list.sort_by_key(|d| (own_files.contains(&d.span().file), d.span().file, d.span().lo));
     Analysis { program, checked, diags }
 }
 
