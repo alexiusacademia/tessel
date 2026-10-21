@@ -49,6 +49,55 @@ fn add_path(ctx: CGContextRef, path: &BezPath) {
     }
 }
 
+/// How many subpaths Core Graphics is given to stroke at once (see
+/// `stroke_path`).
+const STROKE_BATCH: usize = 16;
+
+/// Strokes `path` in `color`, with the context's stroke style. Core
+/// Graphics takes much longer to stroke one path of many subpaths that
+/// overlap than the same subpaths a few at a time (thousands of short
+/// dashes in a few pixels, as a dense hatch seen from far: seconds instead
+/// of milliseconds), so a path of many is stroked in batches. Each subpath
+/// is stroked on its own anyway (its dashes start again with it). A
+/// translucent color would build up where batches overlap, so then the
+/// batches are drawn opaque into a layer that's laid down at the color's
+/// alpha, as one stroke would be.
+fn stroke_path(ctx: CGContextRef, path: &BezPath, style: &Stroke, color: Rgba) {
+    let els = path.elements();
+    let starts: Vec<usize> = els.iter().enumerate().filter(|(_, e)| matches!(e, PathEl::MoveTo(_))).map(|(i, _)| i).collect();
+    let (r, g, b, a) = components(color);
+    unsafe {
+        if starts.len() <= STROKE_BATCH {
+            add_path(ctx, path);
+            CGContextSetRGBStrokeColor(ctx, r, g, b, a);
+            CGContextStrokePath(ctx);
+            return;
+        }
+        let layer = a < 1.0;
+        if layer {
+            // (A layer is as big as the clip: just around the stroke.)
+            use kurbo::Shape;
+            let reach = style.width * style.miter_limit.max(1.0) / 2.0 + 2.0;
+            let around = path.bounding_box().inflate(reach, reach);
+            add_path(ctx, &around.to_path(0.1));
+            CGContextClip(ctx);
+            CGContextSetAlpha(ctx, a);
+            CGContextBeginTransparencyLayer(ctx, std::ptr::null());
+            CGContextSetAlpha(ctx, 1.0);
+        }
+        CGContextSetRGBStrokeColor(ctx, r, g, b, if layer { 1.0 } else { a });
+        for (n, batch) in starts.chunks(STROKE_BATCH).enumerate() {
+            let start = if n == 0 { 0 } else { batch[0] };
+            let end = starts.get((n + 1) * STROKE_BATCH).copied().unwrap_or(els.len());
+            add_path(ctx, &BezPath::from_vec(els[start..end].to_vec()));
+            CGContextStrokePath(ctx);
+        }
+        if layer {
+            CGContextEndTransparencyLayer(ctx);
+        }
+    }
+}
+
 fn components(c: Rgba) -> (f64, f64, f64, f64) {
     let [r, g, b, a] = c.0.map(|v| v as f64 / 255.0);
     (r, g, b, a)
@@ -156,11 +205,8 @@ fn play_into(list: &DrawList, ctx: CGContextRef, base: Affine, open: &mut Vec<bo
                 Op::Stroke { path, style, color, transform: t } => {
                     CGContextSaveGState(ctx);
                     CGContextConcatCTM(ctx, transform(base * *t));
-                    add_path(ctx, path);
                     stroke_style(ctx, style);
-                    let (r, g, b, a) = components(*color);
-                    CGContextSetRGBStrokeColor(ctx, r, g, b, a);
-                    CGContextStrokePath(ctx);
+                    stroke_path(ctx, path, style, *color);
                     CGContextRestoreGState(ctx);
                 }
                 Op::FillGradient { path, rule, gradient, place, transform: t } => {

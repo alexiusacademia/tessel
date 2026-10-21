@@ -1,0 +1,33 @@
+// A path of many subpaths that overlap is stroked as one stroke: a
+// translucent color doesn't build up where they cross. (On macOS such a
+// path is stroked a few subpaths at a time, which is much faster.)
+
+fn strokeOf(_ color: Color) -> Int {
+    let path = joinPath(tempFolder(), "tessel-stroke-many.png")
+    let ok = renderImage(path: path, width: 20, height: 10) { g in
+        g.fillRect(x: 0, y: 0, width: 20, height: 10, color: .rgb(0, 0, 0))
+        g.beginPath()
+        // 40 copies of the same short line.
+        for _ in 0..40 {
+            g.moveTo(2, 5)
+            g.lineTo(18, 5)
+        }
+        g.stroke(color, width: 4)
+    }
+    var red = -1
+    if ok {
+        if let picture = readImage(path) {
+            red = picture.2[5 * 20 + 10] / 16777216
+        }
+    }
+    deleteFile(path)
+    red
+}
+
+fn main() {
+    print("opaque: {strokeOf(.rgb(255, 0, 0))}")
+    // Half red over black: about 128, not the full red that 40 strokes
+    // laid down one after another would make.
+    let half = strokeOf(.rgba(255, 0, 0, 0.5))
+    print("translucent: {half > 120 && half < 136}")
+}
