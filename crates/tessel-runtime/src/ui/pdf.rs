@@ -21,6 +21,7 @@ use kurbo::{Affine, BezPath, Cap, Join, PathEl, Stroke, StrokeOpts};
 use pdf_writer::types::{BlendMode, CidFontType, FontFlags, FunctionShadingType, LineCapStyle, LineJoinStyle, SystemInfo, TextRenderingMode, UnicodeCmap};
 use pdf_writer::{Content, Filter, Finish, Name, Pdf, Rect, Ref, Str, TextStr};
 
+use super::canvas::Page;
 use super::draw::{Blend, DrawList, FillRule, Gradient, Op};
 use super::image::Picture;
 use super::text::TextLayout;
@@ -71,25 +72,26 @@ pub trait Source {
 
 /// Writes pages (each drawn in points, from its top left corner) as a PDF
 /// of `width` × `height` points each. Whether it was written.
-pub fn write(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList], source: &dyn Source) -> bool {
-    let bytes = document(title, width, height, pages, source);
+pub fn write(path: &str, title: &str, pages: &[Page], source: &dyn Source) -> bool {
+    let bytes = document(title, pages, source);
     std::fs::write(path, bytes).is_ok()
 }
 
 /// The bytes of the PDF.
-pub fn document(title: &str, width: f64, height: f64, pages: &[DrawList], source: &dyn Source) -> Vec<u8> {
+pub fn document(title: &str, pages: &[Page], source: &dyn Source) -> Vec<u8> {
     let mut doc = Doc::new(source);
     let catalog = doc.alloc();
     let tree = doc.alloc();
     let info = doc.alloc();
     let mut ids = Vec::new();
     for page in pages {
+        let (width, height) = (page.width, page.height);
         let id = doc.alloc();
         let contents = doc.alloc();
         let mut writer = PageWriter { doc: &mut doc, frames: vec![Frame::new(None)] };
         // PDF's y axis goes up from the bottom; a drawing's goes down.
         writer.content().transform([1.0, 0.0, 0.0, -1.0, 0.0, height as f32]);
-        writer.list(page, Affine::IDENTITY, width, height);
+        writer.list(&page.list, Affine::IDENTITY, width, height);
         while writer.frames.len() > 1 {
             writer.pop(width, height);
         }
@@ -896,10 +898,14 @@ mod tests {
         one.ops.push(Op::Image { picture, transform: Affine::translate((40.0, 340.0)) * Affine::scale(20.0), alpha: 1.0 });
         let mut two = DrawList::new();
         two.ops.push(Op::Text { layout: text("Page two", 18.0), transform: Affine::translate((40.0, 40.0)), tint: Some(Rgba([200, 0, 0, 255])), halo: Some((Rgba([255, 255, 0, 255]), 2.0)) });
-        let bytes = document("Writer test", 300.0, 400.0, &[one, two], &source);
+        let pages = [Page { list: one, width: 300.0, height: 400.0 }, Page { list: two, width: 500.0, height: 200.0 }];
+        let bytes = document("Writer test", &pages, &source);
         assert!(bytes.starts_with(b"%PDF-1.7"));
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("/Count 2"));
+        // (Each page has its own size.)
+        assert!(text.contains("/MediaBox [0 0 300 400]"));
+        assert!(text.contains("/MediaBox [0 0 500 200]"));
         assert!(text.contains("/FontFile2") || text.contains("/FontFile3"));
         if let Some(path) = std::env::var_os("TESSEL_PDF_TEST_OUT") {
             std::fs::write(path, &bytes).unwrap();

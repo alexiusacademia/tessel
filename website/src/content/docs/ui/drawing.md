@@ -515,6 +515,24 @@ points; a point is 1/72 inch) unless `width:` and `height:` say otherwise;
 US Letter is 612 × 792. `g.textWidth` tells how wide a text will be, for
 lining up columns or wrapping long text yourself.
 
+A document can mix page sizes: `g.newPage(width:height:)` starts a page of
+its own size, and `g.width` and `g.height` follow it. A size left out is
+the page before's, so `g.newPage(width: 842, height: 595)` turns the pages
+from there on sideways:
+
+```tessel
+fn main() {
+    let ok = writePDF(path: "sheets.pdf") { g in
+        g.text("A4, upright: {Int(g.width)} × {Int(g.height)}", x: 50, y: 50)
+        g.newPage(width: 1191, height: 842)
+        g.text("A3, sideways: {Int(g.width)} × {Int(g.height)}", x: 50, y: 50)
+        g.rect(x: 20, y: 20, width: g.width - 40, height: g.height - 40)
+        g.stroke(.black, width: 2)
+    }
+    print(ok)
+}
+```
+
 ## Testing
 
 In a [headless run](/ui/testing/), `tree` and `dump` say what each canvas

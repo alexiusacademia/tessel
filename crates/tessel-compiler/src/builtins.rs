@@ -930,7 +930,8 @@ fn graphics_method(name: &str) -> Option<Method> {
     let color = || P::unlabeled("color", COLOR);
     let labeled_color = || P::new("color", COLOR);
     Some(match name {
-        "beginPath" | "closePath" | "save" | "restore" | "resetTransform" | "newPage" => method(vec![], Ty::Void),
+        "beginPath" | "closePath" | "save" | "restore" | "resetTransform" => method(vec![], Ty::Void),
+        "newPage" => method(vec![f("width").default(), f("height").default()], Ty::Void),
         "moveTo" | "lineTo" | "translate" => method(vec![u("x"), u("y")], Ty::Void),
         "quadTo" => method(vec![u("cx"), u("cy"), u("x"), u("y")], Ty::Void),
         "curveTo" => method(vec![u("c1x"), u("c1y"), u("c2x"), u("c2y"), u("x"), u("y")], Ty::Void),
@@ -1434,7 +1435,7 @@ fn graphics_call(name: &str) -> Option<RtCall> {
         "strokeRadial" => rt_g("tsl_canvas_stroke_radial", &[Req, Req, Req, Req, EmptyList, Float(1.0), EmptyList]),
         "beginLayer" => rt_g("tsl_canvas_begin_layer", &[Case(0), Float(1.0)]),
         "endLayer" => rt_g("tsl_canvas_end_layer", &[]),
-        "newPage" => rt_g("tsl_canvas_new_page", &[]),
+        "newPage" => rt_g("tsl_canvas_new_page", &[Float(0.0), Float(0.0)]),
         "clip" => rt_g("tsl_canvas_clip", &[]),
         "clipPath" => rt_g("tsl_canvas_clip_path", &[Bool(false)]),
         _ => return None,

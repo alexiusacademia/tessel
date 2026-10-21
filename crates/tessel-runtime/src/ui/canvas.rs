@@ -84,8 +84,16 @@ struct Current {
     scratch: Vec<Point>,
     clipped: Vec<Point>,
     /// For `writePDF`: the pages finished by `g.newPage()`, before the one
-    /// being drawn. `None` for a canvas or a picture, which have one page.
-    pages: Option<Vec<DrawList>>,
+    /// being drawn, with their sizes. `None` for a canvas or a picture,
+    /// which have one page.
+    pages: Option<Vec<Page>>,
+}
+
+/// A finished page of a `writePDF`: what's on it, and its size in points.
+pub struct Page {
+    pub list: DrawList,
+    pub width: f64,
+    pub height: f64,
 }
 
 /// A drawing kept for a `Canvas(redraw:)`.
@@ -112,9 +120,9 @@ fn draw(block: &Callback, w: f64, h: f64) -> Drawing {
     draw_pages(block, w, h, false).0
 }
 
-/// Runs a block, and returns what it drew: its last page, and with `pages`
-/// the pages `g.newPage()` finished before it.
-fn draw_pages(block: &Callback, w: f64, h: f64, pages: bool) -> (Drawing, Vec<DrawList>) {
+/// Runs a block, and returns what it drew: its last page (and that page's
+/// size), and with `pages` the pages `g.newPage()` finished before it.
+fn draw_pages(block: &Callback, w: f64, h: f64, pages: bool) -> (Drawing, Vec<Page>, f64, f64) {
     let current = Current {
         scene: DrawList::new(),
         w,
@@ -136,7 +144,7 @@ fn draw_pages(block: &Callback, w: f64, h: f64, pages: bool) -> (Drawing, Vec<Dr
     for _ in done.layers.drain(..) {
         done.scene.pop();
     }
-    (Drawing { list: Rc::new(done.scene), stats: done.stats }, done.pages.unwrap_or_default())
+    (Drawing { list: Rc::new(done.scene), stats: done.stats }, done.pages.unwrap_or_default(), done.w, done.h)
 }
 
 /// The drawing of the canvas with key `key`: its block's, or the one kept
@@ -198,8 +206,9 @@ pub unsafe extern "C" fn tsl_render_image(
 
 /// `writePDF(path:title:width:height:) { g in … }`: runs the block, with
 /// `g.newPage()` starting each page after the first, and saves the pages
-/// as a PDF of `width` × `height` points each. Returns whether it was
-/// saved. `f` is called as `f(env, width, height)`.
+/// as a PDF. Pages are `width` × `height` points, unless
+/// `g.newPage(width:height:)` gives one another size. Returns whether it
+/// was saved. `f` is called as `f(env, width, height)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_write_pdf(
     path: *const Str,
@@ -219,14 +228,29 @@ pub unsafe extern "C" fn tsl_write_pdf(
     // while the app is dark.
     let dark = theme::is_dark();
     theme::set_dark(false);
-    let (last, mut pages) = draw_pages(&block, width, height, true);
+    let (last, mut pages, w, h) = draw_pages(&block, width, height, true);
     theme::set_dark(dark);
-    pages.push(Rc::try_unwrap(last.list).unwrap_or_else(|l| {
+    let list = Rc::try_unwrap(last.list).unwrap_or_else(|l| {
         let mut list = DrawList::new();
         list.append(l, Affine::IDENTITY);
         list
-    }));
-    crate::wrote(&path, super::backend::write_pdf(&path, &title, width, height, &pages)) as u8
+    });
+    pages.push(Page { list, width: w, height: h });
+    crate::wrote(&path, super::backend::write_pdf(&path, &title, &pages)) as u8
+}
+
+/// `g.width`: the width of what's being drawn now (a `writePDF` page can
+/// have another than the first's). `first` is the one `g` was made with,
+/// for a `g` kept after its block ended.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_page_width(first: f64) -> f64 {
+    CURRENT.with(|c| c.borrow().as_ref().map_or(first, |c| c.w))
+}
+
+/// `g.height`: as `g.width` (`tsl_canvas_page_width`).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_canvas_page_height(first: f64) -> f64 {
+    CURRENT.with(|c| c.borrow().as_ref().map_or(first, |c| c.h))
 }
 
 /// Drops the drawings kept for canvases that aren't in the tree any more.
@@ -1322,17 +1346,26 @@ pub extern "C" fn tsl_canvas_begin_layer(blend: i32, opacity: f64) {
 
 /// `g.endLayer()`: ends the layer the last `g.beginLayer` began (and the
 /// clips begun since). Without one, does nothing.
-/// `g.newPage()`: in `writePDF`, the page so far is done, and drawing goes
-/// on a new one, with nothing transformed or clipped. Elsewhere it does
-/// nothing.
+/// `g.newPage(width:height:)`: in `writePDF`, the page so far is done, and
+/// drawing goes on a new one, with nothing transformed or clipped. The new
+/// page is `width` × `height` points; a size left out (0) is the page
+/// before's. Elsewhere it does nothing.
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_canvas_new_page() {
+pub extern "C" fn tsl_canvas_new_page(width: f64, height: f64) {
     with(|c| {
         let Some(pages) = c.pages.as_mut() else { return };
         for _ in c.layers.drain(..) {
             c.scene.pop();
         }
-        pages.push(std::mem::replace(&mut c.scene, DrawList::new()));
+        let list = std::mem::replace(&mut c.scene, DrawList::new());
+        pages.push(Page { list, width: c.w, height: c.h });
+        // (14 400 points is the largest page PDF readers take, as in `writePDF`.)
+        if width > 0.0 {
+            c.w = width.clamp(1.0, 14400.0);
+        }
+        if height > 0.0 {
+            c.h = height.clamp(1.0, 14400.0);
+        }
         c.path = BezPath::new();
         c.transform = Affine::IDENTITY;
         c.zoom = 1.0;

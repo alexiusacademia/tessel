@@ -917,7 +917,7 @@ points are in the current coordinates, and turn and scale with the transform.
 
 | Method | |
 |---|---|
-| `newPage()` | In [`writePDF`](/reference/stdlib/#writepdf), ends the page and goes on to a new one, with nothing transformed or clipped. Elsewhere it does nothing. |
+| `newPage(width: =, height: =)` | In [`writePDF`](/reference/stdlib/#writepdf), ends the page and goes on to a new one, with nothing transformed or clipped. The new page is `width` × `height` points; a size left out is the page before's. Elsewhere it does nothing. |
 
 **The transform**, which says where coordinates land, **and clipping:**
 

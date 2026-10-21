@@ -127,8 +127,8 @@ mod tests {
     #[test]
     fn makes_a_print_operation() {
         let path = std::env::temp_dir().join(format!("tessel-print-test-{}.pdf", std::process::id()));
-        let page = crate::ui::draw::DrawList::new();
-        assert!(crate::ui::backend::write_pdf(path.to_str().unwrap(), "Test", 595.0, 842.0, &[page]));
+        let page = crate::ui::canvas::Page { list: crate::ui::draw::DrawList::new(), width: 595.0, height: 842.0 };
+        assert!(crate::ui::backend::write_pdf(path.to_str().unwrap(), "Test", &[page]));
         let operation = super::system::operation(path.to_str().unwrap(), "Test");
         let _ = std::fs::remove_file(&path);
         assert!(operation.is_some());

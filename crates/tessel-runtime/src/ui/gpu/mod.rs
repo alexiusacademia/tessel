@@ -354,6 +354,6 @@ fn render_pixels(cx: &mut RenderContext, renderer: &mut Option<Renderer>, scene:
 }
 
 /// Writes pages as a PDF (see `ui::pdf`).
-pub fn write_pdf(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList]) -> bool {
-    super::pdf::write(path, title, width, height, pages, &text::PdfSource::default())
+pub fn write_pdf(path: &str, title: &str, pages: &[super::canvas::Page]) -> bool {
+    super::pdf::write(path, title, pages, &text::PdfSource::default())
 }

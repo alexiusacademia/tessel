@@ -752,7 +752,8 @@ writePDF(path: String, title: String = "", width: Float = 595.28,
 Runs a drawing block, as [`renderImage`](#renderimage) does, and saves what
 it draws as a PDF document of pages `width` × `height` points (A4 unless
 they're given; a point is 1/72 inch). In the block, `g.newPage()` ends a
-page and starts the next. Returns whether it worked.
+page and starts the next, and `g.newPage(width:height:)` starts one of
+another size. Returns whether it worked.
 
 ```tessel
 fn main() {
@@ -768,7 +769,9 @@ fn main() {
 - Text stays text, with its fonts in the file; shapes stay shapes; pictures
   keep their pixels. `title` is the document's title, which PDF readers
   show.
-- `g.width` and `g.height` are the page's size; every page has the same.
+- `g.width` and `g.height` are the size of the page being drawn. Pages are
+  all `width` × `height` unless `g.newPage(width:height:)` gives one
+  another size; a size it leaves out is the page before's.
 - A new page starts with nothing transformed, clipped or in a layer.
 - It's drawn in the light appearance, even in an app that's dark: on paper,
   `.primary` is black.
@@ -782,7 +785,7 @@ printDocument(title: String = "", width: Float = 595.28, height: Float = 841.89,
 ```
 
 Draws pages as [`writePDF`](#writepdf) does, with `g.newPage()` between
-them, and prints them through the system. Returns whether the document was
+them (each page fitted to the paper), and prints them through the system. Returns whether the document was
 printed (or handed over to be).
 
 ```tessel

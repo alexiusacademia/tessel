@@ -1,0 +1,27 @@
+// writePDF: g.newPage(width:height:) gives the next page its own size.
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-pdf-sizes-test.pdf")
+    var sizes: [String] = []
+    let ok = writePDF(path: path, width: 300, height: 200) { g in
+        sizes.append("{Int(g.width)}x{Int(g.height)}")
+        g.newPage(width: 500, height: 700)
+        sizes.append("{Int(g.width)}x{Int(g.height)}")
+        g.fillRect(x: 0, y: 0, width: g.width, height: g.height, color: .blue)
+        // Left out, a size is the page before's.
+        g.newPage(height: 100)
+        sizes.append("{Int(g.width)}x{Int(g.height)}")
+        g.newPage()
+        sizes.append("{Int(g.width)}x{Int(g.height)}")
+    }
+    print(ok)
+    print(sizes)
+    let data = readData(path) ?? Data()
+    let text = Data(bytes: data.bytes.filter { b in b != 0 }).latin1
+    print(text.contains("/Count 4"))
+    for box in ["0 0 300 200", "0 0 500 700", "0 0 500 100"] {
+        let found = text.contains("[" + box + "]")
+        print("{box}: {found}")
+    }
+    deleteFile(path)
+}

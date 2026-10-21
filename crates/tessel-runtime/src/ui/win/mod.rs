@@ -727,6 +727,6 @@ impl Offscreen {
 
 /// Writes pages as a PDF (Windows has no PDF writer of its own: see
 /// `ui::pdf`). Whether it was written.
-pub fn write_pdf(path: &str, title: &str, width: f64, height: f64, pages: &[DrawList]) -> bool {
-    super::pdf::write(path, title, width, height, pages, &text::PdfSource::default())
+pub fn write_pdf(path: &str, title: &str, pages: &[super::canvas::Page]) -> bool {
+    super::pdf::write(path, title, pages, &text::PdfSource::default())
 }

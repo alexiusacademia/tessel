@@ -932,7 +932,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ExprKind::Name(n) => self
                 .lookup(n)
                 .is_some_and(|v| matches!(v.store, Store::Slot(_) | Store::Boxed(_) | Store::EnvBox(_) | Store::Field(_) | Store::SelfRef)),
-            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) || self.page_size(e) => false,
             ExprKind::Member { object, optional: false, .. } => matches!(self.ty(object), Ty::Struct(_)) && self.stays_put(object, items),
             ExprKind::Index(object, _) => items && matches!(self.ty(object), Ty::List(_)) && self.stays_put(object, false),
             _ => false,
@@ -2493,12 +2493,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.read_ptr_of(e)
     }
 
+    /// Whether `e` is `g.width` or `g.height` of a `Graphics`: read from the
+    /// runtime (see `property`), not from where `g` is stored.
+    fn page_size(&self, e: &Expr) -> bool {
+        matches!(&e.kind, ExprKind::Member { object, name, .. }
+            if self.ty(object) == builtins::GRAPHICS && matches!(name.name.as_str(), "width" | "height"))
+    }
+
     /// Whether `read_ptr` gives a pointer for `e`.
     fn readable_place(&self, e: &Expr) -> bool {
         match &e.kind {
             ExprKind::Name(n) => self.lookup(n).is_some(),
             // (A computed property is a call.)
-            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => false,
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) || self.page_size(e) => false,
             ExprKind::Member { object, optional: false, .. } => {
                 matches!(self.ty(object), Ty::Struct(_) | Ty::Iface(_)) && self.readable_place(object)
             }
@@ -2541,7 +2548,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let v = self.lookup(n)?;
                 Some(self.var_read_ptr(&v, e.span))
             }
-            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) => None,
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) || self.page_size(e) => None,
             ExprKind::Member { object, name, optional: false } if matches!(self.ty(object), Ty::Iface(_)) => {
                 let Ty::Iface(i) = self.ty(object) else { unreachable!() };
                 let base = self.read_ptr(object)?;
@@ -3770,6 +3777,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             return self.call_rt_generic(call.rt, &[(v, t.clone())], &pt).unwrap();
         }
         match t {
+            // `g.width`, `g.height`: the page being drawn now, which
+            // `g.newPage(width:height:)` can change (the field is the first
+            // page's).
+            Ty::Struct(id) if *t == builtins::GRAPHICS && matches!(name, "width" | "height") => {
+                let idx = self.field_index(*id, name);
+                let f = self.b.build_extract_value(v.into_struct_value(), idx, "").unwrap();
+                let rt = if name == "width" { "tsl_canvas_page_width" } else { "tsl_canvas_page_height" };
+                self.call_rt_generic(rt, &[(f, Ty::Float)], &Ty::Float).unwrap()
+            }
             Ty::Struct(id) => {
                 let idx = self.field_index(*id, name);
                 let ft = self.checked.structs[*id].fields[idx as usize].ty.clone();
