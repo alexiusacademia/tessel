@@ -147,6 +147,7 @@ export default defineConfig({
 						{ label: 'Saving data in a database', slug: 'guides/database' },
 						{ label: 'Building for Android', slug: 'guides/android' },
 						{ label: 'Debugging', slug: 'guides/debugging' },
+						{ label: 'Testing your code', slug: 'guides/testing' },
 						{ label: 'Libraries', slug: 'guides/libraries' },
 					],
 				},

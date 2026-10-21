@@ -1,0 +1,64 @@
+// `tessel test`'s own test (see `test_blocks` in crates/tessel-cli/tests/run.rs):
+// tests that pass, fail in each way, crash and hang, and what it reports
+// for them (main.out, with the times taken out).
+
+struct Point {
+    x: Int
+    y: Int
+}
+
+fn add(_ a: Int, _ b: Int) -> Int { a + b }
+
+fn checkSorted(_ xs: [Int]) {
+    var i = 1
+    while i < xs.count {
+        expect(xs[i - 1] <= xs[i], "not in order at {i}")
+        i += 1
+    }
+}
+
+fn main() {
+    print("the program itself")
+}
+
+test "adds two numbers" {
+    expect(add(2, 2) == 4)
+    expect(add(-1, 1) == 0)
+}
+
+test "a comparison that fails shows both sides" {
+    let p = Point(x: 1, y: 2)
+    expect(p == Point(x: 1, y: 3))
+    expect(add(2, 2) > 5, "two and two")
+}
+
+test "each side is worked out once" {
+    var stack = [1, 2, 3]
+    expect(stack.removeLast() == 3)
+    expect(stack.count == 2)
+}
+
+test "a helper's expect says where it is" {
+    print("checking a list")
+    checkSorted([1, 2, 5, 4])
+}
+
+test "fail with a reason" {
+    fail("not written yet")
+}
+
+test "a crash fails only this test" {
+    let xs = [1, 2]
+    print(xs[5])
+}
+
+test "a test that never ends (stopped by --timeout 2)" {
+    var n = 0
+    while true { n += 1 }
+}
+
+test "plain true" {
+    expect(true)
+    let ok = [1, 2].contains(2)
+    expect(ok)
+}

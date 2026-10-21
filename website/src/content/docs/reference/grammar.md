@@ -168,12 +168,15 @@ entry  = import | visibility? item ;
 import = "import" (IDENT | STRING) ("as" IDENT)? ;
 visibility = "public" | "private" ;
 item   = app_decl | view_decl | struct_decl | enum_decl | interface_decl | fn_decl
-       | const_decl ;
+       | const_decl | test_decl ;
 const_decl = "let" IDENT (":" type)? "=" expr ;
+test_decl  = "test" STRING block ;
 ```
 
 A `let` at the top level is a [constant](/language/basics/#constants),
-worked out once when the program starts.
+worked out once when the program starts. A `test` is a
+[test](/guides/testing/), which only `tessel test` runs; `test` is a
+keyword only before a test's name.
 
 `import geometry` loads the module in the folder `geometry` next to the
 file, or else the [library](/guides/libraries/) `geometry` the project

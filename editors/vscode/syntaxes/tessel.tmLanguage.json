@@ -116,6 +116,10 @@
           "match": "^\\s*import\\b"
         },
         {
+          "name": "storage.type.test.tessel",
+          "match": "^\\s*test(?=\\s+\")"
+        },
+        {
           "name": "storage.modifier.tessel",
           "match": "\\b(bind)\\b|^\\s*(public|private)\\b|\\b(async|static)(?=\\s+(fn|let|async)\\b)"
         },

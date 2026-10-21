@@ -103,6 +103,11 @@ pub fn resolve(sources: &mut SourceMap, root: Vec<(u32, Program)>, diags: &mut D
         program.items.extend(prog.items);
         program.private.extend(prog.private);
         program.public.extend(prog.public);
+        // (A module's tests are its own: they run with `tessel test` in its
+        // folder, not in the programs that import it.)
+        if module.is_none() {
+            program.tests.extend(prog.tests);
+        }
     }
     program
 }

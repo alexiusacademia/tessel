@@ -30,6 +30,9 @@ commands:
                  build and run a program; with --hot, an app takes its new
                  code when its files change, and keeps its state
   repl           type code and see what it does, a line at a time
+  test [path] [--filter <text>] [--timeout <seconds>]
+                 run the program's tests (`test "name" { … }` blocks), each in a
+                 process of its own; with --filter, those whose name has <text>
   add <library>[@<version>]
                  use a published library: adds it to [dependencies] in
                  tessel.toml, works out its version (and those of the
@@ -408,6 +411,19 @@ Opens the [Tessel IDE](/start/ide/) on a folder: the current one, or the one
 you name. The first time, `tessel` compiles the IDE and caches it in your
 system's temporary folder; it's compiled again only when `tessel` itself
 changes.
+
+## `tessel test`
+
+```sh
+tessel test [path] [--filter <text>] [--timeout <seconds>]
+```
+
+Runs the program's [tests](/guides/testing/) (its `test "name" { … }`
+blocks), each in a process of its own, several at a time, and says which
+passed and why the others failed. `path` is a file or a folder (the
+current folder if left out). `--filter` runs the tests whose name has the
+text in it; `--timeout` stops a test after that many seconds (60 unless
+given). It ends with exit code 1 if a test failed.
 
 ## `tessel add`, `remove` and `deps`
 

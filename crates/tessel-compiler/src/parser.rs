@@ -26,6 +26,8 @@ pub struct Parser<'a> {
     repl: Option<Vec<Stmt>>,
     /// For a REPL entry: where each declaration and import is.
     decls: Vec<ReplDecl>,
+    /// `test "…" { … }` blocks so far.
+    tests: Vec<TestDecl>,
 }
 
 /// What a declaration in a REPL entry is.
@@ -71,6 +73,7 @@ pub fn parse_repl(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut 
         private: Default::default(),
         repl: Some(Vec::new()),
         decls: Vec::new(),
+        tests: Vec::new(),
     };
     let program = p.program();
     ReplEntry { program, stmts: p.repl.take().unwrap_or_default(), decls: p.decls }
@@ -92,6 +95,7 @@ pub fn parse_file(file: u32, text: &str, diags: &mut Diagnostics, next_id: &mut 
         private: Default::default(),
         repl: None,
         decls: Vec::new(),
+        tests: Vec::new(),
     };
     p.program()
 }
@@ -394,6 +398,8 @@ impl<'a> Parser<'a> {
                 _ if self.at_fn() => self.fn_decl().map(Item::Fn),
                 Tok::View => self.view_decl().map(Item::View),
                 Tok::App => self.app_decl().map(Item::App),
+                // (`test` is a keyword only before a test's name.)
+                Tok::Ident(w) if w == "test" && matches!(self.peek_at(1), Tok::Str(_)) => self.test_decl().map(Item::Fn),
                 Tok::Let if *self.peek_at(1) == Tok::LParen => {
                     let span = self.span();
                     self.error(span, "a constant at the top level of a file has one name")
@@ -439,7 +445,40 @@ impl<'a> Parser<'a> {
             imports,
             public: std::mem::take(&mut self.public),
             private: std::mem::take(&mut self.private),
+            tests: std::mem::take(&mut self.tests),
         }
+    }
+
+    /// `test "name" { … }`: a function `__test_<file>_<n>`, recorded in
+    /// `tests` for `tessel test`.
+    fn test_decl(&mut self) -> PResult<FnDecl> {
+        let lo = self.bump().span; // test
+        let (name, name_span) = match self.peek().clone() {
+            Tok::Str(pieces) => {
+                let span = self.bump().span;
+                match pieces.as_slice() {
+                    [StrPiece::Text(t)] => (t.clone(), span),
+                    _ => {
+                        self.error(span, "a test's name must be plain text").help("write it like `test \"adds two numbers\" { … }`");
+                        return Err(Reported);
+                    }
+                }
+            }
+            _ => return Err(self.unexpected("the test's name in quotes, like `test \"adds two numbers\" { … }`")),
+        };
+        let body = self.block()?;
+        let function = format!("__test_{}_{}", self.file, self.tests.len());
+        self.tests.push(TestDecl { name, function: function.clone(), span: lo.to(name_span) });
+        Ok(FnDecl {
+            name: Ident { name: function, span: name_span },
+            generics: Vec::new(),
+            params: Vec::new(),
+            ret: None,
+            body,
+            constant: false,
+            prop: false,
+            is_async: false,
+        })
     }
 
     fn struct_decl(&mut self) -> PResult<StructDecl> {

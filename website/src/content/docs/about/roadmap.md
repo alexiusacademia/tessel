@@ -61,7 +61,9 @@ its first releases came so quickly. The dates on
   calendar arithmetic, random numbers, the
   clipboard, reading standard input and writing to standard error, and many
   methods for strings, numbers and lists.
-- **Tools:** the `tessel` command, a REPL (`tessel repl`), hot reload
+- **Tools:** the `tessel` command, [tests](/guides/testing/) written next to
+  the code (`tessel test`), [libraries](/guides/libraries/) to publish and
+  use (`tessel add`, `tessel publish`), a REPL (`tessel repl`), hot reload
   (`tessel run --hot`, and "Reload on save" in the IDE), the Tessel IDE
   (with this documentation built in, a Design panel for building a
   window by pointing at it, and a preview for Markdown files), a VS Code extension, a
@@ -101,7 +103,6 @@ These are the next areas of work. None of them has a date.
 |---|---|
 | App polish | Fuller accessibility: reading and editing text through a screen reader, and Android. |
 | Standard library | Filling gaps as apps need them. |
-| Language | Packages: installing shared modules by name, with versions. |
 | Packaging | Code signing and installers. |
 | Debugging | Changing values and conditions on breakpoints in the debugger. |
 

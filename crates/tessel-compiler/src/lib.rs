@@ -15,6 +15,7 @@ pub mod modules;
 pub mod navigate;
 pub mod parser;
 pub mod source;
+pub mod testing;
 pub mod types;
 
 use diag::Diagnostics;
@@ -48,6 +49,14 @@ pub fn set_app_info(info: AppInfo) {
 
 pub(crate) fn app_info() -> AppInfo {
     APP_INFO.lock().unwrap().clone().unwrap_or_default()
+}
+
+static TEST_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Makes programs analyzed from now on run their tests (`tessel test`): see
+/// `testing`.
+pub fn set_test_mode(on: bool) {
+    TEST_MODE.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Finds a library a program depends on: given the program's folder, the
@@ -91,8 +100,12 @@ pub fn analyze(sources: &mut SourceMap, require_entry: bool) -> Analysis {
     for (id, file) in sources.files() {
         root.push((id, parser::parse_file(id, &file.text, &mut diags, &mut next_id)));
     }
+    let own_files: std::collections::HashSet<u32> = root.iter().map(|(id, _)| *id).collect();
     // (Adds the files of imported modules to `sources`.)
     let mut program = modules::resolve(sources, root, &mut diags, &mut next_id);
+    if TEST_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        testing::lower(&mut program, &own_files, sources, &mut diags, &mut next_id);
+    }
     program.items.extend(tuple_structs());
     add_prelude(&mut program, sources, &mut diags, &mut next_id);
     lower_statics(&mut program);

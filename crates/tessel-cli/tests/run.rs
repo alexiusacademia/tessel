@@ -681,3 +681,41 @@ fn libraries() {
     assert!(ok && !dir.join("app/tessel.lock").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `tessel test`: tests that pass, fail in each way, crash and hang, and
+/// what it says about them (`tests/test_blocks/main.out`, without times).
+#[test]
+fn test_blocks() {
+    let dir = repo().join("tests/test_blocks");
+    let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .args(["test", ".", "--timeout", "2"])
+        .current_dir(&dir)
+        .env_remove("TESSEL_VERSION")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "failing tests make the exit code 1");
+    let text = String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n").replace(".\\main.tsl", "./main.tsl");
+    // (Times differ from run to run.)
+    let mut got = String::new();
+    for line in text.lines() {
+        let line = match (line.rfind(" ms)"), line.rfind('(')) {
+            (Some(end), Some(start)) if end > start => {
+                let inside = &line[start + 1..end];
+                let place = inside.rsplit_once(", ").map_or(String::new(), |(p, _)| format!("{p}, "));
+                format!("{}({place}… ms){}", &line[..start], &line[end + 4..])
+            }
+            _ => line.to_string(),
+        };
+        let line = match line.rsplit_once(", in ") {
+            Some((head, _)) if line.ends_with(" s") => format!("{head}, in … s"),
+            _ => line,
+        };
+        got += &line;
+        got.push('\n');
+    }
+    let expected = std::fs::read_to_string(dir.join("main.out")).unwrap().replace("\r\n", "\n");
+    assert_eq!(got, expected, "tessel test's report differs:\n{got}");
+    // `tessel run` runs the program itself, not its tests.
+    let run = Command::new(env!("CARGO_BIN_EXE_tessel")).args(["run", "."]).current_dir(&dir).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "the program itself");
+}

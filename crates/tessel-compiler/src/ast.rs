@@ -18,6 +18,18 @@ pub struct Program {
     /// Name spans of declarations and members marked `public` / `private`.
     pub public: std::collections::HashSet<Span>,
     pub private: std::collections::HashSet<Span>,
+    /// `test "name" { … }` blocks (of the program's own files), in order.
+    pub tests: Vec<TestDecl>,
+}
+
+/// A `test "name" { … }` block. The parser makes it a function without
+/// parameters, `function`, which `tessel test` runs; other builds check it
+/// but never call it.
+#[derive(Debug, Clone)]
+pub struct TestDecl {
+    pub name: String,
+    pub function: String,
+    pub span: Span,
 }
 
 /// `import geometry` or `import "../shared/geometry"`, maybe with

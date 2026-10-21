@@ -238,6 +238,17 @@ Math functions take their arguments **without labels**, in the order shown.
 - The results follow the usual floating-point rules and never stop the
   program: `sqrt(-1.0)` is `NaN` ("not a number") and `log(0.0)` is `-inf`.
 
+## Tests
+
+In a [test](/guides/testing/):
+
+| Function | What it does |
+|---|---|
+| `expect(_ condition: Bool, _ message: String = "")` | Fails the test if `condition` is false. `tessel test` says where it is and what it says, and for a comparison (`==`, `<`, …) the values on each side. |
+| `fail(_ message: String = "")` | Fails the test. |
+
+The test goes on after either, and fails when it ends.
+
 ## Random numbers
 
 ### random

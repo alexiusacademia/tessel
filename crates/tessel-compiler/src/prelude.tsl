@@ -942,3 +942,38 @@ view FontPicker(family: bind String, onChange: fn() = {}) {
 fn __fontFamilyOf(_ name: String) -> String {
     if name == "System" { "" } else if name == "Monospaced" { "monospaced" } else { name }
 }
+
+/// In a test (`test "name" { … }`): reports `condition` when it's false.
+/// `tessel test` says where it is and what it says, and for a comparison
+/// like `expect(total == 42)`, the values on each side.
+fn expect(_ condition: Bool, _ message: String = "") {
+    if !condition {
+        __testFailed("", "expect(…)", message, "")
+    }
+}
+
+/// In a test: reports that it failed, with `message`.
+fn fail(_ message: String = "") {
+    __testFailed("", "fail", message, "")
+}
+
+/// What `tessel test` makes of `expect(condition)`: `at` is where it is,
+/// `text` the condition as written.
+fn __expectTrue(_ condition: Bool, _ at: String, _ text: String, _ message: String = "") {
+    if !condition {
+        __testFailed(at, "expect({text})", message, "")
+    }
+}
+
+/// What `tessel test` makes of `expect(left == right)` (or `!=`, `<`, …),
+/// with each side worked out once and shown as text.
+fn __expectCompare(_ condition: Bool, _ left: String, _ right: String, _ at: String, _ text: String, _ message: String = "") {
+    if !condition {
+        __testFailed(at, "expect({text})", message, "left:  {left}\nright: {right}")
+    }
+}
+
+/// A failure, on standard error, for `tessel test` to find.
+fn __testFailed(_ at: String, _ what: String, _ message: String, _ detail: String) {
+    printError("tessel-test-failure: {toJson([at, what, message, detail])}")
+}

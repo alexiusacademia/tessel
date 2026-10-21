@@ -10,6 +10,7 @@ mod pin;
 mod preview;
 mod repl;
 mod telemetry;
+mod test;
 mod update;
 
 use std::io::IsTerminal;
@@ -47,6 +48,9 @@ commands:
                  --bundle an .aab for Google Play (needs the Android SDK and NDK)
   android doctor
                  check that what building for Android needs is installed
+  test [path] [--filter <text>] [--timeout <seconds>]
+                 run the program's tests (`test \"name\" { … }` blocks), each in a
+                 process of its own; with --filter, those whose name has <text>
   run <path> [--hot]
                  build and run a program; with --hot, an app takes its new
                  code when its files change, and keeps its state
@@ -253,6 +257,7 @@ fn main() -> ExitCode {
             }
         }
         (Some("update"), _) => update::run(&args[1..]),
+        (Some("test"), _) => test::run(&args[1..]),
         (Some("add"), _) => packages::add(&args[1..]),
         (Some("remove"), _) => packages::remove(&args[1..]),
         (Some("deps"), _) => packages::deps(&args[1..]),

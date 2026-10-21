@@ -80,6 +80,7 @@ fn project(args: &[String]) -> Option<PathBuf> {
     match args.first().map(String::as_str) {
         Some("check" | "build" | "run" | "preview" | "complete") => args.get(1).map(PathBuf::from),
         Some("repl" | "lsp") => Some(PathBuf::from(".")),
+        Some("test") => Some(PathBuf::from(args.get(1).filter(|a| !a.starts_with("--")).map_or(".", String::as_str))),
         _ => None,
     }
 }

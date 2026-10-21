@@ -1,0 +1,30 @@
+ok    adds two numbers  (… ms)
+FAIL  a comparison that fails shows both sides  (main.tsl:29, … ms)
+      main.tsl:31: expect(p == Point(x: 1, y: 3))
+        left:  {"x":1,"y":2}
+        right: {"x":1,"y":3}
+      main.tsl:32: expect(add(2, 2) > 5)
+        two and two
+        left:  4
+        right: 5
+ok    each side is worked out once  (… ms)
+FAIL  a helper's expect says where it is  (main.tsl:41, … ms)
+      main.tsl:15: expect(xs[i - 1] <= xs[i])
+        not in order at 3
+        left:  5
+        right: 4
+      it printed:
+        checking a list
+FAIL  fail with a reason  (main.tsl:46, … ms)
+      main.tsl:47: fail
+        not written yet
+FAIL  a crash fails only this test  (main.tsl:50, … ms)
+      it stopped with exit code 101
+      it printed:
+        error: index 5 is out of range for a list of 2 items
+         --> ./main.tsl:52:11
+FAIL  a test that never ends (stopped by --timeout 2)  (main.tsl:55, … ms)
+      it took longer than 2 s, and was stopped
+ok    plain true  (… ms)
+
+3 passed, 5 failed, in … s
