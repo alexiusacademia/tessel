@@ -1,0 +1,29 @@
+// A LazyVStack in a second window keeps building its rows when that window
+// is the current one and the main window has no LazyVStack of its own
+// (each window's lists were forgetting the others').
+
+struct S {
+    n: Int = 3
+    f: String = ""
+}
+
+view Rows(s: bind S) {
+    let k = if s.f == "" { s.n } else { 1 }
+    LazyVStack(count: k, rowHeight: 124) { r in
+        HStack { Text("row {r}") }
+    }
+}
+
+app LazyWindow(width: 300, height: 600) {
+    state s = S()
+    state open = true
+    Text("main")
+    Window("Pal", isOpen: open, width: 300, height: 600) {
+        VStack {
+            TextField("Filter", text: s.f)
+            Scroll { Rows(s: s) }
+                .frame(maxHeight: .infinity)
+            Text("below")
+        }
+    }
+}

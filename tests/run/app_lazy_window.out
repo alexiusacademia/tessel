@@ -1,0 +1,26 @@
+Window "Pal"
+  VStack
+    TextField "Filter" = ""
+    Scroll
+      View
+        LazyVStack 3 rows, built 0..3
+          VStack
+            HStack
+              Text "row 0"
+          VStack
+            HStack
+              Text "row 1"
+          VStack
+            HStack
+              Text "row 2"
+    Text "below"
+Window "Pal"
+  VStack
+    TextField "Filter" = "d"
+    Scroll
+      View
+        LazyVStack 1 rows, built 0..1
+          VStack
+            HStack
+              Text "row 0"
+    Text "below"

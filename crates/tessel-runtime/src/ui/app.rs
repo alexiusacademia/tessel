@@ -1161,11 +1161,15 @@ impl App {
                 self.take_requests();
             }
             let mut again = false;
+            let mut lazy_seen = Vec::new();
             self.each_surface(|a| {
                 a.lay_out();
                 again |= a.run_on_resize();
-                again |= a.lazy_rows();
+                again |= a.lazy_rows(&mut lazy_seen);
             });
+            // (Only once every window has said which lists it has: one
+            // window's lists aren't another's to forget.)
+            super::controls::LAZY.with(|l| l.borrow_mut().retain(|k, _| lazy_seen.contains(k)));
             if !again {
                 break;
             }
@@ -2190,8 +2194,9 @@ impl App {
     /// After layout: the rows each `LazyVStack` should build, from the part
     /// of it that shows (inside the window and the scroll views around it).
     /// When those aren't the ones it built, it's to be built again: returns
-    /// whether any is.
-    fn lazy_rows(&mut self) -> bool {
+    /// whether any is. Adds the lists it has to `seen` (the caller forgets
+    /// the rows of lists no window has).
+    fn lazy_rows(&mut self, seen: &mut Vec<u64>) -> bool {
         fn visit(n: &Node, clip: Rect, out: &mut Vec<(u64, usize, usize)>, seen: &mut Vec<u64>) {
             if n.mods.hidden {
                 return;
@@ -2225,13 +2230,12 @@ impl App {
                 visit(c, clip, out, seen);
             }
         }
-        let (mut wanted, mut seen) = (Vec::new(), Vec::new());
+        let mut wanted = Vec::new();
         if let Some(t) = &self.tree {
-            visit(t, Rect { x: 0.0, y: 0.0, w: self.width, h: self.height }, &mut wanted, &mut seen);
+            visit(t, Rect { x: 0.0, y: 0.0, w: self.width, h: self.height }, &mut wanted, seen);
         }
         super::controls::LAZY.with(|l| {
             let mut l = l.borrow_mut();
-            l.retain(|k, _| seen.contains(k));
             for &(key, from, to) in &wanted {
                 l.insert(key, (from, to));
             }
