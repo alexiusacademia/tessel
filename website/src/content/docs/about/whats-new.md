@@ -11,6 +11,26 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.12.0
+
+*October 22, 2026*
+
+- **PDF pages of different sizes.** `g.newPage(width:height:)` starts a
+  page of its own size, so one document can hold A1, A3 and A4 sheets;
+  `g.width` and `g.height` follow the page being drawn. See
+  [Making a PDF](/ui/drawing/#making-a-pdf).
+- **Android on Mali phones.** Apps draw on the graphics card on phones with
+  a Mali (most phones that aren't Snapdragon ones), where they used to
+  work out most of each frame on the processor: scrolling a long list went
+  from 60 ms a frame to 7 ms on a Pixel 10a.
+- **Background work is quick to start.** `background` hands the values it
+  uses, and its result, to the other thread without copying them: a list
+  of 40,000 structs goes over in about 1 ms instead of 25.
+- **Faster drawing on macOS** of a path made of many small overlapping
+  pieces (a dense hatch seen from far): 2.2 s became 34 ms.
+- A mistake in an imported module is now listed before the mistakes it
+  causes in the program that uses it.
+
 ## 0.11.0
 
 *October 21, 2026*
