@@ -43,5 +43,11 @@ Measured on the Pixel 10a, scrolling a list of 300 rows: 7 ms a frame on
 the GPU, against 60 ms with the earlier workaround (vello's steps before
 `fine` on the processor).
 
+Upstream: vello issue #1816 reports the same bug (Pixel 9 Pro), and pull
+request #1817 makes the same change; as of 2026-10-23 it isn't merged
+(a review asked for an `if` instead of `select`), and vello 0.11.0
+doesn't have it. Our confirmation from the Pixel 10a is on #1816:
+https://github.com/linebender/vello/issues/1816#issuecomment-6360706095
+
 When updating vello, check whether the published shaders still read out
 of bounds this way, and drop this copy if they don't.
