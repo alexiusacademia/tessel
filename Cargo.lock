@@ -2941,6 +2941,7 @@ name = "tessel-cli"
 version = "0.12.0"
 dependencies = [
  "cc",
+ "flate2",
  "lsp-server",
  "lsp-types",
  "png",

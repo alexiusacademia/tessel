@@ -21,6 +21,9 @@ mod db;
 mod debug;
 mod dates;
 mod sensors;
+// The installer of Windows apps (`tessel build --bundle` for Windows).
+#[cfg(all(windows, feature = "native"))]
+mod setup;
 mod stack_guard;
 mod stdlib;
 pub mod ui;

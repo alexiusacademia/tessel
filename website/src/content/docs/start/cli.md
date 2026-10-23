@@ -320,8 +320,9 @@ installed.
 - **`--bundle`** makes an app you can double-click. On macOS this is an app
   bundle, `Name.app`, named after your `app` (for a `fn main()` program,
   after the executable), created next to where the executable would go; the
-  executable moves inside it. On Windows, an executable is already
-  double-clickable, so `--bundle` makes the same `.exe`.
+  executable moves inside it. On Windows (and with `--windows` on a Mac)
+  it's the app's installer, `Name Setup.exe`, with the executable inside it
+  (see [The installer of a Windows app](#the-installer-of-a-windows-app)).
 
 On Windows, apps (programs with an `app`) are built without a console
 window.
@@ -345,6 +346,41 @@ the first `--windows` build downloads it, once for each version of Tessel.
 The app isn't signed, so Windows may say it's from an unknown publisher the
 first time it's opened (**More info**, then **Run anyway**). Signing a
 Windows app needs a code-signing certificate and is done on Windows.
+
+### The installer of a Windows app
+
+```sh
+tessel build <path> --windows --bundle
+```
+
+With `--bundle`, a Windows build is the app's installer: `Name Setup.exe`,
+named after your `app` (or the `name` in [`tessel.toml`](/start/project/)),
+with the app, its icon and its details inside. Built on a Mac with
+`--windows` or on Windows, it's the same installer. Opened, it asks whether
+to install the app and then:
+
+- puts it in `AppData\Local\Programs\Name` (it's installed for the person
+  who runs the installer, so Windows doesn't ask for an administrator),
+- adds it to the Start menu, and to the desktop if they tick **Add a
+  shortcut to the desktop**,
+- lists it in **Settings → Apps → Installed apps**, from where it can be
+  uninstalled,
+- makes Explorer open the app's [`documentTypes:`](/ui/menus-windows/#opening-documents)
+  files with it (a kind of file another app already opens stays with that
+  app, and yours is offered in **Open with**).
+
+Opening a newer installer updates the app in the same place, even while it's
+running (it's the new version from its next start). Uninstalling removes
+the app, its shortcuts and its file types; the documents made with it stay.
+
+`Name Setup.exe /S` installs without asking anything, and the uninstaller
+(`uninstall.exe` in the app's folder) removes the app without asking with
+`/uninstall /S`, for installing on many computers. The exit code is 0 when
+it worked.
+
+The installer adds less than 1 MB, and the app inside it is compressed, so
+it's often smaller than the app itself (`Todos Setup.exe` is 2 MB, for a
+2.3 MB `todos.exe`). Like the app, it isn't signed (see above).
 
 ### For Android
 

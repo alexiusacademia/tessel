@@ -84,9 +84,10 @@ These are the main gaps you may run into today.
   in their windows on macOS and Windows, but text can't be read or edited
   piece by piece through one, menus drawn in the window aren't described,
   and it hasn't been tried with Narrator on Windows. Not on Android yet.
-- **Packaging:** `tessel build --bundle` makes a `.app` on macOS, with your
-  `icon.png` as its icon, but apps aren't code signed and there are no
-  installers.
+- **Packaging:** `tessel build --bundle` makes a `.app` on macOS and an
+  installer (`Name Setup.exe`) for Windows, with your `icon.png` as their
+  icon, but apps aren't code signed, and there are no disk images (`.dmg`)
+  for macOS.
 - **Editor support:** the language server doesn't format code, and the
   Tessel IDE itself doesn't have go-to-definition or rename yet (VS Code
   and other editors do, through the language server).

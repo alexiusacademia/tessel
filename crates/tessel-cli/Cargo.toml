@@ -27,6 +27,8 @@ lsp-server = "0.10"
 lsp-types = "0.97"
 # `tessel repl`: editing the line being typed, and earlier lines with the arrow keys.
 rustyline = { version = "17", default-features = false }
+# The installer of Windows apps: the app inside it, compressed (see setup.rs).
+flate2 = "1"
 # App icons: reading `icon.png` and writing it at each size.
 png = "0.18.1"
 serde_json = "1.0.151"

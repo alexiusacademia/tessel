@@ -318,6 +318,15 @@ jobs:
           run "$t" build dist/smoke/hello -o dist/smoke/hello-app
           echo "A one-Text app is $(wc -c < dist/smoke/hello-app${{ runner.os == 'Windows' && '.exe' || '' }}) bytes"
           TESSEL_SCRIPT='click field 1; type "hello"; click "Add"; tree' dist/smoke/todos${{ runner.os == 'Windows' && '.exe' || '' }}
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The installer of a Windows app (--bundle): it installs the app,
+            # which runs, and its uninstaller removes it.
+            mkdir -p dist/smoke/notes
+            printf 'app Notes(documentTypes: ["note"]) {\n    Text("notes")\n}\n' > dist/smoke/notes/main.tsl
+            printf '[app]\nname = "Smoke Notes"\nid = "dev.tessel.smokenotes"\nversion = "1.2.3"\n' > dist/smoke/notes/tessel.toml
+            run "$t" build dist/smoke/notes --bundle -o dist/smoke/notes-setup/notes.exe
+            pwsh -File install/check-setup.ps1 -Setup "dist/smoke/notes-setup/Smoke Notes Setup.exe" -Name "Smoke Notes" -Id dev.tessel.smokenotes -Extension note
+          fi
 
       - name: Archive
         shell: bash
@@ -395,6 +404,9 @@ jobs:
             tar -xzf dist/tessel-*-windows-x64-parts.tar.gz -C dist/check/windows
             TESSEL_WINDOWS_PARTS="$PWD/dist/check/windows" dist/check/mac/tessel build examples/todos --windows -o dist/check/todos.exe
             file dist/check/todos.exe | grep -q "PE32+ executable (GUI) x86-64" || { echo "::error::tessel build --windows didn't make a Windows app"; exit 1; }
+            # And its installer (--bundle).
+            TESSEL_WINDOWS_PARTS="$PWD/dist/check/windows" dist/check/mac/tessel build examples/todos --windows --bundle -o dist/check/setup/todos.exe
+            file "dist/check/setup/Todos Setup.exe" | grep -q "PE32+ executable (GUI) x86-64" || { echo "::error::tessel build --windows --bundle didn't make an installer"; exit 1; }
             rm -rf dist/check
           fi
           (cd dist && shasum -a 256 tessel-* > SHA256SUMS)

@@ -6,6 +6,7 @@ mod lsp;
 mod manifest;
 mod new;
 mod packages;
+mod setup;
 mod pin;
 mod preview;
 mod repl;
@@ -740,8 +741,10 @@ fn version_info(found: Option<&manifest::Found>, app_name: Option<&str>, program
 }
 
 fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
-    if !cfg!(target_os = "macos") || cross_windows() {
-        // Windows apps are already a single double-clickable .exe, with the icon inside.
+    if cfg!(windows) || cross_windows() {
+        return make_installer(exe, app, program);
+    }
+    if !cfg!(target_os = "macos") {
         return Ok(exe.to_path_buf());
     }
     let found = program.and_then(|p| manifest::find(p).ok().flatten());
@@ -761,14 +764,7 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     let id = escape(&info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(name)));
     let version = escape(info.version.as_deref().unwrap_or("1.0"));
     let build = info.build.as_deref().map_or(version.clone(), escape);
-    // The documents the manifest lists, and the code's `documentTypes:`.
-    let mut documents: Vec<manifest::Document> = info.documents.clone();
-    for ext in app.map_or(&[][..], |a| a.document_types.as_slice()) {
-        if !documents.iter().any(|d| d.extensions.contains(ext)) {
-            documents.push(manifest::Document { name: None, extensions: vec![ext.clone()], role: None });
-        }
-    }
-    let mut extra = document_types_plist(&documents);
+    let mut extra = document_types_plist(&documents(&info, app));
     if let Some(c) = &info.copyright {
         extra.push_str(&format!("\n    <key>NSHumanReadableCopyright</key><string>{}</string>", escape(c)));
     }
@@ -800,6 +796,61 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     // Last, so a bundle with its executable is a complete one.
     std::fs::rename(exe, contents.join("MacOS").join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
     Ok(bundle)
+}
+
+/// The installer of a Windows app: `<Name> Setup.exe` next to the
+/// executable, which moves inside it (see `setup`). Returns its path.
+fn make_installer(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
+    let found = program.and_then(|p| manifest::find(p).ok().flatten());
+    let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
+    let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+    let name = info.name.clone().unwrap_or_else(|| app.map_or(stem, |a| a.name.as_str()).to_string());
+    let setup_exe = exe.with_file_name(setup::file_name(&name));
+    let package = setup::Package {
+        id: info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(&name)),
+        version: info.version.clone().unwrap_or_else(|| "1.0".into()),
+        publisher: info.author.clone().unwrap_or_default(),
+        exe: format!("{}.exe", setup::file_name(&name).trim_end_matches(" Setup.exe")),
+        documents: documents(&info, app)
+            .into_iter()
+            .map(|d| {
+                let name = d.name.unwrap_or_else(|| format!("{} file", d.extensions.first().map_or(String::new(), |e| e.to_uppercase())));
+                (name, d.extensions)
+            })
+            .collect(),
+        name,
+    };
+    let bytes = std::fs::read(exe).map_err(|e| format!("can't read `{}`: {e}", exe.display()))?;
+    let icon = icon::Icon::of_program(program, manifest::icon_path(found.as_ref()).as_deref())?;
+    let mut version = version_info(found.as_ref(), Some(&package.name), program, &setup_exe);
+    version.description = format!("{} Setup", package.name);
+    let mut resources = icon.windows_resources();
+    resources.extend(icon::version_resource(&version));
+    resources.extend(setup::resources(&package, &bytes));
+
+    let obj = std::env::temp_dir().join(format!("tessel-setup-{}.o", std::process::id()));
+    let res = obj.with_extension("res");
+    let linked = codegen::compile_entry(setup::ENTRY, &obj, target_triple().as_deref())
+        .and_then(|()| std::fs::write(&res, resources).map_err(|e| format!("can't write `{}`: {e}", res.display())))
+        .and_then(|()| link(&obj, &runtime_lib()?, &setup_exe, true, Some(&res)));
+    let _ = std::fs::remove_file(&obj);
+    let _ = std::fs::remove_file(&res);
+    linked.map_err(|e| format!("can't make the installer: {e}"))?;
+    // (The app is inside the installer now.)
+    let _ = std::fs::remove_file(exe);
+    Ok(setup_exe)
+}
+
+/// The kinds of documents an app opens: the manifest's, and the code's
+/// `documentTypes:`.
+fn documents(info: &manifest::App, app: Option<&AppInfo>) -> Vec<manifest::Document> {
+    let mut documents: Vec<manifest::Document> = info.documents.clone();
+    for ext in app.map_or(&[][..], |a| a.document_types.as_slice()) {
+        if !documents.iter().any(|d| d.extensions.contains(ext)) {
+            documents.push(manifest::Document { name: None, extensions: vec![ext.clone()], role: None });
+        }
+    }
+    documents
 }
 
 /// `CFBundleDocumentTypes` for an app that opens these kinds of files:

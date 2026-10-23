@@ -193,15 +193,9 @@ enum Mode<'a> {
     Design(&'a RefCell<crate::design::Views>),
 }
 
-fn generate<R>(
-    program: &Program,
-    checked: &Checked,
-    sources: &SourceMap,
-    optimize: bool,
-    target_triple: Option<&str>,
-    mode: Mode,
-    emit: impl FnOnce(&TargetMachine, &Module) -> Result<R, Vec<Diagnostic>>,
-) -> Result<R, Vec<Diagnostic>> {
+/// The machine code is for: `target_triple`, or this computer. `jit` is for
+/// code loaded into `tessel` itself (see `generate`).
+fn target_machine(target_triple: Option<&str>, optimize: bool, jit: bool) -> Result<(TargetMachine, TargetTriple, String), String> {
     let config = InitializationConfig::default();
     Target::initialize_x86(&config);
     Target::initialize_aarch64(&config);
@@ -210,7 +204,7 @@ fn generate<R>(
         None => host_triple(),
     };
     let name = triple.as_str().to_string_lossy().to_string();
-    let target = Target::from_triple(&triple).map_err(|e| vec![internal(e.to_string())])?;
+    let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
     let level = if optimize { OptimizationLevel::Default } else { OptimizationLevel::None };
     // A baseline CPU, not this machine's: apps must run on every computer of
     // their kind, not just ones as new as the one that built them.
@@ -221,14 +215,49 @@ fn generate<R>(
     } else {
         "x86-64"
     };
+    let model = if jit && name.contains("windows") { CodeModel::Large } else { CodeModel::Default };
+    let tm = target
+        .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, model)
+        .ok_or_else(|| format!("can't create a target machine for `{name}`"))?;
+    Ok((tm, triple, name))
+}
+
+/// An object file whose `main` only calls `function`, a runtime function
+/// that takes nothing and returns the exit code: for programs that are all
+/// runtime (the installer of Windows apps, see `tessel build --bundle`).
+pub fn compile_entry(function: &str, out: &Path, target_triple: Option<&str>) -> Result<(), String> {
+    let (tm, triple, _) = target_machine(target_triple, true, false)?;
+    let ctx = Context::create();
+    let module = ctx.create_module("entry");
+    module.set_triple(&triple);
+    module.set_data_layout(&tm.get_target_data().get_data_layout());
+    let int = ctx.i32_type();
+    let ptr = ctx.ptr_type(AddressSpace::default());
+    let main = module.add_function("main", int.fn_type(&[int.into(), ptr.into()], false), None);
+    let callee = module.add_function(function, int.fn_type(&[], false), Some(Linkage::External));
+    let builder = ctx.create_builder();
+    builder.position_at_end(ctx.append_basic_block(main, "entry"));
+    let code = builder.build_call(callee, &[], "code").map_err(|e| e.to_string())?;
+    let code = code.try_as_basic_value().basic().ok_or("the entry function returns nothing")?;
+    builder.build_return(Some(&code)).map_err(|e| e.to_string())?;
+    module.verify().map_err(|e| e.to_string())?;
+    tm.write_to_file(&module, FileType::Object, out).map_err(|e| e.to_string())
+}
+
+fn generate<R>(
+    program: &Program,
+    checked: &Checked,
+    sources: &SourceMap,
+    optimize: bool,
+    target_triple: Option<&str>,
+    mode: Mode,
+    emit: impl FnOnce(&TargetMachine, &Module) -> Result<R, Vec<Diagnostic>>,
+) -> Result<R, Vec<Diagnostic>> {
     // Code loaded into `tessel` (the REPL, hot reload, previews) may land
     // far from `tessel` itself: on Windows its references to the runtime
     // would then not fit in 32 bits, so every address is a full one there.
     let jit = !matches!(mode, Mode::Program | Mode::Debug);
-    let model = if jit && name.contains("windows") { CodeModel::Large } else { CodeModel::Default };
-    let tm = target
-        .create_target_machine(&triple, cpu, "", level, RelocMode::PIC, model)
-        .ok_or_else(|| vec![internal(format!("can't create a target machine for `{name}`"))])?;
+    let (tm, triple, name) = target_machine(target_triple, optimize, jit).map_err(|e| vec![internal(e)])?;
 
     let ctx = Context::create();
     let module = ctx.create_module("tessel");

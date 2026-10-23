@@ -72,6 +72,14 @@ windows = { version = "0.62", optional = true, features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
+    # The installer of Windows apps (see setup.rs).
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 windows-numerics = { version = "0.3", optional = true }
 # (For `#[implement]`: a DirectWrite text renderer that collects glyphs for PDFs.)

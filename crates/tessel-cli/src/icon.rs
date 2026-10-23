@@ -272,7 +272,7 @@ fn version_node(key: &str, value: &[u8], value_len: u16, text: bool, children: &
     out
 }
 
-fn resource(out: &mut Vec<u8>, kind: u16, id: u16, memory_flags: u16, data: &[u8]) {
+pub(crate) fn resource(out: &mut Vec<u8>, kind: u16, id: u16, memory_flags: u16, data: &[u8]) {
     out.extend((data.len() as u32).to_le_bytes());
     out.extend(32u32.to_le_bytes()); // the header's size
     for number in [kind, id] {

@@ -64,7 +64,9 @@ The `[app]` table says what the app says about itself:
 On macOS, [`tessel build --bundle`](/start/cli/#tessel-build) writes these
 into the bundle's `Info.plist` (and names the bundle after the app). On
 Windows, `tessel build` puts them in the `.exe`, where its Properties show
-them. The About panel (from the app's menu on macOS) shows the name,
+them, and the [installer](/start/cli/#the-installer-of-a-windows-app)
+(`--bundle`) lists the app under its name, version and `author` in
+Settings, by its `id`. The About panel (from the app's menu on macOS) shows the name,
 version and copyright.
 
 ## Android
