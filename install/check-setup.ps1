@@ -50,10 +50,9 @@ Check ($p.ExitCode -eq 0) "the installed app runs"
 Get-Content $out
 
 # Installing again (an update) works, even while the app is running.
-$env:TESSEL_SCRIPT = "wait 30"
+# (With its window: a script's `wait` doesn't take real time.)
 $running = Start-Process -FilePath $exe -PassThru
-Remove-Item Env:\TESSEL_SCRIPT
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 Check (-not $running.HasExited) "the app is running"
 $p = Start-Process -FilePath (Resolve-Path $Setup) -ArgumentList "/S" -Wait -PassThru
 Check ($p.ExitCode -eq 0) "installing again works while the app is running"

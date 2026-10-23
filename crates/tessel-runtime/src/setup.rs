@@ -88,7 +88,7 @@ pub extern "C" fn tessel_setup_main() -> i32 {
             return 1;
         }
     };
-    let mut ui = Ui { package, uninstall, desktop: false, done: false, pages: Vec::new(), remove_folder: None };
+    let mut ui = Ui { package, uninstall, desktop: false, done: false, failed: false, pages: Vec::new(), remove_folder: None };
     let code = if silent {
         match ui.work() {
             Ok(()) => 0,
@@ -99,13 +99,17 @@ pub extern "C" fn tessel_setup_main() -> i32 {
         }
     } else {
         let first = ui.first_page();
-        match ui.run(first) {
-            OPEN => {
-                let _ = std::process::Command::new(ui.package.install_dir().join(&ui.package.exe)).spawn();
-                0
-            }
-            _ if ui.done => 0,
-            _ => 2,
+        // (The dialog's callback changes `ui` while it's open.)
+        let button = unsafe { Ui::run(&mut ui, first) };
+        if button == OPEN {
+            let _ = std::process::Command::new(ui.package.install_dir().join(&ui.package.exe)).spawn();
+        }
+        if ui.done {
+            0
+        } else if ui.failed {
+            1
+        } else {
+            2
         }
     };
     if let Some(folder) = ui.remove_folder.take() {
@@ -297,8 +301,9 @@ struct Ui {
     uninstall: bool,
     /// Whether "Add a shortcut to the desktop" is ticked.
     desktop: bool,
-    /// Whether the work is done.
+    /// Whether the work is done, or failed.
     done: bool,
+    failed: bool,
     /// The pages shown, kept until the dialog closes (it reads their text,
     /// which stays where it is when a page moves).
     pages: Vec<Page>,
@@ -354,10 +359,11 @@ impl Ui {
         page
     }
 
-    /// Shows `page` (and the pages after it). Returns the button that closed it.
-    fn run(&mut self, mut page: Page) -> i32 {
-        let config = page.config(self as *mut Ui as isize);
-        self.pages.push(page);
+    /// Shows `page` (and the pages after it). Returns the button that closed
+    /// it. The dialog's callback has `ui` meanwhile.
+    unsafe fn run(ui: *mut Ui, mut page: Page) -> i32 {
+        let config = page.config(ui as isize);
+        unsafe { (*ui).pages.push(page) };
         let mut button = 0;
         unsafe {
             let _ = TaskDialogIndirect(&config, Some(&mut button), None, None);
@@ -395,6 +401,7 @@ unsafe extern "system" fn callback(hwnd: HWND, msg: TASKDIALOG_NOTIFICATIONS, wp
         let next = match ui.work() {
             Ok(()) => ui.done_page(),
             Err(e) => {
+                ui.failed = true;
                 let what = if ui.uninstall { "removed" } else { "installed" };
                 Page::error(&format!("{} couldn't be {what}", ui.package.name), &e)
             }
