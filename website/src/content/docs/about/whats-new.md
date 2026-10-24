@@ -11,6 +11,20 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.13.0
+
+*October 24, 2026*
+
+- **An installer for your Windows app.** `tessel build --bundle` for
+  Windows (on Windows, or with `--windows` on a Mac) makes
+  `<Name> Setup.exe` with the app inside. It installs for the person who
+  runs it, with no administrator prompt. It adds a Start menu shortcut
+  (and a desktop one if they tick the box), lists the app in Settings so
+  it can be removed there, and opens the app's document types. Running a
+  newer installer updates the app, even while it's open. `/S` installs
+  without asking. See
+  [The installer of a Windows app](/start/cli/#the-installer-of-a-windows-app).
+
 ## 0.12.0
 
 *October 22, 2026*
