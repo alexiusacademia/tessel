@@ -11,6 +11,22 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.16.2
+
+*October 26, 2026*
+
+Fixed:
+
+- In a [headless run](/ui/testing/), `now()` follows the script's clock:
+  it starts at the real time and moves with `wait`, so a timer sees the
+  time it came due at. A loop that waits for `now()` to change never ends
+  there; use `after` instead.
+- On macOS, bold and italic monospaced text is drawn bold and italic
+  (it was drawn regular).
+- On macOS, Chinese, Japanese and other characters a font lacks no
+  longer push a line of monospaced text down: a line's height and
+  baseline come from the fonts the text asks for.
+
 ## 0.16.1
 
 *October 25, 2026*
