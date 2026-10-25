@@ -1,6 +1,6 @@
 ---
 title: Built with Tessel
-description: Desktop apps written in Tessel, a spreadsheet, a word processor and engineering apps among them.
+description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler and engineering apps among them.
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
@@ -11,6 +11,7 @@ import slope from '../../assets/showcase/slope.jpg';
 import flume from '../../assets/showcase/flume.webp';
 import forebay from '../../assets/showcase/forebay.jpg';
 import girder from '../../assets/showcase/girder.jpg';
+import keystone from '../../assets/showcase/keystone.jpg';
 import ide from '../../assets/screens/ide.png';
 
 Tessel is made for real desktop apps, and the best proof is apps people use.
@@ -54,6 +55,27 @@ drawing them, is done on a [`Canvas`](/ui/drawing/); a keystroke in a 300-page
 document takes a few milliseconds.
 
 <LinkButton href="https://quill.syncster.dev/" icon="external">quill.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={keystone} loading="eager" alt="Keystone showing a house build's Gantt chart with the S-curve of its cost below" />
+
+## Keystone
+
+A project scheduler with Microsoft Project's scope: tasks and outlines, all
+four kinds of link with lags, calendars, the critical path, resources with
+leveling, costs, baselines, progress and earned value, and the Gantt chart,
+network diagram, resource, usage, calendar, timeline, S-curve and report
+views. Type a plan as an indented outline, drag bars to move and link tasks
+while the critical path follows, and branch the plan to compare what-ifs.
+
+About 73,000 lines of Tessel. The scheduler, the leveling, and the readers and
+writers for Microsoft Project XML, Primavera P6 XER and Excel are Tessel code;
+it schedules 2,000 tasks in about 10 ms.
+
+<LinkButton href="https://keystone.syncster.dev/" icon="external">keystone.syncster.dev</LinkButton>
 
 </section>
 
