@@ -65,6 +65,8 @@ macOS (Apple silicon):
 curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
 ```
 
+or with Homebrew: `brew install alexiusacademia/tessel/tessel`.
+
 Windows (PowerShell):
 
 ```powershell

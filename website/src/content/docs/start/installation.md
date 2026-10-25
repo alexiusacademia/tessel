@@ -20,6 +20,16 @@ This installs Tessel into `~/.tessel/bin` and adds that folder to your
 
 Tessel runs on Macs with Apple silicon (M1 or later), macOS 11 or newer.
 
+### With Homebrew
+
+```sh
+brew install alexiusacademia/tessel/tessel
+```
+
+`brew upgrade tessel` updates it, and so does `tessel update` (which runs
+Homebrew). Homebrew has only the latest version; a project can still use
+another with [`tessel pin`](/start/cli/#tessel-pin).
+
 ## Windows
 
 In PowerShell:

@@ -133,9 +133,11 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
         None => latest()?,
     };
     let newer = parse_version(&target) > parse_version(&current);
+    let brew = homebrew();
     if check {
         if newer {
-            println!("Tessel {target} is available (you have {current}). Run `tessel update` to install it.");
+            let how = if brew.is_some() { "brew upgrade tessel" } else { "tessel update" };
+            println!("Tessel {target} is available (you have {current}). Run `{how}` to install it.");
         } else {
             println!("Tessel {current} is up to date.");
         }
@@ -147,6 +149,23 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
     }
     if wanted.is_none() && !newer {
         println!("Tessel {current} is newer than the latest release ({target}); nothing to do.");
+        return Ok(());
+    }
+
+    // Homebrew's Tessel is updated by Homebrew, to the latest version only.
+    if let Some(brew) = brew {
+        if wanted.is_some() {
+            return Err("this Tessel was installed with Homebrew, which has only the latest version; \
+                 `tessel pin` uses another version in a project"
+                .into());
+        }
+        println!("Updating Tessel {current} → {target} with Homebrew");
+        for args in [&["update", "--quiet"][..], &["upgrade", "alexiusacademia/tessel/tessel"][..]] {
+            let ok = Command::new(&brew).args(args).status().map_err(|e| format!("can't run {}: {e}", brew.display()))?;
+            if !ok.success() {
+                return Err(format!("`brew {}` failed", args.join(" ")));
+            }
+        }
         return Ok(());
     }
 
@@ -289,6 +308,17 @@ fn writable(dir: &Path, e: std::io::Error) -> String {
 }
 
 /// The folder this `tessel` is installed in.
+/// `brew`, when this Tessel was installed with Homebrew (it's in a
+/// `Cellar/tessel/<version>` folder, under Homebrew's prefix).
+fn homebrew() -> Option<PathBuf> {
+    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).ok()?;
+    let at = exe.ancestors().find(|a| a.file_name().is_some_and(|n| n == "Cellar"))?;
+    if !exe.strip_prefix(at).ok()?.starts_with("tessel") {
+        return None;
+    }
+    Some(at.parent()?.join("bin").join("brew")).filter(|b| b.is_file())
+}
+
 fn install_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| format!("can't find tessel itself: {e}"))?;
     let dir = exe.parent().ok_or("can't find tessel's folder")?.to_path_buf();
