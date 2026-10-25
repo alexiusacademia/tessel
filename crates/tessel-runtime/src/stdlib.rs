@@ -302,10 +302,37 @@ pub extern "C" fn tsl_random_float() -> f64 {
 
 // ===== dates and time =====
 
-/// `now()`: seconds since 1 January 1970 (UTC), with fractions.
+/// In a headless run (a test script), its clock: the time it started at
+/// (`f64` bits; 0 when there's no script), and how far `wait` has moved it.
+static SCRIPT_START: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SCRIPT_MOVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn system_now() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+/// A test script's clock starts now, and stands still until it's moved.
+pub(crate) fn start_script_clock() {
+    use std::sync::atomic::Ordering::Relaxed;
+    SCRIPT_START.store(system_now().to_bits(), Relaxed);
+    SCRIPT_MOVED.store(0f64.to_bits(), Relaxed);
+}
+
+/// A test script's clock has moved to `seconds` after it started.
+pub(crate) fn move_script_clock(seconds: f64) {
+    SCRIPT_MOVED.store(seconds.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `now()`: seconds since 1 January 1970 (UTC), with fractions. In a
+/// headless run, the script's clock, which only `wait` moves (as timers
+/// see it).
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_now() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+    use std::sync::atomic::Ordering::Relaxed;
+    match SCRIPT_START.load(Relaxed) {
+        0 => system_now(),
+        start => f64::from_bits(start) + f64::from_bits(SCRIPT_MOVED.load(Relaxed)),
+    }
 }
 
 // (Calendar dates and time zones are in `dates.rs`.)

@@ -191,6 +191,13 @@ forward by two seconds and runs every `after` and `every` timer that comes
 due, in order (including timers those timers start). So a test of a
 10-second countdown finishes instantly.
 
+`now()` reads the same clock: it starts at the real time when the script
+starts, and moves only with `wait`, so each timer sees the time it came due
+at. Code that works out how far along something is from `now()`, like an
+animation of its own, is tested the same way as one that counts timer
+ticks. (A loop that waits for `now()` to move never ends in a headless run;
+use `after` instead.)
+
 `wait` also first lets any running `fetch`, `request`, `download`,
 `runCommand` and `background` calls finish and delivers their callbacks. Use
 `wait 0` after starting one to wait for its result, without moving the

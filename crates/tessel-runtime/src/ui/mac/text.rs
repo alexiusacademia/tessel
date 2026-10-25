@@ -33,6 +33,29 @@ struct Span {
     color: Option<Rgba>,
 }
 
+/// The ascent, descent and leading of a line from `start` to `end` (UTF-16
+/// units): the largest of the fonts asked for in it, the spans' and (where
+/// they don't cover it) the base font's.
+fn asked_metrics(start: usize, end: usize, base: CTFontRef, spans: &[(usize, usize, CTFontRef)]) -> (f64, f64, f64) {
+    let metrics = |f: CTFontRef| unsafe { (CTFontGetAscent(f), CTFontGetDescent(f), CTFontGetLeading(f)) };
+    let mut over: Vec<(usize, usize, CTFontRef)> =
+        spans.iter().filter(|(from, to, _)| *from < end.max(start + 1) && *to > start).copied().collect();
+    over.sort_by_key(|s| s.0);
+    // Whether the spans cover the whole line.
+    let mut reach = start;
+    for (from, to, _) in &over {
+        if *from > reach {
+            break;
+        }
+        reach = reach.max(*to);
+    }
+    let mut fonts: Vec<CTFontRef> = over.iter().map(|s| s.2).collect();
+    if reach < end || over.is_empty() {
+        fonts.push(base);
+    }
+    fonts.into_iter().map(metrics).fold((0.0, 0.0, 0.0), |a, m| (a.0.max(m.0), a.1.max(m.1), a.2.max(m.2)))
+}
+
 /// How tall lines are.
 #[derive(Clone, Copy)]
 enum LineHeight {
@@ -106,6 +129,16 @@ impl TextEngine {
             }
             let kind = if f.family == Family::Mono { kCTFontUIFontUserFixedPitch } else { kCTFontUIFontSystem };
             let mut font = Owned(CTFontCreateUIFontForLanguage(kind, f.size, std::ptr::null()));
+            // The monospaced font (Menlo) in its weight, by its family: a copy
+            // of its description with another weight keeps its regular face.
+            if f.family == Family::Mono && (f.weight != 400.0 || f.italic) {
+                let family = Owned::new(CTFontCopyFamilyName(font.get())).map(|n| string_of(n.get()));
+                if let Some(styled) = family.and_then(|name| named(&name, f)) {
+                    let r = styled.get();
+                    self.fonts.insert(f.key(), styled);
+                    return r;
+                }
+            }
             if f.weight != 400.0 {
                 let w = cfnumber_f64(weight_trait(f.weight));
                 let traits = cfdict(&[(kCTFontWeightTrait, w.get())]);
@@ -220,6 +253,13 @@ impl TextEngine {
 
             let size = font.size;
             let (fa, fd, fl) = (CTFontGetAscent(base_font), CTFontGetDescent(base_font), CTFontGetLeading(base_font));
+            // The spans with fonts of their own, in UTF-16 units.
+            let font_spans: Vec<(usize, usize, CTFontRef)> = spans
+                .iter()
+                .zip(&span_fonts)
+                .filter_map(|(sp, f)| Some((unit(sp.range.start), unit(sp.range.end), (*f)?)))
+                .filter(|(from, to, _)| to > from)
+                .collect();
             let mut measured = Vec::new();
             let mut widest: f64 = 0.0;
             let mut advance: f64 = 0.0;
@@ -228,6 +268,11 @@ impl TextEngine {
                 let (mut visible, mut full) = (0.0, 0.0);
                 if let Some(l) = line {
                     let w = CTLineGetTypographicBounds(l.get(), &mut asc, &mut desc, &mut lead);
+                    // The line is as tall as the fonts the text asks for, not
+                    // the ones Core Text draws some characters with instead
+                    // (Menlo's for Chinese, with a taller ascent and leading,
+                    // put such a line lower than one without them).
+                    (asc, desc, lead) = asked_metrics(*start, *start + *count, base_font, &font_spans);
                     visible = (w - CTLineGetTrailingWhitespaceWidth(l.get())).max(0.0);
                     full = w;
                     advance = advance.max(w);
@@ -669,4 +714,35 @@ pub fn styles(name: &str) -> Vec<crate::ui::text::FontStyle> {
     }
     out.sort_by(|a, b| a.weight.total_cmp(&b.weight).then(a.italic.cmp(&b.italic)));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::text::Face;
+
+    /// The monospaced font in bold is its bold face (issue #43).
+    #[test]
+    fn monospaced_bold_is_bold() {
+        unsafe extern "C" {
+            fn CTFontCopyPostScriptName(font: CTFontRef) -> CFStringRef;
+        }
+        let mut e = TextEngine::new();
+        let font = e.font(Font { family: Family::Mono, size: 13.0, weight: 700.0, italic: false });
+        let name = Owned::new(unsafe { CTFontCopyPostScriptName(font) } as CFTypeRef).map(|n| string_of(n.get() as CFStringRef));
+        assert!(name.as_deref().is_some_and(|n| n.contains("Bold")), "{name:?}");
+    }
+
+    /// Chinese characters drawn with another font than Menlo don't move
+    /// the monospaced line's baseline (issue #39).
+    #[test]
+    fn fallback_fonts_keep_the_baseline() {
+        let mut e = TextEngine::new();
+        let mono = Face { family: Family::Mono, ..Face::default() };
+        let black = crate::ui::Rgba([0, 0, 0, 255]);
+        let latin = e.styled("Wall", 16.0, 400.0, mono, black, None, 0);
+        let cjk = e.styled("日本の基礎", 16.0, 400.0, mono, black, None, 0);
+        assert_eq!(latin.shaped.lines[0].baseline, cjk.shaped.lines[0].baseline);
+        assert_eq!(latin.height, cjk.height);
+    }
 }

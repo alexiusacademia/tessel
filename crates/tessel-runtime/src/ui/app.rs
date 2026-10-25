@@ -193,6 +193,13 @@ pub(super) fn wake_for_media() {
     }
 }
 
+/// Moves a headless run's clock to `t` seconds after it started: the
+/// timers' clock, and `now()`'s.
+fn set_script_clock(t: f64) {
+    CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(t));
+    crate::stdlib::move_script_clock(t);
+}
+
 fn now() -> f64 {
     CLOCK.with(|c| match &*c.borrow() {
         Clock::Real(start) => start.elapsed().as_secs_f64(),
@@ -5519,7 +5526,8 @@ fn run_script(app: App, script: &str) -> i32 {
 }
 
 fn script_steps(app: &mut App, script: &str) -> i32 {
-    CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(0.0));
+    set_script_clock(0.0);
+    crate::stdlib::start_script_clock();
     let mut offscreen: Option<super::backend::Offscreen> = None;
     let mut commands: Vec<String> = Vec::new();
     for cmd in script.split([';', '\n']).map(str::trim).filter(|c| !c.is_empty()) {
@@ -5978,13 +5986,13 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let end = now() + secs;
                 // Step through timers in order, so ones they add also fire.
                 while let Some(t) = next_timer().filter(|t| *t <= end) {
-                    CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(t));
+                    set_script_clock(t);
                     if fire_timers() {
                         app.dirty = true;
                         app.update();
                     }
                 }
-                CLOCK.with(|c| *c.borrow_mut() = Clock::Virtual(end));
+                set_script_clock(end);
                 app.tip_due();
             }
             "menu" => {

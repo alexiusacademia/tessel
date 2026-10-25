@@ -1,0 +1,20 @@
+// In a headless run, now() reads the script's clock, which only `wait`
+// moves, as the timers do.
+
+app Clock {
+    state started = 0.0
+    state ticks = 0
+    state seen: [Float] = []
+
+    VStack {
+        Text("{now() - started} s, {ticks} ticks")
+        Text("seen {seen}")
+    }
+    .onAppear {
+        started = now()
+        every(seconds: 0.25) {
+            ticks += 1
+            seen.append(now() - started)
+        }
+    }
+}

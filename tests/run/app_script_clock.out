@@ -1,0 +1,15 @@
+Root
+  View
+    VStack
+      Text "0.0 s, 0 ticks"
+      Text "seen []"
+Root
+  View
+    VStack
+      Text "1.0 s, 4 ticks"
+      Text "seen [0.25, 0.5, 0.75, 1.0]"
+Root
+  View
+    VStack
+      Text "1.5 s, 6 ticks"
+      Text "seen [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]"
