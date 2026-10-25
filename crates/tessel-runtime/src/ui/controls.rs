@@ -321,7 +321,7 @@ fn build_palette(b: &mut Builder) {
         n.mods.font_size = Some(12.0);
         n.mods.color = Some(super::theme::theme().colors[super::theme::SECONDARY]);
     }
-    b.leaf(Kind::TextField { placeholder: "Hex".into(), text: Callback::new(hex_text as *const c_void, std::ptr::null_mut()), secure: false, lines: 1 });
+    b.leaf(Kind::TextField { placeholder: "Hex".into(), text: Callback::new(hex_text as *const c_void, std::ptr::null_mut()), secure: false, lines: 1, search: false });
     if let Some(n) = b.last() {
         n.mods.width = Some(120.0);
         n.mods.autofocus = FOCUS_HEX.replace(false);
@@ -362,12 +362,23 @@ const FIRST_ROWS: usize = 0;
 /// shows, each with `f(env, i)` (the closure is the runtime's).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_lazy(count: i64, row_height: f64, f: *const c_void, env: *mut Header) {
+    lazy(count, row_height, f, env, false);
+}
+
+/// `LazyHStack(count:columnWidth:) { i in … }`: like a `LazyVStack`, with
+/// columns side by side.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_lazy_across(count: i64, width: f64, f: *const c_void, env: *mut Header) {
+    lazy(count, width, f, env, true);
+}
+
+fn lazy(count: i64, row_height: f64, f: *const c_void, env: *mut Header, across: bool) {
     let rows = Callback::new(f, env);
     let count = count.max(0) as usize;
     let row_height = if row_height.is_finite() { row_height.max(1.0) } else { 20.0 };
     let mut key = None;
     with_builder(|b| {
-        b.begin(Kind::Lazy { count, row_height, first: 0 }, 0);
+        b.begin(Kind::Lazy { count, row_height, first: 0, across }, 0);
         key = Some(b.parent().key);
     });
     // (Not in a build: nothing to do.)
@@ -384,7 +395,8 @@ pub unsafe extern "C" fn tsl_ui_lazy(count: i64, row_height: f64, f: *const c_vo
         // Each row is known by its number, so it keeps its state as the list scrolls.
         with_builder(|b| {
             b.pending_id = Some(i as u64);
-            b.begin(Kind::VStack(0.0, 0), 0);
+            // (A column's views are centered across it.)
+            b.begin(Kind::VStack(0.0, across as u8), 0);
         });
         rows.call_with_int(i as i64);
         with_builder(|b| b.end());

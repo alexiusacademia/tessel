@@ -1,0 +1,60 @@
+Root [0,0 420x400]
+  View [0,84 420x232]
+    VStack [0,84 420x232]
+      Grid 2 columns [16,100 388x176]
+        GridRow [16,100 388x28]
+          Text "Name" [68,106 38x16]
+          TextField "" = "Ada" [114,100 290x28]
+        GridRow [16,138 388x28]
+          Text "Email address" [16,144 90x16]
+          TextField "" = "" [114,138 290x28]
+        Divider [16,177 388x1]
+        GridRow [16,188 388x61]
+          Text "Size" [79,210 27x16]
+          Picker radio [114,188 74x61]
+            Text "Small" [136,188 35x16]
+            Text "Medium" [136,210 52x16]
+            Text "Large" [136,233 37x16]
+        GridRow [16,259 388x16]
+          Text "A note across both columns, which is long enough to wrap onto more lines." shows "A note across both columns, which is long enough to wrap…" [16,259 387x16]
+      Text "Size: medium" [16,284 87x16]
+Root
+  View
+    VStack
+      Grid 2 columns
+        GridRow
+          Text "Name"
+          TextField "" = "Ada"
+        GridRow
+          Text "Email address"
+          TextField "" = ""
+        Divider
+        GridRow
+          Text "Size"
+          Picker radio
+            Text "Small"
+            Text "Medium"
+            Text "Large"
+        GridRow
+          Text "A note across both columns, which is long enough to wrap onto more lines." shows "A note across both columns, which is long enough to wrap…"
+      Text "Size: large"
+Root
+  View
+    VStack
+      Grid 2 columns
+        GridRow
+          Text "Name"
+          TextField "" = "Ada"
+        GridRow
+          Text "Email address"
+          TextField "" = ""
+        Divider
+        GridRow
+          Text "Size"
+          Picker radio
+            Text "Small"
+            Text "Medium"
+            Text "Large"
+        GridRow
+          Text "A note across both columns, which is long enough to wrap onto more lines." shows "A note across both columns, which is long enough to wrap…"
+      Text "Size: small"

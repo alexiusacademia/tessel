@@ -1,0 +1,31 @@
+// Table cells edited in place: a double click (or Enter on a row) shows a
+// text field; Enter or a click elsewhere keeps what's typed, Escape drops
+// it, and Tab goes on to the next cell that's edited.
+
+struct Person {
+    name: String
+    age: Int
+}
+
+app People(width: 420, height: 260) {
+    state people = [Person(name: "Ada", age: 36), Person(name: "Alan", age: 41), Person(name: "Grace", age: 85)]
+    state selection: [Int] = []
+
+    VStack {
+        Table(rows: people.count, selection: selection) {
+            TableColumn("Name", onEdit: { i, text in people[i].name = text }) { i in
+                Text(people[i].name)
+            }
+            TableColumn("Age", width: 80, onEdit: { i, text in
+                if let n = parseInt(text).value() {
+                    people[i].age = n
+                }
+            }) { i in
+                Text("{people[i].age}")
+            }
+            TableColumn("Note") { i in Text("row {i}") }
+        }
+        Text(people.map { p in "{p.name} {p.age}" }.joined(separator: ", "))
+    }
+    .padding(12)
+}

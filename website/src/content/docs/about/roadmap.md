@@ -28,8 +28,10 @@ its first releases came so quickly. The dates on
   been tried only on an emulator; there an app can read the phone's
   location, satellites and compass. There's no Linux or iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
-  `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`, scrolling
-  either or both ways (and from code), split views,
+  `Text` (selectable, or cut short), `Button`, `TextField`, `SearchField`,
+  `Link`, `Toggle`, `Picker` (segments or radio buttons), `TabView`, grids,
+  scrolling either or both ways (and from code), split views, a rich text
+  editor, tables with cells edited in place,
   `CodeEditor` with syntax colors, `Table` and `Tree`, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
   and pressed states, and the layout and styling modifiers. Every control

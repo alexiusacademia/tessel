@@ -764,6 +764,252 @@ view DatePicker(date: bind Float, format: String = "d MMM yyyy", firstWeekday: I
     }
 }
 
+// ---- Rich text ----
+
+/// A stretch of a `RichText` in a style of its own: the characters from
+/// `start` up to `end` (counted as `String.count` counts them). A `size` of
+/// 0, the color `.primary` and the font `""` are the editor's own.
+struct TextRun {
+    start: Int
+    end: Int
+    bold: Bool = false
+    italic: Bool = false
+    underline: Bool = false
+    strikethrough: Bool = false
+    size: Float = 0.0
+    color: Color = .primary
+    font: String = ""
+}
+
+/// Text with stretches in styles of their own, as a `RichTextEditor`
+/// edits it: `RichText("Hello")`. Where runs overlap, the later one's style
+/// is the one that counts.
+struct RichText {
+    text: String
+    runs: [TextRun] = []
+
+    /// The text in Markdown: bold, italic and struck-through stretches
+    /// (the other styles have no Markdown).
+    markdown: String {
+        let chars = text.characters
+        var marks: [Int] = []
+        for _ in 0..chars.count {
+            marks.append(0)
+        }
+        for r in runs {
+            var bits = 0
+            if r.bold {
+                bits = bits | 1
+            }
+            if r.italic {
+                bits = bits | 2
+            }
+            if r.strikethrough {
+                bits = bits | 4
+            }
+            for i in max(r.start, 0)..min(r.end, chars.count) {
+                marks[i] = bits
+            }
+        }
+        var out = ""
+        // The marks open, in the order they were opened.
+        var open: [Int] = []
+        // Closes the marks open that `keep` hasn't (and opens again those
+        // closed on the way that it has).
+        fn close(keep: Int) {
+            var again: [Int] = []
+            while open.any(where: { m in (keep & m) == 0 }) {
+                let m = open.removeLast()
+                out += __markdownMark(m)
+                if (keep & m) != 0 {
+                    again.insert(m, at: 0)
+                }
+            }
+            for m in again {
+                out += __markdownMark(m)
+                open.append(m)
+            }
+        }
+        var i = 0
+        while i < chars.count {
+            if chars[i] == "\n" {
+                close(keep: 0)
+                out += "\n"
+                i += 1
+                continue
+            }
+            // A stretch in one style, on one line: its spaces at each end
+            // stay outside its marks.
+            var j = i
+            while j < chars.count && marks[j] == marks[i] && chars[j] != "\n" {
+                j += 1
+            }
+            var a = i
+            while a < j && chars[a].trim() == "" {
+                a += 1
+            }
+            var b = j
+            while b > a && chars[b - 1].trim() == "" {
+                b -= 1
+            }
+            if a < b {
+                close(keep: marks[i])
+            }
+            for k in i..a {
+                out += chars[k]
+            }
+            if a < b {
+                for m in [1, 2, 4] {
+                    if (marks[i] & m) != 0 && !open.contains(m) {
+                        out += __markdownMark(m)
+                        open.append(m)
+                    }
+                }
+                for k in a..b {
+                    let c = chars[k]
+                    if c == "*" || c == "_" || c == "~" || c == "`" || c == "\\" || c == "[" || c == "]" {
+                        out += "\\"
+                    }
+                    out += c
+                }
+                // Marks the next stretch hasn't close before these spaces.
+                let next = if j < chars.count && chars[j] != "\n" { marks[j] } else { 0 }
+                close(keep: next)
+            }
+            for k in b..j {
+                out += chars[k]
+            }
+            i = j
+        }
+        close(keep: 0)
+        out
+    }
+
+    /// A `RichText` from Markdown's `**bold**`, `*italic*` (or `_italic_`)
+    /// and `~~struck through~~`; `\*` is a star itself.
+    static fn fromMarkdown(_ markdown: String) -> RichText {
+        let chars = markdown.characters
+        var text = ""
+        var runs: [TextRun] = []
+        var bits = 0
+        var start = 0
+        var count = 0
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            let next = if i + 1 < chars.count { chars[i + 1] } else { "" }
+            let before = if i > 0 { chars[i - 1] } else { " " }
+            // Which mark this is, if it's one: 1 bold, 2 italic, 4 struck through.
+            var mark = 0
+            var length = 1
+            if c == "\\" && next != "" {
+                text += next
+                count += 1
+                i += 2
+                continue
+            }
+            if (c == "*" && next == "*") || (c == "~" && next == "~") {
+                mark = if c == "*" { 1 } else { 4 }
+                length = 2
+            } else if c == "*" || c == "_" {
+                mark = 2
+            }
+            let after = if i + length < chars.count { chars[i + length] } else { " " }
+            // A mark opens before text, and closes after it.
+            let opens = mark != 0 && (bits & mark) == 0 && after.trim() != ""
+            let closes = mark != 0 && (bits & mark) != 0 && before.trim() != ""
+            if opens || closes {
+                if count > start && bits != 0 {
+                    runs.append(TextRun(start: start, end: count, bold: (bits & 1) != 0, italic: (bits & 2) != 0, strikethrough: (bits & 4) != 0))
+                }
+                bits = bits ^ mark
+                start = count
+                i += length
+                continue
+            }
+            text += c
+            count += 1
+            i += 1
+        }
+        if count > start && bits != 0 {
+            runs.append(TextRun(start: start, end: count, bold: (bits & 1) != 0, italic: (bits & 2) != 0, strikethrough: (bits & 4) != 0))
+        }
+        RichText(text: text, runs: runs)
+    }
+}
+
+// The Markdown of a mark: 1 bold, 2 italic, 4 struck through.
+fn __markdownMark(_ mark: Int) -> String {
+    if mark == 1 { "**" } else if mark == 2 { "*" } else { "~~" }
+}
+
+// `RichTextEditor(text: doc)`: a field to write in with styles: bold,
+// italic, underline, strikethrough, sizes, colors and fonts, with a bar of
+// buttons for them above it (unless `toolbar: false`). Cmd+B, Cmd+I and
+// Cmd+U (Ctrl on Windows) work either way.
+view RichTextEditor(text: bind RichText, toolbar: Bool = true, onChange: fn() = {}) {
+    state id = __richId()
+    state color = Color.primary
+    state family = ""
+    let marks = __richMarks(id)
+
+    VStack(spacing: 6) {
+        if toolbar {
+            HStack(spacing: 2) {
+                __RichMark(label: "B", name: "Bold", on: (marks & 1) != 0, weight: .bold, action: { __richApply(id, "bold") })
+                __RichMark(label: "I", name: "Italic", on: (marks & 2) != 0, italic: true, action: { __richApply(id, "italic") })
+                __RichMark(label: "U", name: "Underline", on: (marks & 4) != 0, action: { __richApply(id, "underline") })
+                __RichMark(label: "S", name: "Strikethrough", on: (marks & 8) != 0, action: { __richApply(id, "strikethrough") })
+                Divider().frame(height: 18).padding(horizontal: 4)
+                __RichMark(label: "A−", name: "Smaller", on: false, action: { __richApply(id, "smaller") })
+                __RichMark(label: "A+", name: "Bigger", on: false, action: { __richApply(id, "bigger") })
+                Divider().frame(height: 18).padding(horizontal: 4)
+                ColorPicker(color: color, onChange: { __richApply(id, "color:" + toJson(color)) })
+                FontPicker(family: family, onChange: { __richApply(id, "font:" + family) })
+                Spacer()
+                __RichMark(label: "Plain", name: "Plain text", on: false, action: { __richApply(id, "plain") })
+            }
+        }
+        __RichEditor(id: id, json: toJson(text), onChange: { json in
+            let changed: RichText? = fromJson(json)
+            if let t = changed {
+                text = t
+                onChange()
+            }
+        })
+    }
+}
+
+view __RichMark(label: String, name: String, on: Bool, weight: Weight = .regular, italic: Bool = false, action: fn()) {
+    Text(label)
+        .font(weight: weight, italic: italic)
+        .padding(horizontal: 7)
+        .frame(height: 26, minWidth: 28)
+        .background(if on { .separator } else { .clear }, radius: 5)
+        .hoverBackground(.separator, radius: 5)
+        .tooltip(name)
+        .accessibilityLabel(name)
+        .onTap { action() }
+}
+
+// ---- Links ----
+
+// `Link("Tessel", url: "https://…")`: text in the accent color that opens a
+// web page (or a file, or an email with `mailto:`) when it's clicked. With
+// `action:`, it runs that too (or instead, without `url`).
+view Link(_ title: String, url: String = "", action: fn() = {}) {
+    Text(title)
+        .color(.blue)
+        .cursor(.hand)
+        .accessibilityLabel(title)
+        .onTap {
+            if url != "" {
+                openURL(url)
+            }
+            action()
+        }
+}
+
 // ---- Views for sheets and forms ----
 
 // `TextPrompt("Rename", text: name)`: a question with a text field, for a

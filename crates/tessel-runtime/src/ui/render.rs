@@ -201,7 +201,7 @@ pub fn scroll_bars(n: &Node, ui: &Interaction) -> (Option<Bar>, Option<Bar>) {
             };
             (side, bottom)
         }
-        Kind::TextField { lines: 2.., .. } => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
+        Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. } => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
         Kind::CodeEditor { .. } => {
             let code = Rect { x: content.x + n.layout.gutter, w: (content.w - n.layout.gutter).max(0.0), ..content };
             let across = ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
@@ -534,6 +534,12 @@ impl Painter<'_> {
             Kind::Text(_) => {
                 if let Some(t) = &n.layout.text {
                     let c = n.layout.content;
+                    // Text that's selectable shows what's selected of it.
+                    if let Some(e) = self.ui.shown_editing(n.key) {
+                        for r in t.selection(e.range()) {
+                            self.fill(Rect { x: c.x + r.x0, y: c.y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 }, 2.0, theme().selection);
+                        }
+                    }
                     self.text(t, c.x, c.y, None);
                 }
             }
@@ -558,11 +564,30 @@ impl Painter<'_> {
                 } else {
                     self.stroke(content, 6.0, 1.0, theme().field_border);
                 }
+                let search = matches!(n.kind, Kind::TextField { search: true, .. });
+                if search {
+                    // The magnifying glass, and the button that clears the text.
+                    let size = 14.0;
+                    let glass = Rect { x: content.x + 8.0, y: content.y + (content.h - size) / 2.0, w: size, h: size };
+                    self.svg("search", glass, theme().colors[theme::SECONDARY]);
+                    if let Some(r) = search_clear(n) {
+                        self.fill(r, r.w / 2.0, theme().colors[theme::SECONDARY]);
+                        let x = 8.0;
+                        self.svg("close", Rect { x: r.x + (r.w - x) / 2.0, y: r.y + (r.h - x) / 2.0, w: x, h: x }, theme().field);
+                    }
+                }
                 if let (Some(t), Some(ph)) = (&n.layout.text, &n.layout.placeholder) {
                     let (x0, y0) = field_origin(n);
                     let line_h = ph.height().max(t.height());
                     let t_scene = self.t();
-                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
+                    // (A search field's text stays between its glass and its button.)
+                    let area = if search {
+                        let left = super::layout::SEARCH_LEFT - 2.0;
+                        Rect { x: content.x + left, y: content.y, w: (content.w - left - super::layout::SEARCH_RIGHT).max(0.0), h: content.h }.inset(2.0)
+                    } else {
+                        content.inset(2.0)
+                    };
+                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(area, 4.0));
                     let scroll = editing.map_or(0.0, |e| e.scroll);
                     // (Several lines scroll down, one line across.)
                     let down = self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
@@ -591,6 +616,56 @@ impl Painter<'_> {
                     self.paint_scroll_bars(n);
                 }
             }
+            Kind::RichEditor { doc, .. } => {
+                let editing = self.ui.shown_editing(n.key);
+                self.fill(content, 6.0, theme().field);
+                if let Some(t) = &n.layout.text {
+                    let (x0, y0) = field_origin(n);
+                    let y0 = y0 - self.ui.scroll.get(&n.key).copied().unwrap_or(0.0);
+                    let t_scene = self.t();
+                    self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(content.inset(2.0), 4.0));
+                    if let Some(e) = &editing {
+                        let (caret, rects) = super::edit::geometry(t, e);
+                        for r in rects {
+                            self.fill(Rect { x: x0 + r.x0, y: y0 + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 }, 2.0, theme().selection);
+                        }
+                        if e.range().is_empty() {
+                            let caret = match caret {
+                                Some(c) => Rect { x: x0 + c.x0, y: y0 + c.y0, w: 1.5, h: c.y1 - c.y0 },
+                                None => Rect { x: x0, y: y0, w: 1.5, h: style.size * 1.2 },
+                            };
+                            self.fill(caret, 0.0, theme().accent);
+                        }
+                    }
+                    self.text(t, x0, y0, None);
+                    // Underlines and lines through, under the runs that have them.
+                    for (range, m) in &doc.runs {
+                        if !(m.underline || m.strike) {
+                            continue;
+                        }
+                        let size = m.size.unwrap_or(style.size);
+                        let color = m.color.as_ref().and_then(super::rich::color_of).unwrap_or(style.color);
+                        let thick = (size / 14.0).max(1.0);
+                        for r in t.selection(range.clone()) {
+                            let w = r.x1 - r.x0;
+                            if m.underline {
+                                self.fill(Rect { x: x0 + r.x0, y: y0 + r.y1 - size * 0.16, w, h: thick }, 0.0, color);
+                            }
+                            if m.strike {
+                                self.fill(Rect { x: x0 + r.x0, y: y0 + r.y1 - size * 0.55, w, h: thick }, 0.0, color);
+                            }
+                        }
+                    }
+                    self.underline_composing(n, t, x0, y0);
+                    self.scene.pop();
+                    self.paint_scroll_bars(n);
+                }
+                if editing.is_some() {
+                    self.stroke(content, 6.0, 2.0, theme().accent);
+                } else {
+                    self.stroke(content, 6.0, 1.0, theme().field_border);
+                }
+            }
             Kind::Toggle { is_on, .. } => {
                 // How far on it's drawn: it slides from one side to the other.
                 let on = self.ui.anim.toggle(n.key, unsafe { *is_on.locate() } & 1 != 0);
@@ -607,7 +682,29 @@ impl Painter<'_> {
                     self.text(label, content.x, content.y + (content.h - label.height()) / 2.0, None);
                 }
             }
-            Kind::Picker { selection } => {
+            Kind::Picker { selection, style: 1 } => {
+                // Radio buttons: a ring, filled with a dot when it's chosen.
+                let current = selection.locate();
+                let size = super::layout::RADIO;
+                for (c, seg) in n.children.iter().zip(&n.layout.segments) {
+                    if c.mods.hidden {
+                        continue;
+                    }
+                    let selected = c.mods.tag.as_ref().is_some_and(|tag| tag.equals(current));
+                    let ring = Rect { x: seg.x, y: seg.y + (seg.h - size) / 2.0, w: size, h: size };
+                    let over = self.ui.pointer.is_some_and(|(x, y)| seg.contains(x, y)) && !style.disabled;
+                    if selected {
+                        self.fill(ring, size / 2.0, theme().accent);
+                        let dot = 6.0;
+                        self.fill(Rect { x: ring.x + (size - dot) / 2.0, y: ring.y + (size - dot) / 2.0, w: dot, h: dot }, dot / 2.0, Rgba([255, 255, 255, 255]));
+                    } else {
+                        self.fill(ring, size / 2.0, if over { theme().control_hover } else { theme().field });
+                        self.stroke(ring, size / 2.0, 1.0, theme().field_border);
+                    }
+                    self.paint(c);
+                }
+            }
+            Kind::Picker { selection, .. } => {
                 self.fill(content, 8.0, theme().control);
                 let current = selection.locate();
                 for (c, seg) in n.children.iter().zip(&n.layout.segments) {
@@ -1043,12 +1140,23 @@ pub fn code_origin(n: &Node) -> (f64, f64) {
 /// several lines has its text at the top; one of one line, in the middle.
 pub fn field_origin(n: &Node) -> (f64, f64) {
     let content = n.layout.rect.inset_by(n.mods.padding);
-    if matches!(n.kind, Kind::TextField { lines: 2.., .. }) {
+    if matches!(n.kind, Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. }) {
         return (content.x + 8.0, content.y + 6.0);
     }
     let line_h = match (&n.layout.text, &n.layout.placeholder) {
         (Some(t), Some(p)) => p.height().max(t.height()),
         _ => 0.0,
     };
-    (content.x + 8.0, content.y + (content.h - line_h) / 2.0)
+    let left = if matches!(n.kind, Kind::TextField { search: true, .. }) { super::layout::SEARCH_LEFT } else { 8.0 };
+    (content.x + left, content.y + (content.h - line_h) / 2.0)
+}
+
+/// A search field's clear button, when it has text to clear.
+pub fn search_clear(n: &Node) -> Option<Rect> {
+    if !matches!(n.kind, Kind::TextField { search: true, .. }) || n.layout.empty {
+        return None;
+    }
+    let c = n.layout.rect.inset_by(n.mods.padding);
+    let size = 14.0;
+    Some(Rect { x: c.x + c.w - super::layout::SEARCH_RIGHT + (super::layout::SEARCH_RIGHT - size) / 2.0 - 2.0, y: c.y + (c.h - size) / 2.0, w: size, h: size })
 }

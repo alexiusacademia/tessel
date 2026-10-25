@@ -1,0 +1,38 @@
+click 400 60
+key home
+key shift+right
+key shift+right
+key shift+right
+key shift+right
+key shift+right
+key cmd+b
+tree
+key end
+type ", again"
+click "I"
+type X
+tree
+click "S"
+type Y
+key left
+key shift+left
+click "A+"
+tree
+key cmd+z
+key cmd+z
+tree
+key cmd+shift+z
+tree
+key home
+key shift+right
+key shift+right
+key shift+right
+click colorpicker 1
+click "#d61f1f"
+tree
+click "Plain"
+tree
+key end
+key enter
+type Line two
+tree

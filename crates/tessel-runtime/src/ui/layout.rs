@@ -94,6 +94,11 @@ pub struct Box {
     pub segments: Vec<Rect>,
     /// For Markdown: what to draw, and where its links are.
     pub markdown: Option<std::rc::Rc<super::markdown::Laid>>,
+    /// For text cut short by its `.lineLimit`: it shows only the start of
+    /// its text, then "…".
+    pub cut: bool,
+    /// For grids: how its columns and rows came out (see `grid`).
+    pub grid: Option<std::rc::Rc<GridSizes>>,
     /// Inherited style, resolved for this node.
     pub style: Style,
 }
@@ -175,11 +180,26 @@ pub struct Style {
     pub animation: f64,
     /// How they move (see `anim::ease`).
     pub curve: u8,
+    /// `.selectable()`: text can be selected and copied.
+    pub selectable: bool,
+    /// `.lineLimit(n)`: the most lines text shows (0 for no limit).
+    pub line_limit: usize,
 }
 
 impl Default for Style {
     fn default() -> Style {
-        Style { size: 14.0, weight: 400.0, face: Default::default(), color: theme().colors[theme::PRIMARY], disabled: false, text_align: 0, animation: 0.0, curve: 0 }
+        Style {
+            size: 14.0,
+            weight: 400.0,
+            face: Default::default(),
+            color: theme().colors[theme::PRIMARY],
+            disabled: false,
+            text_align: 0,
+            animation: 0.0,
+            curve: 0,
+            selectable: false,
+            line_limit: 0,
+        }
     }
 }
 
@@ -191,9 +211,18 @@ enum Axis {
 
 const BUTTON_PAD: (f64, f64) = (14.0, 6.0);
 const FIELD_PAD: (f64, f64) = (8.0, 6.0);
+/// Room before a search field's text (for its magnifying glass), and
+/// after it (for its clear button).
+pub const SEARCH_LEFT: f64 = 26.0;
+pub const SEARCH_RIGHT: f64 = 24.0;
 /// Room kept beside the text of a field of several lines, for its scroll bar.
 const LINES_BAR: f64 = 8.0;
 const SEGMENT_PAD: f64 = 12.0;
+/// A radio button (`Picker(style: .radio)`), the room between it and its
+/// option, and between options.
+pub const RADIO: f64 = 16.0;
+const RADIO_GAP: f64 = 6.0;
+const RADIO_ROWS: f64 = 6.0;
 const SWITCH: Size = Size { w: 38.0, h: 22.0 };
 const GROUP_SPACING: f64 = 8.0;
 /// A `Slider`'s height, and the radius of its knob.
@@ -282,6 +311,8 @@ impl Layouter<'_> {
             text_align: n.mods.text_align.unwrap_or(parent.text_align),
             animation: n.mods.animation.map_or(parent.animation, |a| a.0),
             curve: n.mods.animation.map_or(parent.curve, |a| a.1),
+            selectable: n.mods.selectable.unwrap_or(parent.selectable),
+            line_limit: n.mods.line_limit.unwrap_or(parent.line_limit),
         }
     }
 
@@ -298,6 +329,38 @@ impl Layouter<'_> {
 
     fn text_layout(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
         std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, 0))
+    }
+
+    /// A `RichTextEditor`'s text, wrapped inside a field `w` wide, in the
+    /// editor's style with its runs in theirs (and text being composed in
+    /// place of the selection, in the style typing takes).
+    fn rich_text(&mut self, key: u64, doc: &super::rich::Doc, style: &Style, w: f64) -> std::rc::Rc<super::text::TextLayout> {
+        use super::text::{Family, Styled};
+        let mut shown;
+        let mut doc = doc;
+        if let Some((k, range, composed)) = &self.composing {
+            if *k == key && doc.text.get(range.clone()).is_some() {
+                let marks = super::rich::typing_marks(key, doc, range.clone());
+                shown = doc.clone();
+                shown.replace(range.clone(), composed, &marks);
+                doc = &shown;
+            }
+        }
+        let base = Styled { range: 0..0, family: style.face.family, size: style.size, weight: style.weight, italic: style.face.italic, color: style.color };
+        let runs: Vec<Styled> = doc
+            .runs
+            .iter()
+            .map(|(range, m)| Styled {
+                range: range.clone(),
+                family: m.font.as_deref().map_or(base.family, Family::named),
+                size: m.size.unwrap_or(base.size),
+                weight: if m.bold { base.weight.max(700.0) } else { base.weight },
+                italic: m.italic || base.italic,
+                color: m.color.as_ref().and_then(super::rich::color_of).unwrap_or(base.color),
+            })
+            .collect();
+        let wrap = (w - 2.0 * FIELD_PAD.0 - LINES_BAR).max(1.0);
+        std::rc::Rc::new(self.text.runs(&doc.text, &base, &runs, Some(wrap)))
     }
 
     /// A secure field's text: a dot for each character, laid out so that
@@ -319,9 +382,39 @@ impl Layouter<'_> {
         std::rc::Rc::new(t)
     }
 
-    /// A `Text`'s layout: like `text_layout`, with its lines aligned.
-    fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> std::rc::Rc<super::text::TextLayout> {
-        std::rc::Rc::new(self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, style.text_align))
+    /// A `Text`'s layout: like `text_layout`, with its lines aligned, and
+    /// no more of them than its `.lineLimit` (the last cut short with "…").
+    /// Whether it's cut short.
+    fn text_block(&mut self, s: &str, style: &Style, max_w: Option<f64>) -> (std::rc::Rc<super::text::TextLayout>, bool) {
+        let t = self.text.styled(s, style.size, style.weight, style.face, style.color, max_w, style.text_align);
+        let limit = style.line_limit;
+        if limit == 0 || t.lines.len() <= limit {
+            return (std::rc::Rc::new(t), false);
+        }
+        // The most of the last line that fits with "…" after it.
+        let line = t.lines[limit - 1].range.clone();
+        let ends: Vec<usize> = s[line.clone()].char_indices().map(|(i, _)| line.start + i).chain(std::iter::once(line.end)).collect();
+        let mut lay = |end: usize| {
+            let shown = format!("{}…", s[..end].trim_end());
+            self.text.styled(&shown, style.size, style.weight, style.face, style.color, max_w, style.text_align)
+        };
+        let (mut lo, mut hi) = (0, ends.len() - 1);
+        let mut best = lay(ends[0]);
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            let t = lay(ends[mid]);
+            if t.lines.len() <= limit {
+                lo = mid;
+                best = t;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        if lo == 0 && best.lines.len() > limit {
+            // (Not even "…" fits on the line: what fits of it, cut off.)
+            best.lines.truncate(limit);
+        }
+        (std::rc::Rc::new(best), true)
     }
 
     fn measure(&mut self, n: &mut Node, avail: Size, parent: &Style) -> Size {
@@ -361,9 +454,10 @@ impl Layouter<'_> {
         match &n.kind {
             Kind::Text(s) => {
                 let s = s.clone();
-                let t = self.text_block(&s, style, finite(avail.w));
+                let (t, cut) = self.text_block(&s, style, finite(avail.w));
                 let size = Size { w: t.width(), h: t.height() };
                 n.layout.text = Some(t);
+                n.layout.cut = cut;
                 size
             }
             Kind::Button { label, .. } => {
@@ -389,17 +483,29 @@ impl Layouter<'_> {
                 n.layout.placeholder = Some(ph);
                 Size { w, h: lines as f64 * line_h + 2.0 * FIELD_PAD.1 }
             }
-            Kind::TextField { placeholder, text, secure, .. } => {
+            Kind::TextField { placeholder, text, secure, search, .. } => {
                 let value = self.shown_text(n.key, read_string(text));
-                let (placeholder, secure) = (placeholder.clone(), *secure);
+                let (placeholder, secure, search) = (placeholder.clone(), *secure, *search);
                 let ph = self.text_layout(&placeholder, style, None);
                 let t = if secure { self.masked(&value, style) } else { self.text_layout(&value, style, None) };
                 let line_h = (ph.height()).max(t.height());
-                let w = (t.width().max(ph.width()) + 2.0 * FIELD_PAD.0).max(120.0);
+                let extra = if search { SEARCH_LEFT + SEARCH_RIGHT - 2.0 * FIELD_PAD.0 } else { 0.0 };
+                let w = (t.width().max(ph.width()) + 2.0 * FIELD_PAD.0 + extra).max(120.0);
                 n.layout.empty = value.is_empty();
                 n.layout.text = Some(t);
                 n.layout.placeholder = Some(ph);
                 Size { w: w.min(avail.w.max(60.0)), h: line_h + 2.0 * FIELD_PAD.1 }
+            }
+            Kind::RichEditor { doc, .. } => {
+                // As large as it's let be; its text wraps inside (again when
+                // it's placed) and scrolls.
+                let doc = doc.clone();
+                let w = if avail.w.is_finite() { avail.w.max(80.0) } else { 320.0 };
+                let h = if avail.h.is_finite() { avail.h.max(60.0) } else { 200.0 };
+                let t = self.rich_text(n.key, &doc, style, w);
+                n.layout.content_h = t.height() + 2.0 * FIELD_PAD.1;
+                n.layout.text = Some(t);
+                Size { w, h }
             }
             Kind::Toggle { label, .. } => {
                 if label.is_empty() {
@@ -555,6 +661,22 @@ impl Layouter<'_> {
                 w: if avail.w.is_finite() { avail.w } else { 300.0 },
                 h: if avail.h.is_finite() { avail.h } else { 150.0 },
             },
+            Kind::Picker { style: 1, .. } => {
+                // Radio buttons: an option a line, with its button before it.
+                let room = Size { w: (avail.w - RADIO - RADIO_GAP).max(0.0), h: avail.h };
+                let (mut w, mut h): (f64, f64) = (0.0, 0.0);
+                let mut first = true;
+                for c in &mut n.children {
+                    let s = self.measure(c, room, style);
+                    if c.mods.hidden {
+                        continue;
+                    }
+                    w = w.max(RADIO + RADIO_GAP + s.w);
+                    h += s.h.max(RADIO) + if first { 0.0 } else { RADIO_ROWS };
+                    first = false;
+                }
+                Size { w, h }
+            }
             Kind::Picker { .. } => {
                 let mut w = 0.0;
                 let mut h: f64 = 0.0;
@@ -598,6 +720,15 @@ impl Layouter<'_> {
                     h: header.h + if open { DISCLOSURE_GAP + content.h } else { 0.0 },
                 }
             }
+            Kind::Lazy { count, row_height, across: true, .. } => {
+                // Columns: as tall as the tallest, or the room there is.
+                let (count, width) = (*count, *row_height);
+                let mut h: f64 = 0.0;
+                for c in &mut n.children {
+                    h = h.max(self.measure(c, Size { w: width, h: avail.h }, style).h);
+                }
+                Size { w: count as f64 * width, h: if avail.h.is_finite() { avail.h } else { h } }
+            }
             Kind::Lazy { count, row_height, .. } => {
                 let (count, row_height) = (*count, *row_height);
                 let mut w: f64 = 0.0;
@@ -606,6 +737,8 @@ impl Layouter<'_> {
                 }
                 Size { w: if avail.w.is_finite() { avail.w } else { w }, h: count as f64 * row_height }
             }
+            Kind::Grid { .. } => self.measure_grid(n, avail, style),
+            Kind::GridRow => self.measure_stack(n, GROUP_SPACING, Axis::X, avail, style),
             Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
             Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
@@ -895,6 +1028,24 @@ impl Layouter<'_> {
                     y += c.layout.size.h + GROUP_SPACING;
                 }
             }
+            Kind::Picker { style: 1, .. } => {
+                let mut y = content.y;
+                let mut segments = Vec::new();
+                for c in &mut n.children {
+                    if c.mods.hidden {
+                        self.place(c, Rect { x: content.x, y, w: 0.0, h: 0.0 });
+                        segments.push(Rect::default());
+                        continue;
+                    }
+                    let s = c.layout.size;
+                    let h = s.h.max(RADIO);
+                    let w = s.w.min((content.w - RADIO - RADIO_GAP).max(0.0));
+                    self.place(c, Rect { x: content.x + RADIO + RADIO_GAP, y: y + (h - s.h) / 2.0, w, h: s.h });
+                    segments.push(Rect { x: content.x, y, w: RADIO + RADIO_GAP + w, h });
+                    y += h + RADIO_ROWS;
+                }
+                n.layout.segments = segments;
+            }
             Kind::Picker { .. } => {
                 let mut x = content.x + 2.0;
                 let mut segments = Vec::new();
@@ -984,6 +1135,12 @@ impl Layouter<'_> {
             Kind::TextField { .. } => {
                 // Re-wrap nothing; the field just takes the width it was given.
             }
+            Kind::RichEditor { doc, .. } => {
+                let (doc, style) = (doc.clone(), n.layout.style);
+                let t = self.rich_text(n.key, &doc, &style, content.w);
+                n.layout.content_h = t.height() + 2.0 * FIELD_PAD.1;
+                n.layout.text = Some(t);
+            }
             Kind::ColorPicker { .. } => {
                 // The palette goes below the swatch (above it if there's no
                 // room), inside the window.
@@ -1016,13 +1173,20 @@ impl Layouter<'_> {
                 };
                 self.place_stack(n, DISCLOSURE_GAP, 0, Axis::Y, inner);
             }
-            Kind::Lazy { row_height, first, .. } => {
-                let (row_height, first) = (*row_height, *first);
+            Kind::Lazy { row_height, first, across, .. } => {
+                let (row_height, first, across) = (*row_height, *first, *across);
                 for (i, c) in n.children.iter_mut().enumerate() {
-                    let y = content.y + (first + i) as f64 * row_height;
-                    self.place(c, Rect { x: content.x, y, w: content.w, h: row_height });
+                    let along = (first + i) as f64 * row_height;
+                    let r = if across {
+                        Rect { x: content.x + along, y: content.y, w: row_height, h: content.h }
+                    } else {
+                        Rect { x: content.x, y: content.y + along, w: content.w, h: row_height }
+                    };
+                    self.place(c, r);
                 }
             }
+            Kind::Grid { .. } => self.place_grid(n, content),
+            Kind::GridRow => self.place_stack(n, GROUP_SPACING, 1, Axis::X, content),
             _ => {}
         }
     }
@@ -1063,9 +1227,10 @@ impl Layouter<'_> {
                 if (r.w - c.layout.size.w).abs() > 0.5 {
                     let style = c.layout.style;
                     let s = s.clone();
-                    let t = self.text_block(&s, &style, Some((r.w - c.mods.padding.horizontal()).max(0.0)));
+                    let (t, cut) = self.text_block(&s, &style, Some((r.w - c.mods.padding.horizontal()).max(0.0)));
                     c.layout.natural = Size { w: t.width(), h: t.height() };
                     c.layout.text = Some(t);
+                    c.layout.cut = cut;
                 }
             }
             self.place(c, r);
@@ -1095,9 +1260,15 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
     }
     match &n.kind {
         Kind::Spacer => parent == Some(axis),
+        Kind::Lazy { across: true, .. } => axis == Axis::Y,
         Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } | Kind::Ribbon { .. } => axis == Axis::X,
+        Kind::Grid { .. } => n.children.iter().any(|c| match c.kind {
+            Kind::GridRow => c.children.iter().any(|cell| flex(cell, axis, Some(Axis::X))),
+            _ => flex(c, axis, Some(Axis::Y)),
+        }),
+        Kind::GridRow => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
         Kind::Disclosure { .. } => axis == Axis::X,
-        Kind::Scroll(_) | Kind::Split { .. } | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
+        Kind::Scroll(_) | Kind::Split { .. } | Kind::CodeEditor { .. } | Kind::RichEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
         Kind::TableRow(_) => axis == Axis::X,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),
@@ -1217,4 +1388,218 @@ pub fn split_first(n: &Node, along: f64) -> f64 {
     let (lo, hi) = (min(n.children.first()), along - SPLIT_DIVIDER - min(n.children.get(1)));
     let wanted = if wanted.is_finite() { wanted } else { lo };
     if hi < lo { (along - SPLIT_DIVIDER).max(0.0) / 2.0 } else { wanted.clamp(lo, hi) }
+}
+
+// ===== grids =====
+
+/// How a grid's columns came out when it was measured: each column's least
+/// width (from cells that aren't flexible), and whether it's flexible (it
+/// shares the room left, like a `Spacer`).
+#[derive(Debug, Default)]
+pub struct GridSizes {
+    pub widths: Vec<f64>,
+    pub flexible: Vec<bool>,
+}
+
+/// A grid's rows: for each child, its cells (the cell's place in the row,
+/// the first column it takes and how many), or `None` for a view that's a
+/// row of its own, as wide as the grid. And how many columns there are.
+fn grid_plan(n: &Node) -> (Vec<Option<Vec<(usize, usize, usize)>>>, usize) {
+    let mut columns = 0;
+    let plan = n
+        .children
+        .iter()
+        .map(|c| {
+            let Kind::GridRow = c.kind else { return None };
+            let mut at = 0;
+            let cells = c
+                .children
+                .iter()
+                .enumerate()
+                .filter(|(_, cell)| !cell.kind.is_menu())
+                .map(|(i, cell)| {
+                    let span = cell.mods.grid_columns.unwrap_or(1).max(1);
+                    let place = (i, at, span);
+                    at += span;
+                    place
+                })
+                .collect();
+            columns = columns.max(at);
+            Some(cells)
+        })
+        .collect();
+    (plan, columns)
+}
+
+impl Layouter<'_> {
+    /// The width of `span` columns from `col`, with the spaces between them.
+    fn span_width(widths: &[f64], col: usize, span: usize, spacing: f64) -> f64 {
+        let end = (col + span).min(widths.len());
+        widths[col.min(end)..end].iter().sum::<f64>() + spacing * span.saturating_sub(1) as f64
+    }
+
+    /// The columns' widths when the grid is `room` wide: their least widths,
+    /// and the room left shared by the flexible ones.
+    fn grid_widths(sizes: &GridSizes, spacing: f64, room: f64) -> Vec<f64> {
+        let mut widths = sizes.widths.clone();
+        let flexible = sizes.flexible.iter().filter(|f| **f).count();
+        if flexible > 0 && room.is_finite() {
+            let gaps = spacing * widths.len().saturating_sub(1) as f64;
+            let fixed: f64 = widths.iter().zip(&sizes.flexible).filter(|(_, f)| !**f).map(|(w, _)| w).sum();
+            let share = ((room - gaps - fixed) / flexible as f64).max(0.0);
+            for (w, f) in widths.iter_mut().zip(&sizes.flexible) {
+                if *f {
+                    *w = w.max(share);
+                }
+            }
+        }
+        widths
+    }
+
+    fn measure_grid(&mut self, n: &mut Node, avail: Size, style: &Style) -> Size {
+        let Kind::Grid { spacing, row_spacing, .. } = n.kind else { return Size::default() };
+        let (plan, columns) = grid_plan(n);
+        let mut sizes = GridSizes { widths: vec![0.0; columns], flexible: vec![false; columns] };
+        let free = Size { w: avail.w, h: f64::INFINITY };
+        let mut wide: f64 = 0.0;
+        // The cells' own widths: the widest in each column, then what cells
+        // over several columns need more.
+        for (row, cells) in n.children.iter_mut().zip(&plan) {
+            let row_style = Self::style_for(row, style);
+            row.layout.style = row_style;
+            let Some(cells) = cells else {
+                let s = self.measure(row, free, style);
+                if !flex(row, Axis::X, Some(Axis::Y)) {
+                    wide = wide.max(s.w);
+                }
+                continue;
+            };
+            for &(i, col, span) in cells {
+                let c = &mut row.children[i];
+                if flex(c, Axis::X, Some(Axis::X)) {
+                    if span == 1 {
+                        sizes.flexible[col] = true;
+                    }
+                    continue;
+                }
+                let s = self.measure(c, free, &row_style);
+                if span == 1 {
+                    sizes.widths[col] = sizes.widths[col].max(s.w);
+                }
+            }
+        }
+        for (row, cells) in n.children.iter().zip(&plan) {
+            for &(i, col, span) in cells.iter().flatten() {
+                let c = &row.children[i];
+                if span > 1 && !flex(c, Axis::X, Some(Axis::X)) {
+                    let have = Self::span_width(&sizes.widths, col, span, spacing);
+                    let last = (col + span).min(columns) - 1;
+                    if c.layout.size.w > have {
+                        sizes.widths[last] += c.layout.size.w - have;
+                    }
+                }
+            }
+        }
+        let widths = Self::grid_widths(&sizes, spacing, avail.w);
+        let total = Self::span_width(&widths, 0, columns, spacing).max(wide);
+        let grows = sizes.flexible.iter().any(|f| *f) && avail.w.is_finite();
+        let w = if grows { avail.w.max(total) } else { total };
+        n.layout.grid = Some(std::rc::Rc::new(sizes));
+        // The rows, with the cells as wide as their columns.
+        let h = self.grid_rows(n, &plan, &widths, w, row_spacing, spacing, style).iter().sum::<f64>();
+        let shown = n.children.iter().filter(|c| !c.mods.hidden).count();
+        Size { w, h: h + row_spacing * shown.saturating_sub(1) as f64 }
+    }
+
+    /// Measures each row's cells at the widths of their columns (and a
+    /// row of its own at the grid's width `w`): the rows' heights.
+    #[allow(clippy::too_many_arguments)]
+    fn grid_rows(
+        &mut self,
+        n: &mut Node,
+        plan: &[Option<Vec<(usize, usize, usize)>>],
+        widths: &[f64],
+        w: f64,
+        _row_spacing: f64,
+        spacing: f64,
+        style: &Style,
+    ) -> Vec<f64> {
+        let mut heights = Vec::new();
+        for (row, cells) in n.children.iter_mut().zip(plan) {
+            if row.mods.hidden {
+                heights.push(0.0);
+                continue;
+            }
+            let Some(cells) = cells else {
+                heights.push(self.measure(row, Size { w, h: f64::INFINITY }, style).h);
+                continue;
+            };
+            let row_style = row.layout.style;
+            let mut h: f64 = 0.0;
+            for &(i, col, span) in cells {
+                let cell_w = Self::span_width(widths, col, span, spacing);
+                let c = &mut row.children[i];
+                h = h.max(self.measure(c, Size { w: cell_w, h: f64::INFINITY }, &row_style).h);
+            }
+            row.layout.size = Size { w, h };
+            heights.push(h);
+        }
+        heights
+    }
+
+    fn place_grid(&mut self, n: &mut Node, content: Rect) {
+        let Kind::Grid { spacing, row_spacing, align } = n.kind else { return };
+        let (plan, columns) = grid_plan(n);
+        let Some(sizes) = n.layout.grid.clone() else { return };
+        let widths = Self::grid_widths(&sizes, spacing, content.w);
+        let style = n.layout.style;
+        // (Measured again, for the widths the columns have now.)
+        let heights = self.grid_rows(n, &plan, &widths, content.w, row_spacing, spacing, &style);
+        let (h_align, v_align) = super::align_2d(align);
+        // How each column's cells line up across: as one of them says, or the grid.
+        let mut column_align = vec![h_align; columns];
+        for (row, cells) in n.children.iter().zip(&plan) {
+            for &(i, col, span) in cells.iter().flatten() {
+                if let (Some(a), 1) = (row.children[i].mods.grid_align, span) {
+                    column_align[col] = a;
+                }
+            }
+        }
+        let mut lefts = Vec::with_capacity(columns);
+        let mut x = content.x;
+        for w in &widths {
+            lefts.push(x);
+            x += w + spacing;
+        }
+        let total = Self::span_width(&widths, 0, columns, spacing);
+        let mut y = content.y;
+        for ((row, cells), h) in n.children.iter_mut().zip(&plan).zip(&heights) {
+            if row.mods.hidden {
+                self.place(row, Rect { x: content.x, y, w: 0.0, h: 0.0 });
+                continue;
+            }
+            let Some(cells) = cells else {
+                self.place(row, Rect { x: content.x, y, w: content.w, h: *h });
+                y += h + row_spacing;
+                continue;
+            };
+            let r = Rect { x: content.x, y, w: total.max(content.w), h: *h };
+            row.layout.rect = r;
+            row.layout.content = r;
+            for &(i, col, span) in cells {
+                let cell = Rect { x: lefts.get(col).copied().unwrap_or(x), y, w: Self::span_width(&widths, col, span, spacing), h: *h };
+                let c = &mut row.children[i];
+                let w = if flex(c, Axis::X, Some(Axis::X)) { cell.w } else { c.layout.size.w.min(cell.w) };
+                let ch = if flex(c, Axis::Y, Some(Axis::X)) { cell.h } else { c.layout.size.h.min(cell.h) };
+                // (A cell over several columns lines up as it says, or as the grid does.)
+                let across = match span {
+                    1 => column_align.get(col).copied().unwrap_or(h_align),
+                    _ => c.mods.grid_align.unwrap_or(h_align),
+                };
+                let at = |a: u8, room: f64, len: f64| (room - len) * a as f64 / 2.0;
+                self.place(c, Rect { x: cell.x + at(across, cell.w, w), y: cell.y + at(v_align, cell.h, ch), w, h: ch });
+            }
+            y += h + row_spacing;
+        }
+    }
 }

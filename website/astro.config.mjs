@@ -123,6 +123,7 @@ export default defineConfig({
 						{ label: 'Layout', slug: 'ui/layout' },
 						{ label: 'Alignment and sizing', slug: 'ui/alignment' },
 						{ label: 'Text and styling', slug: 'ui/styling' },
+						{ label: 'Rich text', slug: 'ui/rich-text' },
 						{ label: 'Controls', slug: 'ui/controls' },
 						{ label: 'Lists and identity', slug: 'ui/lists' },
 						{ label: 'Tables and trees', slug: 'ui/tables' },

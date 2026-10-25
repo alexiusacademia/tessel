@@ -1,0 +1,28 @@
+Root
+  View
+    VStack
+      Text "Order 4417 shipped today" selected "4417"
+      Text "Not selectable"
+      Button "Paste"
+      Text "Got: "
+Root
+  View
+    VStack
+      Text "Order 4417 shipped today" selected "4417 sh"
+      Text "Not selectable"
+      Button "Paste"
+      Text "Got: "
+Root
+  View
+    VStack
+      Text "Order 4417 shipped today"
+      Text "Not selectable"
+      Button "Paste"
+      Text "Got: 4417 sh"
+Root
+  View
+    VStack
+      Text "Order 4417 shipped today"
+      Text "Not selectable"
+      Button "Paste"
+      Text "Got: Order 4417 shipped today"

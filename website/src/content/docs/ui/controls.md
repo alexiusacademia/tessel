@@ -128,6 +128,47 @@ can type right away without clicking it first. It also works on a
 startup, or when an `if` starts showing it. That makes it a good fit for a
 field that pops up when needed, like a "New file name" prompt.
 
+## SearchField
+
+`SearchField` is a text field for what to look for: a magnifying glass
+before the text, and a button after it that clears it. Escape clears it
+too:
+
+```tessel
+app Contacts(width: 320, height: 300) {
+    state query = ""
+    let names = ["Ada Lovelace", "Alan Turing", "Grace Hopper"]
+    let shown = names.filter { n in query == "" || n.lowercase().contains(query.lowercase()) }
+
+    VStack(alignment: .leading) {
+        SearchField("Search contacts", text: query)
+        for name in shown {
+            Text(name)
+        }
+    }
+    .padding(12)
+}
+```
+
+The placeholder is "Search" unless you give one. Like a `TextField`, it
+changes `text:` as the user types, and runs [`.onSubmit`](#submitting-with-enter)
+on Enter, for a search that's too slow to run on every key.
+
+## Link
+
+`Link` is text that opens a web page when it's clicked, in the accent
+color, with the pointing hand over it:
+
+```tessel
+Link("Read the guide", url: "https://tessel-lang.syncster.dev")
+Link("Email us", url: "mailto:hello@example.com")
+Link("Show details", action: { details = true })
+```
+
+`url:` is opened as [`openURL`](/reference/stdlib/#openurl) opens it: a web
+page, a file or folder, or an email. `action:` runs a block instead (or as
+well).
+
 ## Toggle
 
 `Toggle` is an on/off switch bound to a `Bool`:
@@ -167,6 +208,31 @@ long as every `.tag` has the same type as the selection. Options are usually
 
 `.tag` only means something on the options of a `Picker` and the pages of a
 [`TabView`](/ui/tabs/); anywhere else it's a compile error.
+
+### Radio buttons
+
+`style: .radio` shows the options one above the other, each with a round
+button, the chosen one filled:
+
+```tessel
+enum Units { metric, imperial }
+
+app Settings(width: 300, height: 160) {
+    state units = Units.metric
+
+    VStack(alignment: .leading) {
+        Text("Units").font(weight: .semibold)
+        Picker(selection: units, style: .radio) {
+            Text("Metric (m, kg)").tag(.metric)
+            Text("Imperial (ft, lb)").tag(.imperial)
+        }
+    }
+}
+```
+
+Clicking an option or its button chooses it; with the keyboard on the
+picker, the arrows move the choice. In a [form](/ui/layout/#grids) the
+options line up beside their label.
 
 ## Slider, Stepper and ColorPicker
 

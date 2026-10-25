@@ -1,0 +1,19 @@
+doubleclick 50 74
+tree
+type Turing
+key enter
+tree
+doubleclick 200 50
+type 37
+key tab
+tree
+type X
+key escape
+tree
+key down
+key enter
+type Hopper
+click 300 200
+tree
+doubleclick 300 98
+tree

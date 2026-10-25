@@ -1,0 +1,15 @@
+// Copying from a RichTextEditor takes the styles along to another one;
+// a plain text field gets the text.
+
+
+app Two(width: 520, height: 400) {
+    state a = RichText("Hello world", runs: [TextRun(start: 0, end: 5, bold: true, color: .red)])
+    state b = RichText("Start: ")
+    state plain = ""
+    VStack {
+        RichTextEditor(text: a, toolbar: false)
+        RichTextEditor(text: b, toolbar: false)
+        TextField("plain", text: plain)
+    }
+    .padding(12)
+}

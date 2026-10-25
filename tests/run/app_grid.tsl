@@ -1,0 +1,41 @@
+// Grid: rows of cells in columns that line up, GridRows from views of the
+// program's own, a cell over two columns, a row of its own (a Divider), and
+// a column lined up by `.gridColumnAlignment`. With radio buttons in it.
+
+enum Size { small, medium, large }
+
+view Field(label: String, text: bind String) {
+    GridRow {
+        Text(label).gridColumnAlignment(.trailing)
+        TextField("", text: text)
+    }
+}
+
+app GridApp(width: 420, height: 400) {
+    state name = "Ada"
+    state email = ""
+    state size = Size.medium
+
+    VStack(alignment: .leading) {
+        Grid(spacing: 8, rowSpacing: 10) {
+            Field(label: "Name", text: name)
+            Field(label: "Email address", text: email)
+            Divider()
+            GridRow {
+                Text("Size")
+                Picker(selection: size, style: .radio) {
+                    Text("Small").tag(Size.small)
+                    Text("Medium").tag(Size.medium)
+                    Text("Large").tag(Size.large)
+                }
+            }
+            GridRow {
+                Text("A note across both columns, which is long enough to wrap onto more lines.")
+                    .gridCellColumns(2)
+                    .lineLimit(1)
+            }
+        }
+        Text("Size: {size}")
+    }
+    .padding(16)
+}

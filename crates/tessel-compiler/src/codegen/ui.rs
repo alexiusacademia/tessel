@@ -599,6 +599,25 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_text_field", &[label, secure, lines], loc);
                 self.release(label, &Ty::Str);
             }
+            "__RichEditor" => {
+                let id = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
+                let json = self.expr_as(a(1).unwrap(), &Ty::Str).unwrap();
+                let change = self.expr_as(a(2).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
+                self.pass_closure("tsl_ui_rich_editor", &[id, json], change);
+                self.release(json, &Ty::Str);
+            }
+            "SearchField" => {
+                let label = match a(0) {
+                    Some(x) => self.expr_as(x, &Ty::Str).unwrap(),
+                    None => self.str_lit("Search").into(),
+                };
+                let loc = self.locator(a(1).unwrap());
+                // (Flags: 2 is a search field.)
+                let flags = self.i8().const_int(2, false).into();
+                let lines = self.i64().const_int(1, false).into();
+                self.pass_closure("tsl_ui_text_field", &[label, flags, lines], loc);
+                self.release(label, &Ty::Str);
+            }
             "Toggle" => {
                 let label = string(self, a(0));
                 let loc = self.locator(a(1).unwrap());
@@ -679,8 +698,38 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "Picker" => {
                 let loc = self.locator(a(0).unwrap());
-                self.pass_closure("tsl_ui_begin_picker", &[], loc);
-                self.content_inline(a(1).unwrap());
+                // The `PickerStyle` case's tag; 0 is `.segmented`.
+                let style = match a(1) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                self.pass_closure("tsl_ui_begin_picker", &[style], loc);
+                self.content_inline(a(2).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "Grid" => {
+                // The `Alignment` case's tag; 0 is `.leading`.
+                let align = match a(0) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                let f64t = self.ctx.f64_type();
+                let spacing = match a(1) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => f64t.const_float(8.0).into(),
+                };
+                // (No `rowSpacing:` is the same as `spacing:`.)
+                let rows = match a(2) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => f64t.const_float(f64::NAN).into(),
+                };
+                self.call_rt("tsl_ui_begin_grid", &[align, spacing, rows]);
+                self.content_inline(a(3).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "GridRow" => {
+                self.call_rt("tsl_ui_begin_grid_row", &[]);
+                self.content_inline(a(0).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
             "TabView" => {
@@ -884,13 +933,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.position_at_end(done);
                 self.call_rt("tsl_ui_end", &[]);
             }
-            "LazyVStack" => {
+            "LazyVStack" | "LazyHStack" => {
                 let count = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
                 let height = self.expr_as(a(1).unwrap(), &Ty::Float).unwrap();
                 let ExprKind::Closure { params, body } = &a(2).unwrap().kind else { unreachable!("checked: the rows are a block") };
                 let rows = self.make_closure(Body::Rows(&params[0], body), &Ty::View);
-                self.pass_closure("tsl_ui_lazy", &[count, height], rows);
-    }
+                let rt = if name == "LazyHStack" { "tsl_ui_lazy_across" } else { "tsl_ui_lazy" };
+                self.pass_closure(rt, &[count, height], rows);
+            }
 
             "Table" => {
                 // The columns are added by the block, then the table is built.
@@ -930,9 +980,12 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     Some(x) => self.expr(x).unwrap(),
                     None => self.ctx.i32_type().const_zero().into(),
                 };
-                let ExprKind::Closure { params, body } = &a(3).unwrap().kind else { unreachable!("checked: the cells are a block") };
+                let edit = a(3).map(|x| self.expr_as(x, &Ty::func(vec![Ty::Int, Ty::Str], Ty::Void)).unwrap());
+                let mut leading = vec![title, has, width, align];
+                leading.extend(self.closure_parts(edit));
+                let ExprKind::Closure { params, body } = &a(4).unwrap().kind else { unreachable!("checked: the cells are a block") };
                 let cells = self.make_closure(Body::Rows(&params[0], body), &Ty::View);
-                self.pass_closure("tsl_ui_table_column", &[title, has, width, align], cells);
+                self.pass_closure("tsl_ui_table_column", &leading, cells);
                 self.release(title, &Ty::Str);
             }
             "Tree" => {
@@ -1291,6 +1344,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let text = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
                 self.call_rt(if name == "tooltip" { "tsl_ui_tooltip" } else { "tsl_ui_accessibility_label" }, &[text]);
                 self.release(text, &Ty::Str);
+            }
+            "gridCellColumns" | "lineLimit" => {
+                let n = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
+                self.call_rt(if name == "lineLimit" { "tsl_ui_line_limit" } else { "tsl_ui_grid_cell_columns" }, &[n]);
+            }
+            "gridColumnAlignment" => {
+                let a = int(self, a(0).unwrap());
+                self.call_rt("tsl_ui_grid_column_alignment", &[a]);
+            }
+            "selectable" => {
+                let b = flag(self, a(0));
+                self.call_rt("tsl_ui_selectable", &[b]);
             }
             "tag" => {
                 let x = &args[0].value;

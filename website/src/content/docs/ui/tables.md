@@ -98,6 +98,46 @@ changes they mean other people, so `sort()` above clears the selection.
 `multiple: false` keeps it to one row. A table without `selection:` can't
 be selected.
 
+## Editing cells
+
+A column with `onEdit:` has cells that can be edited where they are, as in
+a spreadsheet. Double-click a cell and a text field takes its place, with
+its text selected to type over:
+
+```tessel
+struct Item {
+    name: String
+    count: Int
+}
+
+app Stock(width: 400, height: 240) {
+    state items = [Item(name: "Bolts", count: 120), Item(name: "Nuts", count: 80)]
+    state selected: [Int] = []
+
+    Table(rows: items.count, selection: selected) {
+        TableColumn("Item", onEdit: { i, text in items[i].name = text }) { i in
+            Text(items[i].name)
+        }
+        TableColumn("Count", width: 80, alignment: .trailing, onEdit: { i, text in
+            if let n = parseInt(text).value() {
+                items[i].count = n
+            }
+        }) { i in
+            Text("{items[i].count}")
+        }
+    }
+}
+```
+
+- `onEdit:` gets the row and what was typed, and puts it in your data;
+  it can refuse it, as the count above does with what isn't a number.
+- Enter, or a click somewhere else, keeps what's typed. Escape drops it.
+- Tab keeps it and goes on to the next cell that's edited (Shift+Tab, the
+  one before), on to the next row.
+- With the keyboard on the table, Enter edits the row's first cell that's
+  edited, when the table has no `onOpen:`.
+- The field starts with the cell's text: its first `Text`'s.
+
 ## A tree
 
 A `Tree` asks your data what's in it: `children:` is given a node's

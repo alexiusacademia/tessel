@@ -3419,8 +3419,10 @@ impl Checker<'_> {
                     .iter()
                     .map(|f| ParamSig { has_default: f.has_default, ..ParamSig::new(&f.name, f.ty.clone()) })
                     .collect();
-                // The prelude's `Error("reason")` needs no label.
-                if Some(id) == self.prelude_error() && args.first().is_some_and(|a| a.label.is_none()) {
+                // The prelude's `Error("reason")` and `RichText("text")` need no label.
+                let unlabeled = Some(id) == self.prelude_error()
+                    || self.structs[id].name == "RichText" && self.structs[id].span.file == crate::source::PRELUDE_FILE;
+                if unlabeled && args.first().is_some_and(|a| a.label.is_none()) {
                     params[0].unlabeled = true;
                 }
                 for a in args {

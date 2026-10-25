@@ -1,0 +1,16 @@
+doubleclick 160 57
+tree
+key shift+right
+key shift+right
+key shift+right
+type x
+key backspace
+key cmd+x
+tree
+click "Paste"
+tree
+click 120 57
+key cmd+a
+key cmd+c
+click "Paste"
+tree

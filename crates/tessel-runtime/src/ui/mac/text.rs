@@ -285,6 +285,14 @@ impl TextEngine {
         }
     }
 
+    /// Text with stretches in styles of their own (a `RichTextEditor`'s),
+    /// wrapped at `max_w`.
+    pub fn runs(&mut self, text: &str, base: &crate::ui::text::Styled, runs: &[crate::ui::text::Styled], max_w: Option<f64>) -> TextLayout {
+        let font = |s: &crate::ui::text::Styled| Font { family: s.family, size: s.size, weight: s.weight, italic: s.italic };
+        let spans: Vec<Span> = runs.iter().map(|s| Span { range: s.range.clone(), font: Some(font(s)), color: Some(s.color) }).collect();
+        self.build(text, font(base), base.color, &spans, LineHeight::Natural, max_w, 0)
+    }
+
     /// Code: monospaced, not wrapped, with syntax colors.
     pub fn code_layout(&mut self, text: &str, size: f64) -> TextLayout {
         let spans = colors(crate::ui::highlight::highlight(text));

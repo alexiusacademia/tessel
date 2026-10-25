@@ -1,0 +1,13 @@
+// LazyHStack: only the columns near what shows are built.
+
+app Strip(width: 400, height: 200) {
+    VStack {
+        Scroll(.horizontal) {
+            LazyHStack(count: 10000, columnWidth: 60) { i in
+                Text("#{i}").id(i)
+            }
+        }
+        .frame(height: 80)
+        Button("Go to 5000") { scrollTo(5000, align: .center) }
+    }
+}

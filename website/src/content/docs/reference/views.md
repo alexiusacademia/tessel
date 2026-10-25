@@ -111,6 +111,9 @@ Text("Hello, world!")
   [`.textAlignment`](/reference/modifiers/#textalignment).
 - In a frame larger than the text, the text is centered unless the frame
   gives an `alignment:`.
+- [`.lineLimit(n)`](/reference/modifiers/#linelimit) cuts it short after
+  `n` lines, with "…"; [`.selectable()`](/reference/modifiers/#selectable)
+  lets the user select and copy it.
 
 ## Button
 
@@ -171,6 +174,64 @@ TextField("Password", text: password, secure: true)
 - [`.autofocus()`](/reference/modifiers/#autofocus) makes it start editing as
   soon as it appears.
 
+## SearchField
+
+```text
+SearchField(_ placeholder: String = "Search", text: bind String)
+```
+
+A text field for what to look for, with a magnifying glass before its text
+and, while there's text, a button after it that clears it. Escape clears it
+too (and, when it's empty, stops editing).
+
+```tessel
+SearchField(text: query)
+    .onSubmit { search() }
+```
+
+Everything else is as for a one-line [`TextField`](#textfield).
+
+## Link
+
+```text
+Link(_ title: String, url: String = "", action: fn() = {})
+```
+
+Text in the accent color that opens `url` with
+[`openURL`](/reference/stdlib/#openurl) when it's clicked, and runs
+`action`. The pointer is a hand over it.
+
+```tessel
+Link("Privacy policy", url: "https://example.com/privacy")
+```
+
+## RichTextEditor
+
+```text
+RichTextEditor(text: bind RichText, toolbar: Bool = true, onChange: fn() = {})
+```
+
+A field to write text in with styles: bold, italic, underline,
+strikethrough, sizes, colors and fonts, with a bar of buttons for them
+above it (without `toolbar: false`). Cmd+B, Cmd+I and Cmd+U (Ctrl on
+Windows) work too. `onChange` runs after each change. See
+[Rich text](/ui/rich-text/).
+
+```tessel
+RichTextEditor(text: note)
+```
+
+- `RichText` is `text: String` and `runs: [TextRun]`; a `TextRun` is a
+  stretch from `start` up to `end` (in characters) with `bold`, `italic`,
+  `underline`, `strikethrough`, `size` (0: the editor's), `color`
+  (`.primary`: the editor's) and `font` (`""`: the editor's).
+- `doc.markdown` is the text in Markdown, and `RichText.fromMarkdown(…)`
+  reads it back (bold, italic and strikethrough).
+- It takes all the space it's offered, and scrolls. `.font(size:)` and
+  `.color(…)` on it are for text without styles of its own.
+- Copying takes the styles along (as HTML, with plain text, on the
+  clipboard), and pasting text with styles from other apps keeps them.
+
 ## Toggle
 
 ```text
@@ -192,10 +253,11 @@ Toggle(isOn: isOn)
 ## Picker
 
 ```text
-Picker(selection: bind T, content: View)
+Picker(selection: bind T, style: PickerStyle = .segmented, content: View)
 ```
 
-A segmented control for choosing one of several options. Each view in the
+A control for choosing one of several options: a row of segments, or with
+`style: .radio`, radio buttons one above the other. Each view in the
 block is one option; give each option a [`.tag(value)`](/reference/modifiers/#tag).
 The option whose tag equals `selection` is highlighted, and clicking an option
 sets `selection` to its tag.
@@ -214,6 +276,7 @@ Picker(selection: mode) {
   a `for` loop or an `if`. A `.tag` must be on those views themselves, not on
   something nested inside them.
 - The options sit side by side, each with 12 points of space on either side.
+  As radio buttons, each option is a line, with its button before it.
 
 ## Slider
 
@@ -579,6 +642,42 @@ HSplit(size: sidebar) {
   (`HSplit 220`), and `drag` on the divider moves it.
 - See [Split views](/ui/layout/#split-views).
 
+## Grid and GridRow
+
+```text
+Grid(alignment: Alignment = .leading, spacing: Float = 8, rowSpacing: Float = spacing, content: View)
+GridRow(content: View)
+```
+
+Rows of cells in columns that line up. Each `GridRow` in the block is a
+row, and each view in it a cell; a column is as wide as its widest cell.
+
+```tessel
+Grid {
+    GridRow {
+        Text("Width").gridColumnAlignment(.trailing)
+        TextField("", text: width)
+    }
+    GridRow {
+        Text("Height")
+        TextField("", text: height)
+    }
+}
+```
+
+- `spacing` is between columns (and rows, without `rowSpacing`).
+- `alignment` places each cell in its row and column (`.leading`: at the
+  left, centered from top to bottom).
+  [`.gridColumnAlignment`](/reference/modifiers/#gridcolumnalignment) lines
+  up one column, and [`.gridCellColumns`](/reference/modifiers/#gridcellcolumns)
+  makes a cell take several.
+- A view in the block that isn't a `GridRow` is a row of its own, as wide
+  as the grid. A `GridRow` can come from a view of the program's own.
+- A column with a flexible cell (a text field, a view with `.frame(maxWidth:)`)
+  shares the room left over; then the grid is flexible across too.
+- Outside a `Grid`, a `GridRow` lays out like an `HStack`.
+- See [Grids](/ui/layout/#grids).
+
 ## LazyVStack
 
 ```text
@@ -610,6 +709,21 @@ Scroll {
 - In a [headless run](/ui/testing/), `tree` shows only the rows built:
   `LazyVStack 100000 rows, built 1990..2020`.
 
+## LazyHStack
+
+```text
+LazyHStack(count: Int, columnWidth: Float, content: fn(Int) -> View)
+```
+
+A [`LazyVStack`](#lazyvstack) on its side: `count` columns of `columnWidth`
+points each, of which only those near what shows are built. Put it in a
+[`Scroll(.horizontal)`](#scroll).
+
+- Each column is as tall as the list, its views centered across it.
+- The list is as wide as all its columns, and flexible vertically.
+- In a [headless run](/ui/testing/), `tree` shows the columns built:
+  `LazyHStack 10000 columns, built 40..67`.
+
 ## Table
 
 ```text
@@ -640,13 +754,20 @@ columns, as [`TableColumn`](#tablecolumn)s (and nothing else). See
 ## TableColumn
 
 ```text
-TableColumn(_ title: String, width: Float = …, alignment: Alignment = .leading, cells: fn(Int) -> View)
+TableColumn(_ title: String, width: Float = …, alignment: Alignment = .leading,
+            onEdit: fn(Int, String) = …, cells: fn(Int) -> View)
 ```
 
 A column of a [`Table`](#table): `cells` builds its cell in row `i`.
 Without `width`, the columns that have none share the room the others
 leave (each at least 80 points). `alignment` (`.leading`, `.center` or
 `.trailing`) lines up its cells and its title.
+
+With `onEdit`, its cells can be edited: a double click on one (or Enter on
+a row, in a table without `onOpen`) shows a text field with the cell's text
+(its first `Text`'s). Enter or a click elsewhere passes the row and what was
+typed to `onEdit`; Escape drops it; Tab passes it on and edits the next
+cell that can be. See [Editing cells](/ui/tables/#editing-cells).
 
 ## Tree
 

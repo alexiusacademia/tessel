@@ -1,0 +1,14 @@
+click field 1
+type river
+key enter
+tree
+click field 1
+key escape
+tree
+type lake
+click 330 63
+type pond
+tree
+click "Count"
+click "Tessel"
+tree

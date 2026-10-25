@@ -160,7 +160,7 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
             _ => Item { press: true, ..item(Role::Button, called(label)) },
         }),
         Kind::Toggle { label, is_on } => Some(Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) }),
-        Kind::TextField { placeholder, text, secure, lines } => Some(Item {
+        Kind::TextField { placeholder, text, secure, lines, .. } => Some(Item {
             value: if *secure { String::new() } else { read_string(text) },
             press: true,
             ..item(
@@ -171,6 +171,11 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
                 },
                 called(placeholder),
             )
+        }),
+        Kind::RichEditor { doc, .. } => Some(Item {
+            value: doc.text.clone(),
+            press: true,
+            ..item(Role::Editor, n.mods.access_label.clone().unwrap_or_default())
         }),
         Kind::CodeEditor { text, .. } => {
             // (A screen reader is given a long text in parts it asks for;
@@ -232,7 +237,7 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
     match &n.kind {
         _ if leaf => {}
         // The options: each child with a tag, called by its words.
-        Kind::Picker { selection } => {
+        Kind::Picker { selection, .. } => {
             let current = selection.locate();
             for (c, place) in n.children.iter().zip(&n.layout.segments) {
                 let chosen = c.mods.tag.as_ref().is_some_and(|t| t.equals(current));

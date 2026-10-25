@@ -1,0 +1,30 @@
+Root
+  View
+    VStack
+      View
+        VStack
+          RichTextEditor "Hello world" runs ["0..5 bold color \"red\""]
+      View
+        VStack
+          RichTextEditor "Start: Hello world" runs ["7..12 bold color \"red\""] selected 18..18
+      TextField "plain" = ""
+Root
+  View
+    VStack
+      View
+        VStack
+          RichTextEditor "Hello world" runs ["0..5 bold color \"red\""]
+      View
+        VStack
+          RichTextEditor "Start: Hello world" runs ["7..12 bold color \"red\""]
+      TextField "plain" = "Hello world"
+Root
+  View
+    VStack
+      View
+        VStack
+          RichTextEditor "llo world" runs ["0..3 bold color \"red\""]
+      View
+        VStack
+          RichTextEditor "Start: Hello worldHe" runs ["7..12 bold color \"red\"", "18..20 bold color \"red\""] selected 20..20
+      TextField "plain" = "Hello world"

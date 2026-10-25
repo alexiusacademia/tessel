@@ -1,0 +1,19 @@
+click 400 20
+key cmd+a
+key cmd+c
+click 400 195
+key end
+key cmd+v
+tree
+click 300 373
+key cmd+v
+tree
+click 400 20
+key home
+key shift+right
+key shift+right
+key cmd+x
+click 400 195
+key end
+key cmd+v
+tree

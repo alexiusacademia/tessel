@@ -1,0 +1,26 @@
+// RichText: its text and runs, as Markdown and back, and as JSON.
+
+fn main() {
+    var doc = RichText("Hello brave new world, XY and z")
+    doc.runs.append(TextRun(start: 0, end: 5, bold: true))
+    doc.runs.append(TextRun(start: 6, end: 11, italic: true, strikethrough: true))
+    doc.runs.append(TextRun(start: 23, end: 24, italic: true))
+    doc.runs.append(TextRun(start: 24, end: 25, italic: true, strikethrough: true))
+    doc.runs.append(TextRun(start: 26, end: 31, bold: true, italic: true, size: 18, color: .red))
+    print(doc.markdown)
+
+    let back = RichText.fromMarkdown(doc.markdown)
+    print(back.text == doc.text, back.markdown == doc.markdown)
+    print(back.runs.count, back.runs[0].bold, back.runs[1].italic, back.runs[1].strikethrough)
+
+    // Stars that aren't marks stay stars.
+    print(RichText.fromMarkdown("2 * 3 = 6, **so** _it_ is \\*fine\\*").markdown)
+    print(RichText.fromMarkdown("line one\n**line** two").runs.count)
+
+    let saved = toJson(RichText("x", runs: [TextRun(start: 0, end: 1, underline: true)]))
+    print(saved)
+    let loaded: RichText? = fromJson(saved)
+    if let doc = loaded {
+        print(doc.runs[0].underline)
+    }
+}

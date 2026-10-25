@@ -1,0 +1,248 @@
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #1d1d1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world" runs ["0..5 bold"] selected 0..5
+      Text "**Hello** world (1)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #1d1d1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againX" runs ["0..5 bold", "18..19 italic"] selected 19..19
+      Text "**Hello** world, again*X* (3)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #1d1d1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againXY" runs ["0..5 bold", "18..19 italic size 16", "19..20 italic strikethrough"] selected 18..19
+      Text "**Hello** world, again*X~~Y~~* (5)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #1d1d1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, again" runs ["0..5 bold"] selected 18..18
+      Text "**Hello** world, again (7)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #1d1d1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againXY" runs ["0..5 bold", "18..19 italic", "19..20 italic strikethrough"] selected 18..19
+      Text "**Hello** world, again*X~~Y~~* (8)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #d61f1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againXY" runs ["0..3 bold color {\"rgb\":{\"red\":214,\"green\":31,\"blue\":31}}", "3..5 bold", "18..19 italic", "19..20 italic strikethrough"] selected 0..3
+      Text "**Hello** world, again*X~~Y~~* (9)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #d61f1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againXY" runs ["3..5 bold", "18..19 italic", "19..20 italic strikethrough"] selected 0..3
+      Text "Hel**lo** world, again*X~~Y~~* (10)"
+Root
+  View
+    VStack
+      View
+        VStack
+          HStack
+            View
+              Text "B"
+            View
+              Text "I"
+            View
+              Text "U"
+            View
+              Text "S"
+            Divider
+            View
+              Text "A−"
+            View
+              Text "A+"
+            Divider
+            ColorPicker = #d61f1f
+            View
+              HStack
+                Text "System"
+                Spacer
+                Icon chevronDown
+            Spacer
+            View
+              Text "Plain"
+          RichTextEditor "Hello world, againXY\nLine two" runs ["3..5 bold", "18..19 italic", "19..21 italic strikethrough"] selected 29..29
+      Text "Hel**lo** world, again*X~~Y~~* (12)"

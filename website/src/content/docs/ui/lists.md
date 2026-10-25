@@ -257,6 +257,29 @@ to `count - 1`. Put the list in a [`Scroll`](/ui/layout/#scroll), where
 it's as tall as all its rows. [`scrollTo(i)`](/ui/layout/#scrolling-from-code)
 shows row `i`, built or not.
 
+### Sideways with `LazyHStack`
+
+`LazyHStack` is the same for a long row: `columnWidth:` points wide each,
+side by side, of which only those that show are built. Put it in a
+`Scroll(.horizontal)`:
+
+```tessel
+app Timeline(width: 480, height: 160) {
+    Scroll(.horizontal) {
+        LazyHStack(count: 3650, columnWidth: 64) { day in
+            VStack {
+                Text("Day").font(size: 11).color(.secondary)
+                Text("{day + 1}").font(size: 20, weight: .semibold)
+            }
+        }
+    }
+    .frame(height: 80)
+}
+```
+
+A column is as tall as the list, with its views centered across it.
+`scrollTo(i)` shows column `i`.
+
 ## Trees with `DisclosureGroup`
 
 A [`DisclosureGroup`](/reference/views/#disclosuregroup) is a title with an

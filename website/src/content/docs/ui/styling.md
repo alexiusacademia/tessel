@@ -22,7 +22,38 @@ new line. When a text is offered less width than it needs, it wraps onto more
 lines at word boundaries.
 
 For text with headings, lists or links in it, see
-[Markdown](#longer-text-with-markdown) below.
+[Markdown](#longer-text-with-markdown) below. For text the user writes in
+bold, colors and sizes, see [Rich text](/ui/rich-text/).
+
+### Cutting text short
+
+`.lineLimit(n)` shows at most `n` lines of a text. When there's more, the
+last line ends in "…" where it's cut:
+
+```tessel
+VStack(alignment: .leading) {
+    Text(file.path).lineLimit(1)
+    Text(note.body).lineLimit(3).color(.secondary)
+}
+.frame(width: 240)
+```
+
+It's handy for paths, names and previews in narrow columns and lists. Set
+on a stack, it applies to every text in it.
+
+### Text the user can copy
+
+`.selectable()` lets the user select a text with the mouse and copy it:
+a double click picks a word, a triple click all of it, and Shift with the
+arrows makes the selection longer. Cmd+C (Ctrl+C on Windows) copies it.
+The text can't be changed:
+
+```tessel
+Text("Order {order.number}").selectable()
+```
+
+Set on a stack, it applies to every text in it. Error messages, ids and
+results people want to paste elsewhere are good uses.
 
 ## Fonts
 

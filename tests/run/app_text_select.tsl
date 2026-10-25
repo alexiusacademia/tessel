@@ -1,0 +1,11 @@
+// `.selectable()`: text that can be selected and copied, but not changed.
+
+app SelApp(width: 400, height: 200) {
+    state pasted = ""
+    VStack {
+        Text("Order 4417 shipped today").selectable()
+        Text("Not selectable")
+        Button("Paste") { pasted = clipboardText() ?? "" }
+        Text("Got: {pasted}")
+    }
+}

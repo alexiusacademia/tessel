@@ -397,7 +397,7 @@ Root
                 HStack
                   Icon circleCheck
                   Text "No problems"
-Completions: [greeting] Graphics BackgroundJob ProgressBar ProgressPanel DisclosureGroup RibbonGroup background
+Completions: [greeting] Graphics Grid GridRow BackgroundJob ProgressBar ProgressPanel DisclosureGroup RibbonGroup background
 Root
   View
     VStack

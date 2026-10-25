@@ -817,6 +817,8 @@ enum Hit {
     TreeArrow(u64, usize),
     /// The divider of a split view, which is dragged.
     Split(u64),
+    /// A search field's button that clears it.
+    SearchClear(u64),
 }
 
 impl Hit {
@@ -828,7 +830,7 @@ impl Hit {
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
             Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _) => k,
-            Hit::Split(k) => k,
+            Hit::Split(k) | Hit::SearchClear(k) => k,
         }
     }
 }
@@ -1153,6 +1155,12 @@ impl App {
         if let Some(redo) = UNDO.with(|u| u.take()) {
             self.undo(redo);
         }
+        self.each_surface(|a| a.finish_cell_edit());
+        let commands = super::rich::COMMANDS.with(|q| std::mem::take(&mut *q.borrow_mut()));
+        if !commands.is_empty() {
+            self.each_surface(|a| a.rich_commands(&commands));
+        }
+        self.each_surface(|a| a.rich_marks());
         // `.onAppear` blocks can change state, which rebuilds again (a few times at most).
         if let Some(root) = NEW_ROOT.with(|r| r.borrow_mut().take()) {
             self.root = root;
@@ -1239,13 +1247,17 @@ impl App {
                     return Some(r);
                 }
             }
-            // A `LazyVStack`'s row, by its number (built or not).
-            if let (Kind::Lazy { count, row_height, .. }, true) = (&n.kind, rows)
+            // A `LazyVStack`'s row (a `LazyHStack`'s column), by its number (built or not).
+            if let (Kind::Lazy { count, row_height, across, .. }, true) = (&n.kind, rows)
                 && id < *count as u64
             {
-                let row_height = *row_height;
+                let (row_height, along) = (*row_height, id as f64 * *row_height);
                 let c = n.layout.rect.inset_by(n.mods.padding);
-                return Some(Rect { x: c.x, y: c.y + id as f64 * row_height, w: c.w, h: row_height });
+                return Some(if *across {
+                    Rect { x: c.x + along, y: c.y, w: row_height, h: c.h }
+                } else {
+                    Rect { x: c.x, y: c.y + along, w: c.w, h: row_height }
+                });
             }
             if scrolls {
                 around.pop();
@@ -1976,7 +1988,7 @@ impl App {
             if n.mods.hidden || n.layout.style.disabled {
                 return;
             }
-            if editable_text(n).is_some() || focusable(n) {
+            if typable(n) || focusable(n) {
                 out.push(n);
             }
             // (Not into a color picker's palette.)
@@ -2005,7 +2017,7 @@ impl App {
         };
         let node = found[next];
         let (key, control, field) = (node.key, focusable(node), matches!(node.kind, Kind::TextField { .. }));
-        let text = editable_text(node).map(read_string).unwrap_or_default();
+        let text = shown_text(node).unwrap_or_default();
         self.ui.composing = None;
         self.completing.asked = None;
         if control {
@@ -2203,11 +2215,15 @@ impl App {
             self.ui.editing = None;
             return;
         };
-        let Some(text) = editable_text(node) else {
+        let Some(text) = shown_text(node) else {
             self.ui.editing = None;
             return;
         };
-        e.clamp(&read_string(text));
+        e.clamp(&text);
+        // (Text that's only selected doesn't scroll.)
+        if selectable_text(node) {
+            return;
+        }
         let Some(layout) = &node.layout.text else { return };
         // While text is composed, the caret is inside it.
         let mut at = e.clone();
@@ -2242,7 +2258,7 @@ impl App {
                 let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
                 keep(sy, cy0, cy1, visible_h, layout.height());
             }
-            Kind::TextField { lines: 2.., .. } => {
+            Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. } => {
                 let (cy0, cy1) = caret.map_or((0.0, 16.0), |c| (c.y0, c.y1));
                 let visible_h = (content.h - 12.0).max(1.0);
                 let sy = self.ui.scroll.entry(e.key).or_insert(0.0);
@@ -2250,7 +2266,8 @@ impl App {
             }
             _ => {
                 let caret_x = caret.map_or(0.0, |c| c.x0);
-                let visible = (node.layout.rect.w - 16.0).max(1.0);
+                let room = if matches!(node.kind, Kind::TextField { search: true, .. }) { super::layout::SEARCH_LEFT + super::layout::SEARCH_RIGHT } else { 16.0 };
+                let visible = (node.layout.rect.w - room).max(1.0);
                 keep(&mut e.scroll, caret_x, caret_x, visible, layout.width());
             }
         }
@@ -2305,10 +2322,16 @@ impl App {
                 let (x1, y1) = ((clip.x + clip.w).min(c.x + c.w), (clip.y + clip.h).min(c.y + c.h));
                 clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
             }
-            if let Kind::Lazy { count, row_height, first } = n.kind {
+            if let Kind::Lazy { count, row_height, first, across } = n.kind {
                 seen.push(n.key);
                 let c = r.inset_by(n.mods.padding);
-                let (top, bottom) = (clip.y.max(c.y), (clip.y + clip.h).min(c.y + c.h));
+                // (Columns: the same, across.)
+                let (top, bottom, c) = if across {
+                    let c = Rect { x: c.y, y: c.x, w: c.h, h: c.w };
+                    ((clip.x).max(c.y), (clip.x + clip.w).min(c.y + c.h), c)
+                } else {
+                    (clip.y.max(c.y), (clip.y + clip.h).min(c.y + c.h), c)
+                };
                 let built = (first, first + n.children.len());
                 if bottom > top {
                     let from = ((top - c.y) / row_height).floor().max(0.0) as usize;
@@ -2351,8 +2374,8 @@ impl App {
             if let (Some(cb), true) = (&n.mods.on_appear, new) {
                 out.push(cb.clone());
             }
-            if let (true, true, Some(text)) = (n.mods.autofocus, new, editable_text(n)) {
-                *focus = Some((n.key, read_string(text)));
+            if let (true, true, true) = (n.mods.autofocus, new, typable(n)) {
+                *focus = Some((n.key, shown_text(n).unwrap_or_default()));
             }
             for c in &n.children {
                 visit(c, keys, old, out, focus);
@@ -2374,12 +2397,15 @@ impl App {
         super::canvas::keep_only(&self.keys);
         super::scene3d::keep_only(&self.keys);
         super::table::keep_only(&self.keys);
+        super::rich::keep_only(&self.keys);
         let back = self.current;
         for (window, (key, text)) in focus {
             if self.enter(window) {
                 let mut e = Editing::new(key, &text);
-                // A color picker's hex field starts with its text selected, to type over.
-                if Some(key) == super::controls::HEX_FIELD.get() {
+                // A color picker's hex field, and a table's cell, start with
+                // their text selected, to type over.
+                let cell = super::table::CELL.with(|c| c.borrow().as_ref().and_then(|c| c.field)) == Some(key);
+                if Some(key) == super::controls::HEX_FIELD.get() || cell {
                     e.anchor = 0;
                 }
                 self.ui.editing = Some(e);
@@ -2500,13 +2526,14 @@ impl App {
     /// Where the text of an editable view starts, and its (x, y) scroll.
     fn text_origin(&self, node: &Node) -> (f64, f64, f64, f64) {
         match node.kind {
+            Kind::Text(_) => (node.layout.content.x, node.layout.content.y, 0.0, 0.0),
             Kind::CodeEditor { .. } => {
                 let (x0, y0) = code_origin(node);
                 let sx = self.ui.scroll_x.get(&node.key).copied().unwrap_or(0.0);
                 let sy = self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
                 (x0, y0, sx, sy)
             }
-            Kind::TextField { lines: 2.., .. } => {
+            Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. } => {
                 let (x0, y0) = field_origin(node);
                 (x0, y0, 0.0, self.ui.scroll.get(&node.key).copied().unwrap_or(0.0))
             }
@@ -2521,7 +2548,7 @@ impl App {
     /// Whether the text being edited is a text field of several lines.
     fn editing_lines(&self) -> bool {
         let key = self.ui.editing.as_ref().map(|e| e.key);
-        key.and_then(|k| self.node(k)).is_some_and(|n| matches!(n.kind, Kind::TextField { lines: 2.., .. }))
+        key.and_then(|k| self.node(k)).is_some_and(|n| matches!(n.kind, Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. }))
     }
 
     fn editing_code(&self) -> bool {
@@ -2542,7 +2569,8 @@ impl App {
     #[cfg(target_os = "android")]
     fn edited(&self) -> Option<super::android::Text> {
         let e = self.ui.editing.as_ref()?;
-        let text = read_string(editable_text(self.node(e.key)?)?);
+        let node = self.node(e.key)?;
+        let text = shown_text(node).filter(|_| typable(node))?;
         Some(super::android::Text { anchor: e.anchor.min(text.len()), focus: e.focus.min(text.len()), text })
     }
 
@@ -2741,7 +2769,11 @@ impl App {
             match n.kind {
                 Kind::Button { .. } => Some(Hit::Button(n.key)),
                 Kind::Toggle { .. } => Some(Hit::Toggle(n.key)),
-                Kind::TextField { .. } | Kind::CodeEditor { .. } => Some(Hit::Field(n.key)),
+                Kind::TextField { search: true, .. } if render::search_clear(n).is_some_and(|r| r.inset(-3.0).contains(x, y)) => {
+                    Some(Hit::SearchClear(n.key))
+                }
+                Kind::TextField { .. } | Kind::CodeEditor { .. } | Kind::RichEditor { .. } => Some(Hit::Field(n.key)),
+                Kind::Text(_) if selectable_text(n) && n.mods.on_tap.is_none() && n.mods.on_pointer.is_none() => Some(Hit::Field(n.key)),
                 Kind::Slider { .. } => Some(Hit::Slider(n.key)),
                 Kind::Stepper { .. } => {
                     let r = n.layout.rect.inset_by(n.mods.padding);
@@ -2919,7 +2951,9 @@ impl App {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
-            inner.or(n.mods.cursor.filter(|_| n.layout.rect.contains(x, y)))
+            // (Over text that can be typed in or selected: the text cursor.)
+            let text = (typable(n) && !matches!(n.kind, Kind::CodeEditor { .. }) || selectable_text(n)) && !n.layout.style.disabled;
+            inner.or(n.mods.cursor.filter(|_| n.layout.rect.contains(x, y))).or((text && n.layout.rect.contains(x, y)).then_some(5))
         }
         // In the order of the `CursorStyle` enum.
         const STYLES: [CursorIcon; 13] = [
@@ -3340,6 +3374,212 @@ impl App {
         self.dirty = true;
     }
 
+    // ===== rich text editors =====
+
+    /// A rich text editor's text changed: the program is told (with the
+    /// text's JSON), and the step before it can be undone.
+    fn rich_commit(&mut self, key: u64, doc: super::rich::Doc, before: (super::rich::Doc, usize, usize), typing: bool) {
+        use super::rich::{HISTORY, TYPED};
+        let coalesce = typing && TYPED.with(|t| t.get()) == Some(key);
+        HISTORY.with(|h| {
+            let mut h = h.borrow_mut();
+            let steps = h.entry(key).or_default();
+            if !coalesce {
+                steps.0.push(before);
+            }
+            steps.1.clear();
+        });
+        TYPED.with(|t| t.set(typing.then_some(key)));
+        self.rich_set(key, doc);
+    }
+
+    /// Puts a new text in a rich text editor, and tells the program.
+    fn rich_set(&mut self, key: u64, doc: super::rich::Doc) {
+        let json = doc.to_json();
+        let mut told = None;
+        if let Some(Kind::RichEditor { doc: d, on_change, .. }) = self.tree.as_mut().and_then(|t| t.find_mut(key)).map(|n| &mut n.kind) {
+            *d = Rc::new(doc);
+            told = Some(on_change.clone());
+        }
+        if let Some(cb) = told {
+            cb.call_with(crate::str_new(&json) as *mut u8);
+        }
+        self.ui.last_edited = Some(key);
+        self.dirty = true;
+    }
+
+    /// Undo (or redo) in a rich text editor.
+    fn rich_undo(&mut self, key: u64, redo: bool) {
+        use super::rich::HISTORY;
+        let Some(Kind::RichEditor { doc, .. }) = self.node(key).map(|n| &n.kind) else { return };
+        let (a, f) = self.ui.editing.as_ref().filter(|e| e.key == key).map_or((doc.text.len(), doc.text.len()), |e| (e.anchor, e.focus));
+        let now = ((**doc).clone(), a, f);
+        let step = HISTORY.with(|h| {
+            let mut h = h.borrow_mut();
+            let steps = h.entry(key).or_default();
+            let (from, to) = if redo { (&mut steps.1, &mut steps.0) } else { (&mut steps.0, &mut steps.1) };
+            let step = from.pop()?;
+            to.push(now);
+            Some(step)
+        });
+        super::rich::TYPED.with(|t| t.set(None));
+        let Some((doc, anchor, focus)) = step else { return };
+        self.rich_set(key, doc);
+        self.ui.editing = Some(Editing { key, anchor, focus, ..Default::default() });
+    }
+
+    /// Changes the style of what's selected in a rich text editor (with
+    /// nothing selected: of what's typed next), and goes back to typing in it.
+    fn rich_command(&mut self, key: u64, command: &super::rich::Command) {
+        let Some(n) = self.node(key) else { return };
+        let Kind::RichEditor { doc, .. } = &n.kind else { return };
+        let (doc, base) = ((**doc).clone(), n.layout.style.size);
+        let len = doc.text.len();
+        let fix = |i: usize| {
+            let mut i = i.min(len);
+            while !doc.text.is_char_boundary(i) {
+                i -= 1;
+            }
+            i
+        };
+        let (anchor, focus) = match self.ui.editing.as_ref().filter(|e| e.key == key) {
+            Some(e) => (e.anchor, e.focus),
+            None => super::rich::SELECTED.with(|s| s.borrow().get(&key).copied()).unwrap_or((len, len)),
+        };
+        let (anchor, focus) = (fix(anchor), fix(focus));
+        let selection = anchor.min(focus)..anchor.max(focus);
+        if let Some(d) = super::rich::apply(key, &doc, selection, command, base) {
+            self.rich_commit(key, d, (doc, anchor, focus), false);
+        }
+        self.ui.editing = Some(Editing { key, anchor, focus, ..Default::default() });
+        self.ui.focused = None;
+        self.dirty = true;
+    }
+
+    /// What toolbars asked of their editors (by id), for those in this window.
+    fn rich_commands(&mut self, commands: &[(i64, super::rich::Command)]) {
+        fn find(n: &Node, id: i64) -> Option<u64> {
+            match n.kind {
+                Kind::RichEditor { id: i, .. } if i == id => Some(n.key),
+                _ => n.children.iter().find_map(|c| find(c, id)),
+            }
+        }
+        for (id, command) in commands {
+            if let Some(key) = self.tree.as_ref().and_then(|t| find(t, *id)) {
+                self.rich_command(key, command);
+            }
+        }
+    }
+
+    /// Keeps where each rich text editor's selection is, and tells its
+    /// toolbar what's selected (building again when that changed).
+    fn rich_marks(&mut self) {
+        fn editors(n: &Node, out: &mut Vec<(u64, i64, Rc<super::rich::Doc>)>) {
+            if let Kind::RichEditor { id, doc, .. } = &n.kind {
+                out.push((n.key, *id, doc.clone()));
+            }
+            for c in &n.children {
+                editors(c, out);
+            }
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            editors(t, &mut found);
+        }
+        for (key, id, doc) in found {
+            let selected = match self.ui.editing.as_ref().filter(|e| e.key == key) {
+                Some(e) => {
+                    super::rich::SELECTED.with(|s| s.borrow_mut().insert(key, (e.anchor, e.focus)));
+                    (e.anchor, e.focus)
+                }
+                None => super::rich::SELECTED.with(|s| s.borrow().get(&key).copied()).unwrap_or((0, 0)),
+            };
+            let len = doc.text.len();
+            let (a, f) = (selected.0.min(len), selected.1.min(len));
+            if !doc.text.is_char_boundary(a) || !doc.text.is_char_boundary(f) {
+                continue;
+            }
+            let bits = super::rich::marks_bits(key, &doc, a.min(f)..a.max(f));
+            let changed = super::rich::MARKS.with(|m| m.borrow_mut().insert(id, bits) != Some(bits));
+            if changed {
+                self.dirty = true;
+            }
+        }
+    }
+
+    /// Starts editing a table's cell: a text field takes its place, with
+    /// the text it showed (its first `Text`'s).
+    fn edit_cell(&mut self, table: u64, row: usize, column: usize) {
+        fn first_text(n: &Node) -> Option<String> {
+            match &n.kind {
+                Kind::Text(s) => Some(s.clone()),
+                _ => n.children.iter().find_map(first_text),
+            }
+        }
+        fn find_row(n: &Node, table: u64, index: usize) -> Option<&Node> {
+            match &n.kind {
+                Kind::TableRow(r) if r.table == table && r.index == index => Some(n),
+                _ => n.children.iter().find_map(|c| find_row(c, table, index)),
+            }
+        }
+        let text = self.node(table).and_then(|t| find_row(t, table, row)).and_then(|r| r.children.get(column)).and_then(first_text);
+        super::table::begin_edit(table, row, column, &text.unwrap_or_default());
+        self.ui.focused = None;
+        self.dirty = true;
+    }
+
+    /// Once the cell being edited is left (Enter, a click elsewhere, Tab):
+    /// the column's `onEdit` gets what was typed, unless Escape dropped it.
+    /// Tab goes on to edit the next cell.
+    fn finish_cell_edit(&mut self) {
+        let Some((table, row, column, field, cancel, next)) =
+            super::table::CELL.with(|c| c.borrow().as_ref().map(|e| (e.table, e.row, e.column, e.field, e.cancel, e.next)))
+        else {
+            return;
+        };
+        if self.node(table).is_none() {
+            return;
+        }
+        let editing = field.is_some() && self.ui.editing.as_ref().map(|e| e.key) == field;
+        if editing {
+            super::table::CELL.with(|c| c.borrow_mut().as_mut().map(|e| e.seen = true));
+            return;
+        }
+        let seen = super::table::CELL.with(|c| c.borrow().as_ref().is_some_and(|e| e.seen));
+        if !seen {
+            return;
+        }
+        super::table::CELL.with(|c| c.borrow_mut().take());
+        if !cancel {
+            let on_edit = self.table_parts(table).and_then(|(s, _)| s.columns.get(column).and_then(|c| c.on_edit.clone()));
+            if let Some(cb) = on_edit {
+                cb.call_with_int_ptr(row as i64, crate::str_new(&super::table::typed()) as *mut u8);
+            }
+        }
+        self.dirty = true;
+        if let Some((row, column)) = next {
+            self.edit_cell(table, row, column);
+            self.select_row(table, row, false, false);
+        } else {
+            // The keyboard goes back to the table.
+            self.ui.focused = Some(table);
+        }
+    }
+
+    /// The cell Tab (or Shift+Tab: `back`) goes to from one being edited:
+    /// the next one that's edited, on to the next row.
+    fn next_cell(&self, table: u64, row: usize, column: usize, back: bool) -> Option<(usize, usize)> {
+        let (spec, _) = self.table_parts(table)?;
+        let edited: Vec<usize> = (0..spec.columns.len()).filter(|&c| spec.columns[c].on_edit.is_some()).collect();
+        let at = row * spec.columns.len() + column;
+        let cells = (0..spec.count).flat_map(|r| edited.iter().map(move |&c| (r, c)));
+        if back {
+            cells.filter(|&(r, c)| r * spec.columns.len() + c < at).last()
+        } else {
+            cells.into_iter().find(|&(r, c)| r * spec.columns.len() + c > at)
+        }
+    }
+
     /// `onOpen` with a row (of a tree, with its node's path).
     fn open_row(&mut self, table: u64, row: usize) {
         let Some((spec, _)) = self.table_parts(table) else { return };
@@ -3402,7 +3642,11 @@ impl App {
             ("pageup", c) => Some(c.unwrap_or(0).saturating_sub(page)),
             ("enter", Some(c)) => {
                 self.ui.focus_ring = true;
-                self.open_row(table, c);
+                // Without `onOpen`, Enter edits the row's first cell that's edited.
+                match spec.columns.iter().position(|c| c.on_edit.is_some()).filter(|_| spec.on_open.is_none()) {
+                    Some(column) => self.edit_cell(table, c, column),
+                    None => self.open_row(table, c),
+                }
                 return true;
             }
             ("right" | "left", Some(c)) if tree => {
@@ -3503,7 +3747,12 @@ impl App {
                 self.ui.last_row_click = if again { None } else { Some((now, table, row)) };
                 self.select_row(table, row, shift, toggle);
                 if again {
-                    self.open_row(table, row);
+                    // In a column whose cells are edited: edit the cell.
+                    let column = self.node(table).and_then(|n| n.layout.tabs.iter().position(|t| x >= t.rect.x && x < t.rect.x + t.rect.w));
+                    match column.filter(|&c| self.table_parts(table).is_some_and(|(s, _)| s.columns.get(c).is_some_and(|c| c.on_edit.is_some()))) {
+                        Some(column) => self.edit_cell(table, row, column),
+                        None => self.open_row(table, row),
+                    }
                 }
             }
             (Hit::TreeArrow(table, row), Kind::Table(_)) => {
@@ -3555,6 +3804,20 @@ impl App {
                     self.ui.editing = Some(Editing::new(*key, &read_string(text)));
                 }
             }
+            // A search field's clear button: no text, and on to typing.
+            (Hit::SearchClear(key), Kind::TextField { text, .. }) => {
+                let key = *key;
+                set_string(text, "");
+                self.ui.editing = Some(Editing::new(key, ""));
+                self.dirty = true;
+            }
+            // Selectable text: the caret goes where it's clicked (unseen).
+            (Hit::Field(key), Kind::Text(_) | Kind::RichEditor { .. }) => {
+                let key = *key;
+                if self.ui.editing.as_ref().is_none_or(|e| e.key != key) {
+                    self.press_field(key, x, y, false, 1);
+                }
+            }
             (Hit::Tab(_, i), Kind::TabView { selection, .. }) => {
                 if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
                     unsafe { tag.store_to(selection.locate()) };
@@ -3568,7 +3831,7 @@ impl App {
                     close.call_with(bytes.as_mut_ptr());
                 }
             }
-            (Hit::Segment(_, i), Kind::Picker { selection }) => {
+            (Hit::Segment(_, i), Kind::Picker { selection, .. }) => {
                 if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
                     unsafe { tag.store_to(selection.locate()) };
                 }
@@ -3767,7 +4030,7 @@ impl App {
                 true
             }
             // The arrows choose the option, or the tab, before or after.
-            (Kind::Picker { selection } | Kind::TabView { selection, .. }, "left" | "right" | "up" | "down") => {
+            (Kind::Picker { selection, .. } | Kind::TabView { selection, .. }, "left" | "right" | "up" | "down") => {
                 let current = selection.locate();
                 let tagged: Vec<usize> = (0..n.children.len()).filter(|&i| n.children[i].mods.tag.is_some()).collect();
                 let at = tagged.iter().position(|&i| n.children[i].mods.tag.as_ref().is_some_and(|t| t.equals(current)));
@@ -3806,7 +4069,73 @@ impl App {
     fn edit(&mut self, change: Edit) {
         let Some(mut e) = self.ui.editing.clone() else { return };
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(e.key)) else { return };
-        let (Some(text), Some(layout)) = (editable_text(node), &node.layout.text) else { return };
+        let Some(layout) = &node.layout.text else { return };
+        if let Kind::RichEditor { doc, .. } = &node.kind {
+            let doc = (**doc).clone();
+            let marks = super::rich::typing_marks(e.key, &doc, e.range());
+            let before = (doc.clone(), e.anchor, e.focus);
+            let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
+            // Copying takes the styles along; pasting text with styles keeps them.
+            let range = e.range();
+            match change {
+                Edit::Copy | Edit::Cut if !range.is_empty() => {
+                    let part = doc.slice(range.clone());
+                    self.clipboard.set_rich(&part.text, &part.to_html());
+                    let key = e.key;
+                    if matches!(change, Edit::Cut) {
+                        let mut d = doc;
+                        d.replace(range.clone(), "", &marks);
+                        e.collapse_to(range.start);
+                        self.ui.editing = Some(e);
+                        self.rich_commit(key, d, before, false);
+                    } else {
+                        self.ui.editing = Some(e);
+                    }
+                    return;
+                }
+                Edit::Paste => {
+                    if let Some(html) = self.clipboard.html() {
+                        let part = super::rich::Doc::from_html(&html);
+                        if !part.text.is_empty() {
+                            let mut d = doc;
+                            d.splice(range.clone(), &part);
+                            e.collapse_to(range.start + part.text.len());
+                            let key = e.key;
+                            self.ui.editing = Some(e);
+                            self.rich_commit(key, d, before, false);
+                            return;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            let new = edit::apply(&doc.text, layout, &mut e, change, &mut self.clipboard, true);
+            let key = e.key;
+            self.ui.editing = Some(e);
+            if let Some(new) = new {
+                let (start, old_end, new_end) = super::rich::changed(&doc.text, &new);
+                let mut d = doc;
+                d.replace(start..old_end, &new[start..new_end], &marks);
+                self.rich_commit(key, d, before, typing);
+            } else {
+                self.follow_caret();
+            }
+            return;
+        }
+        // Text that's only selected: it's selected and copied, never changed.
+        if selectable_text(node) {
+            let change = match change {
+                Edit::Cut => Edit::Copy,
+                Edit::Insert(_) | Edit::Backspace(_) | Edit::Delete(_) | Edit::Paste => return,
+                other => other,
+            };
+            let current = shown_text(node).unwrap_or_default();
+            let _ = edit::apply(&current, layout, &mut e, change, &mut self.clipboard, true);
+            self.ui.editing = Some(e);
+            self.dirty = true;
+            return;
+        }
+        let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
         let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
         let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
@@ -3851,6 +4180,10 @@ impl App {
     /// edited, with the caret where the change was.
     fn undo(&mut self, redo: bool) {
         let Some(key) = self.ui.editing.as_ref().map(|e| e.key).or(self.ui.last_edited) else { return };
+        if self.node(key).is_some_and(|n| matches!(n.kind, Kind::RichEditor { .. })) {
+            self.rich_undo(key, redo);
+            return;
+        }
         let Some(text) = self.node(key).and_then(editable_text).cloned() else { return };
         let current = read_string(&text);
         let editing = self.ui.editing.clone().filter(|e| e.key == key);
@@ -3973,8 +4306,44 @@ impl App {
 
     /// A key press for the views (and the text being edited).
     fn key_plain(&mut self, name: &str, mods: Mods) {
+        // In a table's cell being edited, Escape drops what's typed, and Tab
+        // goes on to the next cell.
+        let in_cell = super::table::CELL.with(|c| c.borrow().as_ref().and_then(|c| c.field.map(|f| (f, c.table, c.row, c.column))));
+        if let Some((field, table, row, column)) = in_cell.filter(|c| self.ui.editing.as_ref().map(|e| e.key) == Some(c.0)) {
+            let _ = field;
+            match name {
+                "escape" => {
+                    super::table::CELL.with(|c| c.borrow_mut().as_mut().map(|e| e.cancel = true));
+                    self.ui.editing = None;
+                    self.dirty = true;
+                    return;
+                }
+                "tab" => {
+                    let next = self.next_cell(table, row, column, mods.shift);
+                    super::table::CELL.with(|c| c.borrow_mut().as_mut().map(|e| e.next = next));
+                    self.ui.editing = None;
+                    self.dirty = true;
+                    return;
+                }
+                _ => {}
+            }
+        }
         if !mods.primary && !mods.shift && self.completion_key(name) {
             return;
+        }
+        // In a rich text editor, Cmd+B, Cmd+I and Cmd+U change the style.
+        let rich = self.ui.editing.as_ref().map(|e| e.key).filter(|k| self.node(*k).is_some_and(|n| matches!(n.kind, Kind::RichEditor { .. })));
+        if let (Some(key), true, false) = (rich, mods.primary, mods.alt) {
+            let command = match name {
+                "b" => Some(super::rich::Command::Bold),
+                "i" => Some(super::rich::Command::Italic),
+                "u" => Some(super::rich::Command::Underline),
+                _ => None,
+            };
+            if let Some(c) = command {
+                self.rich_command(key, &c);
+                return;
+            }
         }
         // Text editing keeps Cmd+A/C/X/V/Z while a field is being edited.
         let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v" | "z");
@@ -4040,6 +4409,16 @@ impl App {
                 self.edit(Edit::Insert("\n".into()));
                 return;
             }
+            // Escape in a search field with text clears it first.
+            "escape" if self.ui.editing.as_ref().and_then(|e| self.node(e.key)).is_some_and(|n| render::search_clear(n).is_some()) => {
+                let Some(key) = self.ui.editing.as_ref().map(|e| e.key) else { return };
+                if let Some(Kind::TextField { text, .. }) = self.node(key).map(|n| &n.kind) {
+                    set_string(text, "");
+                }
+                self.ui.editing = Some(Editing::new(key, ""));
+                self.dirty = true;
+                return;
+            }
             "enter" | "escape" => {
                 let submit = (name == "enter")
                     .then(|| self.ui.editing.as_ref().and_then(|e| self.node(e.key)).and_then(|n| n.mods.on_submit.clone()))
@@ -4065,8 +4444,7 @@ impl App {
         self.ui.focused = None;
         self.ui.keys_to = None;
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
-        let Some(text) = editable_text(node) else { return };
-        let current = read_string(text);
+        let Some(current) = shown_text(node) else { return };
         if self.ui.editing.as_ref().is_none_or(|e| e.key != key) {
             self.ui.editing = Some(Editing::new(key, &current));
         }
@@ -4347,18 +4725,68 @@ impl App {
             let what = match &n.kind {
                 Kind::Root => "Root".to_string(),
                 Kind::Group => "View".to_string(),
-                Kind::Text(s) => format!("Text {s:?}"),
+                Kind::Text(s) => {
+                    // Cut short by its line limit: what shows; selected: what is.
+                    let shown = n.layout.cut.then(|| text_shown(n, s));
+                    let mut out = match &shown {
+                        Some(shown) => format!("Text {s:?} shows {shown:?}"),
+                        None => format!("Text {s:?}"),
+                    };
+                    if let Some(e) = ui.editing.as_ref().filter(|e| e.key == n.key) {
+                        let text = shown.unwrap_or_else(|| s.clone());
+                        out += &format!(" selected {:?}", text.get(e.range()).unwrap_or(""));
+                    }
+                    out
+                }
                 Kind::Button { label, .. } => format!("Button {label:?}"),
-                Kind::TextField { text, placeholder, secure, .. } => {
+                Kind::TextField { text, placeholder, secure, search, .. } => {
                     let composing = ui.composing_in(n.key).map(|(_, c)| format!(" composing {:?}", c.text)).unwrap_or_default();
                     let mut value = read_string(text);
                     if *secure {
                         value = value.chars().map(|_| '•').collect();
                     }
-                    format!("TextField {placeholder:?} = {value:?}{composing}")
+                    let kind = if *search { "SearchField" } else { "TextField" };
+                    format!("{kind} {placeholder:?} = {value:?}{composing}")
                 }
                 Kind::Toggle { label, is_on } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
+                Kind::RichEditor { doc, .. } => {
+                    // Its runs, by the characters they're on, and how they look.
+                    let at = |b: usize| doc.text[..b].chars().count();
+                    let runs: Vec<String> = doc
+                        .runs
+                        .iter()
+                        .map(|(r, m)| {
+                            let mut looks = Vec::new();
+                            for (on, name) in [(m.bold, "bold"), (m.italic, "italic"), (m.underline, "underline"), (m.strike, "strikethrough")] {
+                                if on {
+                                    looks.push(name.to_string());
+                                }
+                            }
+                            if let Some(s) = m.size {
+                                looks.push(format!("size {s}"));
+                            }
+                            if let Some(c) = &m.color {
+                                looks.push(format!("color {c}"));
+                            }
+                            if let Some(f) = &m.font {
+                                looks.push(format!("font {f:?}"));
+                            }
+                            format!("{}..{} {}", at(r.start), at(r.end), looks.join(" "))
+                        })
+                        .collect();
+                    let mut out = format!("RichTextEditor {:?} runs {runs:?}", doc.text);
+                    if let Some(e) = ui.editing.as_ref().filter(|e| e.key == n.key) {
+                        out += &format!(" selected {}..{}", at(e.range().start.min(doc.text.len())), at(e.range().end.min(doc.text.len())));
+                    }
+                    out
+                }
+                Kind::Picker { style: 1, .. } => "Picker radio".to_string(),
                 Kind::Picker { .. } => "Picker".to_string(),
+                Kind::Grid { .. } => {
+                    let columns = n.layout.grid.as_ref().map_or(0, |g| g.widths.len());
+                    format!("Grid {columns} columns")
+                }
+                Kind::GridRow => "GridRow".to_string(),
                 Kind::VStack(..) => "VStack".to_string(),
                 Kind::HStack(..) => "HStack".to_string(),
                 Kind::ZStack(_) => "ZStack".to_string(),
@@ -4419,8 +4847,11 @@ impl App {
                     let open = unsafe { *expanded.locate() } & 1 != 0;
                     format!("DisclosureGroup {title:?} {}", if open { "open" } else { "closed" })
                 }
-                Kind::Lazy { count, first, .. } => {
+                Kind::Lazy { count, first, across: false, .. } => {
                     format!("LazyVStack {count} rows, built {}..{}", first, first + n.children.len())
+                }
+                Kind::Lazy { count, first, .. } => {
+                    format!("LazyHStack {count} columns, built {}..{}", first, first + n.children.len())
                 }
                 Kind::Table(spec) => {
                     let mut out = match spec.tree {
@@ -4535,8 +4966,10 @@ impl App {
                 Kind::Group => "View",
                 Kind::Text(_) => "Text",
                 Kind::Button { .. } => "Button",
+                Kind::TextField { search: true, .. } => "SearchField",
                 Kind::TextField { .. } => "TextField",
                 Kind::Toggle { .. } => "Toggle",
+                Kind::RichEditor { .. } => "RichTextEditor",
                 Kind::Picker { .. } => "Picker",
                 Kind::VStack(..) => "VStack",
                 Kind::HStack(..) => "HStack",
@@ -4559,7 +4992,10 @@ impl App {
                 Kind::ColorPicker { .. } => "ColorPicker",
                 Kind::Swatch(_) => "Swatch",
                 Kind::Disclosure { .. } => "DisclosureGroup",
-                Kind::Lazy { .. } => "LazyVStack",
+                Kind::Lazy { across: false, .. } => "LazyVStack",
+                Kind::Lazy { .. } => "LazyHStack",
+                Kind::Grid { .. } => "Grid",
+                Kind::GridRow => "GridRow",
                 Kind::Table(spec) => {
                     if spec.tree.is_some() {
                         "Tree"
@@ -4794,6 +5230,25 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     [x, y] => app.pointer_at(x, y),
                     _ => None,
                 };
+                // A double click in text selects a word; on a table's row,
+                // it opens it (or edits the cell).
+                if let (None, [x, y], "doubleclick") = (key, &n[..], word) {
+                    match app.hit(*x, *y) {
+                        Some(Hit::Field(k)) => {
+                            app.press_field(k, *x, *y, false, 1);
+                            app.press_field(k, *x, *y, false, 2);
+                            mouse = (*x, *y);
+                            continue;
+                        }
+                        Some(Hit::TableRow(..)) => {
+                            app.click(*x, *y);
+                            app.click(*x, *y);
+                            mouse = (*x, *y);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
                 let (Some(key), [x, y]) = (key, &n[..]) else {
                     eprintln!("script: no view with `.onPointer` for `{cmd}`");
                     return 2;
@@ -6015,7 +6470,8 @@ impl WindowApp {
 
     /// Input methods are on while a text field or code editor is edited.
     fn sync_ime(&mut self) {
-        let editing = self.app.ui.editing.is_some();
+        // (Text that's only selected takes no typing.)
+        let editing = self.app.ui.editing.as_ref().is_some_and(|e| self.app.node(e.key).is_some_and(typable));
         if editing != self.ime {
             self.ime = editing;
             // (A phone's keyboard takes a moment to slide in or out.)
@@ -6036,7 +6492,8 @@ impl WindowApp {
         #[cfg(target_os = "android")]
         {
             use super::android::Typing;
-            let key = self.app.ui.editing.as_ref().map(|e| e.key);
+            // (Not for text that's only selected.)
+            let key = self.app.ui.editing.as_ref().map(|e| e.key).filter(|k| self.app.node(*k).is_some_and(typable));
             let now = self.app.edited();
             if key != self.phone.typing_in {
                 self.phone.typing_in = key;
@@ -6701,12 +7158,57 @@ fn common_prefix(a: &str, b: &str) -> usize {
 /// Whether a view's text is edited in lines: a code editor, or a text field
 /// of several.
 fn in_lines(kind: &Kind) -> bool {
-    matches!(kind, Kind::CodeEditor { .. } | Kind::TextField { lines: 2.., .. })
+    matches!(kind, Kind::CodeEditor { .. } | Kind::TextField { lines: 2.., .. } | Kind::RichEditor { .. })
+}
+
+/// Whether a view's text can be typed in (a text field, code editor or
+/// rich text editor).
+fn typable(n: &Node) -> bool {
+    editable_text(n).is_some() || matches!(n.kind, Kind::RichEditor { .. })
+}
+
+/// Puts `value` where a `String` locator points (letting go of what was there).
+fn set_string(locator: &Callback, value: &str) {
+    let slot = locator.locate() as *mut *mut Str;
+    unsafe {
+        let old = *slot;
+        *slot = crate::str_new(value);
+        crate::tsl_release(old as *mut Header);
+    }
 }
 
 fn editable_text(n: &Node) -> Option<&Callback> {
     match &n.kind {
         Kind::TextField { text, .. } | Kind::CodeEditor { text, .. } => Some(text),
         _ => None,
+    }
+}
+
+/// Whether a view is text that can be selected but not changed: a
+/// `Text` with `.selectable()`.
+fn selectable_text(n: &Node) -> bool {
+    matches!(n.kind, Kind::Text(_)) && n.layout.style.selectable
+}
+
+/// The text of a view whose text is selected or edited: a text field's or
+/// code editor's, or a selectable `Text`'s (as it shows: cut short by its
+/// `.lineLimit`, it's what shows that's selected).
+fn shown_text(n: &Node) -> Option<String> {
+    match &n.kind {
+        Kind::Text(s) if selectable_text(n) => Some(text_shown(n, s)),
+        Kind::RichEditor { doc, .. } => Some(doc.text.clone()),
+        _ => editable_text(n).map(read_string),
+    }
+}
+
+/// What shows of a `Text`'s `s`: all of it, or (cut short by its
+/// `.lineLimit`) its start, without the spaces at its end, then "…".
+fn text_shown(n: &Node, s: &str) -> String {
+    match &n.layout.text {
+        Some(t) if n.layout.cut => {
+            let start = t.len.saturating_sub('…'.len_utf8()).min(s.len());
+            format!("{}…", s.get(..start).unwrap_or(s))
+        }
+        _ => s.to_string(),
     }
 }

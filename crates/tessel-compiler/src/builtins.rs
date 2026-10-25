@@ -35,6 +35,8 @@ pub const CURVES: &[&str] = &["easeInOut", "easeIn", "easeOut", "linear", "sprin
 pub const SCROLL_AXES_CASES: &[&str] = &["vertical", "horizontal", "both"];
 /// Where `scrollTo` puts a view (the runtime relies on the order).
 pub const SCROLL_ALIGN_CASES: &[&str] = &["nearest", "top", "center", "bottom"];
+/// How a `Picker` shows its options (the runtime relies on the order).
+pub const PICKER_STYLE_CASES: &[&str] = &["segmented", "radio"];
 
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
@@ -54,7 +56,7 @@ pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt"
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
 /// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode, Edge,
-/// RibbonSize, Curve, ScrollAxes, ScrollAlign.
+/// RibbonSize, Curve, ScrollAxes, ScrollAlign, PickerStyle.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -86,6 +88,7 @@ pub fn enums() -> Vec<EnumDef> {
         simple("Curve", CURVES),
         simple("ScrollAxes", SCROLL_AXES_CASES),
         simple("ScrollAlign", SCROLL_ALIGN_CASES),
+        simple("PickerStyle", PICKER_STYLE_CASES),
     ]
 }
 
@@ -202,6 +205,7 @@ pub const RIBBON_SIZE: Ty = Ty::Enum(10);
 pub const CURVE: Ty = Ty::Enum(11);
 pub const SCROLL_AXES: Ty = Ty::Enum(12);
 pub const SCROLL_ALIGN: Ty = Ty::Enum(13);
+pub const PICKER_STYLE: Ty = Ty::Enum(14);
 
 pub struct Builtins {
     pub color: Ty,
@@ -224,12 +228,13 @@ pub const VIEW_NAMES: &[&str] =
         "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Scene3D", "Slider", "Stepper", "ColorPicker",
         "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
         "RibbonButton", "RibbonToggle", "RibbonMenu", "Table", "TableColumn", "Tree", "HSplit", "VSplit",
+        "Grid", "GridRow", "LazyHStack", "SearchField", "__RichEditor",
     ];
 
 /// Built-in views whose names a program may take for its own types (a
 /// program's `struct Tree` was there first): the program's own is meant
 /// then, and the view isn't to be had in it.
-pub const YIELDING_VIEWS: &[&str] = &["Table", "TableColumn", "Tree"];
+pub const YIELDING_VIEWS: &[&str] = &["Table", "TableColumn", "Tree", "Grid", "GridRow"];
 
 /// Views that only go in menus (`.contextMenu`, `.menuBar`, `Menu`).
 pub const MENU_VIEWS: &[&str] = &["MenuItem", "MenuDivider", "Menu"];
@@ -247,6 +252,13 @@ impl Builtins {
                 P::new("lines", Ty::Int).default(),
             ],
             "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
+            // The text of the prelude's `RichTextEditor` (see the runtime's `rich`).
+            "__RichEditor" => vec![
+                P::new("id", Ty::Int),
+                P::new("json", Ty::Str),
+                P::new("onChange", Ty::func(vec![Ty::Str], Ty::Void)),
+            ],
+            "SearchField" => vec![P::unlabeled("placeholder", Ty::Str).default(), P::new("text", Ty::Str).bind()],
             "CodeEditor" => vec![
                 P::new("text", Ty::Str).bind(),
                 P::new("errorLines", Ty::list(Ty::Int)).default(),
@@ -261,7 +273,7 @@ impl Builtins {
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
                 selection.sets_tag = true;
-                vec![selection, content()]
+                vec![selection, P::new("style", PICKER_STYLE).default(), content()]
             }
             "TabView" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
@@ -285,6 +297,14 @@ impl Builtins {
                 content(),
             ],
             "ZStack" => vec![P::new("alignment", self.alignment.clone()).default(), content()],
+            // Rows (`GridRow`s) of cells in columns that line up.
+            "Grid" => vec![
+                P::new("alignment", self.alignment.clone()).default(),
+                P::new("spacing", Ty::Float).default(),
+                P::new("rowSpacing", Ty::Float).default(),
+                content(),
+            ],
+            "GridRow" => vec![content()],
             "Scroll" => vec![P::unlabeled("axes", SCROLL_AXES).default(), content()],
             // The first pane's width (height), when the app keeps it.
             "HSplit" | "VSplit" => vec![P::new("size", Ty::Float).bind().default(), content()],
@@ -327,7 +347,15 @@ impl Builtins {
             "TableColumn" => {
                 let mut cells = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
                 cells.rows = true;
-                vec![P::unlabeled("title", Ty::Str), P::new("width", Ty::Float).default(), P::new("alignment", self.alignment.clone()).default(), cells]
+                vec![
+                    P::unlabeled("title", Ty::Str),
+                    P::new("width", Ty::Float).default(),
+                    P::new("alignment", self.alignment.clone()).default(),
+                    // Its cells can be edited: a double click shows a text
+                    // field, and what's typed comes here (with the row).
+                    P::new("onEdit", Ty::func(vec![Ty::Int, Ty::Str], Ty::Void)).default(),
+                    cells,
+                ]
             }
             // The program's tree: how many children a node has (by its path,
             // `[]` for the top), and the row of each that shows.
@@ -347,6 +375,11 @@ impl Builtins {
                 let mut rows = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
                 rows.rows = true;
                 vec![P::new("count", Ty::Int), P::new("rowHeight", Ty::Float), rows]
+            }
+            "LazyHStack" => {
+                let mut columns = P::new("content", Ty::func(vec![Ty::Int], Ty::View));
+                columns.rows = true;
+                vec![P::new("count", Ty::Int), P::new("columnWidth", Ty::Float), columns]
             }
             "MenuItem" => vec![
                 P::unlabeled("title", Ty::Str),
@@ -462,6 +495,10 @@ impl Builtins {
             "animation" => vec![P::unlabeled("seconds", Ty::Float).default(), P::new("curve", CURVE).default()],
             "textAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
             "hoverBackground" => vec![P::unlabeled("color", self.color.clone()), P::new("radius", Ty::Float).default()],
+            "gridCellColumns" => vec![P::unlabeled("count", Ty::Int)],
+            "gridColumnAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
+            "selectable" => vec![P::unlabeled("isSelectable", Ty::Bool).default()],
+            "lineLimit" => vec![P::unlabeled("lines", Ty::Int)],
             _ => return None,
         })
     }
@@ -600,6 +637,11 @@ impl Builtins {
             "fileSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Int) },
             "modifiedTime" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Float) },
             "homeFolder" | "documentsFolder" | "tempFolder" | "appPath" | "appFolder" | "platform" => FnSig { params: vec![], ret: Ty::Str },
+            // (For the prelude's `RichTextEditor`: its id, the marks of what's
+            // selected in it, and its toolbar's commands.)
+            "__richId" => FnSig { params: vec![], ret: Ty::Int },
+            "__richMarks" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Int },
+            "__richApply" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::unlabeled("command", Ty::Str)], ret: Ty::Void },
             "appDataFolder" => FnSig { params: vec![P::unlabeled("name", Ty::Str)], ret: Ty::Str },
             "joinPath" => FnSig { params: vec![P::unlabeled("folder", Ty::Str), P::unlabeled("name", Ty::Str)], ret: Ty::Str },
             "arguments" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
@@ -764,7 +806,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
-    "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
+    "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "__richId", "__richMarks", "__richApply", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "chooseFolder", "__openFiles", "__messageDialog", "__printFile", "__dateParts",
@@ -1198,7 +1240,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
             "tooltip", "accessibilityLabel", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
-            "onCloseRequest",
+            "onCloseRequest", "gridCellColumns", "gridColumnAlignment", "selectable", "lineLimit",
         ],
         _ => &[],
     }
@@ -1299,6 +1341,9 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "tempFolder" => rt("tsl_temp_folder"),
         "appPath" => rt("tsl_app_path"),
         "appFolder" => rt("tsl_app_folder"),
+        "__richId" => rt("tsl_rich_id"),
+        "__richMarks" => rt("tsl_rich_marks"),
+        "__richApply" => rt("tsl_rich_apply"),
         "appDataFolder" => rt("tsl_app_data_folder"),
         "joinPath" => rt("tsl_join_path"),
         "platform" => rt("tsl_platform"),

@@ -143,6 +143,38 @@ impl TextEngine {
         self.styled(text, size, weight, Face::default(), color, max_w, align)
     }
 
+    /// Text with stretches in styles of their own (a `RichTextEditor`'s),
+    /// wrapped at `max_w`.
+    pub fn runs(&mut self, text: &str, base: &crate::ui::text::Styled, runs: &[crate::ui::text::Styled], max_w: Option<f64>) -> TextLayout {
+        fn family(f: Family) -> StyleProperty<'static, Paint> {
+            match f {
+                Family::System => StyleProperty::from(GenericFamily::SystemUi),
+                Family::Mono => StyleProperty::from(GenericFamily::Monospace),
+                named => {
+                    let name = named.name().unwrap_or_default().replace('"', "");
+                    StyleProperty::FontFamily(parley::FontFamily::Source(format!("\"{name}\", system-ui").into()))
+                }
+            }
+        }
+        let mut b = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
+        b.push_default(family(base.family));
+        b.push_default(StyleProperty::FontSize(base.size as f32));
+        b.push_default(StyleProperty::FontWeight(parley::FontWeight::new(base.weight)));
+        b.push_default(StyleProperty::Brush(Paint(base.color.0)));
+        for r in runs {
+            if r.family != base.family {
+                b.push(family(r.family), r.range.clone());
+            }
+            b.push(StyleProperty::FontSize(r.size as f32), r.range.clone());
+            b.push(StyleProperty::FontWeight(parley::FontWeight::new(r.weight)), r.range.clone());
+            if r.italic {
+                b.push(StyleProperty::FontStyle(parley::FontStyle::Italic), r.range.clone());
+            }
+            b.push(StyleProperty::Brush(Paint(r.color.0)), r.range.clone());
+        }
+        finish(b.build(text), text, max_w, 0)
+    }
+
     /// Text in a family and style of its own (`g.text`, a `Text` with
     /// `.font(family:italic:)`).
     #[allow(clippy::too_many_arguments)]

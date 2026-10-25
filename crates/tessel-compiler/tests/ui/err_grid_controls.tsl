@@ -1,0 +1,32 @@
+// Grid, Picker styles, text modifiers, TableColumn's onEdit, SearchField
+// and RichTextEditor are checked like other views.
+
+app Form {
+    state choice = 1
+    state rows = [1, 2]
+    state query = ""
+    state doc = RichText("Hi")
+
+    VStack {
+        Grid(spacing: "wide") { // error: expected `Float`, found `String`
+            GridRow {
+                Text("a").gridCellColumns(1.5) // error: expected `Int`, found `Float`
+            }
+        }
+        Picker(selection: choice, style: .menu) { // error: `PickerStyle` has no case `.menu`
+            Text("One").tag(1)
+        }
+        Text("long").lineLimit("one") // error: expected `Int`, found `String`
+        Text("pick").selectable(1) // error: expected `Bool`, found `Int`
+        Table(rows: rows.count) {
+            TableColumn("N", onEdit: { i in print(i) }) { i in // error: this block should take 2 parameter(s)
+                Text("{rows[i]}")
+            }
+        }
+        SearchField(text: "query") // error: needs something it can change
+        RichTextEditor(text: query) // error: expected `RichText`, found `String`
+        LazyHStack(count: 3, columnWidth: "wide") { i in // error: expected `Float`, found `String`
+            Text("{i}")
+        }
+    }
+}

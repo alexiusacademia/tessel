@@ -36,6 +36,65 @@ pub struct Column {
     pub width: Option<f64>,
     /// 0 leading, 1 center, 2 trailing.
     pub align: u8,
+    /// `onEdit`: its cells can be edited, and this gets what's typed in one
+    /// (`fn(env, row, String)`).
+    pub on_edit: Option<Callback>,
+}
+
+/// The cell being edited: in which table, row and column; the key of its
+/// text field, once it's built; whether the field has been edited (until
+/// then, it isn't left); and how the editing ends: dropped (Escape), or
+/// going on in another cell (Tab).
+pub struct CellEdit {
+    pub table: u64,
+    pub row: usize,
+    pub column: usize,
+    pub field: Option<u64>,
+    pub seen: bool,
+    pub cancel: bool,
+    pub next: Option<(usize, usize)>,
+}
+
+thread_local! {
+    /// The cell being edited, if one is.
+    pub static CELL: RefCell<Option<CellEdit>> = const { RefCell::new(None) };
+}
+
+/// The text typed in the cell being edited (the UI thread's only).
+static mut CELL_TEXT: *mut Str = std::ptr::null_mut();
+
+/// The cell's text field's locator.
+extern "C" fn cell_text(_env: *mut Header) -> *mut u8 {
+    unsafe {
+        if CELL_TEXT.is_null() {
+            CELL_TEXT = crate::str_new("");
+        }
+        &raw mut CELL_TEXT as *mut u8
+    }
+}
+
+/// What's typed in the cell being edited.
+pub fn typed() -> String {
+    unsafe { crate::str_text(*(cell_text(std::ptr::null_mut()) as *const *const Str)) }.to_string()
+}
+
+/// Starts editing a cell, with `text` in it.
+pub fn begin_edit(table: u64, row: usize, column: usize, text: &str) {
+    unsafe {
+        let slot = cell_text(std::ptr::null_mut()) as *mut *mut Str;
+        let old = *slot;
+        *slot = crate::str_new(text);
+        crate::tsl_release(old as *mut Header);
+    }
+    CELL.with(|c| *c.borrow_mut() = Some(CellEdit { table, row, column, field: None, seen: false, cancel: false, next: None }));
+}
+
+/// Lets go of the text typed in a cell (at exit).
+pub fn forget_cell_text() {
+    unsafe {
+        let old = std::ptr::replace(&raw mut CELL_TEXT, std::ptr::null_mut());
+        crate::tsl_release(old as *mut Header);
+    }
 }
 
 /// What a table (or tree) is: what the program said of it.
@@ -167,11 +226,23 @@ pub extern "C" fn tsl_ui_table_begin() {
     BUILDING.with(|b| b.borrow_mut().push((Vec::new(), Vec::new())));
 }
 
-/// `TableColumn(title, width:alignment:) { i in … }`: a column of the
-/// table being built; `f(env, i)` builds its cell in row `i`.
+/// `TableColumn(title, width:alignment:onEdit:) { i in … }`: a column of
+/// the table being built; `f(env, i)` builds its cell in row `i`. `edit_f`
+/// is null when its cells aren't edited.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_table_column(title: *const Str, has_width: u8, width: f64, align: i32, f: *const c_void, env: *mut Header) {
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_ui_table_column(
+    title: *const Str,
+    has_width: u8,
+    width: f64,
+    align: i32,
+    edit_f: *const c_void,
+    edit_env: *mut Header,
+    f: *const c_void,
+    env: *mut Header,
+) {
     let title = unsafe { crate::str_text(title) }.to_string();
+    let on_edit = (!edit_f.is_null()).then(|| Callback::new(edit_f, edit_env));
     let cells = Callback::new(f, env);
     let width = (has_width != 0 && width.is_finite()).then_some(width.max(MIN_WIDTH));
     let align = match align {
@@ -181,7 +252,7 @@ pub unsafe extern "C" fn tsl_ui_table_column(title: *const Str, has_width: u8, w
     };
     BUILDING.with(|b| {
         if let Some((columns, blocks)) = b.borrow_mut().last_mut() {
-            columns.push(Column { title, width, align });
+            columns.push(Column { title, width, align, on_edit });
             blocks.push(cells);
         }
     });
@@ -224,11 +295,32 @@ pub unsafe extern "C" fn tsl_ui_table_end(
     };
     let selected: HashSet<i64> = spec.selection.as_ref().map(read_ints).unwrap_or_default().into_iter().collect();
     let aligns: Vec<u8> = spec.columns.iter().map(|c| c.align).collect();
+    let row_height = spec.row_height;
     build(spec, |_| None, |row| {
         for (column, cells) in blocks.iter().enumerate() {
             let align = aligns.get(column).copied().unwrap_or(0);
             with_builder(|b| b.begin(Kind::VStack(0.0, align), column as u64));
-            cells.call_with_int(row.index as i64);
+            let editing = CELL.with(|c| c.borrow().as_ref().is_some_and(|e| e.table == row.table && e.row == row.index && e.column == column));
+            if editing {
+                // The cell being edited: a text field with what's typed.
+                let text = Callback::new(cell_text as *const c_void, std::ptr::null_mut());
+                with_builder(|b| {
+                    b.leaf(Kind::TextField { placeholder: String::new(), text, secure: false, lines: 1, search: false });
+                    if let Some(n) = b.last() {
+                        n.mods.autofocus = true;
+                        n.mods.max_width = Some(f64::INFINITY);
+                        n.mods.height = Some((row_height - 2.0).max(8.0));
+                        let key = n.key;
+                        CELL.with(|c| {
+                            if let Some(e) = c.borrow_mut().as_mut() {
+                                e.field = Some(key);
+                            }
+                        });
+                    }
+                });
+            } else {
+                cells.call_with_int(row.index as i64);
+            }
             with_builder(|b| end_cell(b, align));
         }
         row.selected = selected.contains(&(row.index as i64));
@@ -256,7 +348,7 @@ pub unsafe extern "C" fn tsl_ui_tree(
     let children = Callback::new(children_f, children_env);
     let rows = Callback::new(f, env);
     let spec = Spec {
-        columns: vec![Column { title: String::new(), width: None, align: 0 }],
+        columns: vec![Column { title: String::new(), width: None, align: 0, on_edit: None }],
         count: 0,
         row_height: if row_height.is_finite() && row_height >= 8.0 { row_height } else { 24.0 },
         selection: given(sel_f, sel_env),
@@ -320,7 +412,7 @@ fn build(mut spec: Spec, count_of: impl FnOnce(u64) -> Option<usize>, mut cells:
         b.begin(Kind::Table(Rc::new(spec)), 0);
         table = b.parent().key;
         b.begin(Kind::Scroll(0), 0);
-        b.begin(Kind::Lazy { count, row_height, first: 0 }, 0);
+        b.begin(Kind::Lazy { count, row_height, first: 0, across: false }, 0);
     });
     let mut list = 0;
     with_builder(|b| list = b.parent().key);

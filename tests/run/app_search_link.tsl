@@ -1,0 +1,13 @@
+// SearchField, and Link.
+
+app Find(width: 360, height: 200) {
+    state query = ""
+    state found = 0
+    VStack(alignment: .leading) {
+        SearchField(text: query).onSubmit { found += 1 }
+        Text("Looking for \"{query}\", searched {found} times")
+        Link("Tessel", url: "https://tessel-lang.syncster.dev")
+        Link("Count", action: { found += 10 })
+    }
+    .padding(16)
+}

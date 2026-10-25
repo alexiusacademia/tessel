@@ -81,7 +81,7 @@ impl Editing {
         self.focus = to;
     }
 
-    fn collapse_to(&mut self, i: usize) {
+    pub fn collapse_to(&mut self, i: usize) {
         self.anchor = i;
         self.focus = i;
     }
@@ -148,6 +148,36 @@ impl Clipboard {
         }
     }
 
+    /// Puts text with styles on the clipboard: as HTML (for apps that take
+    /// it) and as plain text (for the rest).
+    pub fn set_rich(&mut self, text: &str, html: &str) {
+        match self {
+            #[cfg(not(target_os = "android"))]
+            Clipboard::System(c) => {
+                if c.set().html(html, Some(text)).is_err() {
+                    let _ = c.set_text(text.to_string());
+                }
+            }
+            _ => {
+                self.set(text);
+                RICH.with(|r| *r.borrow_mut() = Some((text.to_string(), html.to_string())));
+            }
+        }
+    }
+
+    /// The HTML on the clipboard, if there's some.
+    pub fn html(&mut self) -> Option<String> {
+        match self {
+            #[cfg(not(target_os = "android"))]
+            Clipboard::System(c) => c.get().html().ok().filter(|h| !h.trim().is_empty()),
+            // (Ours, as long as the text on the clipboard is still what went with it.)
+            _ => {
+                let now = self.get();
+                RICH.with(|r| r.borrow().as_ref().filter(|(t, _)| *t == now).map(|(_, h)| h.clone()))
+            }
+        }
+    }
+
     fn set(&mut self, text: &str) {
         match self {
             #[cfg(target_os = "android")]
@@ -162,6 +192,12 @@ impl Clipboard {
             Clipboard::Headless => crate::stdlib::set_headless_clipboard(text),
         }
     }
+}
+
+thread_local! {
+    /// Where the system's clipboard isn't used: the text with styles copied
+    /// last, and its HTML.
+    static RICH: std::cell::RefCell<Option<(String, String)>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Applies `edit` to `text` (laid out as `layout`). Returns the new text if it

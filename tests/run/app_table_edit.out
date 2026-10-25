@@ -1,0 +1,168 @@
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [1]
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+              VStack
+                Text "row 0"
+            Row 1 selected
+              VStack
+                TextField "" = "Alan"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 36, Alan 41, Grace 85"
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [1] focused
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "36"
+              VStack
+                Text "row 0"
+            Row 1 selected
+              VStack
+                Text "Turing"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 36, Turing 41, Grace 85"
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [1]
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "37"
+              VStack
+                Text "row 0"
+            Row 1 selected
+              VStack
+                TextField "" = "Turing"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 37, Turing 41, Grace 85"
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [1] focused
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "37"
+              VStack
+                Text "row 0"
+            Row 1 selected
+              VStack
+                Text "Turing"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2
+              VStack
+                Text "Grace"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 37, Turing 41, Grace 85"
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [2] focused
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "37"
+              VStack
+                Text "row 0"
+            Row 1
+              VStack
+                Text "Turing"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2 selected
+              VStack
+                Text "Hopper"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 37, Turing 41, Hopper 85"
+Root
+  View
+    VStack
+      Table ["Name", "Age", "Note"] 3 rows, selected [2] focused
+        Scroll
+          LazyVStack 3 rows, built 0..3
+            Row 0
+              VStack
+                Text "Ada"
+              VStack
+                Text "37"
+              VStack
+                Text "row 0"
+            Row 1
+              VStack
+                Text "Turing"
+              VStack
+                Text "41"
+              VStack
+                Text "row 1"
+            Row 2 selected
+              VStack
+                Text "Hopper"
+              VStack
+                Text "85"
+              VStack
+                Text "row 2"
+      Text "Ada 37, Turing 41, Hopper 85"

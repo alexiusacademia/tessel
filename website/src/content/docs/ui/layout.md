@@ -230,6 +230,60 @@ app Atlas(width: 800, height: 500) {
 - A split view takes all the space it's offered. Its panes are its first two
   views.
 
+## Grids
+
+A `Grid` lines views up in rows and columns. Each `GridRow` is a row, and
+each view in it a cell; a column is as wide as its widest cell, so labels
+and fields line up from row to row. It's the way to lay out a form:
+
+```tessel
+app Signup(width: 420, height: 260) {
+    state name = ""
+    state email = ""
+    state plan = "Free"
+
+    Grid(spacing: 10) {
+        GridRow {
+            Text("Name").gridColumnAlignment(.trailing)
+            TextField("", text: name)
+        }
+        GridRow {
+            Text("Email address")
+            TextField("", text: email)
+        }
+        Divider()
+        GridRow {
+            Text("Plan")
+            Picker(selection: plan, style: .radio) {
+                Text("Free").tag("Free")
+                Text("Pro").tag("Pro")
+            }
+        }
+        GridRow {
+            Text("You can change your plan at any time.")
+                .gridCellColumns(2)
+                .color(.secondary)
+        }
+    }
+    .padding(20)
+}
+```
+
+- `spacing:` is the room between columns, and between rows unless
+  `rowSpacing:` says otherwise (8 points each by default).
+- `alignment:` lines up each cell in its row and column: `.leading` (the
+  default) puts it at the left, centered from top to bottom. A cell with
+  `.gridColumnAlignment(.trailing)` lines up its whole column, as the
+  labels above.
+- `.gridCellColumns(2)` makes a cell take two columns (or more).
+- A view in the grid that isn't in a `GridRow`, like the `Divider` above,
+  is a row of its own, as wide as the grid.
+- Columns with a flexible view in them, such as a text field, share the
+  room the others leave, so a grid in a wide window has wide fields.
+- A row can come from a view of your own: `view Field(…) { GridRow { … } }`
+  makes one row of the grid it's in. Rows from `for` and `if` work too.
+- Outside a `Grid`, a `GridRow` is laid out like an `HStack`.
+
 ## Padding
 
 `.padding` adds space around a view, inside its background and border. You

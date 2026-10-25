@@ -23,6 +23,7 @@ mod menu;
 #[cfg(target_os = "macos")]
 mod native;
 mod render;
+pub(crate) mod rich;
 mod svg;
 mod print;
 mod text;
@@ -100,6 +101,12 @@ impl Callback {
     pub fn call_with_int(&self, arg: i64) {
         let f: extern "C" fn(*mut Header, i64) = unsafe { std::mem::transmute(self.f) };
         f(self.env, arg);
+    }
+
+    /// Runs a closure taking an `Int` and a pointer: `void fn(env, i64, ptr)`.
+    pub fn call_with_int_ptr(&self, a: i64, b: *mut u8) {
+        let f: extern "C" fn(*mut Header, i64, *mut u8) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, b);
     }
 
     /// Runs a closure taking a pointer and giving an `Int`: `i64 fn(env, ptr)`.
@@ -212,7 +219,9 @@ pub enum Kind {
     /// copied.
     /// `lines` above 1: the text wraps, Enter starts a new line, and the
     /// field is that many lines high (and scrolls).
-    TextField { placeholder: String, text: Callback, secure: bool, lines: u32 },
+    /// `search`: a `SearchField`, with a magnifying glass before its text
+    /// and a button that clears it after.
+    TextField { placeholder: String, text: Callback, secure: bool, lines: u32, search: bool },
     Toggle { label: String, is_on: Callback },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
     CodeEditor {
@@ -235,9 +244,14 @@ pub enum Kind {
     TabView { selection: Callback, close: Option<Callback> },
     /// A hairline separator across its stack.
     Divider,
+    /// The text of a `RichTextEditor`: its id (for its toolbar), its text
+    /// (see `rich`), and what's told of each change (`fn(env, String)`,
+    /// with the text's JSON).
+    RichEditor { id: i64, doc: std::rc::Rc<rich::Doc>, on_change: Callback },
     /// An SVG drawing: a built-in icon (with its name), `Svg("…")`, or an SVG file.
     Svg { source: std::rc::Rc<str>, icon: Option<&'static str> },
-    Picker { selection: Callback },
+    /// `style` is a `PickerStyle` tag: 0 segmented, 1 radio buttons.
+    Picker { selection: Callback, style: u8 },
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
     HStack(f64, u8),
@@ -249,6 +263,13 @@ pub enum Kind {
     /// panes and a divider that's dragged between them. `size` is the
     /// first pane's width (height) when it's bound (see `layout::SPLITS`).
     Split { vertical: bool, size: Option<Callback> },
+    /// `Grid(alignment:spacing:rowSpacing:)`: its `GridRow`s' cells in
+    /// columns that line up (see `layout::grid`). Other views in it take a
+    /// row of their own, as wide as the grid. `align` is an `Alignment` tag.
+    Grid { spacing: f64, row_spacing: f64, align: u8 },
+    /// A row of a `Grid`: each child is a cell. Elsewhere, it's laid out
+    /// like an `HStack`.
+    GridRow,
     Spacer,
     /// Text written in Markdown. Pictures are looked for in `folder`;
     /// `on_link` gets the address of a link that's clicked.
@@ -282,8 +303,9 @@ pub enum Kind {
     Disclosure { title: String, expanded: Callback },
     /// `LazyVStack(count:rowHeight:)`: rows `first ..` (its children, one
     /// stack each) of `count`, each `row_height` tall; only those near
-    /// what shows are built (see `lazy`).
-    Lazy { count: usize, row_height: f64, first: usize },
+    /// what shows are built (see `lazy`). `LazyHStack(count:columnWidth:)`
+    /// (`across`): columns side by side, each `row_height` wide.
+    Lazy { count: usize, row_height: f64, first: usize, across: bool },
     /// `MenuItem("Copy", shortcut: "cmd+c", checked:) { … }`: an item of a
     /// menu. Its shortcut is kept as `menu::Shortcut::parse` reads it.
     MenuItem { label: String, shortcut: String, checked: bool, action: Callback },
@@ -427,6 +449,17 @@ pub struct Mods {
     /// `.onCloseRequest { … }`: called instead of closing the window (or
     /// quitting) when the user asks to.
     pub on_close_request: Option<Callback>,
+    /// `.gridCellColumns(n)`: how many columns of its `Grid` the cell takes.
+    pub grid_columns: Option<usize>,
+    /// `.gridColumnAlignment(…)`: how the cells of its column line up
+    /// across (0 leading, 1 center, 2 trailing).
+    pub grid_align: Option<u8>,
+    /// `.selectable()`: its text (and the text in it) can be selected and
+    /// copied; inherited.
+    pub selectable: Option<bool>,
+    /// `.lineLimit(n)`: its text (and the text in it) shows at most `n`
+    /// lines, the last ending in "…"; inherited.
+    pub line_limit: Option<usize>,
     /// Which view expression of the source this is, for `tessel preview`:
     /// its number among the ones the compiler listed.
     pub source: Option<u32>,
@@ -563,6 +596,13 @@ impl Node {
         }
         self.children.iter().find_map(|c| c.find(key))
     }
+
+    pub fn find_mut(&mut self, key: u64) -> Option<&mut Node> {
+        if self.key == key {
+            return Some(self);
+        }
+        self.children.iter_mut().find_map(|c| c.find_mut(key))
+    }
 }
 
 /// Part of a view's identity: a different kind of view in the same position
@@ -608,6 +648,9 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Table(_) => 37,
         Kind::TableRow(_) => 38,
         Kind::Split { .. } => 39,
+        Kind::Grid { .. } => 40,
+        Kind::GridRow => 41,
+        Kind::RichEditor { .. } => 42,
     }
 }
 
@@ -742,6 +785,7 @@ fn lift_ribbon_parts(node: &mut Node) {
             (Kind::Ribbon { .. }, Kind::RibbonTab { .. }) => true,
             (Kind::RibbonTab { .. }, Kind::RibbonGroup { .. }) => true,
             (Kind::RibbonGroup { .. }, Kind::RibbonItem { .. }) => true,
+            (Kind::Grid { .. }, Kind::GridRow) => true,
             _ => false,
         }
     }
@@ -758,7 +802,7 @@ fn lift_ribbon_parts(node: &mut Node) {
             }
         }
     }
-    if !matches!(node.kind, Kind::Ribbon { .. } | Kind::RibbonTab { .. } | Kind::RibbonGroup { .. }) {
+    if !matches!(node.kind, Kind::Ribbon { .. } | Kind::RibbonTab { .. } | Kind::RibbonGroup { .. } | Kind::Grid { .. }) {
         return;
     }
     if !node.children.iter().any(|c| only_parts(&node.kind, c)) {
@@ -822,6 +866,7 @@ pub fn release_caches() {
 pub fn release_all_state() {
     release_caches();
     controls::forget_hex_text();
+    table::forget_cell_text();
     let records: Vec<*mut Header> = STATES.with(|s| s.borrow_mut().drain().map(|(_, v)| v.record).collect());
     for r in records {
         unsafe { tsl_release(r) };
@@ -847,13 +892,28 @@ pub unsafe extern "C" fn tsl_ui_button(label: *const Str, f: *const c_void, env:
     with_builder(|b| b.leaf(Kind::Button { label, action }));
 }
 
+/// `TextField` (and `SearchField`): `flags` has 1 for a secure field, 2
+/// for a search field.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, secure: u8, lines: i64, f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, flags: u8, lines: i64, f: *const c_void, env: *mut Header) {
     let placeholder = unsafe { text_of(placeholder) };
     let text = Callback::new(f, env);
-    // (A secret is one line: its dots don't wrap.)
-    let lines = if secure != 0 { 1 } else { lines.clamp(1, 1000) as u32 };
-    with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure: secure != 0, lines }));
+    let (secure, search) = (flags & 1 != 0, flags & 2 != 0);
+    if search {
+        // (Its magnifying glass and clear button are built-in icons.)
+        svg::enable_icons();
+    }
+    // (A secret is one line: its dots don't wrap; so is a search.)
+    let lines = if secure || search { 1 } else { lines.clamp(1, 1000) as u32 };
+    with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure, lines, search }));
+}
+
+/// `__RichEditor(id:json:onChange:)`: the text of a `RichTextEditor`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_rich_editor(id: i64, json: *const Str, f: *const c_void, env: *mut Header) {
+    let doc = rich::Doc::parse(unsafe { crate::str_text(json) });
+    let on_change = Callback::new(f, env);
+    with_builder(|b| b.leaf(Kind::RichEditor { id, doc: std::rc::Rc::new(doc), on_change }));
 }
 
 #[unsafe(no_mangle)]
@@ -1162,9 +1222,48 @@ pub unsafe extern "C" fn tsl_ui_begin_split(vertical: u8, f: *const c_void, env:
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_begin_picker(f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_begin_picker(style: i32, f: *const c_void, env: *mut Header) {
     let selection = Callback::new(f, env);
-    with_builder(|b| b.begin(Kind::Picker { selection }, 0));
+    with_builder(|b| b.begin(Kind::Picker { selection, style: style.clamp(0, 1) as u8 }, 0));
+}
+
+/// `Grid(alignment:spacing:rowSpacing:)`: a `rowSpacing` that's not a
+/// number is `spacing`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_begin_grid(align: i32, spacing: f64, row_spacing: f64) {
+    let spacing = if spacing.is_finite() { spacing.max(0.0) } else { 8.0 };
+    let row_spacing = if row_spacing.is_finite() { row_spacing.max(0.0) } else { spacing };
+    with_builder(|b| b.begin(Kind::Grid { spacing, row_spacing, align: align.clamp(0, 8) as u8 }, 0));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_begin_grid_row() {
+    with_builder(|b| b.begin(Kind::GridRow, 0));
+}
+
+/// `.gridCellColumns(n)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_grid_cell_columns(n: i64) {
+    modify(|m| m.grid_columns = Some(n.clamp(1, 1000) as usize));
+}
+
+/// `.gridColumnAlignment(…)`: only the horizontal part of the `Alignment` counts.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_grid_column_alignment(align: i32) {
+    let (h, _) = align_2d(align.clamp(0, 8) as u8);
+    modify(|m| m.grid_align = Some(h));
+}
+
+/// `.selectable(on)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_selectable(on: u8) {
+    modify(|m| m.selectable = Some(on != 0));
+}
+
+/// `.lineLimit(n)`: 0 or less is no limit.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_line_limit(n: i64) {
+    modify(|m| m.line_limit = Some(n.clamp(0, 1_000_000) as usize));
 }
 
 /// Opens a TabView. `close_f` is null when tabs can't be closed; otherwise

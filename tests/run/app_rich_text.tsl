@@ -1,0 +1,12 @@
+// RichTextEditor: styles from the keyboard and the toolbar, typing on in
+// a style, colors, undo, and the text as Markdown.
+
+app Notes(width: 520, height: 320) {
+    state doc = RichText("Hello world")
+    state changes = 0
+    VStack(alignment: .leading) {
+        RichTextEditor(text: doc, onChange: { changes += 1 })
+        Text("{doc.markdown.lines().first ?? ""} ({changes})").lineLimit(1)
+    }
+    .padding(12)
+}

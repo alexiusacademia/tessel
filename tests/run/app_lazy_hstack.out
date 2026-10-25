@@ -1,0 +1,160 @@
+Root
+  View
+    VStack
+      Scroll horizontal
+        LazyHStack 10000 columns, built 0..17
+          VStack
+            Text "#0"
+          VStack
+            Text "#1"
+          VStack
+            Text "#2"
+          VStack
+            Text "#3"
+          VStack
+            Text "#4"
+          VStack
+            Text "#5"
+          VStack
+            Text "#6"
+          VStack
+            Text "#7"
+          VStack
+            Text "#8"
+          VStack
+            Text "#9"
+          VStack
+            Text "#10"
+          VStack
+            Text "#11"
+          VStack
+            Text "#12"
+          VStack
+            Text "#13"
+          VStack
+            Text "#14"
+          VStack
+            Text "#15"
+          VStack
+            Text "#16"
+      Button "Go to 5000"
+Root
+  View
+    VStack
+      Scroll horizontal
+        LazyHStack 10000 columns, built 40..67
+          VStack
+            Text "#40"
+          VStack
+            Text "#41"
+          VStack
+            Text "#42"
+          VStack
+            Text "#43"
+          VStack
+            Text "#44"
+          VStack
+            Text "#45"
+          VStack
+            Text "#46"
+          VStack
+            Text "#47"
+          VStack
+            Text "#48"
+          VStack
+            Text "#49"
+          VStack
+            Text "#50"
+          VStack
+            Text "#51"
+          VStack
+            Text "#52"
+          VStack
+            Text "#53"
+          VStack
+            Text "#54"
+          VStack
+            Text "#55"
+          VStack
+            Text "#56"
+          VStack
+            Text "#57"
+          VStack
+            Text "#58"
+          VStack
+            Text "#59"
+          VStack
+            Text "#60"
+          VStack
+            Text "#61"
+          VStack
+            Text "#62"
+          VStack
+            Text "#63"
+          VStack
+            Text "#64"
+          VStack
+            Text "#65"
+          VStack
+            Text "#66"
+      Button "Go to 5000"
+Root
+  View
+    VStack
+      Scroll horizontal
+        LazyHStack 10000 columns, built 4987..5014
+          VStack
+            Text "#4987"
+          VStack
+            Text "#4988"
+          VStack
+            Text "#4989"
+          VStack
+            Text "#4990"
+          VStack
+            Text "#4991"
+          VStack
+            Text "#4992"
+          VStack
+            Text "#4993"
+          VStack
+            Text "#4994"
+          VStack
+            Text "#4995"
+          VStack
+            Text "#4996"
+          VStack
+            Text "#4997"
+          VStack
+            Text "#4998"
+          VStack
+            Text "#4999"
+          VStack
+            Text "#5000"
+          VStack
+            Text "#5001"
+          VStack
+            Text "#5002"
+          VStack
+            Text "#5003"
+          VStack
+            Text "#5004"
+          VStack
+            Text "#5005"
+          VStack
+            Text "#5006"
+          VStack
+            Text "#5007"
+          VStack
+            Text "#5008"
+          VStack
+            Text "#5009"
+          VStack
+            Text "#5010"
+          VStack
+            Text "#5011"
+          VStack
+            Text "#5012"
+          VStack
+            Text "#5013"
+      Button "Go to 5000"

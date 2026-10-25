@@ -1002,3 +1002,58 @@ Text("Welcome to Tessel.\nLet's build something.")
 - It doesn't move the text's box. Where the box goes is up to its stack's
   `alignment:` or its frame's.
 - Inherited: set it on a stack to align all the text inside.
+
+## lineLimit
+
+```text
+.lineLimit(_ lines: Int)
+```
+
+Shows at most `lines` lines of text. When there's more, the last line
+ends in "…" where it's cut.
+
+```tessel
+Text(path).lineLimit(1)
+```
+
+- It counts the lines the text wraps onto, and those `\n` starts.
+- Inherited: set it on a stack to limit every text inside. `0` is no limit.
+- A selectable text that's cut short selects and copies what shows.
+
+## selectable
+
+```text
+.selectable(_ isSelectable: Bool = true)
+```
+
+The text can be selected with the mouse (a double click picks a word, a
+triple click all of it) and the keyboard (Shift with the arrows), and copied
+with Cmd+C (Ctrl+C on Windows). It can't be changed.
+
+```tessel
+Text("Error 4417: the file is locked").selectable()
+```
+
+- Inherited: set it on a stack to make every text inside selectable;
+  `.selectable(false)` on one inside takes it away.
+- A text with `.onTap` or `.onPointer` takes clicks for those instead.
+
+## gridCellColumns
+
+```text
+.gridCellColumns(_ count: Int)
+```
+
+In a [`GridRow`](/reference/views/#grid-and-gridrow): the cell takes
+`count` columns, the next cell starting after them.
+
+## gridColumnAlignment
+
+```text
+.gridColumnAlignment(_ alignment: Alignment)
+```
+
+In a [`GridRow`](/reference/views/#grid-and-gridrow): lines up the cells of
+the cell's whole column across: `.leading`, `.center` or `.trailing` (only
+the horizontal part counts). One cell of the column is enough. A cell over
+several columns lines up as it says itself.

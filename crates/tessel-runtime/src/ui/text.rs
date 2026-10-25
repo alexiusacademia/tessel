@@ -144,6 +144,18 @@ pub extern "C" fn tsl_font_families() -> *mut crate::List {
     unsafe { crate::str_list(names.iter().map(String::as_str)) }
 }
 
+/// A stretch of text in a style of its own (a `RichTextEditor`'s runs), or
+/// the style of all of it (its `range` left aside).
+#[derive(Clone, Debug)]
+pub struct Styled {
+    pub range: Range<usize>,
+    pub family: Family,
+    pub size: f64,
+    pub weight: f32,
+    pub italic: bool,
+    pub color: super::Rgba,
+}
+
 /// A rectangle in a layout's coordinates: from (x0, y0) to (x1, y1).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {

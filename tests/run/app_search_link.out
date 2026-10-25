@@ -1,0 +1,37 @@
+Root
+  View
+    VStack
+      SearchField "Search" = "river"
+      Text "Looking for \"river\", searched 1 times"
+      View
+        Text "Tessel"
+      View
+        Text "Count"
+Root
+  View
+    VStack
+      SearchField "Search" = ""
+      Text "Looking for \"\", searched 1 times"
+      View
+        Text "Tessel"
+      View
+        Text "Count"
+Root
+  View
+    VStack
+      SearchField "Search" = "pond"
+      Text "Looking for \"pond\", searched 1 times"
+      View
+        Text "Tessel"
+      View
+        Text "Count"
+(open https://tessel-lang.syncster.dev)
+Root
+  View
+    VStack
+      SearchField "Search" = "pond"
+      Text "Looking for \"pond\", searched 11 times"
+      View
+        Text "Tessel"
+      View
+        Text "Count"
