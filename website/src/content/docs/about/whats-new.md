@@ -11,6 +11,40 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.15.0
+
+*October 25, 2026*
+
+- **Grids for forms.** `Grid` with `GridRow`s lines up labels and fields in
+  columns; `.gridColumnAlignment` and `.gridCellColumns` fine-tune it. See
+  [Grids](/ui/layout/#grids).
+- **Rich text.** `RichTextEditor(text:)` writes in bold, italic, underline,
+  strikethrough, sizes, colors and fonts, with a bar of buttons and
+  Cmd+B/I/U. It edits a `RichText` (text and styled runs) that saves with
+  `toJson`, and turns into Markdown with `.markdown`. Copying keeps the
+  styles, into other apps too, and pasting from them keeps theirs. See
+  [Rich text](/ui/rich-text/).
+- **Tables edited in place.** `TableColumn(onEdit:)`: double-click a cell,
+  type, Enter. See [Editing cells](/ui/tables/#editing-cells).
+- **More controls.** `Picker(style: .radio)` and `Picker(style: .menu)`,
+  `SearchField`, `Link`, `LazyHStack`. Text can be cut short with
+  `.lineLimit(n)` and copied with `.selectable()`.
+- **Turning and scaling.** `.rotation(degrees)` and `.scale(…)`; the views
+  around make room. See [Turning and scaling](/ui/layout/#turning-and-scaling).
+- **Sound and video.** `playSound` gives a `Sound` to pause, stop and seek;
+  `VideoPlayer` shows a video with controls Tessel draws. See
+  [Sound and video](/ui/media/).
+- **Web pages.** `WebView(url:)` and `WebView(html:)`, with the system's
+  browser engine. See [Web pages](/ui/web/).
+- **The desktop.** A tray or menu-bar icon with a menu, which can keep the
+  app running when its window is closed (`.trayIcon`, `showWindow()`);
+  `showNotification`; `setFullScreen`; and files dragged out of the app
+  with `.dragFile`. See [The desktop](/ui/desktop/).
+- **Two new lessons** in the course: [Forms, tables and rich
+  text](/learn/21-forms-tables/) and [Sound, video, the web and the
+  desktop](/learn/22-media-desktop/). `examples/desktop-demo` tries all of
+  it.
+
 ## 0.14.0
 
 *October 25, 2026*
