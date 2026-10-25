@@ -570,6 +570,8 @@ pub struct Screen {
     window: Arc<Window>,
     view: *mut objc2::runtime::AnyObject,
     bitmap: Option<Bitmap>,
+    /// The color under the frames (the window's background).
+    background: Option<Rgba>,
 }
 
 impl Screen {
@@ -578,10 +580,8 @@ impl Screen {
         let handle = window.window_handle().map_err(|e| e.to_string())?;
         let RawWindowHandle::AppKit(h) = handle.as_raw() else { return Err("not an AppKit window".into()) };
         let view = h.ns_view.as_ptr() as *mut objc2::runtime::AnyObject;
-        unsafe {
-            let _: () = objc2::msg_send![view, setWantsLayer: true];
-        }
-        Ok(Screen { window, view, bitmap: None })
+        unsafe { prepare_layer(view) };
+        Ok(Screen { window, view, bitmap: None, background: None })
     }
 
     pub fn resize(&mut self, _width: u32, _height: u32) {
@@ -608,10 +608,86 @@ impl Screen {
             let _: () = objc2::msg_send![transaction, begin];
             let _: () = objc2::msg_send![transaction, setDisableActions: true];
             let _: () = objc2::msg_send![layer, setContents: image as *mut objc2::runtime::AnyObject];
+            // Under the frame, where a larger window isn't drawn yet: the
+            // window's background.
+            if self.background != Some(background) {
+                set_layer_background(layer, background);
+                self.background = Some(background);
+            }
             let _: () = objc2::msg_send![transaction, commit];
             CGImageRelease(image);
         }
         true
+    }
+}
+
+/// A Core Graphics color, as Objective-C methods take it.
+#[repr(C)]
+struct CGColor {
+    _private: [u8; 0],
+}
+
+unsafe impl objc2::encode::RefEncode for CGColor {
+    const ENCODING_REF: objc2::encode::Encoding =
+        objc2::encode::Encoding::Pointer(&objc2::encode::Encoding::Struct("CGColor", &[]));
+}
+
+/// Makes a window's view show the frames it's given, and only those.
+unsafe fn prepare_layer(view: *mut objc2::runtime::AnyObject) {
+    unsafe {
+        let _: () = objc2::msg_send![view, setWantsLayer: true];
+        // Otherwise, while the window is resized, AppKit redraws the layer
+        // itself (with the view's `drawRect:`, which draws nothing) over
+        // the last frame, and the window blinks.
+        let _: () = objc2::msg_send![view, setLayerContentsRedrawPolicy: 0isize];
+        // A frame of the size before stays where it is, rather than being
+        // stretched, until the next one.
+        let layer: *mut objc2::runtime::AnyObject = objc2::msg_send![view, layer];
+        let gravity = cfstring("topLeft");
+        let _: () = objc2::msg_send![layer, setContentsGravity: gravity.get() as *mut objc2::runtime::AnyObject];
+    }
+}
+
+/// The color a layer shows where its contents don't cover it.
+unsafe fn set_layer_background(layer: *mut objc2::runtime::AnyObject, color: Rgba) {
+    unsafe {
+        let space = CGColorSpaceCreateDeviceRGB();
+        let [r, g, b, a] = color.0.map(|c| c as f64 / 255.0);
+        let cg = CGColorCreate(space, [r, g, b, a].as_ptr()) as *mut CGColor;
+        CGColorSpaceRelease(space);
+        let _: () = objc2::msg_send![layer, setBackgroundColor: cg];
+        CGColorRelease(cg as *mut c_void);
+    }
+}
+
+/// Prepares a view without a window as a window's is, and says how its
+/// layer came out (for `tests/layer.rs`).
+pub fn check_layer() -> Result<String, String> {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    unsafe {
+        let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(200.0, 100.0));
+        let view: *mut AnyObject = objc2::msg_send![objc2::class!(NSView), alloc];
+        let view: *mut AnyObject = objc2::msg_send![view, initWithFrame: frame];
+        prepare_layer(view);
+        let layer: *mut AnyObject = objc2::msg_send![view, layer];
+        if layer.is_null() {
+            return Err("the view has no layer".into());
+        }
+        set_layer_background(layer, Rgba([255, 0, 0, 255]));
+        let policy: isize = objc2::msg_send![view, layerContentsRedrawPolicy];
+        let gravity: *mut AnyObject = objc2::msg_send![layer, contentsGravity];
+        let gravity: *const std::ffi::c_char = objc2::msg_send![gravity, UTF8String];
+        let gravity = std::ffi::CStr::from_ptr(gravity).to_string_lossy().to_string();
+        let color: *mut CGColor = objc2::msg_send![layer, backgroundColor];
+        unsafe extern "C" {
+            fn CGColorGetComponents(color: *mut CGColor) -> *const f64;
+            fn CGColorGetNumberOfComponents(color: *mut CGColor) -> usize;
+        }
+        let n = CGColorGetNumberOfComponents(color);
+        let parts = std::slice::from_raw_parts(CGColorGetComponents(color), n);
+        let _: () = objc2::msg_send![view, release];
+        Ok(format!("policy {policy}, gravity {gravity}, background {parts:?}"))
     }
 }
 

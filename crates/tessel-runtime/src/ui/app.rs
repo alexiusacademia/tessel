@@ -7133,7 +7133,14 @@ impl ApplicationHandler for WindowApp {
                 if let Some(s) = self.screen.as_mut() {
                     s.resize(size.width, size.height);
                 }
-                self.request_redraw();
+                // On macOS, the frame of the new size at once, while the
+                // window is being resized: not after it has shown the
+                // last one's (which looks like blinking).
+                if cfg!(target_os = "macos") && self.screen.is_some() {
+                    self.redraw();
+                } else {
+                    self.request_redraw();
+                }
             }
             WindowEvent::ScaleFactorChanged { .. } => self.request_redraw(),
             WindowEvent::ThemeChanged(t) => {

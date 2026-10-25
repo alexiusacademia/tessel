@@ -164,6 +164,8 @@ unsafe extern "C" {
     pub fn CGPDFContextClose(c: CGContextRef);
     pub fn CGColorSpaceCreateDeviceRGB() -> CGColorSpaceRef;
     pub fn CGColorSpaceRelease(space: CGColorSpaceRef);
+    pub fn CGColorCreate(space: CGColorSpaceRef, components: *const f64) -> *mut c_void;
+    pub fn CGColorRelease(color: *mut c_void);
     pub fn CGBitmapContextCreate(
         data: *mut c_void,
         width: usize,

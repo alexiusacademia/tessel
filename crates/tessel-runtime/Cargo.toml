@@ -138,6 +138,12 @@ harness = false
 name = "web"
 harness = false
 
+# Prepares a view's layer as a window's is (see ui::check_layer). Only with
+# TESSEL_NATIVE_TEST=1.
+[[test]]
+name = "layer"
+harness = false
+
 [lints]
 workspace = true
 

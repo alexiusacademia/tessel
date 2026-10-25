@@ -72,6 +72,9 @@ pub use native::check_menu_bar;
 pub use media::check_video;
 #[doc(hidden)]
 pub use webview::check_web_view;
+#[doc(hidden)]
+#[cfg(all(feature = "native", target_os = "macos"))]
+pub use mac::check_layer;
 
 // ===== callbacks =====
 
