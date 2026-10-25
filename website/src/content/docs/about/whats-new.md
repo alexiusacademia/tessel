@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.15.1
+
+*October 25, 2026*
+
+Fixed:
+
+- On macOS, the caret stands after spaces at the end of a line. After Enter
+  in a block, the IDE's editor showed it at the line's start instead of
+  after the new indent, and a space typed at the end of a text field
+  didn't move it.
+
 ## 0.15.0
 
 *October 25, 2026*
