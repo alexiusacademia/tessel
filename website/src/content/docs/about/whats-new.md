@@ -11,6 +11,15 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.15.3
+
+*October 25, 2026*
+
+- **Homebrew.** `brew install alexiusacademia/tessel/tessel` installs
+  Tessel on a Mac, and `brew upgrade tessel` updates it. In a Homebrew
+  installation, `tessel update` (and the IDE's update) runs Homebrew. See
+  [With Homebrew](/start/installation/#with-homebrew).
+
 ## 0.15.2
 
 *October 25, 2026*
