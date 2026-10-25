@@ -3,7 +3,7 @@ title: Status and roadmap
 description: What works in Tessel today, its known limitations, and what is planned next.
 ---
 
-Tessel is at version 0.13. It's young: the core of the language and its UI
+Tessel is at version 0.14. It's young: the core of the language and its UI
 toolkit work, and they're enough to write real apps (the
 [Tessel IDE](/start/ide/) is one), but plenty is missing, and details of the
 language may still change. This page is an honest list of where things stand.
@@ -28,7 +28,8 @@ its first releases came so quickly. The dates on
   been tried only on an emulator; there an app can read the phone's
   location, satellites and compass. There's no Linux or iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
-  `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`,
+  `Text`, `Button`, `TextField`, `Toggle`, `Picker`, `TabView`, scrolling
+  either or both ways (and from code), split views,
   `CodeEditor` with syntax colors, `Table` and `Tree`, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
   and pressed states, and the layout and styling modifiers. Every control
@@ -50,7 +51,8 @@ its first releases came so quickly. The dates on
   downloads and WebSockets, running other programs, and heavy computations on
   another thread (`background`), all with completion blocks that run on the
   UI thread. They work in programs with only `fn main` too.
-- **Language:** structs, enums with values, interfaces, generics, closures, optionals,
+- **Language:** structs, enums with values, interfaces, generics, closures,
+  functions that take any number of values, optionals,
   errors with `Result` and `try`, tuples and sets, `for` and `while` loops
   with `break` and `continue`, and programs split over any number of files,
   with modules (`import`, `public`, `private`) for code shared between

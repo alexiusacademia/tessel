@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.14.0
+
+*October 25, 2026*
+
+- **Functions that take any number of values.** A parameter written
+  `_ values: Float...` takes as many values as the call gives, and is a
+  `[Float]` inside the function. `average(scores...)` passes a list you
+  already have. `print` takes any number of values too
+  (`print("total:", total)`), and so do `min` and `max`. See
+  [Any number of values](/language/functions/#any-number-of-values).
+- **The app's own location.** `appPath()` is the app's executable and
+  `appFolder()` the folder it's in, so an app finds the files shipped next
+  to it wherever it's installed. Under `tessel run` they point at the
+  program's source. See [appPath and appFolder](/reference/stdlib/#apppath-and-appfolder).
+- **Scrolling sideways, or both ways.** `Scroll(.horizontal)` and
+  `Scroll(.both)`. The wheel goes to the innermost scroll view that can move
+  that way. See [Across, and both ways](/ui/layout/#across-and-both-ways).
+- **Scrolling from code.** `scrollTo(id, align:)` brings the view with that
+  `.id` into sight, even one added in the same click, or a row of a
+  `LazyVStack` that isn't built yet. See
+  [Scrolling from code](/ui/layout/#scrolling-from-code).
+- **Split views.** `HSplit` and `VSplit` hold two panes with a divider to
+  drag. `size:` can bind the first pane's width or height, and the divider
+  stops at each pane's minimum size. See [Split views](/ui/layout/#split-views).
+
 ## 0.13.0
 
 *October 24, 2026*
