@@ -8,7 +8,9 @@ published for any program to use: a folder of `.tsl` files with a
 `tessel.toml` that gives it a name and a version. Published libraries are
 listed in the **library index**, a public repository on GitHub
 ([alexiusacademia/tessel-packages](https://github.com/alexiusacademia/tessel-packages)),
-and their code stays in their own git repositories.
+and their code stays in their own git repositories. Browse them, with each
+one's README and versions, at
+[tessel-packages.syncster.dev](https://tessel-packages.syncster.dev).
 
 ## Using a library
 
@@ -172,7 +174,8 @@ The index checks the pull request: the entry is well formed, its tag is
 the commit it names, the code has the checksum and compiles, the
 libraries it uses are published, and the name belongs to the same
 repository as its earlier versions. Once it's merged, `tessel add textkit`
-finds it.
+finds it, and it's on [tessel-packages.syncster.dev](https://tessel-packages.syncster.dev)
+a minute or two later, with its README.
 
 A published version can't change: its tag mustn't move, and a fix is a new
 version. A published library can only use published libraries, not git
