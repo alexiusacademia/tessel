@@ -239,7 +239,7 @@ fn describe(e: &Expr, parent: Span, checked: &Checked, sources: &SourceMap) -> O
                 // The block that holds other views: a stack's, or the one a
                 // custom view takes as its `View` parameter.
                 let holds = match custom {
-                    false => matches!(name.as_str(), "VStack" | "HStack" | "ZStack" | "Scroll"),
+                    false => matches!(name.as_str(), "VStack" | "HStack" | "ZStack" | "Scroll" | "HSplit" | "VSplit"),
                     true => checked.views.get(name).is_some_and(|sigs| {
                         sigs.iter()
                             .zip(&info.args)

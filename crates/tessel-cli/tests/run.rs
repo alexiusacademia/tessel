@@ -253,6 +253,48 @@ fn hot_reload() {
     }
 }
 
+/// `appPath()` and `appFolder()`: the program's source under `tessel run`
+/// (started from another folder), the executable once built, and a built
+/// program's own when a program under `tessel run` starts it.
+#[test]
+fn app_path() {
+    let dir = std::env::temp_dir().join(format!("tessel-app-path-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("prog")).unwrap();
+    // (Without links, as programs see it: /private/var on macOS. On
+    // Windows, `canonicalize` would add `\\?\`.)
+    let dir = if cfg!(windows) { dir } else { dir.canonicalize().unwrap() };
+    let prog = dir.join("prog");
+    std::fs::write(prog.join("main.tsl"), "fn main() {\n    print(appPath())\n    print(appFolder())\n}\n").unwrap();
+    let exe = dir.join(format!("where{}", std::env::consts::EXE_SUFFIX));
+    let lines = |out: std::process::Output| {
+        assert!(out.status.success(), "failed ({}):\n{}", out.status, String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect::<Vec<_>>()
+    };
+
+    // `tessel run`, with the program's path relative to another folder.
+    let run = Command::new(env!("CARGO_BIN_EXE_tessel")).args(["run", "prog"]).current_dir(&dir).output().unwrap();
+    let source = prog.display().to_string();
+    assert_eq!(lines(run), [source.clone(), source.clone()]);
+
+    // Built: the executable, and the folder it's in.
+    let built = Command::new(env!("CARGO_BIN_EXE_tessel")).arg("build").arg(&prog).arg("-o").arg(&exe).output().unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let own = [exe.display().to_string(), dir.display().to_string()];
+    assert_eq!(lines(Command::new(&exe).current_dir("/").output().unwrap()), own);
+
+    // Started by a program under `tessel run`: it has the variables that
+    // program got, but they aren't about it.
+    let parent = format!(
+        "fn main() {{\n    runCommand(path: {:?}, onOutput: {{ line in print(line) }}, onExit: {{ code in }})\n}}\n",
+        exe.display().to_string()
+    );
+    std::fs::write(dir.join("parent.tsl"), parent).unwrap();
+    let run = Command::new(env!("CARGO_BIN_EXE_tessel")).args(["run", "parent.tsl"]).current_dir(&dir).output().unwrap();
+    assert_eq!(lines(run), own);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Builds the IDE (`ide/`) and drives it through `tests/ide/session.script`
 /// on a copy of `tests/ide/project`, then compares its output and the
 /// project's files with what's expected.

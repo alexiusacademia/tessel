@@ -205,6 +205,8 @@ pub struct Param {
     /// Declared as `name: bind T`.
     pub bind: bool,
     pub ty: TypeExpr,
+    /// Declared as `name: T...`: takes any number of `T`s, as a `[T]`.
+    pub variadic: bool,
     pub default: Option<Expr>,
     pub span: Span,
 }
@@ -328,6 +330,8 @@ pub enum ExprKind {
     Await(Box<Expr>),
     /// The completion block of an awaited call (made by the parser).
     Continuation,
+    /// `xs...` as an argument: the list is the values of a variadic parameter.
+    Spread(Box<Expr>),
     /// `shape is Circle` (`test` true) and `shape as? Circle`.
     Cast { value: Box<Expr>, ty: TypeExpr, test: bool },
     Binary(BinOp, Box<Expr>, Box<Expr>),
@@ -435,7 +439,11 @@ fn expr_tree<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 expr_tree(v, f);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Await(x) => expr_tree(x, f),
+        ExprKind::Unary(_, x)
+        | ExprKind::Cast { value: x, .. }
+        | ExprKind::Try(x)
+        | ExprKind::Await(x)
+        | ExprKind::Spread(x) => expr_tree(x, f),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             expr_tree(l, f);
             expr_tree(r, f);

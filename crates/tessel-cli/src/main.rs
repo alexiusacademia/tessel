@@ -988,6 +988,31 @@ fn ide(folder: &Path) -> ExitCode {
     }
 }
 
+/// Tells a program `tessel` builds and starts where its source is, for
+/// `appPath()` and `appFolder()`: `exe` is the executable that runs it.
+pub(crate) fn program_env(cmd: &mut Command, exe: &Path, path: &Path) {
+    cmd.env("TESSEL_RUN_EXE", exe);
+    cmd.env("TESSEL_RUN_SOURCE", source_path(path));
+}
+
+/// The program's source as a full path. (Not `canonicalize`, which on
+/// Windows gives `\\?\C:\…`.)
+pub(crate) fn source_path(path: &Path) -> PathBuf {
+    let full = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // `run ../proj` and `run .`: without the `..` and `.` parts.
+    let mut out = PathBuf::new();
+    for c in full.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 fn run(path: &Path, program_args: &[String]) -> ExitCode {
     let exe = std::env::temp_dir().join(format!("tessel-run-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
     if let Err(code) = build(path, &exe) {
@@ -999,6 +1024,7 @@ fn run(path: &Path, program_args: &[String]) -> ExitCode {
     if let Ok(me) = std::env::current_exe() {
         cmd.env("TESSEL_EXE", me);
     }
+    program_env(&mut cmd, &exe, path);
     let status = cmd.spawn().and_then(|mut child| {
         pass_signals_to(child.id());
         child.wait()

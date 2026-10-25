@@ -815,6 +815,8 @@ enum Hit {
     TableResize(u64, usize),
     TableRow(u64, usize),
     TreeArrow(u64, usize),
+    /// The divider of a split view, which is dragged.
+    Split(u64),
 }
 
 impl Hit {
@@ -826,6 +828,7 @@ impl Hit {
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
             Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _) => k,
+            Hit::Split(k) => k,
         }
     }
 }
@@ -947,7 +950,17 @@ pub extern "C" fn tsl_close_window() {
     CLOSING.with(|c| c.borrow_mut().push(key));
 }
 
+/// `scrollTo(id, align:)`: the scroll views around the view with that
+/// `.id` (a `String`'s hash) scroll so it shows. `align` is a `ScrollAlign`
+/// tag: 0 nearest, 1 top, 2 center, 3 bottom. It's done once the views are
+/// next laid out, so a view the same action adds is there to scroll to.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_scroll_to(id: u64, align: i32) {
+    SCROLL_TARGET.with(|t| t.set(Some((id, align.clamp(0, 3) as u8))));
+}
+
 thread_local! {
+    static SCROLL_TARGET: Cell<Option<(u64, u8)>> = const { Cell::new(None) };
     static DISMISSING: Cell<bool> = const { Cell::new(false) };
     /// `showNotice`: the text that shows, and until when (on the app's clock).
     static NOTICE: RefCell<Option<(String, f64)>> = const { RefCell::new(None) };
@@ -1127,6 +1140,9 @@ struct Mods {
     control: bool,
 }
 
+/// How far either side of a split view's divider it can be caught.
+const SPLIT_GRAB: f64 = 3.0;
+
 /// Keys that edit text or move in it, which `App::key` handles.
 const EDIT_KEYS: &[&str] =
     &["backspace", "delete", "left", "right", "up", "down", "home", "end", "enter", "escape", "tab"];
@@ -1164,6 +1180,7 @@ impl App {
             let mut lazy_seen = Vec::new();
             self.each_surface(|a| {
                 a.lay_out();
+                again |= a.scroll_to_target();
                 again |= a.run_on_resize();
                 again |= a.lazy_rows(&mut lazy_seen);
             });
@@ -1174,6 +1191,8 @@ impl App {
                 break;
             }
         }
+        // (A view that isn't there isn't scrolled to later.)
+        SCROLL_TARGET.with(|t| t.set(None));
         let mut picker_shown = false;
         self.each_surface(|a| {
             // The keyboard leaves a control that's gone.
@@ -1186,7 +1205,7 @@ impl App {
             a.layout_popup();
             a.layout_menus();
             if let Some(tree) = a.tree.as_ref() {
-                a.ui.anim.step(tree, now(), (a.width, a.height), &a.ui.scroll);
+                a.ui.anim.step(tree, now(), (a.width, a.height), (&a.ui.scroll, &a.ui.scroll_x));
             }
         });
         // A palette whose picker is gone closes.
@@ -1198,6 +1217,83 @@ impl App {
         }
     }
 
+    /// `scrollTo`: when the view asked for is in this window, its scroll
+    /// views scroll so it shows (true: lay out again).
+    fn scroll_to_target(&mut self) -> bool {
+        let Some((id, align)) = SCROLL_TARGET.with(Cell::get) else { return false };
+        // The view's rectangle, and the scroll views around it (outermost
+        // first). Views with that `.id` first (`rows`: then a list's row).
+        fn find(n: &Node, id: u64, rows: bool, around: &mut Vec<u64>) -> Option<Rect> {
+            if n.mods.hidden {
+                return None;
+            }
+            if n.id == Some(id) && !rows {
+                return Some(n.layout.rect);
+            }
+            let scrolls = matches!(n.kind, Kind::Scroll(_));
+            if scrolls {
+                around.push(n.key);
+            }
+            for c in n.visible_children() {
+                if let Some(r) = find(c, id, rows, around) {
+                    return Some(r);
+                }
+            }
+            // A `LazyVStack`'s row, by its number (built or not).
+            if let (Kind::Lazy { count, row_height, .. }, true) = (&n.kind, rows)
+                && id < *count as u64
+            {
+                let row_height = *row_height;
+                let c = n.layout.rect.inset_by(n.mods.padding);
+                return Some(Rect { x: c.x, y: c.y + id as f64 * row_height, w: c.w, h: row_height });
+            }
+            if scrolls {
+                around.pop();
+            }
+            None
+        }
+        let mut around = Vec::new();
+        let tree = self.tree.as_ref();
+        let found = tree.and_then(|t| find(t, id, false, &mut around)).or_else(|| tree.and_then(|t| find(t, id, true, &mut around)));
+        let Some(mut target) = found else { return false };
+        SCROLL_TARGET.with(|t| t.set(None));
+        // Innermost first: scrolling one moves the view within the next.
+        for &key in around.iter().rev() {
+            let Some(n) = self.node(key) else { continue };
+            let Kind::Scroll(axes) = n.kind else { continue };
+            let (down, across) = super::scroll_axes(axes);
+            let content = n.layout.rect.inset_by(n.mods.padding);
+            let (dy, dx) = super::layout::scroll_offsets(n, content, &self.ui.scroll, &self.ui.scroll_x);
+            let (max_y, max_x) = ((n.layout.content_h - content.h).max(0.0), (n.layout.content_w - content.w).max(0.0));
+            // How far the view's start is to move, to start `start` along,
+            // in a window of `size`.
+            let shift = |start: f64, len: f64, from: f64, size: f64| -> f64 {
+                let (top, end) = (start - from, start + len - (from + size));
+                match align {
+                    1 => top,
+                    2 => start + len / 2.0 - (from + size / 2.0),
+                    3 => end,
+                    // Nearest: no further than it takes to show it (its start
+                    // when it's larger than the view).
+                    _ if top < 0.0 || len > size => top,
+                    _ if end > 0.0 => end,
+                    _ => 0.0,
+                }
+            };
+            if down {
+                let new = (dy + shift(target.y, target.h, content.y, content.h)).clamp(0.0, max_y);
+                self.ui.scroll.insert(key, new);
+                target.y -= new - dy;
+            }
+            if across {
+                let new = (dx + shift(target.x, target.w, content.x, content.w)).clamp(0.0, max_x);
+                self.ui.scroll_x.insert(key, new);
+                target.x -= new - dx;
+            }
+        }
+        true
+    }
+
     /// Lays out the current window's tree.
     fn lay_out(&mut self) {
         if self.ui.editing.is_none() {
@@ -1207,7 +1303,7 @@ impl App {
             self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
         let top = if self.bar_drawn() { menu::BAR_H } else { 0.0 };
         let Some(tree) = self.tree.as_mut() else { return };
-        Layouter { text: &mut self.text, scroll: &self.ui.scroll, columns: Vec::new(), composing }.run_below(tree, self.width, self.height, top);
+        Layouter { text: &mut self.text, scroll: &self.ui.scroll, scroll_x: &self.ui.scroll_x, columns: Vec::new(), composing }.run_below(tree, self.width, self.height, top);
     }
 
     /// Whether the current window shows a menu bar drawn in it.
@@ -2203,7 +2299,7 @@ impl App {
             }
             let r = n.layout.rect;
             let mut clip = clip;
-            if matches!(n.kind, Kind::Scroll) || n.mods.clipped {
+            if matches!(n.kind, Kind::Scroll(_)) || n.mods.clipped {
                 let c = r.inset_by(n.mods.padding);
                 let (x0, y0) = (clip.x.max(c.x), clip.y.max(c.y));
                 let (x1, y1) = ((clip.x + clip.w).min(c.x + c.w), (clip.y + clip.h).min(c.y + c.h));
@@ -2565,6 +2661,13 @@ impl App {
                 if n.mods.hidden || n.layout.style.disabled || n.children.is_empty() {
                     return None;
                 }
+            }
+            // A split view's divider, a little wider than it looks, to be
+            // easy to catch (over the panes' edges).
+            if let (Kind::Split { .. }, Some(line)) = (&n.kind, n.layout.segments.first())
+                && line.inset(-SPLIT_GRAB).contains(x, y)
+            {
+                return Some(Hit::Split(n.key));
             }
             if let Kind::TabView { .. } = n.kind {
                 for (i, tab) in n.layout.tabs.iter().enumerate() {
@@ -3499,6 +3602,36 @@ impl App {
     // ===== sliders, steppers, color pickers =====
 
     /// Moves a slider's knob to `x` in the window.
+    /// Moves a split view's divider: its first pane is to be `size` (no
+    /// pane less than its minimum).
+    fn set_split(&mut self, key: u64, size: f64) {
+        let Some(n) = self.node(key) else { return };
+        let Kind::Split { vertical, size: bound } = &n.kind else { return };
+        let c = n.layout.rect.inset_by(n.mods.padding);
+        let along = if *vertical { c.h } else { c.w };
+        // Where it may go, as layout has it: the size tried, then clamped.
+        let clamped = match bound {
+            Some(cb) => {
+                super::controls::write_number(cb, false, size);
+                super::layout::split_first(n, along)
+            }
+            None => {
+                super::layout::SPLITS.with(|s| s.borrow_mut().insert(key, size));
+                super::layout::split_first(n, along)
+            }
+        }
+        .round();
+        match bound {
+            Some(cb) => {
+                super::controls::write_number(cb, false, clamped);
+            }
+            None => {
+                super::layout::SPLITS.with(|s| s.borrow_mut().insert(key, clamped));
+            }
+        }
+        self.dirty = true;
+    }
+
     fn slide(&mut self, key: u64, x: f64) {
         let Some(n) = self.node(key) else { return };
         let Kind::Slider { value, from, to, step, on_change } = &n.kind else { return };
@@ -3955,45 +4088,77 @@ impl App {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
-            inner.or((matches!(n.kind, Kind::Scroll) || in_lines(&n.kind)).then_some(n.key))
+            inner.or((matches!(n.kind, Kind::Scroll(_)) || in_lines(&n.kind)).then_some(n.key))
         }
         self.point_root(x, y).and_then(|t| find(t, x, y))
     }
 
     /// What the wheel turns at a point: the innermost scroll view or code
-    /// editor there, or view with `.onPointer` (true: it is told instead).
-    fn wheel_target(&self, x: f64, y: f64) -> Option<(u64, bool)> {
-        fn find(n: &Node, x: f64, y: f64) -> Option<(u64, bool)> {
+    /// editor there that scrolls the way it turns (by `dx`, `dy`), or view
+    /// with `.onPointer` (true: it is told instead).
+    fn wheel_target(&self, x: f64, y: f64, dx: f64, dy: f64) -> Option<(u64, bool)> {
+        fn find(n: &Node, x: f64, y: f64, dx: f64, dy: f64) -> Option<(u64, bool)> {
             if !n.layout.rect.contains(x, y) || n.mods.hidden {
                 return None;
             }
-            let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y));
+            let inner = n.visible_children().iter().rev().find_map(|c| find(c, x, y, dx, dy));
             inner.or_else(|| {
                 if n.mods.on_pointer.is_some() && !n.layout.style.disabled {
-                    Some((n.key, true))
-                } else {
-                    (matches!(n.kind, Kind::Scroll) || in_lines(&n.kind)).then_some((n.key, false))
+                    return Some((n.key, true));
                 }
+                let turns = match n.kind {
+                    // (Sideways only: it takes a wheel that turns down too,
+                    // when no scroll view around it goes that way.)
+                    Kind::Scroll(axes) => {
+                        let (down, across) = super::scroll_axes(axes);
+                        (down && dy != 0.0) || (across && dx != 0.0) || (dx == 0.0 && dy == 0.0)
+                    }
+                    _ => in_lines(&n.kind),
+                };
+                turns.then_some((n.key, false))
             })
         }
-        self.point_root(x, y).and_then(|t| find(t, x, y))
+        let root = self.point_root(x, y)?;
+        find(root, x, y, dx, dy).or_else(|| {
+            // A wheel turned down over a view that only scrolls across.
+            fn across(n: &Node, x: f64, y: f64) -> Option<u64> {
+                if !n.layout.rect.contains(x, y) || n.mods.hidden {
+                    return None;
+                }
+                let inner = n.visible_children().iter().rev().find_map(|c| across(c, x, y));
+                inner.or(matches!(n.kind, Kind::Scroll(1)).then_some(n.key))
+            }
+            across(root, x, y).map(|k| (k, false))
+        })
     }
 
     /// Scrolls the view under (x, y) by (dx, dy): as far as its content
     /// goes. A view with `.onPointer` is told of the scroll instead.
     fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, mods: Mods) {
-        let Some((key, pointer)) = self.wheel_target(x, y) else { return };
+        let Some((key, pointer)) = self.wheel_target(x, y, dx, dy) else { return };
         if pointer {
             self.pointer(key, SCROLL, (x, y), (dx, dy), 0, 0, mods);
             return;
         }
         let Some(n) = self.node(key) else { return };
         let content = n.layout.rect.inset_by(n.mods.padding);
-        let max_y = (n.layout.content_h - content.h).max(0.0);
+        let mut max_y = (n.layout.content_h - content.h).max(0.0);
+        let (mut dx, mut dy) = (dx, dy);
         let max_x = match &n.kind {
             Kind::CodeEditor { .. } => {
                 let width = n.layout.text.as_ref().map_or(0.0, |t| t.width()) + 2.0 * render::CODE_PAD_X;
                 (width - (content.w - n.layout.gutter)).max(0.0)
+            }
+            Kind::Scroll(axes) => {
+                let (down, across) = super::scroll_axes(*axes);
+                if !down {
+                    // Sideways only: a wheel turned down moves it across.
+                    if dx == 0.0 {
+                        (dx, dy) = (dy, 0.0);
+                    }
+                    max_y = 0.0;
+                }
+                if across { (n.layout.content_w - content.w).max(0.0) } else { 0.0 }
             }
             _ => 0.0,
         };
@@ -4197,7 +4362,9 @@ impl App {
                 Kind::VStack(..) => "VStack".to_string(),
                 Kind::HStack(..) => "HStack".to_string(),
                 Kind::ZStack(_) => "ZStack".to_string(),
-                Kind::Scroll => "Scroll".to_string(),
+                Kind::Scroll(0) => "Scroll".to_string(),
+                Kind::Scroll(1) => "Scroll horizontal".to_string(),
+                Kind::Scroll(_) => "Scroll both".to_string(),
                 Kind::Spacer => "Spacer".to_string(),
                 Kind::Image { path, .. } => format!("Image {path:?}"),
                 Kind::TabView { .. } => {
@@ -4205,6 +4372,11 @@ impl App {
                     format!("TabView {titles:?} selected {}", n.selected_tab())
                 }
                 Kind::Divider => "Divider".to_string(),
+                Kind::Split { vertical, .. } => {
+                    let c = n.layout.rect.inset_by(n.mods.padding);
+                    let first = super::layout::split_first(n, if *vertical { c.h } else { c.w });
+                    format!("{} {first}", if *vertical { "VSplit" } else { "HSplit" })
+                }
                 Kind::Canvas { draw, redraw } => {
                     let c = n.layout.rect.inset_by(n.mods.padding);
                     let drawing = super::canvas::drawing(n.key, draw, *redraw, c.w, c.h);
@@ -4369,11 +4541,13 @@ impl App {
                 Kind::VStack(..) => "VStack",
                 Kind::HStack(..) => "HStack",
                 Kind::ZStack(_) => "ZStack",
-                Kind::Scroll => "Scroll",
+                Kind::Scroll(_) => "Scroll",
                 Kind::Spacer => "Spacer",
                 Kind::Image { .. } => "Image",
                 Kind::TabView { .. } => "TabView",
                 Kind::Divider => "Divider",
+                Kind::Split { vertical: false, .. } => "HSplit",
+                Kind::Split { vertical: true, .. } => "VSplit",
                 Kind::Canvas { .. } => "Canvas",
                 Kind::Scene3D { .. } => "Scene3D",
                 Kind::Markdown { .. } => "Markdown",
@@ -4418,7 +4592,7 @@ impl App {
             ));
             // (Layout already puts a scroll view's content where it's scrolled to.)
             let mut clip = clip;
-            if matches!(n.kind, Kind::Scroll) || n.mods.clipped {
+            if matches!(n.kind, Kind::Scroll(_)) || n.mods.clipped {
                 clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
             }
             // A tab view shows only its selected page, a ribbon its selected tab.
@@ -4843,6 +5017,17 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     app.slide(key, x + dx);
                     continue;
                 }
+                // A split view's divider follows the pointer.
+                if let ([x, y, dx, dy], Some(Hit::Split(key))) = (&n[..], n.get(..2).and_then(|p| app.hit(p[0], p[1])))
+                    && let Some(node) = app.node(key)
+                    && let Kind::Split { vertical, .. } = node.kind
+                {
+                    let c = node.layout.rect.inset_by(node.mods.padding);
+                    let size = super::layout::split_first(node, if vertical { c.h } else { c.w });
+                    let _ = (x, y);
+                    app.set_split(key, size + if vertical { *dy } else { *dx });
+                    continue;
+                }
                 // On a view with `.onPointer`: press, move and let go.
                 if let [x, y, dx, dy] = n[..] {
                     if let Some(key) = app.pointer_at(x, y) {
@@ -5186,6 +5371,9 @@ struct WindowApp {
     /// The table column being widened or narrowed: the table, the column,
     /// where the mouse was pressed and how wide the column was then.
     resizing: Option<(u64, usize, f64, f64)>,
+    /// The split view whose divider is being dragged: where the mouse was
+    /// pressed (along it) and the first pane's size then.
+    splitting: Option<(u64, f64, f64)>,
     /// A view with `.draggable` the mouse is pressed on, and where: it's
     /// dragged once the mouse moves far enough.
     drag_start: Option<(u64, (f64, f64))>,
@@ -5217,6 +5405,9 @@ struct Win {
     pointing: Option<(u64, i32)>,
     sliding: Option<u64>,
     resizing: Option<(u64, usize, f64, f64)>,
+    /// The split view whose divider is being dragged: where the mouse was
+    /// pressed (along it) and the first pane's size then.
+    splitting: Option<(u64, f64, f64)>,
     drag_start: Option<(u64, (f64, f64))>,
     pointer: winit::window::CursorIcon,
     last_click: Option<(Instant, (f64, f64), u32)>,
@@ -5239,6 +5430,7 @@ impl Win {
             pointing: None,
             sliding: None,
             resizing: None,
+            splitting: None,
             drag_start: None,
             pointer: winit::window::CursorIcon::Default,
             last_click: None,
@@ -5291,6 +5483,7 @@ fn run_window(app: App) -> i32 {
         pointing: None,
         sliding: None,
         resizing: None,
+        splitting: None,
         drag_start: None,
         pointer: winit::window::CursorIcon::Default,
         last_click: None,
@@ -5335,6 +5528,7 @@ impl WindowApp {
         std::mem::swap(&mut self.pointing, &mut w.pointing);
         std::mem::swap(&mut self.sliding, &mut w.sliding);
         std::mem::swap(&mut self.resizing, &mut w.resizing);
+        std::mem::swap(&mut self.splitting, &mut w.splitting);
         std::mem::swap(&mut self.drag_start, &mut w.drag_start);
         std::mem::swap(&mut self.pointer, &mut w.pointer);
         std::mem::swap(&mut self.last_click, &mut w.last_click);
@@ -5606,7 +5800,7 @@ impl WindowApp {
                 self.phone.fling = None;
                 self.window_event(event_loop, id, moved);
                 let dragged = matches!(self.app.hit(p.0, p.1), Some(Hit::Slider(_) | Hit::Drag(_) | Hit::Pointer(_) | Hit::Palette(_)));
-                let scrolls = self.app.wheel_target(p.0, p.1).is_some_and(|(_, pointer)| !pointer);
+                let scrolls = self.app.wheel_target(p.0, p.1, 0.0, 0.0).is_some_and(|(_, pointer)| !pointer);
                 let waits = scrolls && !dragged && self.app.menu.is_none();
                 if !waits {
                     self.window_event(event_loop, id, button(ElementState::Pressed));
@@ -6062,6 +6256,14 @@ impl ApplicationHandler for WindowApp {
                     self.request_redraw();
                     return;
                 }
+                // A split view's divider follows the mouse.
+                if let Some((key, from, size)) = self.splitting {
+                    let vertical = self.app.node(key).is_some_and(|n| matches!(n.kind, Kind::Split { vertical: true, .. }));
+                    let at = if vertical { self.cursor.1 } else { self.cursor.0 };
+                    self.app.set_split(key, size + at - from);
+                    self.request_redraw();
+                    return;
+                }
                 // A table's column follows the mouse as it's widened or narrowed.
                 if let Some((table, column, x0, w0)) = self.resizing {
                     let width = (w0 + self.cursor.0 - x0).max(super::table::MIN_WIDTH);
@@ -6102,7 +6304,14 @@ impl ApplicationHandler for WindowApp {
                         self.request_redraw();
                     }
                     let (x, y) = self.cursor;
-                    let resize = matches!(self.app.hit(x, y), Some(Hit::TableResize(..))).then_some(winit::window::CursorIcon::ColResize);
+                    let resize = match self.app.hit(x, y) {
+                        Some(Hit::TableResize(..)) => Some(winit::window::CursorIcon::ColResize),
+                        Some(Hit::Split(key)) => Some(match self.app.node(key).map(|n| &n.kind) {
+                            Some(Kind::Split { vertical: true, .. }) => winit::window::CursorIcon::RowResize,
+                            _ => winit::window::CursorIcon::ColResize,
+                        }),
+                        _ => None,
+                    };
                     let pointer = resize.or_else(|| self.app.cursor_at(x, y)).or_else(|| self.app.drag_cursor(x, y)).unwrap_or_default();
                     if pointer != self.pointer {
                         self.pointer = pointer;
@@ -6218,6 +6427,14 @@ impl ApplicationHandler for WindowApp {
                             let width = self.app.node(table).and_then(|n| n.layout.tabs.get(column)).map_or(100.0, |t| t.rect.w);
                             self.resizing = Some((table, column, x, width));
                         }
+                        if let Some(Hit::Split(key)) = hit
+                            && let Some(n) = self.app.node(key)
+                            && let Kind::Split { vertical, .. } = n.kind
+                        {
+                            let c = n.layout.rect.inset_by(n.mods.padding);
+                            let size = super::layout::split_first(n, if vertical { c.h } else { c.w });
+                            self.splitting = Some((key, if vertical { y } else { x }, size));
+                        }
                         if let Some(Hit::Slider(key)) = hit {
                             self.sliding = Some(key);
                             self.app.ui.focused = Some(key);
@@ -6254,6 +6471,7 @@ impl ApplicationHandler for WindowApp {
                         self.dragging = None;
                         self.sliding = None;
                         self.resizing = None;
+                        self.splitting = None;
                         self.drag_start = None;
                         self.app.ui.click_mods = (self.mods.shift, self.mods.primary);
                         let pressed = self.app.ui.pressed.take();

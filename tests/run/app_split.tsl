@@ -1,0 +1,18 @@
+// HSplit and VSplit: a divider dragged between two panes, a bound size,
+// and panes that keep their minimum sizes.
+
+app Panes(width: 400, height: 240) {
+    state sidebar = 120.0
+
+    HSplit(size: sidebar) {
+        VStack {
+            Text("Layers {Int(sidebar)}")
+            Spacer()
+        }
+        .frame(minWidth: 80)
+        VSplit {
+            Text("Map").frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("Details").frame(minHeight: 50)
+        }
+    }
+}

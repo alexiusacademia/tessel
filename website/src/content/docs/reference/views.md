@@ -520,12 +520,13 @@ HStack {
 ## Scroll
 
 ```text
-Scroll(content: View)
+Scroll(_ axes: ScrollAxes = .vertical, content: View)
 ```
 
-A vertically scrolling area. Scroll with the mouse wheel or trackpad, or
-drag the scroll bar: it shows at the right edge when the content is taller
-than the view, and clicking beside its thumb jumps there.
+A scrolling area: up and down (`.vertical`), across (`.horizontal`) or both
+ways (`.both`). Scroll with the mouse wheel or trackpad, or drag a scroll
+bar: one shows at the right edge when the content is taller than the view,
+and along the bottom when it's wider; clicking beside its thumb jumps there.
 
 ```tessel
 Scroll {
@@ -540,12 +541,43 @@ Scroll {
 - A scroll view is flexible in both directions: it takes all the space it's
   offered, and its content can be as tall as it needs.
 - Content starts at the top leading corner.
-- Scrolling is vertical only. The content gets the scroll view's width, so
-  text wraps rather than scroll sideways.
+- Scrolling up and down only (the default), the content gets the scroll
+  view's width, so text wraps rather than scroll sideways. Scrolling
+  across, it gets all the width it asks for.
+- [`scrollTo(id)`](/reference/stdlib/#scrollto) scrolls it from code. See
+  [Scroll](/ui/layout/#scroll).
 
 - If you put several views directly inside, they are stacked downwards like
   a leading-aligned `VStack` with spacing 8. Wrap them in your own `VStack`
   to choose a different spacing or alignment.
+
+## HSplit and VSplit
+
+```text
+HSplit(size: bind Float = …, content: View)
+VSplit(size: bind Float = …, content: View)
+```
+
+Two panes with a divider between them that's dragged to share out the room:
+side by side (`HSplit`) or one above the other (`VSplit`).
+
+```tessel
+HSplit(size: sidebar) {
+    LayerList().frame(minWidth: 150)
+    MapView()
+}
+```
+
+- `size:` is the first pane's width (`VSplit`: height) in points, which it
+  keeps when the window is resized. Dragging the divider changes it. Without
+  it, the panes start out halves.
+- A pane is never smaller than its `.frame(minWidth:)` (`minHeight:`), or 24
+  points without one.
+- The panes are the first two views inside. It takes all the space it's
+  offered.
+- In a [headless run](/ui/testing/), `tree` shows the first pane's size
+  (`HSplit 220`), and `drag` on the divider moves it.
+- See [Split views](/ui/layout/#split-views).
 
 ## LazyVStack
 
@@ -642,7 +674,10 @@ Image(_ path: String)
 ```
 
 Shows an image file. The path is relative to the folder the program is run
-from (see [`currentFolder()`](/reference/stdlib/#currentfolder)).
+from (see [`currentFolder()`](/reference/stdlib/#currentfolder)). For a
+picture that comes with the app, join it to
+[`appFolder()`](/reference/stdlib/#apppath-and-appfolder):
+`Image(joinPath(appFolder(), "logo.png"))`.
 
 ```tessel
 Image("logo.svg").frame(width: 48, height: 48)

@@ -319,7 +319,7 @@ fn build(mut spec: Spec, count_of: impl FnOnce(u64) -> Option<usize>, mut cells:
     with_builder(|b| {
         b.begin(Kind::Table(Rc::new(spec)), 0);
         table = b.parent().key;
-        b.begin(Kind::Scroll, 0);
+        b.begin(Kind::Scroll(0), 0);
         b.begin(Kind::Lazy { count, row_height, first: 0 }, 0);
     });
     let mut list = 0;

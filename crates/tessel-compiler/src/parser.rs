@@ -818,8 +818,9 @@ impl<'a> Parser<'a> {
             self.bump();
             let bind = self.eat(&Tok::Bind);
             let ty = self.type_expr()?;
+            let variadic = self.eat(&Tok::Ellipsis);
             let default = if self.eat(&Tok::Eq) { Some(self.expr()?) } else { None };
-            params.push(Param { unlabeled, name, bind, ty, default, span: start.to(self.prev_span()) });
+            params.push(Param { unlabeled, name, bind, ty, variadic, default, span: start.to(self.prev_span()) });
             if !self.eat(&Tok::Comma) {
                 break;
             }
@@ -1268,6 +1269,14 @@ impl<'a> Parser<'a> {
 
     fn range_expr(&mut self) -> PResult<Expr> {
         let lhs = self.coalesce_expr()?;
+        // `1...5` is a range written as in other languages (`xs...`, a
+        // spread, ends its argument).
+        if self.at(&Tok::Ellipsis) && !matches!(self.peek_at(1), Tok::RParen | Tok::Comma | Tok::Newline) {
+            let span = self.span();
+            self.error(span, "ranges in Tessel are written `a..b`, and leave out `b`")
+                .help("`1..6` counts 1, 2, 3, 4, 5; to include the end, write `1..(n + 1)`");
+            return Err(Reported);
+        }
         if !self.eat(&Tok::DotDot) {
             return Ok(lhs);
         }
@@ -1513,7 +1522,12 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            let value = self.expr()?;
+            let mut value = self.expr()?;
+            if self.at(&Tok::Ellipsis) {
+                let span = value.span.to(self.span());
+                self.bump();
+                value = self.new_expr(ExprKind::Spread(Box::new(value)), span);
+            }
             args.push(Arg { label, value });
             if !self.eat(&Tok::Comma) {
                 break;
@@ -1927,6 +1941,7 @@ fn done_param(ret: Option<TypeExpr>, span: Span) -> Param {
         name: Ident { name: DONE_PARAM.to_string(), span },
         bind: false,
         ty: TypeExpr::Fn(ret.into_iter().collect(), None, span),
+        variadic: false,
         default: None,
         span,
     }

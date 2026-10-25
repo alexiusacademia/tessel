@@ -34,11 +34,14 @@ after(seconds: 1) {
 ### print
 
 ```text
-print(_ value: Int, Float, Bool, String, Range or an enum, terminator: String = "\n")
+print(_ values: Any..., separator: String = " ", terminator: String = "\n")
 ```
 
-Writes a value to standard output, followed by `terminator` (a new line,
-unless you say otherwise).
+Writes values to standard output, with `separator` between them (a space,
+unless you say otherwise), followed by `terminator` (a new line). Each value
+can be an `Int`, `Float`, `Bool`, `String`, `Range` or enum, or a list,
+dictionary, set or tuple of those. `print()` on its own writes just the
+`terminator`.
 
 ```tessel
 print("Hello")        // Hello
@@ -48,6 +51,8 @@ print(true)           // true
 print(Mode.grid)      // grid
 print(0..3)           // 0..3
 print("Name: ", terminator: "")   // no line break: the answer goes on the same line
+print("x", 3, true)                // x 3 true
+print("a", "b", separator: ", ")   // a, b
 ```
 
 - A `Float` always shows a decimal point (`2.0`), so it reads differently
@@ -66,7 +71,7 @@ print("Name: ", terminator: "")   // no line break: the answer goes on the same 
 ### printError
 
 ```text
-printError(_ value: …, terminator: String = "\n")
+printError(_ values: Any..., separator: String = " ", terminator: String = "\n")
 ```
 
 Like `print`, but writes to standard error. Use it for error messages and
@@ -219,13 +224,14 @@ Math functions take their arguments **without labels**, in the order shown.
 | `ceil(x)` | `x` rounded up: `ceil(2.1)` is `3.0`. |
 | `round(x)` | `x` rounded to the nearest whole number; halves round away from zero, so `round(2.5)` is `3.0` and `round(-2.5)` is `-3.0`. |
 | `abs(x)` | `x` without its sign. |
-| `min(a, b)` | The smaller of `a` and `b`. |
-| `max(a, b)` | The larger of `a` and `b`. |
+| `min(a, b, …)` | The smallest of two or more values. |
+| `max(a, b, …)` | The largest of two or more values. |
 | `pi` | The constant π, `3.141592653589793`. |
 
 - All of these take and return a `Float`, except `abs`, `min` and `max`: they
-  work on `Int`s or `Float`s, and return the same type. Both values of `min`
-  and `max` must have the same type. A whole-number literal next to a `Float`
+  work on `Int`s or `Float`s, and return the same type. All the values of
+  `min` and `max` must have the same type. For the smallest or largest item
+  of a list, use the list's [`min()` and `max()`](#list). A whole-number literal next to a `Float`
   is read as a `Float`, so `max(0, x)` works for a `Float` `x`. To mix an
   `Int` variable with a `Float`, convert it with [`Float()`](#float).
 - Whole-number literals are read as `Float`s where a `Float` is expected, so
@@ -539,6 +545,8 @@ that work on every system. To take a path apart, use the `String` properties
 | `documentsFolder()` | The user's Documents folder. |
 | `tempFolder()` | A folder for temporary files. |
 | `appDataFolder(_ name: String)` | A folder for your app's own files (settings, caches), created if needed. |
+| `appPath()` | The running app itself: its executable. |
+| `appFolder()` | The folder the app is in, for files that come with it. |
 | `joinPath(_ folder: String, _ name: String)` | `folder` and `name` joined with the system's separator. |
 
 ### appDataFolder
@@ -558,6 +566,40 @@ let settings = joinPath(appDataFolder("Notes"), "settings.json")
 ```
 
 Use your app's name for `name`, so apps don't mix up their files.
+
+### appPath and appFolder
+
+```text
+appPath() -> String
+appFolder() -> String
+```
+
+Where the running app is: `appPath()` is its executable, and `appFolder()`
+the folder that holds it. Use them for files that come with the app, like
+help pages or templates, wherever it's installed and whichever folder it's
+started from (relative paths are relative to the
+[current folder](#currentfolder) instead).
+
+```tessel
+let help = joinPath(appFolder(), "help.html")
+if fileExists(help) {
+    openURL(help)
+}
+```
+
+| Run as | `appPath()` | `appFolder()` |
+|---|---|---|
+| Installed on Windows | `C:\Users\ada\AppData\Local\Programs\Tally\Tally.exe` | `C:\Users\ada\AppData\Local\Programs\Tally` |
+| A `.app` on macOS | `/Applications/Tally.app/Contents/MacOS/Tally` | `/Applications/Tally.app/Contents/MacOS` |
+| Built with `tessel build` | the executable, like `/Users/ada/tally/tally` | the folder it's in |
+| `tessel run`, `tessel test` | the program: its `.tsl` file, or its folder | the folder of the program's code |
+
+- Under `tessel run` (with `--hot` too), `tessel test` and the debugger, the
+  program runs from a temporary copy, so these give the program's source
+  instead: files kept next to the code are found the same way before and
+  after it's built.
+- On Android, `appPath()` is the app's code library, and `appFolder()` the
+  folder it's in.
 
 ### joinPath
 
@@ -1856,6 +1898,27 @@ user closes it.
 ```tessel
 Button("Don't Save") { quit() }
 ```
+
+### scrollTo
+
+```text
+scrollTo(_ id: Int or String, align: ScrollAlign = .nearest)
+```
+
+Scrolls the scroll views around the view with this
+[`.id`](/reference/modifiers/#id) so that it shows. `align:` is where it ends
+up: `.nearest` (no further than it takes), `.top`, `.center` or `.bottom`
+(across: leading, middle, trailing).
+
+```tessel
+lines.append(text)
+scrollTo(lines.count - 1)          // the line just added
+scrollTo("results", align: .top)
+```
+
+It's done when the views are next laid out, so a view added in the same
+block can be scrolled to. In a `LazyVStack`, row `i` has the id `i`, even
+when it isn't built. See [Scrolling from code](/ui/layout/#scrolling-from-code).
 
 ### openURL
 

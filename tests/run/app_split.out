@@ -1,0 +1,27 @@
+Root
+  View
+    HSplit 120
+      VStack
+        Text "Layers 120"
+        Spacer
+      VSplit 120
+        Text "Map"
+        Text "Details"
+Root
+  View
+    HSplit 180
+      VStack
+        Text "Layers 180"
+        Spacer
+      VSplit 120
+        Text "Map"
+        Text "Details"
+Root
+  View
+    HSplit 80
+      VStack
+        Text "Layers 80"
+        Spacer
+      VSplit 189
+        Text "Map"
+        Text "Details"

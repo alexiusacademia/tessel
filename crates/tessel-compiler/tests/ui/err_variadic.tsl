@@ -1,0 +1,43 @@
+// Parameters that take any number of values (`T...`) and spreads (`xs...`).
+
+fn sum(_ values: Int...) -> Int {
+    values.count
+}
+
+fn one(_ list: [Int]) -> Int {
+    list.count
+}
+
+fn two(_ a: Int..., _ b: Int...) { // error: only one parameter that takes any number of values
+}
+
+fn withDefault(_ a: Int... = [1]) { // error: can't have a default value
+}
+
+fn changes(values: bind Int...) { // error: can't be `bind`
+}
+
+fn labelled(by: Int, values: Int...) -> Int {
+    by
+}
+
+enum Shape {
+    poly(points: Int...) // error: an enum case can't take any number of values
+}
+
+view Row(_ items: String...) { // error: a view can't take any number of values
+    Text("row")
+}
+
+fn main() {
+    let xs = [1, 2]
+    print(sum(0, xs...)) // error: a list passed with `...` must be the only value for `values`
+    print(sum(xs..., 3)) // error: a list passed with `...` must be the only value for `values`
+    print(sum(1, "two")) // error: expected `Int`, found `String`
+    print(one(xs...)) // error: `one` takes this as one value
+    print(labelled(by: 1, values: 1, values: 2)) // error: `values:` is given twice
+    print(labelled(by: xs...)) // error: `labelled` takes `by:` as one value
+    print(max(xs...)) // error: `max` takes its values one by one
+    print(xs...) // error: `print` takes its values one by one
+    let n = abs(xs...) // error: `abs` takes its values one by one
+}

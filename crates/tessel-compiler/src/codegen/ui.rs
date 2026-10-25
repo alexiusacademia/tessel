@@ -791,16 +791,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     "VStack" => (0, Some(1), 2),
                     "HStack" => (1, Some(1), 2),
                     "ZStack" => (2, Some(0), 1),
-                    _ => (3, None, 0),
+                    // (A Scroll's `ScrollAxes`, in place of an alignment.)
+                    _ => (3, Some(0), 1),
                 };
                 let spacing = match (content, a(0)) {
                     (2, Some(x)) => self.expr_as(x, &Ty::Float).unwrap(),
                     _ => self.ctx.f64_type().const_float(8.0).into(),
                 };
-                // The `Alignment` case's tag; 1 is `.center`.
+                // The `Alignment` case's tag; 1 is `.center` (for a Scroll,
+                // 0 is `.vertical`).
                 let align = match align_at.and_then(a) {
                     Some(x) => self.expr(x).unwrap(),
-                    None => self.ctx.i32_type().const_int(1, false).into(),
+                    None => self.ctx.i32_type().const_int((kind != 3) as u64, false).into(),
                 };
                 let k = self.ctx.i32_type().const_int(kind, false);
                 self.call_rt("tsl_ui_begin", &[k.into(), spacing, align]);
@@ -809,6 +811,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "Spacer" => {
                 self.call_rt("tsl_ui_spacer", &[]);
+            }
+            "HSplit" | "VSplit" => {
+                let (f, env) = match a(0) {
+                    Some(x) => {
+                        let l = self.locator(x).into_struct_value();
+                        (self.b.build_extract_value(l, 0, "").unwrap(), self.b.build_extract_value(l, 1, "").unwrap())
+                    }
+                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                };
+                let vertical = self.i8().const_int((name == "VSplit") as u64, false);
+                self.call_rt("tsl_ui_begin_split", &[vertical.into(), f, env]);
+                self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
             }
             "Canvas" | "Scene3D" => {
                 // The runtime calls `adapter(box, width, height)`; the box holds the block.

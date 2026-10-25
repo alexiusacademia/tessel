@@ -86,8 +86,10 @@ pub struct Box {
     pub tabs: Vec<Tab>,
     /// A ribbon group (and its items) shown small, for lack of room.
     pub compact: bool,
-    /// For scroll views: the height of the content.
+    /// For scroll views: the height of the content (and its width, for one
+    /// that scrolls across).
     pub content_h: f64,
+    pub content_w: f64,
     /// For pickers: the rectangle of each option.
     pub segments: Vec<Rect>,
     /// For Markdown: what to draw, and where its links are.
@@ -228,6 +230,7 @@ const POPOVER_GAP: f64 = 6.0;
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
     pub scroll: &'a HashMap<u64, f64>,
+    pub scroll_x: &'a HashMap<u64, f64>,
     /// The widths of the columns of the tables being laid out (innermost last).
     pub columns: Vec<Vec<f64>>,
     /// Text an input method is composing: the view it's for, the part of the
@@ -659,22 +662,55 @@ impl Layouter<'_> {
                 }
                 Size { w: if avail.w.is_finite() { avail.w } else { widths.iter().sum() }, h: avail.h }
             }
-            Kind::Scroll => {
+            Kind::Split { vertical, .. } => {
+                // Each pane gets its share of the room (all of it, without
+                // a size to share); the split takes all it's offered.
+                let vertical = *vertical;
+                let along = if vertical { avail.h } else { avail.w };
+                let first = along.is_finite().then(|| split_first(n, along));
+                let mut total = Size::default();
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let share = match (first, i) {
+                        (Some(f), 0) => f,
+                        (Some(f), 1) => (along - f - SPLIT_DIVIDER).max(0.0),
+                        (Some(_), _) => 0.0,
+                        (None, _) => f64::INFINITY,
+                    };
+                    let room = if vertical { Size { w: avail.w, h: share } } else { Size { w: share, h: avail.h } };
+                    let s = self.measure(c, room, style);
+                    if vertical {
+                        total = Size { w: total.w.max(s.w), h: total.h + s.h };
+                    } else {
+                        total = Size { w: total.w + s.w, h: total.h.max(s.h) };
+                    }
+                }
+                Size {
+                    w: if avail.w.is_finite() { avail.w } else { total.w },
+                    h: if avail.h.is_finite() { avail.h } else { total.h },
+                }
+            }
+            Kind::Scroll(axes) => {
                 // Several children are stacked downwards, like a VStack.
+                // They get all the room they want the ways it scrolls.
+                let (down, across) = super::scroll_axes(*axes);
+                let room = Size { w: if across { f64::INFINITY } else { avail.w }, h: if down { f64::INFINITY } else { avail.h } };
                 let mut content_h: f64 = 0.0;
                 let mut w: f64 = 0.0;
                 let mut first = true;
                 for c in &mut n.children {
-                    let s = self.measure(c, Size { w: avail.w, h: f64::INFINITY }, style);
+                    let s = self.measure(c, room, style);
                     if c.mods.hidden {
                         continue;
                     }
                     content_h += s.h + if first { 0.0 } else { GROUP_SPACING };
                     first = false;
-                    w = w.max(s.w);
+                    // (A view that takes all the width it's offered gets
+                    // the scroll view's.)
+                    w = w.max(if s.w.is_finite() { s.w } else { avail.w });
                 }
                 n.layout.content_h = content_h;
-                Size { w, h: content_h.min(avail.h) }
+                n.layout.content_w = w;
+                Size { w: w.min(avail.w), h: content_h.min(avail.h) }
             }
         }
     }
@@ -807,19 +843,54 @@ impl Layouter<'_> {
                     x += w;
                 }
             }
-            Kind::Scroll => {
-                let offset = self.scroll.get(&n.key).copied().unwrap_or(0.0);
-                let max = (n.layout.content_h - content.h).max(0.0);
-                let offset = offset.clamp(0.0, max);
+            Kind::Split { vertical, .. } => {
+                let vertical = *vertical;
+                let along = if vertical { content.h } else { content.w };
+                let first = split_first(n, along);
+                let second = (along - first - SPLIT_DIVIDER).max(0.0);
+                let (a, divider, b) = if vertical {
+                    (
+                        Rect { h: first, ..content },
+                        Rect { y: content.y + first, h: SPLIT_DIVIDER, ..content },
+                        Rect { y: content.y + first + SPLIT_DIVIDER, h: second, ..content },
+                    )
+                } else {
+                    (
+                        Rect { w: first, ..content },
+                        Rect { x: content.x + first, w: SPLIT_DIVIDER, ..content },
+                        Rect { x: content.x + first + SPLIT_DIVIDER, w: second, ..content },
+                    )
+                };
+                n.layout.segments = vec![divider];
+                let style = n.layout.style.clone();
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let pane = match i {
+                        0 => a,
+                        1 => b,
+                        _ => Rect { w: 0.0, h: 0.0, ..b },
+                    };
+                    // (Measured again for the room it has now.)
+                    self.measure(c, Size { w: pane.w, h: pane.h }, &style);
+                    self.place(c, pane);
+                }
+            }
+            Kind::Scroll(axes) => {
+                let (down, across) = super::scroll_axes(*axes);
+                let (dy, dx) = scroll_offsets(n, content, self.scroll, self.scroll_x);
                 // Scrolling content starts at the top left (lists read that way).
-                let mut y = content.y - offset;
+                let mut y = content.y - dy;
+                let x = content.x - dx;
+                // As wide as the widest child, when it scrolls across.
+                let width = if across { n.layout.content_w.max(content.w) } else { content.w };
                 for c in &mut n.children {
                     if c.mods.hidden {
-                        self.place(c, Rect { x: content.x, y, w: 0.0, h: 0.0 });
+                        self.place(c, Rect { x, y, w: 0.0, h: 0.0 });
                         continue;
                     }
-                    let w = if flex(c, Axis::X, Some(Axis::Y)) { content.w } else { c.layout.size.w.min(content.w) };
-                    let r = Rect { x: content.x, y, w, h: c.layout.size.h };
+                    let w = if flex(c, Axis::X, Some(Axis::Y)) { width } else { c.layout.size.w.min(width) };
+                    // (Not scrolling down, a flexible child is as tall as the view.)
+                    let h = if !down && flex(c, Axis::Y, Some(Axis::Y)) { content.h } else { c.layout.size.h };
+                    let r = Rect { x, y, w, h };
                     self.place(c, r);
                     y += c.layout.size.h + GROUP_SPACING;
                 }
@@ -1026,7 +1097,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         Kind::Spacer => parent == Some(axis),
         Kind::TextField { .. } | Kind::Markdown { .. } | Kind::Slider { .. } | Kind::Lazy { .. } | Kind::Ribbon { .. } => axis == Axis::X,
         Kind::Disclosure { .. } => axis == Axis::X,
-        Kind::Scroll | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
+        Kind::Scroll(_) | Kind::Split { .. } | Kind::CodeEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
         Kind::TableRow(_) => axis == Axis::X,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),
@@ -1107,4 +1178,43 @@ mod tests {
         let big = aligned(outer, Size { w: 500.0, h: 500.0 }, 8);
         assert_eq!((big.x, big.y, big.w, big.h), (10.0, 20.0, 100.0, 50.0));
     }
+}
+
+/// How far a scroll view is scrolled (down, across): as far as its content
+/// goes, and only the ways it scrolls.
+pub fn scroll_offsets(n: &Node, content: Rect, scroll: &HashMap<u64, f64>, scroll_x: &HashMap<u64, f64>) -> (f64, f64) {
+    let Kind::Scroll(axes) = n.kind else { return (0.0, 0.0) };
+    let (down, across) = super::scroll_axes(axes);
+    let (max_y, max_x) = ((n.layout.content_h - content.h).max(0.0), (n.layout.content_w - content.w).max(0.0));
+    let dy = if down { scroll.get(&n.key).copied().unwrap_or(0.0).clamp(0.0, max_y) } else { 0.0 };
+    let dx = if across { scroll_x.get(&n.key).copied().unwrap_or(0.0).clamp(0.0, max_x) } else { 0.0 };
+    (dy, dx)
+}
+
+/// The width (height) of the line between a split view's panes.
+pub const SPLIT_DIVIDER: f64 = 1.0;
+/// The least a pane of a split view is, without a `minWidth` (`minHeight`).
+const SPLIT_MIN: f64 = 24.0;
+
+thread_local! {
+    /// Where each split view's divider was dragged (its first pane's size),
+    /// for one without a `size:` binding.
+    pub static SPLITS: std::cell::RefCell<HashMap<u64, f64>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// The size of a split view's first pane, in `along` points: from its
+/// binding, where it was dragged, or half; no pane less than its minimum.
+pub fn split_first(n: &Node, along: f64) -> f64 {
+    let Kind::Split { vertical, size } = &n.kind else { return 0.0 };
+    let wanted = match size {
+        Some(cb) => super::controls::read_number(cb, false),
+        None => SPLITS.with(|s| s.borrow().get(&n.key).copied()).unwrap_or(((along - SPLIT_DIVIDER) / 2.0).round()),
+    };
+    let min = |c: Option<&Node>| {
+        let m = c.and_then(|c| if *vertical { c.mods.min_height } else { c.mods.min_width });
+        m.unwrap_or(SPLIT_MIN)
+    };
+    let (lo, hi) = (min(n.children.first()), along - SPLIT_DIVIDER - min(n.children.get(1)));
+    let wanted = if wanted.is_finite() { wanted } else { lo };
+    if hi < lo { (along - SPLIT_DIVIDER).max(0.0) / 2.0 } else { wanted.clamp(lo, hi) }
 }

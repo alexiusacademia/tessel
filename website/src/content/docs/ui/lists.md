@@ -254,7 +254,8 @@ app Features(width: 320, height: 300) {
 in points; every row is the same height, which is how the list knows which
 rows show without building them. The block after it builds row `i`, from 0
 to `count - 1`. Put the list in a [`Scroll`](/ui/layout/#scroll), where
-it's as tall as all its rows.
+it's as tall as all its rows. [`scrollTo(i)`](/ui/layout/#scrolling-from-code)
+shows row `i`, built or not.
 
 ## Trees with `DisclosureGroup`
 

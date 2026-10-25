@@ -1,0 +1,95 @@
+// Parameters that take any number of values (`T...`), lists spread into
+// them (`xs...`), and the built-ins that take any number: print, min, max.
+
+fn sum(_ values: Int...) -> Int {
+    var total = 0
+    for v in values {
+        total += v
+    }
+    total
+}
+
+fn line(_ words: String..., separator: String = " ") -> String {
+    words.joined(separator: separator)
+}
+
+fn scaled(by: Float, values: Float...) -> [Float] {
+    values.map { v in v * by }
+}
+
+fn firstOf<T>(_ items: T..., fallback: T) -> T {
+    if items.isEmpty { fallback } else { items[0] }
+}
+
+fn run(_ steps: fn()..., done: fn()) {
+    for s in steps {
+        s()
+    }
+    done()
+}
+
+interface Logger {
+    fn log(_ parts: String...) -> String
+}
+
+struct Plain: Logger {
+    fn log(_ parts: String...) -> String {
+        parts.joined(separator: " ")
+    }
+}
+
+struct Stack<T> {
+    items: [T] = []
+
+    fn pushing(_ more: T...) -> Stack<T> {
+        Stack(items: items + more)
+    }
+}
+
+async fn total(_ xs: Int...) -> Int {
+    sum(xs...)
+}
+
+async fn awaited() {
+    print(await total(1, 2, 3), await total())
+}
+
+fn main() {
+    // Values one by one, none, or a list spread.
+    print(sum(1, 2, 3))
+    print(sum())
+    let xs = [4, 5, 6]
+    print(sum(xs...))
+    print(sum(xs + [10]...))
+
+    // Labelled parameters after and before the values.
+    print(line("a", "b", "c", separator: "-"))
+    print(line().isEmpty)
+    print(scaled(by: 2.0, values: 1.0, 2.5))
+    print(scaled(by: 2.0))
+
+    // Generic, in a method, through an interface, as blocks.
+    print(firstOf(3, 4, fallback: 0))
+    print(firstOf(fallback: "none"))
+    print(firstOf(["x", "yy"]..., fallback: "?"))
+    print(Stack<Int>().pushing(1, 2).pushing(3).items)
+    let l: Logger = Plain()
+    print(l.log("to", "the", "log"))
+    run({ print("one") }, { print("two") }) {
+        print("done")
+    }
+
+    // As a value, it takes the list.
+    let f = sum
+    print(f([7, 8]))
+
+    // Built-ins.
+    print(max(3, 9, 4), min(3, 9, 4, -2), max(1, 2))
+    print(max(1.5, 2, 0.5), min(2.0, 1.25, 3.0))
+    print("a", 1, 2.5, true, 0..3)
+    print("a", "b", separator: ", ")
+    print("no line break", terminator: "")
+    print("!")
+    print()
+    awaited {}
+}

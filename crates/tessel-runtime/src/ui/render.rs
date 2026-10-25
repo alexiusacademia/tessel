@@ -178,13 +178,29 @@ impl Bar {
     }
 }
 
-/// The scroll bars of a view: (down the side, along the bottom). A scroll
-/// view has the first; a code editor both.
+/// The scroll bars of a view: (down the side, along the bottom), each
+/// where it scrolls that way and there's more than shows.
 pub fn scroll_bars(n: &Node, ui: &Interaction) -> (Option<Bar>, Option<Bar>) {
     let content = n.layout.rect.inset_by(n.mods.padding);
     let down = ui.scroll.get(&n.key).copied().unwrap_or(0.0);
     match &n.kind {
-        Kind::Scroll => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
+        Kind::Scroll(axes) => {
+            let (dy, dx) = super::layout::scroll_offsets(n, content, &ui.scroll, &ui.scroll_x);
+            let (downwards, across) = super::scroll_axes(*axes);
+            let bottom = if across { Bar::along(content, false, n.layout.content_w, dx, 0.0) } else { None };
+            let side = if downwards { Bar::along(content, true, n.layout.content_h, dy, 0.0) } else { None };
+            // (The two don't meet in the corner.)
+            let corner = Bar::THICKNESS + Bar::MARGIN;
+            let bottom = match (&side, across) {
+                (Some(_), true) => Bar::along(content, false, n.layout.content_w, dx, corner),
+                _ => bottom,
+            };
+            let side = match (&bottom, downwards) {
+                (Some(_), true) => Bar::along(content, true, n.layout.content_h, dy, corner),
+                _ => side,
+            };
+            (side, bottom)
+        }
         Kind::TextField { lines: 2.., .. } => (Bar::along(content, true, n.layout.content_h, down, 0.0), None),
         Kind::CodeEditor { .. } => {
             let code = Rect { x: content.x + n.layout.gutter, w: (content.w - n.layout.gutter).max(0.0), ..content };
@@ -781,6 +797,11 @@ impl Painter<'_> {
                 // (Inside its padding: padding is room around the line.)
                 self.fill(content, 0.0, theme().colors[theme::SEPARATOR]);
             }
+            Kind::Split { .. } => {
+                if let Some(line) = n.layout.segments.first() {
+                    self.fill(*line, 0.0, theme().colors[theme::SEPARATOR]);
+                }
+            }
             Kind::Svg { source, .. } => {
                 if let Some(svg) = super::svg::load(source, style.color) {
                     self.draw_svg(svg, n.layout.content);
@@ -943,7 +964,7 @@ impl Painter<'_> {
                     }
                 }
             }
-            Kind::Scroll => {
+            Kind::Scroll(_) => {
                 let t = self.t();
                 self.scene.push(FillRule::NonZero, 1.0, t, &rounded(content, 0.0));
                 let outer = self.clip.replace(content);
@@ -982,7 +1003,7 @@ impl Painter<'_> {
         }
         self.offset = (0.0, 0.0);
         // (A color picker's palette is drawn last, over everything: `paint_overlay`.)
-        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll | Kind::TabView { .. } | Kind::ColorPicker { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. }) {
+        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll(_) | Kind::TabView { .. } | Kind::ColorPicker { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. }) {
             for c in &n.children {
                 self.paint(c);
             }

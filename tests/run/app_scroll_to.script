@@ -1,0 +1,9 @@
+click "Fill"
+click "Add"
+click 30 50
+click "Top"
+click 30 50
+click "Mid"
+click 60 85
+click "Far"
+click 30 140

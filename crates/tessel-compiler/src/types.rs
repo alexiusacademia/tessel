@@ -81,6 +81,9 @@ pub struct ParamSig {
     pub ty: Ty,
     pub has_default: bool,
     pub bind: bool,
+    /// `T...`: takes any number of values, which the function gets as a list
+    /// (`ty` is that list, `[T]`).
+    pub variadic: bool,
     /// Picker's `selection`: its type becomes the type `.tag(…)` expects.
     pub sets_tag: bool,
     /// A `fn(T)` whose `T` is that tag type (TabView's `onClose`).
@@ -99,6 +102,7 @@ impl ParamSig {
             ty,
             has_default: false,
             bind: false,
+            variadic: false,
             sets_tag: false,
             tag_fn: false,
             rows: false,
@@ -119,6 +123,20 @@ impl ParamSig {
     pub fn bind(mut self) -> ParamSig {
         self.bind = true;
         self
+    }
+
+    /// `_ label: T...`, with `ty` the list `[T]`.
+    pub fn variadic(mut self) -> ParamSig {
+        self.variadic = true;
+        self
+    }
+
+    /// The type of each value given to it: `T` for a variadic `[T]`.
+    pub fn item_ty(&self) -> &Ty {
+        match (&self.ty, self.variadic) {
+            (Ty::List(t), true) => t,
+            (t, _) => t,
+        }
     }
 }
 

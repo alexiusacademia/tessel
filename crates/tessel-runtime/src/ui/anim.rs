@@ -36,9 +36,10 @@ struct Track {
     start: f64,
     duration: f64,
     curve: u8,
-    /// How far the scroll views around it are scrolled: scrolling moves a
-    /// view at once, so the rectangles here are as if nothing was scrolled.
-    scrolled: f64,
+    /// How far the scroll views around it are scrolled (down, across):
+    /// scrolling moves a view at once, so the rectangles here are as if
+    /// nothing was scrolled.
+    scrolled: (f64, f64),
     seen: u64,
 }
 
@@ -135,7 +136,7 @@ fn mix_shown(a: &Shown, b: &Shown, t: f64) -> Shown {
 impl Animations {
     /// After layout: starts animations for what changed since the last
     /// frame, and moves the ones under way to time `now`.
-    pub fn step(&mut self, root: &Node, now: f64, size: (f64, f64), scroll: &HashMap<u64, f64>) {
+    pub fn step(&mut self, root: &Node, now: f64, size: (f64, f64), scroll: (&HashMap<u64, f64>, &HashMap<u64, f64>)) {
         self.running = false;
         if !self.enabled {
             self.tracks.clear();
@@ -146,19 +147,19 @@ impl Animations {
         let jump = self.frame == 0 || size != self.size;
         self.size = size;
         self.frame += 1;
-        self.visit(root, now, jump, 0.0, scroll);
+        self.visit(root, now, jump, (0.0, 0.0), scroll);
         let frame = self.frame;
         self.tracks.retain(|_, t| t.seen == frame);
         self.toggles.retain(|k, _| self.tracks.contains_key(k));
     }
 
-    fn visit(&mut self, n: &Node, now: f64, jump: bool, scrolled: f64, scroll: &HashMap<u64, f64>) {
+    fn visit(&mut self, n: &Node, now: f64, jump: bool, scrolled: (f64, f64), scroll: (&HashMap<u64, f64>, &HashMap<u64, f64>)) {
         if n.mods.hidden {
             return;
         }
         let rect = n.layout.rect;
         let to = Shown {
-            rect: Rect { y: rect.y + scrolled, ..rect },
+            rect: Rect { y: rect.y + scrolled.0, x: rect.x + scrolled.1, ..rect },
             opacity: n.mods.opacity.unwrap_or(1.0),
             background: n.mods.background,
         };
@@ -198,10 +199,9 @@ impl Animations {
 
         let below = match n.kind {
             // As layout scrolls it: no further than its content goes.
-            Kind::Scroll => {
-                let visible = n.layout.rect.inset_by(n.mods.padding).h;
-                let offset = scroll.get(&n.key).copied().unwrap_or(0.0);
-                scrolled + offset.clamp(0.0, (n.layout.content_h - visible).max(0.0))
+            Kind::Scroll(_) => {
+                let (dy, dx) = super::layout::scroll_offsets(n, n.layout.rect.inset_by(n.mods.padding), scroll.0, scroll.1);
+                (scrolled.0 + dy, scrolled.1 + dx)
             }
             _ => scrolled,
         };
@@ -213,7 +213,7 @@ impl Animations {
     /// What to draw of a view now, where that isn't simply its layout.
     pub fn shown(&self, key: u64) -> Option<Shown> {
         let t = self.tracks.get(&key)?;
-        let rect = Rect { y: t.now.rect.y - t.scrolled, ..t.now.rect };
+        let rect = Rect { y: t.now.rect.y - t.scrolled.0, x: t.now.rect.x - t.scrolled.1, ..t.now.rect };
         Some(Shown { rect, ..t.now })
     }
 

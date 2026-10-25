@@ -357,6 +357,56 @@ pub extern "C" fn tsl_documents_folder() -> *mut Str {
     str_new(&std::path::Path::new(&home()).join("Documents").to_string_lossy())
 }
 
+/// The running app (`appPath()`) and the folder it's in (`appFolder()`).
+/// Under `tessel run`, `tessel test`, hot reload and the debugger, the
+/// program's source (its `.tsl` file, or its folder) and that folder:
+/// `tessel` names the executable it starts in TESSEL_RUN_EXE, and the
+/// source in TESSEL_RUN_SOURCE. (Only for that executable: programs an app
+/// starts get the variables too.)
+fn app_location() -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::path::PathBuf;
+    let exe = running_file();
+    let same = |a: &std::path::Path, b: &std::path::Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if let (Some(run), Some(source)) = (std::env::var_os("TESSEL_RUN_EXE"), std::env::var_os("TESSEL_RUN_SOURCE")) {
+        let source = PathBuf::from(source);
+        if same(&exe, std::path::Path::new(&run)) {
+            let folder = if source.is_dir() { source.clone() } else { source.parent().map(PathBuf::from).unwrap_or_default() };
+            return (source, folder);
+        }
+    }
+    let folder = exe.parent().map(PathBuf::from).unwrap_or_default();
+    (exe, folder)
+}
+
+/// The file the app's code is in: its executable, or on Android (where the
+/// process is Java's) the app's library.
+fn running_file() -> std::path::PathBuf {
+    #[cfg(target_os = "android")]
+    unsafe {
+        let mut info: libc::Dl_info = std::mem::zeroed();
+        if libc::dladdr(running_file as *const libc::c_void, &mut info) != 0 && !info.dli_fname.is_null() {
+            let name = std::ffi::CStr::from_ptr(info.dli_fname).to_string_lossy().into_owned();
+            return std::path::PathBuf::from(name);
+        }
+    }
+    let exe = std::env::current_exe().unwrap_or_default();
+    // (Without links on macOS; on Windows, canonical paths start `\\?\`.)
+    if cfg!(windows) { exe } else { exe.canonicalize().unwrap_or(exe) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_app_path() -> *mut Str {
+    str_new(&app_location().0.to_string_lossy())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_app_folder() -> *mut Str {
+    str_new(&app_location().1.to_string_lossy())
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_temp_folder() -> *mut Str {
     str_new(std::env::temp_dir().to_string_lossy().trim_end_matches(['/', '\\']))

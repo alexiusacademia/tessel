@@ -101,7 +101,9 @@ Image("assets/photo.jpg").frame(height: 100)
 ```
 
 The path is relative to the folder the app is started from (the current
-folder), not to the source file.
+folder), not to the source file. For pictures that come with the app, use
+[`appFolder()`](/reference/stdlib/#apppath-and-appfolder):
+`Image(joinPath(appFolder(), "assets/photo.jpg"))`.
 
 - **SVG files** work like `Svg`: they have their own size, scale with `.frame`,
   and use `currentColor`.

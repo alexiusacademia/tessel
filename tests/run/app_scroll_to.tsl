@@ -1,0 +1,39 @@
+// scrollTo(id, align:): to a view with that `.id` (a number or a string),
+// including one the same action adds, and to a row of a LazyVStack that
+// isn't built yet.
+
+app Log(width: 300, height: 240) {
+    state lines: [String] = []
+
+    VStack {
+        HStack {
+            Button("Fill") {
+                for i in 0..40 {
+                    lines.append("line {i}")
+                }
+            }
+            Button("Add") {
+                lines.append("line {lines.count}")
+                scrollTo(lines.count - 1)
+            }
+            Button("Top") { scrollTo(5, align: .top) }
+            Button("Mid") { scrollTo("middle", align: .center) }
+            Button("Far") { scrollTo(900, align: .top) }
+        }
+        Scroll {
+            for (i, line) in lines.enumerated() {
+                Button(line) { print("clicked {line}") }.id(i)
+            }
+            Button("THE MIDDLE") { print("clicked the middle") }.id("middle")
+            for i in 0..20 {
+                Button("after {i}") { print("clicked after {i}") }
+            }
+        }
+        .frame(height: 90)
+        Scroll {
+            LazyVStack(count: 1000, rowHeight: 24) { i in
+                Button("row {i}") { print("clicked row {i}") }
+            }
+        }
+    }
+}

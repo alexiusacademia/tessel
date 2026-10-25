@@ -128,6 +128,7 @@ fn restart_on_change(path: &Path, program_args: &[String]) -> ExitCode {
         if let Ok(me) = std::env::current_exe() {
             cmd.env("TESSEL_EXE", me);
         }
+        crate::program_env(&mut cmd, &exe, path);
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -175,8 +176,13 @@ pub fn run(path: &Path, program_args: &[String]) -> ExitCode {
 
     // Programs can find the `tessel` command through TESSEL_EXE, as with `tessel run`.
     if let Ok(me) = std::env::current_exe() {
-        // (No other thread is running yet.)
-        unsafe { std::env::set_var("TESSEL_EXE", me) };
+        // (No other thread is running yet.) The app runs in this process,
+        // so `appPath()` is its source when the executable is this one.
+        unsafe {
+            std::env::set_var("TESSEL_RUN_EXE", &me);
+            std::env::set_var("TESSEL_RUN_SOURCE", crate::source_path(path));
+            std::env::set_var("TESSEL_EXE", me);
+        }
     }
     if std::env::var_os("TESSEL_SCRIPT").is_some() {
         // A scripted run reloads when its script says `reload`.

@@ -84,6 +84,7 @@ impl Session {
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let mut program = Command::new(&exe);
         program.env("TESSEL_DEBUG", port.to_string()).env("TESSEL_EXE", &me).stdin(Stdio::null());
+        crate::program_env(&mut program, &exe, path);
         if piped {
             program.stdout(Stdio::piped()).stderr(Stdio::piped());
         }

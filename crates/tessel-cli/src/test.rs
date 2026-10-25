@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
     // first time it starts, which would otherwise hold up every test.)
     let _ = Command::new(&exe).env("TESSEL_TEST", "").stdout(Stdio::null()).stderr(Stdio::null()).status();
     let started = Instant::now();
-    let outcomes = run_all(&exe, &tests, Duration::from_secs_f64(timeout));
+    let outcomes = run_all(&exe, &path, &tests, Duration::from_secs_f64(timeout));
     let _ = std::fs::remove_file(&exe);
 
     let failed = outcomes.iter().filter(|o| !o.passed).count();
@@ -98,19 +98,19 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// Runs every test, several at a time, printing each one's result in the
 /// tests' order as soon as it and those before it are done.
-fn run_all(exe: &Path, tests: &[Test], timeout: Duration) -> Vec<Outcome> {
+fn run_all(exe: &Path, source: &Path, tests: &[Test], timeout: Duration) -> Vec<Outcome> {
     let jobs = std::thread::available_parallelism().map_or(4, |n| n.get()).min(tests.len()).max(1);
     let (tx, rx) = mpsc::channel::<(usize, Outcome)>();
     let next = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let functions: Vec<String> = tests.iter().map(|t| t.function.clone()).collect();
     let mut workers = Vec::new();
     for _ in 0..jobs {
-        let (tx, next, functions, exe) = (tx.clone(), next.clone(), functions.clone(), exe.to_path_buf());
+        let (tx, next, functions, exe, source) = (tx.clone(), next.clone(), functions.clone(), exe.to_path_buf(), source.to_path_buf());
         workers.push(std::thread::spawn(move || {
             loop {
                 let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(function) = functions.get(i) else { break };
-                if tx.send((i, run_one(&exe, function, timeout))).is_err() {
+                if tx.send((i, run_one(&exe, &source, function, timeout))).is_err() {
                     break;
                 }
             }
@@ -133,9 +133,11 @@ fn run_all(exe: &Path, tests: &[Test], timeout: Duration) -> Vec<Outcome> {
     done.into_iter().map(|o| o.unwrap()).collect()
 }
 
-fn run_one(exe: &Path, function: &str, timeout: Duration) -> Outcome {
+fn run_one(exe: &Path, source: &Path, function: &str, timeout: Duration) -> Outcome {
     let start = Instant::now();
-    let child = Command::new(exe)
+    let mut cmd = Command::new(exe);
+    crate::program_env(&mut cmd, exe, source);
+    let child = cmd
         .env("TESSEL_TEST", function)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

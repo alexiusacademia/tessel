@@ -181,6 +181,90 @@ of the call. It can use literals and other top-level functions, but not the
 function's other parameters: `fn area(width: Int, height: Int = width)` is
 an error.
 
+## Any number of values
+
+A parameter whose type ends in `...` takes any number of values, one after
+another. Inside the function they're a list:
+
+```tessel
+fn average(_ values: Float...) -> Float {
+    if values.isEmpty {
+        return 0.0
+    }
+    var total = 0.0
+    for v in values {
+        total += v
+    }
+    total / Float(values.count)
+}
+
+fn main() {
+    print(average(2.0, 4.0, 9.0))
+    print(average(1.5))
+    print(average())
+}
+```
+
+```text
+5.0
+1.5
+0.0
+```
+
+`values` is a `[Float]` here. Given no values, it's an empty list.
+
+### With other parameters
+
+The values go on until the next labelled argument, so the parameters after
+one that takes any number need labels, and they can have defaults as usual:
+
+```tessel
+fn sentence(_ words: String..., ending: String = ".") -> String {
+    words.joined(separator: " ") + ending
+}
+
+fn main() {
+    print(sentence("Tessel", "is", "here"))
+    print(sentence("Really", ending: "?"))
+}
+```
+
+```text
+Tessel is here.
+Really?
+```
+
+A labelled one takes its label once, on its first value:
+`plot(color: .red, points: a, b, c)`.
+
+### Passing a list
+
+To pass a list you already have, write `...` after it. Its items are the
+values:
+
+```tessel
+let scores = [2.0, 4.0, 9.0]
+print(average(scores...))           // 5.0
+print(average(scores + [5.0]...))   // 5.0
+```
+
+A list passed this way must be the only value given: `average(1.0, scores...)`
+is an error. Join the lists first, as in the second line.
+
+### Rules
+
+- A function or method can have one parameter that takes any number of
+  values. It can't be `bind` or have a default (left out, it's an empty
+  list).
+- Views and enum cases can't take any number of values; give them a list.
+- They work in generic functions (`fn firstOf<T>(_ items: T..., fallback: T)`),
+  in interfaces, and in `async` functions.
+- Used as a value without calling it, such a function takes the list:
+  `let f = average` is a `fn([Float]) -> Float`, called as `f([1.0, 2.0])`.
+- `print` takes any number of values too, with a space between them
+  (`print("total:", total)`), and so do `min` and `max`:
+  `max(a, b, c)`.
+
 ## Parameters are copies
 
 A function receives its own copy of each argument. Parameters are constants

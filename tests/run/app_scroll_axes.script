@@ -1,0 +1,7 @@
+click 20 20
+wheel 150 50 300 400
+click 20 20
+wheel 150 140 300 0
+click 20 140
+wheel 150 140 0 200
+click 100 140

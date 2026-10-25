@@ -138,9 +138,97 @@ Scroll {
 ```
 
 A `Scroll` takes all the space it's offered, and its content starts at the top
-left. Scrolling is vertical only. If you put several views directly inside a
-`Scroll`, it stacks them downwards, 8 points apart, as a `VStack` with
-`.leading` alignment would.
+left. If you put several views directly inside a `Scroll`, it stacks them
+downwards, 8 points apart, as a `VStack` with `.leading` alignment would.
+
+### Across, and both ways
+
+A `Scroll` scrolls up and down unless you say otherwise. `Scroll(.horizontal)`
+scrolls across instead, and `Scroll(.both)` both ways, for content wider
+than the view, like a sheet of cells or a large drawing:
+
+```tessel
+Scroll(.horizontal) {
+    HStack {
+        for photo in photos {
+            Image(photo).frame(height: 80)
+        }
+    }
+}
+```
+
+The content gets all the width it asks for, and a scroll bar along the
+bottom when it's wider than the view. The wheel and trackpad move it the way
+they turn; a mouse wheel turned down over a `Scroll(.horizontal)` moves it
+across, unless there's a scroll view around it that goes down: then that
+one scrolls, so a strip of pictures in a page doesn't stop the page.
+
+### Scrolling from code
+
+`scrollTo(id)` scrolls the scroll views around the view with that
+[`.id`](/ui/lists/#identity-with-id) until it shows. Use it to jump to a
+search result, or to keep a log at its newest line:
+
+```tessel
+app Log(width: 320, height: 240) {
+    state lines: [String] = []
+
+    VStack {
+        Button("Add") {
+            lines.append("Line {lines.count + 1}")
+            scrollTo(lines.count - 1)
+        }
+        Scroll {
+            for (i, line) in lines.enumerated() {
+                Text(line).id(i)
+            }
+        }
+    }
+}
+```
+
+- `align:` says where the view ends up: `.nearest` (the default: no further
+  than it takes to show it), `.top`, `.center` or `.bottom`. In a
+  `Scroll(.horizontal)`, they mean the leading edge, the middle and the
+  trailing edge.
+- It happens when the views are next laid out, so a view the same block adds,
+  as above, is there to scroll to. If no view has the id then, nothing
+  scrolls.
+- In a [`LazyVStack`](/ui/lists/#long-lists-with-lazyvstack), a row's number
+  is its id: `scrollTo(5000)` shows row 5000 even before it's built. A view
+  with that `.id` elsewhere in the window comes first.
+
+## Split views
+
+`HSplit` puts two views side by side with a line between them that the user
+drags to share out the room; `VSplit` puts one above the other:
+
+```tessel
+app Atlas(width: 800, height: 500) {
+    state sidebar = 220.0
+
+    HSplit(size: sidebar) {
+        LayerList()
+            .frame(minWidth: 150)
+        VSplit {
+            MapView()
+            AttributeTable()
+                .frame(minHeight: 80)
+        }
+    }
+}
+```
+
+- `size:` is the first pane's width (for `VSplit`, its height) in points. It
+  keeps that size when the window is resized, and the second pane gets the
+  rest: right for a sidebar. Bind it to a `state` to set it, or to save it
+  with the app's settings. Without it, the panes start out halves, and keep
+  where the divider is dragged for as long as the app runs.
+- A pane's `.frame(minWidth:)` (for `VSplit`, `minHeight:`) is as small as
+  the divider lets it get; without one, a pane is never less than 24 points.
+- For three panes, put a split view in a pane of another, as above.
+- A split view takes all the space it's offered. Its panes are its first two
+  views.
 
 ## Padding
 

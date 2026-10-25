@@ -229,6 +229,8 @@ pub enum ArgRef {
     Arg(usize),
     /// The trailing block.
     Trailing,
+    /// Arguments `from..from + count`: the values of a variadic parameter.
+    Many(usize, usize),
 }
 
 #[derive(Clone, Debug)]
@@ -866,7 +868,7 @@ impl Checker<'_> {
                 };
                 let same_params = m.sig.params.len() == want.params.len()
                     && m.sig.params.iter().zip(&want.params).all(|(a, b)| {
-                        a.label == b.label && a.unlabeled == b.unlabeled && a.ty == b.ty && a.bind == b.bind
+                        a.label == b.label && a.unlabeled == b.unlabeled && a.ty == b.ty && a.bind == b.bind && a.variadic == b.variadic
                     });
                 if !same_params || m.sig.ret != want.ret {
                     let have = format!("fn {mname}{}", self.sig_text(&m.sig.params, &m.sig.ret));
@@ -1007,6 +1009,15 @@ impl Checker<'_> {
         }
     }
 
+    /// Only functions and methods take any number of values.
+    fn no_variadic(&mut self, params: &[Param], what: &str) {
+        for p in params.iter().filter(|p| p.variadic) {
+            self.error(p.span, format!("{what} can't take any number of values"))
+                .label("`...` is for functions and methods")
+                .help(format!("take a list instead: `{}: [Type]`", p.name.name));
+        }
+    }
+
     fn params_sig(&mut self, params: &[Param], allow_bind: bool) -> Vec<ParamSig> {
         let mut seen: HashMap<&str, Span> = HashMap::new();
         let mut out = Vec::new();
@@ -1024,16 +1035,34 @@ impl Checker<'_> {
                     .label("there's no variable to change when it's left out")
                     .help("remove the default, or the `bind`");
             }
-            let ty = self.resolve(&p.ty);
+            let mut ty = self.resolve(&p.ty);
             if p.bind && ty == Ty::View {
                 self.error(p.span, "a `View` can't be bound").help("remove `bind`");
+            }
+            if p.variadic {
+                if let Some(first) = params.iter().find(|q| q.variadic).filter(|q| !std::ptr::eq(*q, p)) {
+                    self.error(p.span, "a function can have only one parameter that takes any number of values")
+                        .note_at(first.span, "this one already does")
+                        .help("take a list instead: `name: [Type]`");
+                }
+                if p.bind {
+                    self.error(p.span, "a parameter that takes any number of values can't be `bind`")
+                        .help("remove `bind`, or take one value");
+                }
+                if let Some(d) = &p.default {
+                    self.error(d.span, "a parameter that takes any number of values can't have a default value")
+                        .label("left out, it's an empty list")
+                        .help("remove the default");
+                }
+                ty = Ty::list(ty);
             }
             out.push(ParamSig {
                 label: p.name.name.clone(),
                 unlabeled: p.unlabeled,
                 ty,
                 has_default: p.default.is_some(),
-                bind: p.bind && allow_bind,
+                bind: p.bind && allow_bind && !p.variadic,
+                variadic: p.variadic,
                 sets_tag: false,
                 tag_fn: false,
                 rows: false,
@@ -1135,6 +1164,7 @@ impl Checker<'_> {
                             self.error(c.name.span, format!("case `{}` is declared twice", c.name.name));
                             continue;
                         }
+                        self.no_variadic(&c.fields, "an enum case");
                         let fields = self.params_sig(&c.fields, false);
                         cases.push(CaseDef { name: c.name.name.clone(), fields, span: c.name.span });
                     }
@@ -1175,7 +1205,10 @@ impl Checker<'_> {
                     self.ifaces[id].props = props;
                 }
                 Item::Fn(f) => self.fns[id] = self.fn_sig(f, true),
-                Item::View(v) => self.views[id] = self.params_sig(&v.params, true),
+                Item::View(v) => {
+                    self.no_variadic(&v.params, "a view");
+                    self.views[id] = self.params_sig(&v.params, true);
+                }
                 Item::App(_) => {}
             }
         }
@@ -2277,6 +2310,12 @@ impl Checker<'_> {
             }
             ExprKind::Try(inner) => self.try_expr(e, inner, expected),
             ExprKind::Await(call) => self.await_expr(e, call),
+            // (A spread that a variadic parameter takes is checked there.)
+            ExprKind::Spread(list) => {
+                self.error(e.span, "`...` only passes a list to a parameter that takes any number of values")
+                    .help("remove `...`");
+                self.expr(list, expected)
+            }
             // (Its type is the block the call it's given to expects.)
             ExprKind::Continuation => expected.cloned().unwrap_or(Ty::Error),
             ExprKind::Cast { value, ty, test } => {
@@ -3460,12 +3499,35 @@ impl Checker<'_> {
                     }
                     "abs" | "min" | "max" => return self.numeric_fn(n, args, trailing, span),
                     "zip" => return self.zip(args, trailing, span),
-                    "print" | "printError" => {
+                    "scrollTo" => {
                         let sig = self.builtins.function(n).unwrap();
                         self.args(&what, &sig.params, args, trailing, span);
-                        if let Some(arg) = args.first().filter(|a| a.label.is_none()) {
-                            let t = self.types.get(&arg.value.id).cloned().unwrap_or(Ty::Error);
-                            self.showable(&t, arg.value.span);
+                        if let Some(a) = args.first().filter(|a| a.label.is_none()) {
+                            let t = self.types.get(&a.value.id).cloned().unwrap_or(Ty::Error);
+                            if !matches!(t, Ty::Int | Ty::Str | Ty::Error) {
+                                let what = self.a(&t);
+                                self.error(a.value.span, format!("`scrollTo` needs an `Int` or `String`, found {what}"))
+                                    .help("give it the `.id(…)` of the view to scroll to");
+                            }
+                        }
+                        return Ty::Void;
+                    }
+                    "print" | "printError" => {
+                        if let Some(a) = args.iter().find(|a| matches!(a.value.kind, ExprKind::Spread(_))) {
+                            self.error(a.value.span, format!("`{n}` takes its values one by one"))
+                                .help("print the list itself, without `...`, or join its items into one string");
+                            for a in args {
+                                self.expr(spread_list(&a.value), None);
+                            }
+                            return Ty::Void;
+                        }
+                        let sig = self.builtins.function(n).unwrap();
+                        self.args(&what, &sig.params, args, trailing, span);
+                        if let Some(Some(ArgRef::Many(from, count))) = self.frames.last().and_then(|f| f.args.first().copied()) {
+                            for arg in &args[from..from + count] {
+                                let t = self.types.get(&arg.value.id).cloned().unwrap_or(Ty::Error);
+                                self.showable(&t, arg.value.span);
+                            }
                         }
                         return Ty::Void;
                     }
@@ -3706,11 +3768,22 @@ impl Checker<'_> {
         }
     }
 
-    /// `abs(x)`, `min(a, b)`, `max(a, b)`: on two `Int`s or two `Float`s.
+    /// `abs(x)`, `min(a, b, …)`, `max(a, b, …)`: on `Int`s or `Float`s.
     fn numeric_fn(&mut self, n: &str, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
-        let want = if n == "abs" { 1 } else { 2 };
-        if args.len() != want || trailing.is_some() || args.iter().any(|a| a.label.is_some()) {
-            let shape = if n == "abs" { "abs(x)" } else { &format!("{n}(a, b)") };
+        if let Some(a) = args.iter().find(|a| matches!(a.value.kind, ExprKind::Spread(_))) {
+            let e = self.error(a.value.span, format!("`{n}` takes its values one by one"));
+            if n != "abs" {
+                let word = if n == "min" { "smallest" } else { "largest" };
+                e.help(format!("for the {word} item of a list, write `list.{n}()`"));
+            }
+            for a in args {
+                self.expr(spread_list(&a.value), None);
+            }
+            return Ty::Error;
+        }
+        let fits = if n == "abs" { args.len() == 1 } else { args.len() >= 2 };
+        if !fits || trailing.is_some() || args.iter().any(|a| a.label.is_some()) {
+            let shape = if n == "abs" { "abs(x)" } else { &format!("{n}(a, b, …)") };
             self.error(span, format!("write it as `{shape}`"));
             for a in args {
                 self.expr(&a.value, None);
@@ -4304,7 +4377,27 @@ impl Checker<'_> {
             }
         }
         let mut pi = 0;
-        for arg in args {
+        // A parameter that takes any number of values: the arguments it got
+        // (from the first, in a row up to the next labelled one), or a list
+        // spread into it (`xs...`, then in `assigned`).
+        let var_slot = params[..positional_end].iter().position(|p| p.variadic);
+        let mut var_args: Option<(usize, usize)> = None;
+        let mut collecting = false;
+        for (ai, arg) in args.iter().enumerate() {
+            let spread = matches!(arg.value.kind, ExprKind::Spread(_));
+            if collecting && arg.label.is_none() {
+                let vs = var_slot.unwrap();
+                if spread || assigned[vs].is_some() {
+                    self.spread_alone(&params[vs], arg.value.span);
+                    self.expr(spread_list(&arg.value), None);
+                } else if let Some((_, n)) = &mut var_args {
+                    *n += 1;
+                }
+                continue;
+            }
+            collecting = false;
+            // The start of the values of the variadic parameter.
+            let starts = |j: usize| Some(j) == var_slot && var_args.is_none() && assigned[j].is_none();
             match &arg.label {
                 Some(l) => {
                     // (The label is a use of the parameter's name.)
@@ -4312,7 +4405,22 @@ impl Checker<'_> {
                         self.note(l.span, decl);
                     }
                     if let Some(j) = (pi..positional_end).find(|&j| params[j].label == l.name && !params[j].unlabeled) {
-                        assigned[j] = Some(&arg.value);
+                        if Some(j) == var_slot && !starts(j) {
+                            self.error(l.span, format!("`{}:` is given twice", l.name))
+                                .help("its values go one after another, after one label: `name: a, b, c`");
+                            self.expr(spread_list(&arg.value), None);
+                            continue;
+                        }
+                        if starts(j) {
+                            if spread {
+                                assigned[j] = Some(&arg.value);
+                            } else {
+                                var_args = Some((ai, 1));
+                            }
+                            collecting = true;
+                        } else {
+                            assigned[j] = Some(&arg.value);
+                        }
                         pi = j + 1;
                         continue;
                     }
@@ -4337,9 +4445,16 @@ impl Checker<'_> {
                             self.error(l.span, format!("`{}:` is already given by the block after the call", l.name));
                             self.expr(&arg.value, None);
                         }
-                        Some(j) if assigned[j].is_some() => {
-                            self.error(l.span, format!("`{}:` is given twice", l.name));
+                        Some(j) if assigned[j].is_some() || (Some(j) == var_slot && var_args.is_some()) => {
+                            let e = self.error(l.span, format!("`{}:` is given twice", l.name));
+                            if Some(j) == var_slot {
+                                e.help("its values go one after another, after one label: `name: a, b, c`");
+                            }
                             self.expr(&arg.value, None);
+                        }
+                        Some(j) if params[j].variadic => {
+                            self.error(l.span, format!("`{}:` is in the wrong position", l.name));
+                            self.expr(spread_list(&arg.value), None);
                         }
                         Some(j) => {
                             let order: Vec<String> = params
@@ -4388,8 +4503,19 @@ impl Checker<'_> {
                             self.error(arg.value.span, format!("this argument needs its label `{}:`", p.label))
                                 .help(format!("write `{}: …`", p.label));
                         }
-                        assigned[pi] = Some(&arg.value);
+                        if starts(pi) && !spread {
+                            var_args = Some((ai, 1));
+                            collecting = true;
+                        } else {
+                            collecting = starts(pi);
+                            assigned[pi] = Some(&arg.value);
+                        }
                         pi += 1;
+                    } else if spread {
+                        self.error(arg.value.span, format!("{what} has no parameter that takes any number of values"))
+                            .label("`...` passes a list as such values")
+                            .help("pass the list itself: remove `...`");
+                        self.expr(spread_list(&arg.value), None);
                     } else {
                         let count = match positional_end {
                             0 => "no arguments".to_string(),
@@ -4412,7 +4538,7 @@ impl Checker<'_> {
         let missing: Vec<String> = params
             .iter()
             .zip(&assigned)
-            .filter(|(p, a)| a.is_none() && !p.has_default && p.label != DONE_PARAM)
+            .filter(|(p, a)| a.is_none() && !p.has_default && !p.variadic && p.label != DONE_PARAM)
             .map(|(p, _)| if p.unlabeled { format!("the {} value", p.label) } else { format!("`{}:`", p.label) })
             .collect();
         if !missing.is_empty() {
@@ -4422,26 +4548,57 @@ impl Checker<'_> {
         }
         let refs = assigned
             .iter()
-            .map(|a| {
-                a.map(|v| match args.iter().position(|arg| std::ptr::eq(&arg.value, v)) {
+            .enumerate()
+            .map(|(j, a)| match a {
+                Some(v) => Some(match args.iter().position(|arg| std::ptr::eq(&arg.value, *v)) {
                     Some(i) => ArgRef::Arg(i),
                     // (The completion block comes after the other arguments.)
                     None if matches!(v.kind, ExprKind::Continuation) => ArgRef::Arg(args.len()),
                     None => ArgRef::Trailing,
-                })
+                }),
+                // Values given one by one; none is an empty list.
+                None if Some(j) == var_slot => {
+                    let (from, count) = var_args.unwrap_or((args.len(), 0));
+                    Some(ArgRef::Many(from, count))
+                }
+                None => None,
             })
             .collect();
         if let Some(frame) = self.frames.last_mut() {
             frame.args = refs;
         }
-        for (p, a) in params.iter().zip(assigned) {
+        for (j, (p, a)) in params.iter().zip(assigned).enumerate() {
             if let Some(v) = a {
                 self.arg_value(what, p, v);
+            } else if let (true, Some((from, count))) = (Some(j) == var_slot, var_args) {
+                let item = ParamSig { ty: p.item_ty().clone(), variadic: false, ..p.clone() };
+                for arg in &args[from..from + count] {
+                    self.arg_value(what, &item, &arg.value);
+                }
             }
         }
     }
 
+    /// `xs...` given with other values for the same parameter.
+    fn spread_alone(&mut self, p: &ParamSig, span: Span) {
+        self.error(span, format!("a list passed with `...` must be the only value for `{}`", p.label))
+            .help("join the lists first, like `(xs + [a])...`, or pass the values one by one");
+    }
+
     fn arg_value(&mut self, what: &str, p: &ParamSig, v: &Expr) {
+        if let ExprKind::Spread(list) = &v.kind {
+            if !p.variadic {
+                let whose = if p.unlabeled { "this".to_string() } else { format!("`{}:`", p.label) };
+                self.error(v.span, format!("{what} takes {whose} as one value, not any number of them"))
+                    .help("remove `...`, to pass the list itself");
+                let t = self.expr(list, None);
+                self.types.insert(v.id, t);
+                return;
+            }
+            let t = self.expect(list, &p.ty);
+            self.types.insert(v.id, t);
+            return;
+        }
         if p.ty == Ty::View {
             self.content_closure(v);
             return;
@@ -4510,6 +4667,14 @@ impl Checker<'_> {
 }
 
 // ===== helpers =====
+
+/// The list in `xs...` (checked on its own after a mistake), or `e`.
+fn spread_list(e: &Expr) -> &Expr {
+    match &e.kind {
+        ExprKind::Spread(list) => list,
+        _ => e,
+    }
+}
 
 // ===== generics =====
 
@@ -4800,32 +4965,41 @@ impl Checker<'_> {
         if let (Some(r), Some(e)) = (ret, expected) {
             self.unify(r, e, &tparams, &mut binds);
         }
-        // Which parameter each argument goes to.
-        let mut pairs: Vec<(usize, &Expr)> = Vec::new();
+        // The type each argument is (the parameter's, or a variadic one's
+        // item type for a value given on its own).
+        let mut pairs: Vec<(Ty, &Expr)> = Vec::new();
         let mut positional = params.iter().enumerate().filter(|(_, p)| p.unlabeled).map(|(i, _)| i);
+        // In the values of a variadic parameter, which go on until a label.
+        let mut collecting: Option<usize> = None;
         for a in args {
             let i = match &a.label {
+                None if collecting.is_some() => collecting,
                 Some(l) => params.iter().position(|p| !p.unlabeled && p.label == l.name),
                 None => positional.next(),
             };
+            collecting = i.filter(|&i| params[i].variadic);
             if let Some(i) = i {
-                pairs.push((i, &a.value));
+                let p = &params[i];
+                match &a.value.kind {
+                    ExprKind::Spread(list) => pairs.push((p.ty.clone(), list)),
+                    _ => pairs.push((p.item_ty().clone(), &a.value)),
+                }
             }
         }
         if let (Some(tr), Some(last)) = (trailing, params.len().checked_sub(1)) {
-            pairs.push((last, tr));
+            pairs.push((params[last].ty.clone(), tr));
         }
         // Try the arguments quietly (they're checked for real once the types
         // are known); blocks last, when their parameters' types are known.
         let mark = self.diags.list.len();
         for closures in [false, true] {
-            for &(i, e) in &pairs {
+            for (pt, e) in &pairs {
                 if matches!(e.kind, ExprKind::Closure { .. }) != closures {
                     continue;
                 }
-                let exp = self.expect_for(&params[i].ty, &binds, span);
+                let exp = self.expect_for(pt, &binds, span);
                 let found = self.expr(e, exp.as_ref());
-                self.unify(&params[i].ty, &found, &tparams, &mut binds);
+                self.unify(pt, &found, &tparams, &mut binds);
             }
         }
         self.diags.list.truncate(mark);
@@ -5129,7 +5303,7 @@ impl Checker<'_> {
         let ps: Vec<String> = params
             .iter()
             .map(|p| {
-                let t = self.show(&p.ty);
+                let t = if p.variadic { format!("{}...", self.show(p.item_ty())) } else { self.show(&p.ty) };
                 let t = if p.bind { format!("bind {t}") } else { t };
                 if p.unlabeled { t } else { format!("{}: {t}", p.label) }
             })
@@ -5484,7 +5658,7 @@ fn expr_mutates(e: &Expr, roots: &HashSet<String>) -> bool {
         ExprKind::Str(parts) => parts.iter().any(|p| matches!(p, StrPart::Expr(x) if m(x))),
         ExprKind::List(items) => items.iter().any(m),
         ExprKind::Dict(pairs) => pairs.iter().any(|(k, v)| m(k) || m(v)),
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) => m(x),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Spread(x) => m(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => m(l) || m(r),
         ExprKind::Member { object, .. } => m(object),
         ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_mutates(body, roots),

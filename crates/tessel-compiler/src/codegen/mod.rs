@@ -1688,6 +1688,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_source" => (vec![i32t], None),
             "tsl_ui_next_id" => (vec![i], None),
+            "tsl_scroll_to" => (vec![i, i32t], None),
+            "tsl_ui_begin_split" => (vec![i8t, p, p], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, i32t, p, p], None),
             "tsl_start" => (vec![p], Some(i32t)),
             "tsl_ui_hot" => (vec![p, f64t, f64t, i32t, p, p], None),
@@ -3179,6 +3181,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             ExprKind::GenericName(..) => unreachable!("checked: a generic type isn't a value"),
             ExprKind::Try(inner) => self.try_expr(e, inner),
             ExprKind::Await(call) => self.await_expr(e, call),
+            // A list passed as a variadic parameter's values: the list itself.
+            ExprKind::Spread(list) => self.expr_as(list, &t),
             ExprKind::Continuation => Some(self.continuation(&t)),
             ExprKind::Int(n) => Some(if t == Ty::Float {
                 self.ctx.f64_type().const_float(*n as f64).into()
@@ -3208,20 +3212,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.unhold(1);
                 Some(self.load(&t, slot))
             }
-            ExprKind::List(items) => {
-                let Ty::List(elem) = &t else { unreachable!() };
-                let info = self.type_info(elem);
-                let n = self.i64().const_int(items.len() as u64, false);
-                let list = self.call_rt("tsl_list_new", &[info.into(), n.into()]).unwrap();
-                let slot = self.spill(&t, list);
-                self.hold_slot(slot, &t);
-                for item in items {
-                    let v = self.expr_as(item, elem).unwrap();
-                    self.push_item(slot, v, elem);
-                }
-                self.unhold(1);
-                Some(self.load(&t, slot))
-            }
+            ExprKind::List(items) => Some(self.list_of(&items.iter().collect::<Vec<_>>(), &t)),
             ExprKind::Dict(pairs) => {
                 let Ty::Dict(kt, vt) = &t else { unreachable!() };
                 let (ki, vi) = (self.type_info(kt), self.type_info(vt));
@@ -5001,6 +4992,34 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         methods.iter().any(|m| m.name == name && m.mutating)
     }
 
+    /// A new list `t` of these items.
+    fn list_of(&mut self, items: &[&Expr], t: &Ty) -> Val<'ctx> {
+        let Ty::List(elem) = t else { unreachable!() };
+        let info = self.type_info(elem);
+        let n = self.i64().const_int(items.len() as u64, false);
+        let list = self.call_rt("tsl_list_new", &[info.into(), n.into()]).unwrap();
+        let slot = self.spill(t, list);
+        self.hold_slot(slot, t);
+        for item in items {
+            let v = self.expr_as(item, elem).unwrap();
+            self.push_item(slot, v, elem);
+        }
+        self.unhold(1);
+        self.load(t, slot)
+    }
+
+    /// An argument's value, as type `t`: values given one by one to a
+    /// variadic parameter are made into its list.
+    fn arg_val<'e>(&mut self, r: ArgRef, t: &Ty, arg: &dyn Fn(ArgRef) -> &'e Expr) -> Val<'ctx> {
+        match r {
+            ArgRef::Many(from, count) => {
+                let items: Vec<&Expr> = (from..from + count).map(|i| arg(ArgRef::Arg(i))).collect();
+                self.list_of(&items, t)
+            }
+            r => self.expr_as(arg(r), t).unwrap(),
+        }
+    }
+
     /// Evaluates arguments in parameter order, filling in defaults.
     fn call_args<'e>(
         &mut self,
@@ -5034,7 +5053,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     vals.push(loc);
                     continue;
                 }
-                Some(r) => self.expr_as(arg(r), &p.ty),
+                Some(r) => Some(self.arg_val(r, &p.ty, arg)),
                 None => {
                     let default = decl_params[i].default.as_ref().expect("default value");
                     self.expr_as(default, &p.ty)
@@ -6089,7 +6108,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let sig = self.checked.ifaces[iface].methods[index].1.clone();
         let mut vals = Vec::new();
         for (i, p) in sig.params.iter().enumerate() {
-            let v = self.expr_as(arg(info.args[i].expect("interface methods have no defaults")), &p.ty).unwrap();
+            let v = self.arg_val(info.args[i].expect("interface methods have no defaults"), &p.ty, arg);
             self.hold(v, &p.ty);
             vals.push(v);
         }
@@ -6425,13 +6444,64 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 })
             }
-            "print" | "printError" => {
+            "scrollTo" => {
+                // Ids are kept as numbers: a `String`'s hash (as `.id` does).
                 let x = arg(info.args[0].unwrap());
-                let xt = self.ty(x);
+                let t = self.ty(x);
                 let v = self.expr(x).unwrap();
-                let s = self.stringify(v, &xt);
+                let id = match t {
+                    Ty::Str => self.call_rt("tsl_str_hash", &[v]).unwrap(),
+                    _ => v,
+                };
+                if t == Ty::Str {
+                    self.release(v, &t);
+                }
+                let align = match info.args.get(1).copied().flatten() {
+                    Some(r) => self.expr(arg(r)).unwrap(),
+                    None => self.ctx.i32_type().const_zero().into(),
+                };
+                self.call_rt("tsl_scroll_to", &[id, align]);
+                None
+            }
+            "print" | "printError" => {
+                // The values' text, with the separator between them.
+                let Some(ArgRef::Many(from, count)) = info.args[0] else { unreachable!("checked: print's values") };
+                let sep = match info.args.get(1).copied().flatten() {
+                    Some(r) => self.expr_as(arg(r), &Ty::Str).unwrap(),
+                    None => self.str_lit(" ").into(),
+                };
+                self.hold(sep, &Ty::Str);
+                let mut parts = Vec::new();
+                for i in from..from + count {
+                    let x = arg(ArgRef::Arg(i));
+                    let xt = self.ty(x);
+                    let v = self.expr(x).unwrap();
+                    let s = self.stringify(v, &xt);
+                    self.hold(s, &Ty::Str);
+                    parts.push(s);
+                }
+                let s = match parts.len() {
+                    0 => self.str_lit("").into(),
+                    1 => parts[0],
+                    _ => {
+                        let mut pieces = Vec::new();
+                        for (k, p) in parts.iter().enumerate() {
+                            if k > 0 {
+                                pieces.push(sep);
+                            }
+                            pieces.push(*p);
+                        }
+                        let joined = self.concat(&pieces);
+                        for p in &parts {
+                            self.release(*p, &Ty::Str);
+                        }
+                        joined
+                    }
+                };
+                self.unhold(parts.len() + 1);
+                self.release(sep, &Ty::Str);
                 self.hold(s, &Ty::Str);
-                let end = match info.args.get(1).copied().flatten() {
+                let end = match info.args.get(2).copied().flatten() {
                     Some(r) => self.expr_as(arg(r), &Ty::Str).unwrap(),
                     None => self.str_lit("\n").into(),
                 };
@@ -6552,7 +6622,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 if let Some(b) = b {
                     call_args.push(b.into());
                 }
-                self.b.build_call(func, &call_args, "").unwrap().try_as_basic_value().basic()
+                let mut r = self.b.build_call(func, &call_args, "").unwrap().try_as_basic_value().basic();
+                // `min` and `max` of more than two values, from the left.
+                for x in args.iter().skip(2) {
+                    let c = self.expr_as(&x.value, &Ty::Float).unwrap();
+                    r = self.b.build_call(func, &[r.unwrap().into(), c.into()], "").unwrap().try_as_basic_value().basic();
+                }
+                r
             }
             // `abs`, `min`, `max` on Ints.
             "abs" | "min" | "max" => {
@@ -6562,10 +6638,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     let is_neg = self.b.build_int_compare(IntPredicate::SLT, a, self.i64().const_zero(), "").unwrap();
                     return Some(self.b.build_select(is_neg, neg, a, "").unwrap());
                 }
-                let b = self.expr_as(&args[1].value, &Ty::Int).unwrap().into_int_value();
+                // (Any number of values, from the left.)
                 let pred = if name == "min" { IntPredicate::SLT } else { IntPredicate::SGT };
-                let pick_a = self.b.build_int_compare(pred, a, b, "").unwrap();
-                Some(self.b.build_select(pick_a, a, b, "").unwrap())
+                let mut best = a;
+                for x in &args[1..] {
+                    let b = self.expr_as(&x.value, &Ty::Int).unwrap().into_int_value();
+                    let keep = self.b.build_int_compare(pred, best, b, "").unwrap();
+                    best = self.b.build_select(keep, best, b, "").unwrap().into_int_value();
+                }
+                Some(best.into())
             }
             "openFile" | "saveFile" => {
                 // openFile(title:types:), saveFile(title:name:types:)
@@ -6949,6 +7030,7 @@ fn pick<'e>(args: &'e [Arg], trailing: Option<&'e Expr>, r: ArgRef) -> &'e Expr 
     match r {
         ArgRef::Arg(i) => &args[i].value,
         ArgRef::Trailing => trailing.expect("trailing block"),
+        ArgRef::Many(..) => unreachable!("a variadic parameter's values are taken one by one (`arg_val`)"),
     }
 }
 
@@ -7263,7 +7345,11 @@ fn for_each_child<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
                 f(v);
             }
         }
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Await(x) => f(x),
+        ExprKind::Unary(_, x)
+        | ExprKind::Cast { value: x, .. }
+        | ExprKind::Try(x)
+        | ExprKind::Await(x)
+        | ExprKind::Spread(x) => f(x),
         ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             f(l);
             f(r);

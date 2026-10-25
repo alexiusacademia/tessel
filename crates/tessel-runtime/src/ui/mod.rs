@@ -243,7 +243,12 @@ pub enum Kind {
     HStack(f64, u8),
     /// Its `Alignment` tag.
     ZStack(u8),
-    Scroll,
+    /// Which ways it scrolls (`ScrollAxes`: 0 vertical, 1 horizontal, 2 both).
+    Scroll(u8),
+    /// `HSplit` (side by side) and `VSplit` (one above the other): two
+    /// panes and a divider that's dragged between them. `size` is the
+    /// first pane's width (height) when it's bound (see `layout::SPLITS`).
+    Split { vertical: bool, size: Option<Callback> },
     Spacer,
     /// Text written in Markdown. Pictures are looked for in `folder`;
     /// `on_link` gets the address of a link that's clicked.
@@ -504,8 +509,15 @@ pub struct Node {
     pub mods: Mods,
     /// Identity across rebuilds: a hash of the path from the root.
     pub key: u64,
+    /// Its `.id(…)` (a `String`'s hash), for `scrollTo`.
+    pub id: Option<u64>,
     /// Filled in by layout.
     pub layout: layout::Box,
+}
+
+/// Whether a scroll view with these `ScrollAxes` scrolls up and down, and across.
+pub fn scroll_axes(axes: u8) -> (bool, bool) {
+    (axes != 1, axes != 0)
 }
 
 impl Node {
@@ -524,7 +536,7 @@ impl Node {
     }
 
     fn new(kind: Kind, key: u64) -> Node {
-        Node { kind, children: Vec::new(), mods: Mods::default(), key, layout: layout::Box::default() }
+        Node { kind, children: Vec::new(), mods: Mods::default(), key, id: None, layout: layout::Box::default() }
     }
 
     /// Children that are showing: a tab view shows only its selected page.
@@ -570,7 +582,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::VStack(..) => 11,
         Kind::HStack(..) => 12,
         Kind::ZStack(_) => 13,
-        Kind::Scroll => 14,
+        Kind::Scroll(_) => 14,
         Kind::Spacer => 15,
         Kind::Image { .. } => 16,
         Kind::Svg { .. } => 17,
@@ -595,6 +607,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Scene3D { .. } => 36,
         Kind::Table(_) => 37,
         Kind::TableRow(_) => 38,
+        Kind::Split { .. } => 39,
     }
 }
 
@@ -611,6 +624,8 @@ pub(super) struct Builder {
     stack: Vec<Node>,
     /// Set by `.id(…)`: the identity of the next view, instead of its position.
     pending_id: Option<u64>,
+    /// That id, once the next view's key is made from it.
+    taken_id: Option<u64>,
     /// Open popovers, for the root of each window being built (innermost
     /// last): they become its last children.
     overlays: Vec<Vec<Node>>,
@@ -629,7 +644,8 @@ impl Builder {
     }
 
     fn next_key(&mut self, salt: u64) -> u64 {
-        if let Some(id) = self.pending_id.take() {
+        self.taken_id = self.pending_id.take();
+        if let Some(id) = self.taken_id {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             (self.parent().key, "id", id, salt).hash(&mut h);
             return h.finish();
@@ -640,12 +656,14 @@ impl Builder {
 
     fn leaf(&mut self, kind: Kind) {
         let key = self.next_key(kind_salt(&kind));
-        self.parent().children.push(Node::new(kind, key));
+        let node = Node { id: self.taken_id.take(), ..Node::new(kind, key) };
+        self.parent().children.push(node);
     }
 
     fn begin(&mut self, kind: Kind, salt: u64) {
         let key = self.next_key(salt ^ kind_salt(&kind));
-        self.stack.push(Node::new(kind, key));
+        let node = Node { id: self.taken_id.take(), ..Node::new(kind, key) };
+        self.stack.push(node);
     }
 
     pub(super) fn end(&mut self) {
@@ -673,8 +691,8 @@ impl Builder {
 
     /// Opens a container with its own identity (rather than a position).
     fn begin_keyed(&mut self, kind: Kind, key: u64) {
-        self.pending_id = None;
-        self.stack.push(Node::new(kind, key));
+        let id = self.pending_id.take();
+        self.stack.push(Node { id, ..Node::new(kind, key) });
     }
 }
 
@@ -765,6 +783,7 @@ pub fn build_all(root: &Callback) -> Built {
         *b.borrow_mut() = Some(Builder {
             stack: vec![Node::new(Kind::Root, 1)],
             pending_id: None,
+            taken_id: None,
             overlays: vec![Vec::new()],
             overlay_at: Vec::new(),
             windows: Vec::new(),
@@ -1115,9 +1134,13 @@ pub fn align_2d(tag: u8) -> (u8, u8) {
 }
 
 /// Opens a container: 0 = VStack, 1 = HStack, 2 = ZStack, 3 = Scroll.
-/// `align` is an `Alignment` tag.
+/// `align` is an `Alignment` tag (for a Scroll, its `ScrollAxes` tag).
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_begin(kind: i32, spacing: f64, align: i32) {
+    if kind == 3 {
+        with_builder(|b| b.begin(Kind::Scroll(align.clamp(0, 2) as u8), 0));
+        return;
+    }
     let align = align.clamp(0, 8) as u8;
     let (h, v) = align_2d(align);
     let kind = match kind {
@@ -1125,10 +1148,17 @@ pub extern "C" fn tsl_ui_begin(kind: i32, spacing: f64, align: i32) {
         0 => Kind::VStack(spacing, h),
         // In an HStack, `.leading`/`.trailing` mean top/bottom.
         1 => Kind::HStack(spacing, if align == 0 || align == 2 { align } else { v }),
-        2 => Kind::ZStack(align),
-        _ => Kind::Scroll,
+        _ => Kind::ZStack(align),
     };
     with_builder(|b| b.begin(kind, 0));
+}
+
+/// Opens an `HSplit` (`vertical` 0) or `VSplit` (1). `f` is null without a
+/// `size:` binding; otherwise it locates the first pane's size (a `Float`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_begin_split(vertical: u8, f: *const c_void, env: *mut Header) {
+    let size = (!f.is_null()).then(|| Callback::new(f, env));
+    with_builder(|b| b.begin(Kind::Split { vertical: vertical != 0, size }, 0));
 }
 
 #[unsafe(no_mangle)]
@@ -1552,7 +1582,7 @@ mod tests {
         let mut tree = build(&root);
         let mut text = render::TextEngine::new();
         let scroll = HashMap::new();
-        layout::Layouter { text: &mut text, scroll: &scroll, columns: Vec::new(), composing: None }.run_below(&mut tree, 320.0, 260.0, 0.0);
+        layout::Layouter { text: &mut text, scroll: &scroll, scroll_x: &scroll, columns: Vec::new(), composing: None }.run_below(&mut tree, 320.0, 260.0, 0.0);
         let vstack = &tree.children[0];
         assert!(matches!(vstack.kind, Kind::VStack(..)));
         // Centered horizontally in the window, and the text field stretches.

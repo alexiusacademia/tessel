@@ -31,6 +31,10 @@ pub const EDGES: &[&str] = &["top", "bottom", "leading", "trailing"];
 pub const RIBBON_SIZES: &[&str] = &["small", "large"];
 /// How an animation moves (`.animation(curve:)`), in the runtime's order.
 pub const CURVES: &[&str] = &["easeInOut", "easeIn", "easeOut", "linear", "spring", "bouncy"];
+/// Which ways a `Scroll` scrolls (the runtime relies on the order).
+pub const SCROLL_AXES_CASES: &[&str] = &["vertical", "horizontal", "both"];
+/// Where `scrollTo` puts a view (the runtime relies on the order).
+pub const SCROLL_ALIGN_CASES: &[&str] = &["nearest", "top", "center", "bottom"];
 
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
@@ -50,7 +54,7 @@ pub const ICON_NAMES: &str = include_str!("../../tessel-runtime/icons/names.txt"
 
 /// Built-in enums, registered before user types: Color, Weight, Alignment,
 /// IconName, Appearance, PointerKind, PointerButton, CursorStyle, BlendMode, Edge,
-/// RibbonSize, Curve.
+/// RibbonSize, Curve, ScrollAxes, ScrollAlign.
 pub fn enums() -> Vec<EnumDef> {
     let simple = |name: &str, cases: &[&str]| EnumDef {
         name: name.into(),
@@ -80,6 +84,8 @@ pub fn enums() -> Vec<EnumDef> {
         simple("Edge", EDGES),
         simple("RibbonSize", RIBBON_SIZES),
         simple("Curve", CURVES),
+        simple("ScrollAxes", SCROLL_AXES_CASES),
+        simple("ScrollAlign", SCROLL_ALIGN_CASES),
     ]
 }
 
@@ -194,6 +200,8 @@ pub const BLEND_MODE: Ty = Ty::Enum(8);
 pub const EDGE: Ty = Ty::Enum(9);
 pub const RIBBON_SIZE: Ty = Ty::Enum(10);
 pub const CURVE: Ty = Ty::Enum(11);
+pub const SCROLL_AXES: Ty = Ty::Enum(12);
+pub const SCROLL_ALIGN: Ty = Ty::Enum(13);
 
 pub struct Builtins {
     pub color: Ty,
@@ -215,7 +223,7 @@ pub const VIEW_NAMES: &[&str] =
         "Text", "Button", "TextField", "Toggle", "Picker", "VStack", "HStack", "ZStack", "Spacer", "Scroll", "Image",
         "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Scene3D", "Slider", "Stepper", "ColorPicker",
         "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
-        "RibbonButton", "RibbonToggle", "RibbonMenu", "Table", "TableColumn", "Tree",
+        "RibbonButton", "RibbonToggle", "RibbonMenu", "Table", "TableColumn", "Tree", "HSplit", "VSplit",
     ];
 
 /// Built-in views whose names a program may take for its own types (a
@@ -277,7 +285,9 @@ impl Builtins {
                 content(),
             ],
             "ZStack" => vec![P::new("alignment", self.alignment.clone()).default(), content()],
-            "Scroll" => vec![content()],
+            "Scroll" => vec![P::unlabeled("axes", SCROLL_AXES).default(), content()],
+            // The first pane's width (height), when the app keeps it.
+            "HSplit" | "VSplit" => vec![P::new("size", Ty::Float).bind().default(), content()],
             "Spacer" => vec![],
             "Image" => vec![P::unlabeled("path", Ty::Str)],
             "Canvas" => vec![P::new("redraw", Ty::Int).default(), P::new("draw", Ty::func(vec![GRAPHICS], Ty::Void))],
@@ -459,7 +469,11 @@ impl Builtins {
     pub fn function(&self, name: &str) -> Option<FnSig> {
         Some(match name {
             "print" | "printError" => FnSig {
-                params: vec![P::unlabeled("value", Ty::Any), P::new("terminator", Ty::Str).default()],
+                params: vec![
+                    P::unlabeled("values", Ty::list(Ty::Any)).variadic(),
+                    P::new("separator", Ty::Str).default(),
+                    P::new("terminator", Ty::Str).default(),
+                ],
                 ret: Ty::Void,
             },
             "readLine" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
@@ -585,12 +599,17 @@ impl Builtins {
             "copyFile" => FnSig { params: vec![P::new("from", Ty::Str), P::new("to", Ty::Str)], ret: Ty::Bool },
             "fileSize" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Int) },
             "modifiedTime" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Float) },
-            "homeFolder" | "documentsFolder" | "tempFolder" | "platform" => FnSig { params: vec![], ret: Ty::Str },
+            "homeFolder" | "documentsFolder" | "tempFolder" | "appPath" | "appFolder" | "platform" => FnSig { params: vec![], ret: Ty::Str },
             "appDataFolder" => FnSig { params: vec![P::unlabeled("name", Ty::Str)], ret: Ty::Str },
             "joinPath" => FnSig { params: vec![P::unlabeled("folder", Ty::Str), P::unlabeled("name", Ty::Str)], ret: Ty::Str },
             "arguments" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             "exit" => FnSig { params: vec![P::unlabeled("code", Ty::Int).default()], ret: Ty::Void },
             "openURL" => FnSig { params: vec![P::unlabeled("url", Ty::Str)], ret: Ty::Bool },
+            // `id:` is an `Int` or a `String` (checked specially).
+            "scrollTo" => FnSig {
+                params: vec![P::unlabeled("id", Ty::Any), P::new("align", SCROLL_ALIGN).default()],
+                ret: Ty::Void,
+            },
             "copyToClipboard" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::Bool },
             "clipboardText" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
             // For the prelude (`readText` and the others that return a `Result`).
@@ -745,7 +764,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
-    "documentsFolder", "tempFolder", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
+    "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "chooseFolder", "__openFiles", "__messageDialog", "__printFile", "__dateParts",
@@ -1278,6 +1297,8 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "homeFolder" => rt("tsl_home_folder"),
         "documentsFolder" => rt("tsl_documents_folder"),
         "tempFolder" => rt("tsl_temp_folder"),
+        "appPath" => rt("tsl_app_path"),
+        "appFolder" => rt("tsl_app_folder"),
         "appDataFolder" => rt("tsl_app_data_folder"),
         "joinPath" => rt("tsl_join_path"),
         "platform" => rt("tsl_platform"),

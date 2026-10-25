@@ -1,0 +1,34 @@
+// Scroll(.both) and Scroll(.horizontal): content wider than the view, the
+// wheel moving it across, and a downward wheel over a strip that only
+// scrolls across moving the page around it instead.
+
+app Axes(width: 300, height: 260) {
+    VStack {
+        Scroll(.both) {
+            VStack(alignment: .leading) {
+                for r in 0..30 {
+                    HStack {
+                        for c in 0..12 {
+                            Button("r{r}c{c}") { print("clicked r{r}c{c}") }
+                                .frame(width: 60)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: 100)
+        Scroll {
+            Scroll(.horizontal) {
+                HStack {
+                    for i in 0..20 {
+                        Button("p{i}") { print("clicked p{i}") }.frame(width: 70, height: 40)
+                    }
+                }
+            }
+            .frame(height: 50)
+            for i in 0..20 {
+                Button("row {i}") { print("clicked row {i}") }.frame(width: 200)
+            }
+        }
+    }
+}

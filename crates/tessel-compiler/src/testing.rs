@@ -213,7 +213,7 @@ impl Lowering<'_> {
                     self.expr(v);
                 }
             }
-            ExprKind::Unary(_, x) | ExprKind::Try(x) | ExprKind::Await(x) => self.expr(x),
+            ExprKind::Unary(_, x) | ExprKind::Try(x) | ExprKind::Await(x) | ExprKind::Spread(x) => self.expr(x),
             ExprKind::Cast { value, .. } => self.expr(value),
             ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
                 self.expr(l);

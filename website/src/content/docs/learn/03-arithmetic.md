@@ -301,8 +301,8 @@ and it gives you back a result. You've already used one: `print`.
 | `sqrt(x)` | the square root of `x` | `sqrt(16.0)` | `4.0` |
 | `pow(x, y)` | `x` to the power `y` | `pow(2.0, 10.0)` | `1024.0` |
 | `abs(x)` | `x` without its minus sign | `abs(-7)` | `7` |
-| `min(a, b)` | the smaller of the two | `min(3, 8)` | `3` |
-| `max(a, b)` | the larger of the two | `max(3, 8)` | `8` |
+| `min(a, b, …)` | the smallest of them | `min(3, 8, 5)` | `3` |
+| `max(a, b, …)` | the largest of them | `max(3, 8, 5)` | `8` |
 | `round(x)` | `x` rounded to the nearest whole number | `round(2.5)` | `3.0` |
 
 ```tessel

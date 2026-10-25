@@ -199,7 +199,7 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
         Kind::Markdown { source, .. } => Some(Item { value: source.to_string(), ..item(Role::Document, called("")) }),
         Kind::Picker { .. } => Some(item(Role::Options, called(""))),
         Kind::TabView { .. } => Some(item(Role::Tabs, called(""))),
-        Kind::Scroll => Some(item(Role::Scroll, called(""))),
+        Kind::Scroll(_) => Some(item(Role::Scroll, called(""))),
         Kind::Table(spec) => Some(item(if spec.tree.is_some() { Role::Tree } else { Role::Table }, called(""))),
         Kind::TableRow(row) => {
             let role = if row.path.is_some() { Role::TreeItem } else { Role::Row };

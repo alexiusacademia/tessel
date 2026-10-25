@@ -202,7 +202,7 @@ parentheses: `view Header { … }`.
 ```text
 fn_decl = "async"? "fn" IDENT generics? params ("->" type)? block ;
 params  = "(" (param ("," param)* ","?)? ")" ;
-param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
+param   = "_"? IDENT ":" "bind"? type "..."? ("=" expr)? ;
 ```
 
 - `_` before the name means callers pass the argument without a label.
@@ -210,6 +210,11 @@ param   = "_"? IDENT ":" "bind"? type ("=" expr)? ;
   binding to the caller's value.
 - `= expr` gives a default value. Defaults are evaluated where the call is
   made and can only use global names.
+- `...` after the type makes a parameter that takes any number of values,
+  which the function gets as a list (see
+  [Any number of values](/language/functions/#any-number-of-values)). A
+  function or method can have one; it can't also be `bind` or have a
+  default, and views and enum cases can't have one.
 - A function needs parentheses even with no parameters: `fn reset() { … }`.
 - An `async fn` can use `await`; see
   [Waiting with async and await](/language/async/). It can't have `bind`
@@ -373,7 +378,7 @@ postfix      = "(" args? ")" closure?          call, optionally with a block aft
              ;
 
 args = arg ("," arg)* ","? ;
-arg  = (IDENT ":")? expr ;
+arg  = (IDENT ":")? expr "..."? ;               `xs...`: a list as a variadic parameter's values
 
 primary = INT | FLOAT | STRING | "true" | "false" | "nil"
         | IDENT
