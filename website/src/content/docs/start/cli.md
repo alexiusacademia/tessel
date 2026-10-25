@@ -669,7 +669,7 @@ summary and exits with status 1.
 | `TESSEL_SCRIPT` | Built apps | Runs the app without a window, driven by a script of commands: click, type, press keys, wait, print the view tree, or save a screenshot. See [Testing apps](/ui/testing/). |
 | `TESSEL_EXE` | Set by `tessel run` and `tessel ide` | The path of the `tessel` command that started the program. A program can read it with `environment("TESSEL_EXE")`, which is how the IDE finds `tessel`. |
 | `TESSEL_PROJECT` | The IDE | The project folder. `tessel ide` sets it; you don't normally need it. |
-| `TESSEL_RELEASES` | `tessel update`, `tessel pin` | Where releases are downloaded from, instead of the official release bucket (for testing a release). |
+| `TESSEL_RELEASES` | `tessel update`, `tessel pin` | A folder of releases to download from instead of GitHub's (`<url>/<version>/<file>` and `<url>/latest-<platform>.txt`, for testing a release). |
 | `TESSEL_NO_STATS` | every command, the install scripts | Set to `1` to [report nothing](/start/installation/#what-tessel-reports): not the install or update, and not that Tessel is in use. `DO_NOT_TRACK=1` does the same. |
 | `TESSEL_VERSION` | Every command `tessel pin` covers | Runs the command with this version of Tessel instead of the project's (installing it the first time). See [`tessel pin`](#tessel-pin). |
 | `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |

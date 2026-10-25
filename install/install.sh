@@ -1,11 +1,13 @@
 #!/bin/sh
 # Installs Tessel on macOS:
-#   curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | sh
+#   curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
 # Set TESSEL_VERSION=v0.1.0 to install a specific version, and
 # TESSEL_NO_STATS=1 to leave the download and install uncounted.
 set -eu
 
-BASE="https://storage.googleapis.com/tessel-releases"
+# Releases are GitHub's; those up to 0.15.1 are only in the old bucket.
+GITHUB="https://github.com/alexiusacademia/tessel/releases"
+BUCKET="https://storage.googleapis.com/tessel-releases"
 DIR="${TESSEL_HOME:-$HOME/.tessel}"
 
 fail() { echo "tessel install: $*" >&2; exit 1; }
@@ -16,13 +18,15 @@ case "$(uname -m)" in
   *) fail "Tessel currently supports Apple silicon Macs (arm64) only" ;;
 esac
 
-VERSION="${TESSEL_VERSION:-$(curl -fsSL "$BASE/latest-macos.txt" || curl -fsSL "$BASE/latest.txt")}" || fail "can't reach $BASE"
+VERSION="${TESSEL_VERSION:-$(curl -fsSL "$GITHUB/latest/download/latest-macos.txt" || curl -fsSL "$BUCKET/latest-macos.txt")}" || fail "can't reach $GITHUB"
+case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
 FILE="tessel-$VERSION-macos-$ARCH.tar.gz"
 echo "Installing Tessel $VERSION into $DIR/bin"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-curl -fSL --progress-bar "$BASE/$VERSION/$FILE" -o "$TMP/$FILE" || fail "can't download $FILE"
+curl -fSL --progress-bar "$GITHUB/download/$VERSION/$FILE" -o "$TMP/$FILE" 2>/dev/null ||
+  curl -fSL --progress-bar "$BUCKET/$VERSION/$FILE" -o "$TMP/$FILE" || fail "can't download $FILE"
 mkdir -p "$DIR/bin"
 tar -xzf "$TMP/$FILE" -C "$DIR/bin"
 

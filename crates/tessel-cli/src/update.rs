@@ -1,9 +1,11 @@
 //! `tessel update`: replaces this installation of Tessel with the latest
-//! release (or a chosen version) from the release bucket.
+//! release (or a chosen version), from the repository's GitHub releases.
 //!
-//! A release is `<base>/<version>/tessel-<version>-<platform>.<ext>`, listed in
-//! `<base>/<version>/SHA256SUMS`, and `<base>/latest-<platform>.txt` names the
-//! latest version. The package holds what goes in the installation folder
+//! A release's files are `tessel-<version>-<platform>.<ext>`, listed in its
+//! `SHA256SUMS`, and the latest release's `latest-<platform>.txt` names the
+//! latest version for that platform. Releases up to 0.15.1 are only in the
+//! old release bucket, which is asked when GitHub has no such release. The
+//! package holds what goes in the installation folder
 //! (the folder `tessel` is in): `tessel`, the runtime library, `sdk/`, and a
 //! README. It's unpacked next to the installation first, and only swapped in
 //! once it's complete and verified.
@@ -14,7 +16,35 @@ use std::process::{Command, ExitCode};
 
 use sha2::{Digest, Sha256};
 
-const BASE: &str = "https://storage.googleapis.com/tessel-releases";
+/// Where releases are: GitHub's releases of the repository.
+const GITHUB: &str = "https://github.com/alexiusacademia/tessel/releases";
+/// The bucket releases were in up to 0.15.1 (`<base>/<version>/<file>`, and
+/// `<base>/latest-<platform>.txt`).
+const BUCKET: &str = "https://storage.googleapis.com/tessel-releases";
+
+/// A place releases are downloaded from.
+#[derive(Clone)]
+enum Source {
+    GitHub,
+    /// Laid out as the old bucket is (TESSEL_RELEASES names one, for testing).
+    Folder(String),
+}
+
+impl Source {
+    fn file(&self, version: &str, file: &str) -> String {
+        match self {
+            Source::GitHub => format!("{GITHUB}/download/{version}/{file}"),
+            Source::Folder(base) => format!("{base}/{version}/{file}"),
+        }
+    }
+
+    fn latest(&self, os: &str) -> String {
+        match self {
+            Source::GitHub => format!("{GITHUB}/latest/download/latest-{os}.txt"),
+            Source::Folder(base) => format!("{base}/latest-{os}.txt"),
+        }
+    }
+}
 
 /// This platform's name in release file names, and its package extension.
 fn platform() -> Option<(&'static str, &'static str, &'static str)> {
@@ -25,8 +55,31 @@ fn platform() -> Option<(&'static str, &'static str, &'static str)> {
     }
 }
 
-fn base() -> String {
-    std::env::var("TESSEL_RELEASES").unwrap_or_else(|_| BASE.to_string()).trim_end_matches('/').to_string()
+/// Where to look, in order: TESSEL_RELEASES alone when it's set, otherwise
+/// GitHub, then the old bucket.
+fn sources() -> Vec<Source> {
+    match std::env::var("TESSEL_RELEASES") {
+        Ok(base) => vec![Source::Folder(base.trim_end_matches('/').to_string())],
+        Err(_) => vec![Source::GitHub, Source::Folder(BUCKET.to_string())],
+    }
+}
+
+/// Release `target`'s checksum of `file`, and where the release is.
+fn checksum(target: &str, file: &str) -> Result<(Source, String), String> {
+    let mut sums = None;
+    for source in sources() {
+        if let Ok(text) = get_text(&source.file(target, "SHA256SUMS")) {
+            sums = Some((source, text));
+            break;
+        }
+    }
+    let (source, sums) = sums.ok_or_else(|| format!("there's no release {target}"))?;
+    let expected = sums
+        .lines()
+        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
+        .map(|(h, _)| h.to_lowercase())
+        .ok_or_else(|| format!("release {target} has no `{file}`"))?;
+    Ok((source, expected))
 }
 
 pub(crate) fn agent() -> ureq::Agent {
@@ -48,7 +101,14 @@ fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
 /// The latest version for this platform, like `v0.1.3`.
 pub fn latest() -> Result<String, String> {
     let (os, _, _) = platform().ok_or("updates aren't available for this platform")?;
-    let v = get_text(&format!("{}/latest-{os}.txt", base()))?.trim().to_string();
+    let mut said = Err(String::new());
+    for source in sources() {
+        said = get_text(&source.latest(os));
+        if said.is_ok() {
+            break;
+        }
+    }
+    let v = said?.trim().to_string();
     parse_version(&v).ok_or_else(|| format!("the release list names an odd version: `{v}`"))?;
     Ok(v)
 }
@@ -115,20 +175,17 @@ fn update(wanted: Option<&str>, check: bool) -> Result<(), String> {
 fn fetch(target: &str, staging: &Path, found: &dyn Fn()) -> Result<PathBuf, String> {
     let (_, name, ext) = platform().ok_or("Tessel releases aren't made for this platform")?;
     let file = format!("tessel-{target}-{name}.{ext}");
-    let base = base();
     // The expected checksum first, so a missing release fails fast.
-    let sums = get_text(&format!("{base}/{target}/SHA256SUMS")).map_err(|_| format!("there's no release {target}"))?;
-    let expected = sums
-        .lines()
-        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
-        .map(|(h, _)| h.to_lowercase())
-        .ok_or_else(|| format!("release {target} has no package for this platform"))?;
+    let (source, expected) = checksum(target, &file).map_err(|e| match e.contains("has no") {
+        true => format!("release {target} has no package for this platform"),
+        false => e,
+    })?;
     found();
     let _ = std::fs::remove_dir_all(staging);
     let parent = staging.parent().unwrap_or(staging);
     std::fs::create_dir_all(staging).map_err(|e| writable(parent, e))?;
     let package = staging.join(&file);
-    download(&format!("{base}/{target}/{file}"), &package, &expected)?;
+    download(&source.file(target, &file), &package, &expected)?;
     let unpacked = staging.join("new");
     std::fs::create_dir_all(&unpacked).map_err(|e| e.to_string())?;
     let status = Command::new("tar")
@@ -151,16 +208,10 @@ fn fetch(target: &str, staging: &Path, found: &dyn Fn()) -> Result<PathBuf, Stri
 /// a `.tar.gz`, checked against the release's checksums) and unpacks it
 /// into `dir`.
 pub fn fetch_part(target: &str, file: &str, dir: &Path) -> Result<(), String> {
-    let base = base();
-    let sums = get_text(&format!("{base}/{target}/SHA256SUMS")).map_err(|_| format!("there's no release {target}"))?;
-    let expected = sums
-        .lines()
-        .find_map(|l| l.split_once(char::is_whitespace).filter(|(_, f)| f.trim().trim_start_matches('*') == file))
-        .map(|(h, _)| h.to_lowercase())
-        .ok_or_else(|| format!("release {target} has no `{file}`"))?;
+    let (source, expected) = checksum(target, file)?;
     std::fs::create_dir_all(dir).map_err(|e| writable(dir, e))?;
     let package = dir.join(file);
-    download(&format!("{base}/{target}/{file}"), &package, &expected)?;
+    download(&source.file(target, file), &package, &expected)?;
     let status =
         Command::new("tar").arg("-xf").arg(&package).arg("-C").arg(dir).status().map_err(|e| format!("can't run tar: {e}"))?;
     let _ = std::fs::remove_file(&package);

@@ -1,6 +1,6 @@
 # Builds Tessel's Windows package on a Windows machine and uploads it to the
-# release bucket: what the Release workflow's Windows job does, for when it
-# can't run on GitHub.
+# version's GitHub release: what the Release workflow's Windows job does, for
+# when it can't run on GitHub.
 #
 #   git clone https://github.com/alexiusacademia/tessel
 #   cd tessel
@@ -8,10 +8,12 @@
 #
 # It builds the commit that's checked out, as the version in its Cargo.toml
 # (right after a release, that's master). The script makes
-# dist\tessel-<version>-windows-x64.zip, tests it, uploads it to
-# gs://tessel-releases/<version>/, adds it to that release's SHA256SUMS and
-# points latest-windows.txt at it (which is what `tessel update` and the
-# install script read).
+# dist\tessel-<version>-windows-x64.zip, tests it, uploads it to the GitHub
+# release of the version (making the release if there isn't one yet), adds
+# it to that release's SHA256SUMS and gives it a latest-windows.txt (which is
+# what `tessel update` and the install script read). With the Google Cloud
+# CLI signed in, it copies them to the old bucket gs://tessel-releases too,
+# which Tessel 0.15.1 and earlier update from.
 #
 #   -NoUpload      build and test the package only
 #   -UploadOnly    upload the package a run with -NoUpload made
@@ -22,9 +24,12 @@
 #   - Rust (https://rustup.rs), with Visual Studio's C++ build tools
 #     ("Desktop development with C++"), which rustup asks for;
 #   - Git for Windows (for git, and the sh that comes with it);
-#   - the Google Cloud CLI (https://cloud.google.com/sdk/docs/install),
-#     signed in with `gcloud auth login` as an account that can write to the
-#     tessel-releases bucket (not needed with -NoUpload).
+#   - GitHub's CLI (https://cli.github.com), signed in with `gh auth login`
+#     as an account that can write to the repository (not needed with
+#     -NoUpload);
+#   - for the copy in the old bucket, the Google Cloud CLI
+#     (https://cloud.google.com/sdk/docs/install), signed in with
+#     `gcloud auth login` as an account that can write to it.
 # LLVM and llvm-mingw are downloaded by the script, the first time.
 
 param(
@@ -98,11 +103,19 @@ if (& git status --porcelain --untracked-files=no) {
 
 # ---- The tools ----
 
+$Mirror = $false
 if (-not $NoUpload) {
-    Need "gcloud" "Install the Google Cloud CLI: https://cloud.google.com/sdk/docs/install"
-    Step "Checking access to $Bucket"
-    $said = Attempt { gcloud storage ls "$Bucket/latest-windows.txt" }
-    if ($LASTEXITCODE -ne 0) { Fail "can't read $Bucket ($said). Sign in with: gcloud auth login" }
+    Need "gh" "Install GitHub's CLI: https://cli.github.com"
+    Step "Checking access to GitHub"
+    $said = Attempt { gh auth status }
+    if ($LASTEXITCODE -ne 0) { Fail "gh isn't signed in ($said). Sign in with: gh auth login" }
+    if (Get-Command gcloud -ErrorAction SilentlyContinue) {
+        $said = Attempt { gcloud storage ls "$Bucket/latest-windows.txt" }
+        $Mirror = $LASTEXITCODE -eq 0
+    }
+    if (-not $Mirror) {
+        Write-Host "No access to $Bucket (gcloud auth login): Tessel 0.15.1 and earlier won't see this package." -ForegroundColor Yellow
+    }
 }
 
 if (-not $UploadOnly) {
@@ -210,7 +223,7 @@ if (-not $UploadOnly) {
     $items = @(Get-ChildItem -Name)
     Run tar -a -c -f "..\$Zip" $items
     Pop-Location
-    Write-Host ("dist\$Zip: {0:N1} MB" -f ((Get-Item $ZipPath).Length / 1MB))
+    Write-Host ("dist\${Zip}: {0:N1} MB" -f ((Get-Item $ZipPath).Length / 1MB))
 }
 
 if ($NoUpload) {
@@ -222,17 +235,22 @@ if ($NoUpload) {
 # ---- Upload ----
 
 if (-not (Test-Path $ZipPath)) { Fail "there's no dist\$Zip to upload: build it first (run without -UploadOnly)" }
-Step "Uploading to $Bucket/$Version/"
+Step "Uploading to the GitHub release $Version"
 $work = Join-Path $Repo "dist\upload"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
 
+# The release (made here if the workflow hasn't made it).
+Attempt { gh release view $Version --json tagName } | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Run gh release create $Version --verify-tag --title "Tessel $($Version.TrimStart('v'))" --notes "What's new: https://tessel-lang.syncster.dev/about/whats-new/"
+}
+
 # The release's checksums, with this package's added (or replaced). The
-# macOS package's line, if the release has one, stays.
+# other packages' lines, if the release has them, stay.
 $sumsFile = Join-Path $work "SHA256SUMS"
 $lines = @()
-# (A release that has no package yet has no SHA256SUMS: that's fine.)
-Attempt { gcloud storage cp "$Bucket/$Version/SHA256SUMS" $sumsFile } | Out-Null
+Attempt { gh release download $Version --pattern SHA256SUMS --dir $work --clobber } | Out-Null
 if ($LASTEXITCODE -eq 0 -and (Test-Path $sumsFile)) {
     $lines = @(Get-Content $sumsFile | Where-Object { $_.Trim() -and ($_ -notmatch [regex]::Escape($Zip)) })
 }
@@ -241,29 +259,33 @@ $lines += "$hash  $Zip"
 # (Unix line endings and no byte-order mark: `tessel update` and sha256sum read it.)
 [IO.File]::WriteAllText($sumsFile, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
 
-Run gcloud storage cp $ZipPath "$Bucket/$Version/"
-Run gcloud storage cp $sumsFile "$Bucket/$Version/"
-
 # latest-windows.txt: the version `tessel update` and the install script
-# take. It isn't moved back from a newer release.
-$latest = Lines (& curl.exe -sf "https://storage.googleapis.com/tessel-releases/latest-windows.txt")
+# take (from the latest release). It isn't moved back from a newer release.
+$newest = Lines (Attempt { gh release view --json tagName --jq .tagName })
 $newer = $false
-try { $newer = [version]($latest.TrimStart("v")) -gt [version]($Version.TrimStart("v")) } catch { }
-if ($newer) {
-    Write-Host "latest-windows.txt stays at $latest, which is newer than $Version." -ForegroundColor Yellow
-} else {
-    $pointer = Join-Path $work "latest-windows.txt"
-    [IO.File]::WriteAllText($pointer, "$Version`n", (New-Object Text.UTF8Encoding($false)))
-    Run gcloud storage cp $pointer (Join-Path $Repo "install\install.ps1") "$Bucket/" "--cache-control=no-cache, max-age=0"
+try { $newer = [version]($newest.TrimStart("v")) -gt [version]($Version.TrimStart("v")) } catch { }
+$pointer = Join-Path $work "latest-windows.txt"
+[IO.File]::WriteAllText($pointer, "$Version`n", (New-Object Text.UTF8Encoding($false)))
+$script = Join-Path $Repo "install\install.ps1"
+Run gh release upload $Version $ZipPath $sumsFile $pointer $script --clobber
+if ($newer) { Write-Host "$newest is newer than ${Version}: it stays the latest release." -ForegroundColor Yellow }
+
+# The old bucket's copy, for Tessel 0.15.1 and earlier.
+if ($Mirror) {
+    Step "Copying to $Bucket/$Version/"
+    Run gcloud storage cp $ZipPath $sumsFile "$Bucket/$Version/"
+    if (-not $newer) {
+        Run gcloud storage cp $pointer $script "$Bucket/" "--cache-control=no-cache, max-age=0"
+    }
 }
-Remove-Item -Recurse -Force $work
 
 Step "Checking what's published"
-$published = Lines (& curl.exe -sf "https://storage.googleapis.com/tessel-releases/latest-windows.txt")
-# (From the bucket itself: the public address may show an older copy for an hour.)
-$sums = Lines (Attempt { gcloud storage cat "$Bucket/$Version/SHA256SUMS" })
-Write-Host "latest-windows.txt: $published"
+$check = Join-Path $work "check"
+New-Item -ItemType Directory -Force $check | Out-Null
+Run gh release download $Version --pattern SHA256SUMS --dir $check
+$sums = Lines (Get-Content (Join-Path $check "SHA256SUMS"))
 Write-Host $sums
 if ($sums -notmatch $hash) { Fail "the published SHA256SUMS doesn't have this package's checksum" }
+Remove-Item -Recurse -Force $work
 Write-Host ""
-Write-Host "Published Tessel $Version for Windows: https://storage.googleapis.com/tessel-releases/$Version/$Zip" -ForegroundColor Green
+Write-Host "Published Tessel $Version for Windows: https://github.com/alexiusacademia/tessel/releases/tag/$Version" -ForegroundColor Green

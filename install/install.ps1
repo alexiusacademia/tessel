@@ -1,24 +1,41 @@
 # Installs Tessel on Windows (PowerShell):
-#   irm https://storage.googleapis.com/tessel-releases/install.ps1 | iex
+#   irm https://github.com/alexiusacademia/tessel/releases/latest/download/install.ps1 | iex
 # Set $env:TESSEL_VERSION = "v0.1.0" first to install a specific version, and
 # $env:TESSEL_NO_STATS = "1" to leave the download and install uncounted.
 $ErrorActionPreference = "Stop"
 
-$Base = "https://storage.googleapis.com/tessel-releases"
+# Releases are GitHub's; those up to 0.15.1 are only in the old bucket.
+$GitHub = "https://github.com/alexiusacademia/tessel/releases"
+$Bucket = "https://storage.googleapis.com/tessel-releases"
 $Dir = if ($env:TESSEL_HOME) { $env:TESSEL_HOME } else { Join-Path $env:LOCALAPPDATA "Tessel" }
 $Bin = Join-Path $Dir "bin"
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Tessel needs 64-bit Windows" }
-$Version = if ($env:TESSEL_VERSION) { $env:TESSEL_VERSION } else {
-    try { (Invoke-RestMethod "$Base/latest-windows.txt").Trim() } catch { (Invoke-RestMethod "$Base/latest.txt").Trim() }
+# (Read through a file: GitHub may serve it as bytes, not text.)
+function Get-Text($Url) {
+    $f = Join-Path ([IO.Path]::GetTempPath()) "tessel-$([Guid]::NewGuid()).txt"
+    try {
+        Invoke-WebRequest $Url -OutFile $f -UseBasicParsing
+        (Get-Content $f -Raw).Trim()
+    } finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $f
+    }
 }
+$Version = if ($env:TESSEL_VERSION) { $env:TESSEL_VERSION } else {
+    try { Get-Text "$GitHub/latest/download/latest-windows.txt" } catch { Get-Text "$Bucket/latest-windows.txt" }
+}
+if (-not $Version.StartsWith("v")) { $Version = "v$Version" }
 $File = "tessel-$Version-windows-x64.zip"
 Write-Host "Installing Tessel $Version into $Bin"
 
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid())
 New-Item -ItemType Directory -Force $Tmp | Out-Null
 try {
-    Invoke-WebRequest "$Base/$Version/$File" -OutFile (Join-Path $Tmp $File) -UseBasicParsing
+    try {
+        Invoke-WebRequest "$GitHub/download/$Version/$File" -OutFile (Join-Path $Tmp $File) -UseBasicParsing
+    } catch {
+        Invoke-WebRequest "$Bucket/$Version/$File" -OutFile (Join-Path $Tmp $File) -UseBasicParsing
+    }
     New-Item -ItemType Directory -Force $Bin | Out-Null
     Expand-Archive (Join-Path $Tmp $File) -DestinationPath $Bin -Force
 } finally {

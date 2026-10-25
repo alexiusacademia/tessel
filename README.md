@@ -62,13 +62,13 @@ fn main() {
 macOS (Apple silicon):
 
 ```sh
-curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://storage.googleapis.com/tessel-releases/install.ps1 | iex
+irm https://github.com/alexiusacademia/tessel/releases/latest/download/install.ps1 | iex
 ```
 
 `tessel update` brings an installation up to date.
@@ -180,7 +180,9 @@ commands.
 ### Releases
 
 Packages are built by `.github/workflows/release.yml` when a `v*` tag is
-pushed, and published to the `tessel-releases` bucket. A package holds
+pushed, and published as a GitHub release (and copied to the old
+`tessel-releases` bucket, which Tessel 0.15.1 and earlier update from). A
+package holds
 `tessel`, the runtime library, and `sdk/`: stubs of the macOS libraries
 apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
 import libraries (`install/windows-sdk.sh`). The runtime for Android is

@@ -12,7 +12,7 @@ don't need anything else: no Xcode, no Visual Studio, no Rust or LLVM.
 In Terminal:
 
 ```sh
-curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
 ```
 
 This installs Tessel into `~/.tessel/bin` and adds that folder to your
@@ -25,7 +25,7 @@ Tessel runs on Macs with Apple silicon (M1 or later), macOS 11 or newer.
 In PowerShell:
 
 ```powershell
-irm https://storage.googleapis.com/tessel-releases/install.ps1 | iex
+irm https://github.com/alexiusacademia/tessel/releases/latest/download/install.ps1 | iex
 ```
 
 This installs Tessel into `%LOCALAPPDATA%\Tessel\bin` and adds it to your
@@ -62,19 +62,20 @@ folder to open [the Tessel IDE](/start/ide/).
 
 ## Manual download
 
-The installers download from
-`https://storage.googleapis.com/tessel-releases/`. To install by hand,
-download the package for your system from the folder of the newest version
-(the version number is in
-[`latest.txt`](https://storage.googleapis.com/tessel-releases/latest.txt)):
+The installers download from the repository's
+[GitHub releases](https://github.com/alexiusacademia/tessel/releases). To
+install by hand, download the package for your system from the newest
+release:
 
 | System | Package |
 |---|---|
 | macOS (Apple silicon) | `tessel-<version>-macos-arm64.tar.gz` |
 | Windows (64-bit) | `tessel-<version>-windows-x64.zip` |
 
-Unpack it into a folder and add the folder to your `PATH`. Each version's
-folder also has a `SHA256SUMS` file to check the download against.
+Unpack it into a folder and add the folder to your `PATH`. Each release
+also has a `SHA256SUMS` file to check the download against. (Releases up to
+0.15.1 are in `https://storage.googleapis.com/tessel-releases/<version>/`;
+the installers and `tessel update` find them there too.)
 
 On macOS, `tessel` is signed with a Developer ID and notarized by Apple, so
 it runs even when downloaded with a web browser.
@@ -143,7 +144,7 @@ tessel telemetry off
 it, the install command included:
 
 ```sh
-curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | TESSEL_NO_STATS=1 sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | TESSEL_NO_STATS=1 sh
 ```
 
 Automated builds (where `CI` is set) report nothing.
@@ -153,7 +154,7 @@ Automated builds (where `CI` is set) report nothing.
 Set `TESSEL_VERSION` before running the installer:
 
 ```sh
-curl -fsSL https://storage.googleapis.com/tessel-releases/install.sh | TESSEL_VERSION=v0.1.0 sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | TESSEL_VERSION=v0.1.0 sh
 ```
 
 ## Uninstalling
