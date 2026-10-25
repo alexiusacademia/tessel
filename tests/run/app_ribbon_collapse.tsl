@@ -1,0 +1,43 @@
+// A ribbon in a narrow window: groups shrink, then collapse into one button
+// each, which opens the group in a panel under it.
+
+app Sheet(width: 760, height: 320) {
+    state tab = "Home"
+    state log: [String] = []
+    state bold = false
+    state name = "A1"
+
+    VStack(spacing: 0) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Clipboard") {
+                    RibbonButton("Paste", icon: .paste, size: .large) { log.append("paste") }
+                    RibbonButton("Cut", icon: .cut) { log.append("cut") }
+                    RibbonButton("Copy", icon: .copy) { log.append("copy") }
+                }
+                RibbonGroup("Font") {
+                    RibbonToggle("Bold", icon: .bold, isOn: bold)
+                    RibbonMenu("Borders", icon: .borders) {
+                        MenuItem("All borders") { log.append("all borders") }
+                        MenuItem("No border") { log.append("no border") }
+                    }
+                    TextField("Cell", text: name).frame(width: 80)
+                }
+                RibbonGroup("Editing", icon: .sum) {
+                    RibbonButton("Sum", icon: .sum, size: .large) { log.append("sum") }
+                    RibbonButton("Find", icon: .search, size: .large) { log.append("find") }
+                    RibbonButton("Sort", icon: .sortAscending) { log.append("sort") }
+                    RibbonButton("Filter", icon: .filter) { log.append("filter") }
+                    RibbonButton("Clear", icon: .close) { log.append("clear") }
+                }
+            }
+            RibbonTab("Insert") {
+                RibbonGroup("Charts") {
+                    RibbonButton("Pie", icon: .chartPie) { log.append("pie chart") }
+                }
+            }
+        }
+        Text("bold {bold} | {name} | {log.joined(separator: ", ")}")
+        Spacer()
+    }
+}

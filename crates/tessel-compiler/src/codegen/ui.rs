@@ -806,12 +806,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.content_inline(a(1).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
-            "RibbonTab" | "RibbonGroup" => {
+            "RibbonTab" => {
                 let title = string(self, a(0));
-                let f = if name == "RibbonTab" { "tsl_ui_begin_ribbon_tab" } else { "tsl_ui_begin_ribbon_group" };
-                self.call_rt(f, &[title]);
+                self.call_rt("tsl_ui_begin_ribbon_tab", &[title]);
                 self.release(title, &Ty::Str);
                 self.content_inline(a(1).unwrap());
+                self.call_rt("tsl_ui_end", &[]);
+            }
+            "RibbonGroup" => {
+                let title = string(self, a(0));
+                // Its icon, or -1 for its first item's.
+                let icon = match a(1) {
+                    Some(x) => self.expr(x).unwrap(),
+                    None => self.ctx.i32_type().const_int(u64::MAX, true).into(),
+                };
+                self.call_rt("tsl_ui_begin_ribbon_group", &[title, icon]);
+                self.release(title, &Ty::Str);
+                self.content_inline(a(2).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
             "RibbonButton" | "RibbonToggle" | "RibbonMenu" => {

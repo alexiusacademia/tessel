@@ -234,6 +234,8 @@ fn hsl(h: f64, s: f64, l: f64) -> Rgba {
 thread_local! {
     /// The `Picker(style: .menu)` whose list of options is open.
     pub static OPEN_MENU: Cell<Option<u64>> = const { Cell::new(None) };
+    /// The collapsed `RibbonGroup` whose panel of items is open.
+    pub static OPEN_GROUP: Cell<Option<u64>> = const { Cell::new(None) };
     /// The `ColorPicker` whose palette is open.
     pub static OPEN_PICKER: Cell<Option<u64>> = const { Cell::new(None) };
     /// The open palette's hex field, and the color the picker had when it was built.

@@ -1361,12 +1361,15 @@ A tab of a [`Ribbon`](#ribbon), and only there. Its content is
 ## RibbonGroup
 
 ```text
-RibbonGroup(_ title: String, content: View)
+RibbonGroup(_ title: String, icon: IconName = …, content: View)
 ```
 
 A group of a [`RibbonTab`](#ribbontab)'s items, with `title` under them. A
 large item has a column of its own; small items, and other views (a
 `Picker`, a `TextField`), stack in columns, three small ones to a column.
+In a window too narrow for it, it [folds](/ui/ribbons/#when-the-window-is-narrow)
+into one button, with `icon` (its first item's icon by default), that
+opens it.
 
 ## RibbonButton
 

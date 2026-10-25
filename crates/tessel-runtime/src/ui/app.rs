@@ -820,6 +820,10 @@ enum Hit {
     Disclosure(u64),
     /// A ribbon's menu item (`RibbonMenu`): it opens its menu.
     RibbonMenu(u64),
+    /// A collapsed ribbon group's button, which opens (or closes) its
+    /// panel; and the open panel, besides its items.
+    RibbonGroup(u64),
+    RibbonPanel(u64),
     /// A table's header over a column, or the edge between a column and
     /// the next (to resize it); a row (by its place among the rows), or the
     /// arrow that opens a tree's node. All by the table.
@@ -842,7 +846,7 @@ impl Hit {
         match *self {
             Hit::Button(k) | Hit::Toggle(k) | Hit::Field(k) | Hit::Segment(k, _) | Hit::Tap(k) | Hit::Link(k, _) | Hit::Drag(k) => k,
             Hit::Pointer(k) | Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Swatch(k) | Hit::Palette(k) => k,
-            Hit::RibbonMenu(k) => k,
+            Hit::RibbonMenu(k) | Hit::RibbonGroup(k) | Hit::RibbonPanel(k) => k,
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
             Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _) => k,
@@ -1294,9 +1298,17 @@ impl App {
                 a.ui.anim.step(tree, now(), (a.width, a.height), (&a.ui.scroll, &a.ui.scroll_x));
             }
         });
-        // A palette whose picker is gone closes.
+        // A palette whose picker is gone closes, and so does the panel of a
+        // ribbon group that's gone or has room again.
         if !picker_shown {
             super::controls::OPEN_PICKER.set(None);
+        }
+        if let Some(k) = super::controls::OPEN_GROUP.get() {
+            let mut shown = false;
+            self.each_surface(|a| shown |= a.node(k).is_some_and(|n| n.layout.collapsed));
+            if !shown {
+                super::controls::OPEN_GROUP.set(None);
+            }
         }
         if self.deliver_open_files() {
             self.update();
@@ -2822,6 +2834,11 @@ impl App {
                 }
                 return n.children.get(n.selected_ribbon_tab()).and_then(|c| visit(c, x, y));
             }
+            // A collapsed group is its button (its items are in its panel,
+            // found first, below).
+            if matches!(n.kind, Kind::RibbonGroup { .. }) && n.layout.collapsed {
+                return n.layout.rect.contains(x, y).then_some(Hit::RibbonGroup(n.key));
+            }
             if let Kind::RibbonItem { role, .. } = &n.kind {
                 return n.layout.rect.contains(x, y).then_some(match role {
                     super::RibbonRole::Button(_) => Hit::Button(n.key),
@@ -2920,6 +2937,13 @@ impl App {
                 _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
+            }
+        }
+        // An open ribbon group's panel is over everything else.
+        if let Some(n) = super::controls::OPEN_GROUP.get().and_then(|k| self.node(k)) {
+            if n.layout.collapsed && n.layout.panel.contains(x, y) {
+                let item = n.children.iter().rev().find_map(|c| visit(c, x, y));
+                return Some(item.unwrap_or(Hit::RibbonPanel(n.key)));
             }
         }
         // An open menu picker's list is over everything else.
@@ -3386,6 +3410,10 @@ impl App {
         }
         if name == "escape" && OPEN_PICKER.get().is_some() {
             self.close_picker();
+            return;
+        }
+        if name == "escape" && super::controls::OPEN_GROUP.take().is_some() {
+            self.dirty = true;
             return;
         }
         // Enter in the palette's hex field picks that color.
@@ -3951,6 +3979,18 @@ impl App {
             super::controls::OPEN_MENU.set(None);
             self.dirty = true;
         }
+        // An open ribbon group's panel closes at a click outside it, and
+        // once one of its items is chosen (other views in it keep it open).
+        if let Some(open) = super::controls::OPEN_GROUP.get() {
+            let inside = self.node(open).is_some_and(|n| n.layout.panel.contains(x, y));
+            let item = matches!(hit, Some(Hit::Button(k) | Hit::Toggle(k) | Hit::RibbonMenu(k))
+                if self.node(k).is_some_and(|n| matches!(n.kind, Kind::RibbonItem { .. })));
+            let button = matches!(hit, Some(Hit::RibbonGroup(k)) if k == open);
+            if !button && (!inside || item) {
+                super::controls::OPEN_GROUP.set(None);
+                self.dirty = true;
+            }
+        }
         let on_palette = self.close_palette_unless(&hit);
         // The keyboard goes to the control clicked.
         self.ui.focused = match &hit {
@@ -4029,6 +4069,11 @@ impl App {
             (Hit::Toggle(_), Kind::RibbonItem { role: super::RibbonRole::Toggle(is_on), .. }) => {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+            }
+            (Hit::RibbonGroup(key), _) => {
+                let key = *key;
+                let open = super::controls::OPEN_GROUP.get() == Some(key);
+                super::controls::OPEN_GROUP.set((!open).then_some(key));
             }
             (Hit::RibbonMenu(key), _) => {
                 // Below the item.
@@ -4917,6 +4962,17 @@ impl App {
                     }
                 }
             }
+            // A collapsed ribbon group by its title (its button); its items
+            // only while its panel is open.
+            if let (Kind::RibbonGroup { title, .. }, true, false) = (&n.kind, n.layout.collapsed, n.mods.hidden) {
+                if title == label {
+                    let r = n.layout.rect;
+                    return Some((r.x + r.w / 2.0, r.y + r.h / 2.0));
+                }
+                if super::controls::OPEN_GROUP.get() != Some(n.key) {
+                    return None;
+                }
+            }
             // A link in Markdown, by what it says.
             if let (Kind::Markdown { .. }, Some(laid), false) = (&n.kind, &n.layout.markdown, n.mods.hidden) {
                 let c = n.layout.content;
@@ -5219,8 +5275,15 @@ impl App {
                     format!("Ribbon {titles:?} selected {:?}", titles.get(n.selected_ribbon_tab()).copied().unwrap_or(""))
                 }
                 Kind::RibbonTab { title } => format!("RibbonTab {title:?}"),
-                Kind::RibbonGroup { title } => {
-                    format!("RibbonGroup {title:?}{}", if n.layout.compact { " small" } else { "" })
+                Kind::RibbonGroup { title, .. } => {
+                    let shown = if n.layout.collapsed {
+                        if super::controls::OPEN_GROUP.get() == Some(n.key) { " collapsed open" } else { " collapsed" }
+                    } else if n.layout.compact {
+                        " small"
+                    } else {
+                        ""
+                    };
+                    format!("RibbonGroup {title:?}{shown}")
                 }
                 Kind::RibbonItem { label, large, role, .. } => {
                     let size = if *large && !n.layout.compact { " large" } else { "" };

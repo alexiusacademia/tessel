@@ -1,6 +1,6 @@
 ---
 title: 21. Forms, tables and rich text
-description: Lay out forms with Grid, choose with radio buttons and menus, search, link, cut text short or let it be copied, edit tables in place, write with styles in a RichTextEditor, and turn and scale views.
+description: Lay out forms with Grid, choose with radio buttons and menus, search, link, cut text short or let it be copied, edit tables in place, write with styles in a RichTextEditor, turn and scale views, and put commands in a ribbon.
 ---
 
 Lesson 19 built windows from stacks, buttons and text fields, and lesson 20
@@ -18,6 +18,7 @@ In this lesson you'll learn:
 - how `RichTextEditor` and `RichText` hold text with styles
 - how to turn and scale a view
 - split windows, long rows, and scrolling from code
+- how a `Ribbon` holds an app's commands, and what it does in a narrow window
 
 You'll finish with a small notes app that uses most of them.
 
@@ -290,6 +291,58 @@ app Calendar365(width: 640, height: 300) {
 
 See [Layout](/ui/layout/#split-views) and [Lists](/ui/lists/#sideways-with-lazyhstack).
 
+## A ribbon of commands
+
+Apps with many commands, like a spreadsheet or a word processor, put them in
+a **ribbon**: tabs, each with groups of buttons.
+
+```tessel
+app Sheet(width: 640, height: 300) {
+    state tab = "Home"
+    state bold = false
+    state did = ""
+
+    VStack(spacing: 0) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Clipboard") {
+                    RibbonButton("Paste", icon: .paste, size: .large) { did = "paste" }
+                    RibbonButton("Cut", icon: .cut) { did = "cut" }
+                    RibbonButton("Copy", icon: .copy) { did = "copy" }
+                }
+                RibbonGroup("Font") {
+                    RibbonToggle("Bold", icon: .bold, isOn: bold)
+                }
+                RibbonGroup("Editing", icon: .sum) {
+                    RibbonButton("Sum", icon: .sum, size: .large) { did = "sum" }
+                    RibbonButton("Find", icon: .search, size: .large) { did = "find" }
+                    RibbonButton("Sort", icon: .sortAscending) { did = "sort" }
+                    RibbonButton("Filter", icon: .filter) { did = "filter" }
+                }
+            }
+            RibbonTab("Insert") {
+                RibbonGroup("Charts") {
+                    RibbonButton("Pie", icon: .chartPie) { did = "pie" }
+                }
+            }
+        }
+        Text("Last: {did}, bold {bold}").padding(10)
+        Spacer()
+    }
+}
+```
+
+- `selection:` is the title of the tab that shows.
+- `size: .large` is for the commands used most; the others are small,
+  three to a column.
+- Make the window narrow and the ribbon makes room: first, from the last
+  group on, large items become small; then whole groups fold into one
+  button each, which opens the group under it. Every command stays in
+  reach. `icon:` on a `RibbonGroup` is its folded button's icon (its first
+  item's, without it).
+
+See [Ribbons](/ui/ribbons/).
+
 ## Worked example: a notes app
 
 Put the pieces together: a table of notes whose titles are edited in
@@ -391,6 +444,11 @@ Every `.tag` of a picker must have the same type as its `selection`. With
 `onEdit` gets text. For a number, convert it and decide what happens when
 it isn't one, as `Int(text)` does above, or your data could end up with
 `0` everywhere someone typed a letter.
+
+### The most used commands last in the ribbon
+
+A narrow window folds a ribbon's groups from the last one on. Put the
+groups people use most first, so they're the last to fold.
 
 ### Saving rich text as Markdown
 
@@ -524,5 +582,8 @@ Markdown is `**Hello**, world`: Markdown has no colors.
   around it make room.
 - **`HSplit`**/**`VSplit`** share a window between two views;
   **`Scroll(.horizontal)`**, **`LazyHStack`** and **`scrollTo`** handle long rows.
+- A **`Ribbon`** holds **`RibbonTab`**s of **`RibbonGroup`**s of buttons,
+  toggles and menus; in a narrow window its groups shrink, then fold into
+  buttons that open them.
 
 **Next:** [22. Sound, video, the web and the desktop](/learn/22-media-desktop/)

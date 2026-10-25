@@ -86,6 +86,11 @@ pub struct Box {
     pub tabs: Vec<Tab>,
     /// A ribbon group (and its items) shown small, for lack of room.
     pub compact: bool,
+    /// A ribbon group shown as one button, for even less room: its items
+    /// are in `panel`, under the button, which shows while it's open
+    /// (`controls::OPEN_GROUP`).
+    pub collapsed: bool,
+    pub panel: Rect,
     /// For scroll views: the height of the content (and its width, for one
     /// that scrolls across).
     pub content_h: f64,
@@ -579,6 +584,12 @@ impl Layouter<'_> {
                 }
                 n.layout.tabs = tabs;
                 let selected = n.selected_ribbon_tab();
+                // (The other tabs' groups aren't shown, so none is collapsed and open.)
+                for (i, tab) in n.children.iter_mut().enumerate() {
+                    if i != selected {
+                        tab.children.iter_mut().for_each(|g| g.layout.collapsed = false);
+                    }
+                }
                 let mut w = 0.0;
                 if let Some(c) = n.children.get_mut(selected) {
                     w = self.measure(c, Size { w: avail.w, h: RIBBON_BODY }, style).w;
@@ -587,27 +598,47 @@ impl Layouter<'_> {
             }
             Kind::RibbonTab { .. } => {
                 // Groups show their items small, from the last one on,
-                // until they fit.
+                // until they fit; then, from the last one on, they become
+                // one button each, which opens them.
                 let body = Size { w: f64::INFINITY, h: RIBBON_BODY };
                 let mut widths = Vec::new();
                 for c in &mut n.children {
                     c.layout.compact = false;
+                    c.layout.collapsed = false;
                     widths.push(self.measure(c, body, style).w + 1.0);
                 }
-                let mut i = n.children.len();
-                while widths.iter().sum::<f64>() > avail.w && i > 0 {
-                    i -= 1;
-                    let c = &mut n.children[i];
-                    c.layout.compact = true;
-                    widths[i] = self.measure(c, body, style).w + 1.0;
+                for collapse in [false, true] {
+                    let mut i = n.children.len();
+                    while widths.iter().sum::<f64>() > avail.w && i > 0 {
+                        i -= 1;
+                        let c = &mut n.children[i];
+                        if !matches!(c.kind, Kind::RibbonGroup { .. }) {
+                            continue;
+                        }
+                        if collapse {
+                            c.layout.collapsed = true;
+                        } else {
+                            c.layout.compact = true;
+                        }
+                        let w = self.measure(c, body, style).w + 1.0;
+                        // (A group that's smaller than its button stays as it is.)
+                        if collapse && w >= widths[i] {
+                            c.layout.collapsed = false;
+                            self.measure(c, body, style);
+                            continue;
+                        }
+                        widths[i] = w;
+                    }
                 }
                 Size { w: widths.iter().sum(), h: RIBBON_BODY }
             }
-            Kind::RibbonGroup { title } => {
+            Kind::RibbonGroup { title, .. } => {
                 let title = title.clone();
                 let label = Style { size: 11.0, color: theme().colors[theme::SECONDARY], ..*style };
                 let t = self.text_layout(&title, &label, None);
-                let compact = n.layout.compact;
+                // (A collapsed group's panel shows its items as they are with room.)
+                let collapsed = n.layout.collapsed;
+                let compact = n.layout.compact && !collapsed;
                 for c in &mut n.children {
                     c.layout.compact = compact;
                     let room = if matches!(c.kind, Kind::RibbonItem { large: true, .. }) && !compact { RIBBON_LARGE } else { RIBBON_ROW };
@@ -621,6 +652,14 @@ impl Layouter<'_> {
                 w += RIBBON_GAP * columns.len().saturating_sub(1) as f64 + 2.0 * RIBBON_PAD;
                 let w = w.max(t.width() + 4.0 * RIBBON_PAD);
                 n.layout.text = Some(t);
+                if collapsed {
+                    // The button: the group's icon over its title and an arrow.
+                    n.layout.panel = Rect { x: 0.0, y: 0.0, w, h: RIBBON_BODY };
+                    let button = self.text_layout(&title, &Style { size: 12.0, ..*style }, None);
+                    let w = (button.width() + 12.0 + 2.0 * RIBBON_PAD + 4.0).max(52.0) + 2.0 * RIBBON_PAD;
+                    n.layout.placeholder = Some(button);
+                    return Size { w, h: RIBBON_BODY };
+                }
                 Size { w, h: RIBBON_BODY }
             }
             Kind::RibbonItem { label, large, role, .. } => {
@@ -1168,8 +1207,16 @@ impl Layouter<'_> {
                 }
             }
             Kind::RibbonGroup { .. } => {
-                let mut x = content.x + RIBBON_PAD;
-                let top = content.y + RIBBON_PAD;
+                let (mut x, mut top) = (content.x + RIBBON_PAD, content.y + RIBBON_PAD);
+                if n.layout.collapsed {
+                    // Its items go in the panel under its button, inside the window.
+                    let window = WINDOW.with(|w| w.get());
+                    let size = n.layout.panel;
+                    let px = content.x.min(window.w - size.w - 4.0).max(4.0);
+                    n.layout.panel = Rect { x: px, y: content.y + content.h + 2.0, w: size.w, h: size.h };
+                    x = px + RIBBON_PAD;
+                    top = n.layout.panel.y + RIBBON_PAD;
+                }
                 for column in ribbon_columns(n) {
                     let w = column.iter().map(|i| n.children[*i].layout.size.w).fold(0.0, f64::max);
                     let mut y = top;

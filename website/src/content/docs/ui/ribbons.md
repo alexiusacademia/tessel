@@ -1,6 +1,6 @@
 ---
 title: Ribbons
-description: "A ribbon of tabs and groups of commands, as office apps have: large and small buttons, toggles, menus, and other views, which shrink to fit a narrow window."
+description: "A ribbon of tabs and groups of commands, as office apps have: large and small buttons, toggles, menus, and other views, which shrink and then fold into buttons to fit a narrow window."
 ---
 
 A ribbon is the band of commands across the top of an office app: tabs
@@ -127,10 +127,34 @@ Ribbon(selection: tab) {
 
 ## When the window is narrow
 
-When the groups don't fit, the ribbon shows them smaller, starting from the
-last group: their large items become small, and stack three to a column.
-Groups that still don't fit are cut off at the window's edge, so put the
-groups used most first.
+When the groups don't fit, the ribbon makes room in two steps, each starting
+from the last group:
+
+1. **Smaller:** a group's large items become small, and stack three to a
+   column.
+2. **Folded:** a group becomes one button, with its icon and its title. A
+   click on it opens the group under it, at full size; choosing an item
+   there, clicking elsewhere, or Escape closes it again. (A group that's
+   no wider small than its button would be, like one with a single column
+   of items, stays small.)
+
+So every command stays within reach however narrow the window is. Put the
+groups used most first: they keep their room longest.
+
+A folded group's button shows its first item's icon. `icon:` chooses
+another, one of the [built-in icons](/reference/icons/):
+
+```tessel
+RibbonGroup("Editing", icon: .sum) {
+    RibbonButton("Sum", icon: .sum, size: .large) { sum() }
+    RibbonButton("Find", icon: .search, size: .large) { find() }
+}
+```
+
+![A narrow window's ribbon: the Clipboard group with small Paste, Cut and Copy; the Font and Editing groups folded into buttons with a B and a Σ; the Editing button is open, with large Sum and Find buttons and small Sort, Filter and Clear under it, in a card titled Editing](../../../assets/screens/ui-ribbon-folded.png)
+
+A text field or a picker in an open group keeps it open while it's used; a
+`RibbonButton`, `RibbonToggle` or `RibbonMenu` closes it once it's chosen.
 
 ## Testing
 
@@ -151,4 +175,6 @@ Ribbon ["Home", "Insert"] selected "Home"
       …
 ```
 
-A group shown smaller says `small`.
+A group shown smaller says `small`, a folded one `collapsed` (and `open`
+while it's open). `click "Editing"` opens a folded group by its title, and
+its items can be clicked once it's open.

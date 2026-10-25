@@ -328,11 +328,33 @@ impl Painter<'_> {
     /// Draws the open `ColorPicker`'s palette over the rest of the window.
     pub fn paint_overlay(&mut self, tree: &Node) {
         self.paint_menu_list(tree);
+        self.paint_ribbon_panel(tree);
         let Some(key) = super::controls::OPEN_PICKER.get() else { return };
         let Some(palette) = tree.find(key).and_then(|n| n.children.first()) else { return };
         let r = palette.layout.rect;
         self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.5), 9.5, Rgba([0, 0, 0, 24]));
         self.paint(palette);
+    }
+
+    /// Draws the open panel of a collapsed ribbon group, over everything
+    /// else: a card with the group's items, and its title under them.
+    fn paint_ribbon_panel(&mut self, tree: &Node) {
+        use super::layout::{RIBBON_BODY, RIBBON_TITLE};
+        let Some(n) = super::controls::OPEN_GROUP.get().and_then(|k| tree.find(k)) else { return };
+        if !n.layout.collapsed {
+            return;
+        }
+        let r = n.layout.panel;
+        self.fill(Rect { x: r.x, y: r.y + 3.0, ..r }.inset(-1.5), 7.5, Rgba([0, 0, 0, 26]));
+        self.fill(r, 6.0, theme().popup);
+        self.stroke(r, 6.0, 1.0, theme().field_border);
+        for c in &n.children {
+            self.paint(c);
+        }
+        if let Some(t) = &n.layout.text {
+            let y = r.y + RIBBON_BODY - RIBBON_TITLE + (RIBBON_TITLE - t.height()) / 2.0 - 3.0;
+            self.text(t, r.x + (r.w - t.width()) / 2.0, y, None);
+        }
     }
 
     /// Draws the open list of a menu picker, over everything else: its
@@ -938,11 +960,29 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
-            Kind::RibbonGroup { .. } => {
-                use super::layout::{RIBBON_BODY, RIBBON_TITLE};
+            Kind::RibbonGroup { icon, .. } => {
+                use super::layout::{RIBBON_BODY, RIBBON_PAD, RIBBON_TITLE};
                 let r = placed;
                 self.fill(Rect { x: r.x + r.w, y: r.y + 6.0, w: 1.0, h: RIBBON_BODY - 12.0 }, 0.0, theme().colors[theme::SEPARATOR]);
-                if let Some(t) = &n.layout.text {
+                if n.layout.collapsed {
+                    // One button: the group's icon over its title and an arrow.
+                    let open = super::controls::OPEN_GROUP.get() == Some(n.key);
+                    let b = r.inset(RIBBON_PAD);
+                    if pressed || open {
+                        self.fill(b, 4.0, theme().control_pressed);
+                    } else if hovered {
+                        self.fill(b, 4.0, theme().control_hover);
+                    }
+                    let color = theme().colors[theme::PRIMARY];
+                    let s = super::layout::RIBBON_LARGE_ICON;
+                    self.svg(ribbon_group_icon(n, icon), Rect { x: b.x + (b.w - s) / 2.0, y: b.y + 8.0, w: s, h: s }, color);
+                    if let Some(t) = &n.layout.placeholder {
+                        let x = b.x + (b.w - t.width() - 12.0) / 2.0;
+                        let y = b.y + 8.0 + s + 6.0;
+                        self.text(t, x, y, None);
+                        self.svg("chevronDown", Rect { x: x + t.width() + 2.0, y: y + (t.height() - 10.0) / 2.0, w: 10.0, h: 10.0 }, color);
+                    }
+                } else if let Some(t) = &n.layout.text {
                     let y = r.y + RIBBON_BODY - RIBBON_TITLE + (RIBBON_TITLE - t.height()) / 2.0 - 3.0;
                     self.text(t, r.x + (r.w - t.width()) / 2.0, y, None);
                 }
@@ -1200,7 +1240,9 @@ impl Painter<'_> {
         }
         self.offset = (0.0, 0.0);
         // (A color picker's palette is drawn last, over everything: `paint_overlay`.)
-        if !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll(_) | Kind::TabView { .. } | Kind::ColorPicker { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. }) {
+        // (A collapsed ribbon group's items are drawn in its panel, when it's open.)
+        let collapsed = matches!(n.kind, Kind::RibbonGroup { .. }) && n.layout.collapsed;
+        if !collapsed && !matches!(n.kind, Kind::Picker { .. } | Kind::Scroll(_) | Kind::TabView { .. } | Kind::ColorPicker { .. } | Kind::Ribbon { .. } | Kind::RibbonItem { .. }) {
             for c in &n.children {
                 self.paint(c);
             }
@@ -1272,4 +1314,19 @@ pub fn search_clear(n: &Node) -> Option<Rect> {
     let c = n.layout.rect.inset_by(n.mods.padding);
     let size = 14.0;
     Some(Rect { x: c.x + c.w - super::layout::SEARCH_RIGHT + (super::layout::SEARCH_RIGHT - size) / 2.0 - 2.0, y: c.y + (c.h - size) / 2.0, w: size, h: size })
+}
+
+/// The icon of a collapsed ribbon group's button: its own, or its first
+/// item's.
+pub fn ribbon_group_icon(n: &Node, icon: &'static str) -> &'static str {
+    if !icon.is_empty() {
+        return icon;
+    }
+    n.children
+        .iter()
+        .find_map(|c| match c.kind {
+            Kind::RibbonItem { icon, .. } if !icon.is_empty() => Some(icon),
+            _ => None,
+        })
+        .unwrap_or("chevronDown")
 }

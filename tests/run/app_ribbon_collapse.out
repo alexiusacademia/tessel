@@ -1,0 +1,126 @@
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard" small
+            RibbonButton "Paste"
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font" collapsed
+            RibbonToggle "Bold" = false
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1"
+          RibbonGroup "Editing" collapsed
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold false | A1 | "
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard" small
+            RibbonButton "Paste"
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font" collapsed
+            RibbonToggle "Bold" = false
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1"
+          RibbonGroup "Editing" collapsed open
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold false | A1 | "
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard" small
+            RibbonButton "Paste"
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font" collapsed
+            RibbonToggle "Bold" = false
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1"
+          RibbonGroup "Editing" collapsed
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold false | A1 | find"
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard" small
+            RibbonButton "Paste"
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font" collapsed open
+            RibbonToggle "Bold" = true
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1B2"
+          RibbonGroup "Editing" collapsed
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold true | A1B2 | find"
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard" small
+            RibbonButton "Paste"
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font" collapsed
+            RibbonToggle "Bold" = true
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1B2"
+          RibbonGroup "Editing" collapsed
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold true | A1B2 | find, no border"
+      Spacer
+Root
+  View
+    VStack
+      Ribbon ["Home", "Insert"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Clipboard"
+            RibbonButton "Paste" large
+            RibbonButton "Cut"
+            RibbonButton "Copy"
+          RibbonGroup "Font"
+            RibbonToggle "Bold" = true
+            RibbonMenu "Borders" [MenuItem "All borders", MenuItem "No border"]
+            TextField "Cell" = "A1B2"
+          RibbonGroup "Editing"
+            RibbonButton "Sum" large
+            RibbonButton "Find" large
+            RibbonButton "Sort"
+            RibbonButton "Filter"
+            RibbonButton "Clear"
+      Text "bold true | A1B2 | find, no border"
+      Spacer

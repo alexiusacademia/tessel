@@ -1,0 +1,22 @@
+size 300 320
+tree
+click "Editing"
+tree
+click "Find"
+tree
+click "Font"
+click "Bold"
+click "Font"
+click "Cell"
+type "B2"
+tree
+key escape
+click "Font"
+click "Borders"
+click "No border"
+tree
+click "Editing"
+click "Insert"
+click "Home"
+size 760 320
+tree

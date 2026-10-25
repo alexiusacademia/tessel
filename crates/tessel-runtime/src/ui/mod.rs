@@ -350,7 +350,9 @@ pub enum Kind {
     RibbonTab { title: String },
     /// `RibbonGroup("Clipboard") { items }`: its items in columns, and its
     /// title under them.
-    RibbonGroup { title: String },
+    /// `icon` is the button it becomes when there's no room for it (its
+    /// first item's icon when it's "").
+    RibbonGroup { title: String, icon: &'static str },
     /// `RibbonButton`, `RibbonToggle` and `RibbonMenu`: a built-in icon and a
     /// label, large (the icon over the label) or small (side by side). A
     /// menu's items are its children.
@@ -1835,9 +1837,10 @@ pub unsafe extern "C" fn tsl_ui_begin_ribbon_tab(title: *const Str) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_begin_ribbon_group(title: *const Str) {
+pub unsafe extern "C" fn tsl_ui_begin_ribbon_group(title: *const Str, icon: i32) {
     let title = unsafe { text_of(title) };
-    with_builder(|b| b.begin(Kind::RibbonGroup { title }, 0));
+    let icon = if icon < 0 { "" } else { ribbon_icon(icon) };
+    with_builder(|b| b.begin(Kind::RibbonGroup { title, icon }, 0));
 }
 
 /// A ribbon item's icon (a built-in one, by its `IconName` case).

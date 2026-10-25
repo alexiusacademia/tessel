@@ -408,7 +408,9 @@ impl Builtins {
             "MenuDivider" => vec![],
             "Menu" => vec![P::unlabeled("title", Ty::Str), content()],
             "Ribbon" => vec![P::new("selection", Ty::Str).bind(), content()],
-            "RibbonTab" | "RibbonGroup" => vec![P::unlabeled("title", Ty::Str), content()],
+            "RibbonTab" => vec![P::unlabeled("title", Ty::Str), content()],
+            // (`icon:` shows when the group is collapsed into one button.)
+            "RibbonGroup" => vec![P::unlabeled("title", Ty::Str), P::new("icon", self.icon.clone()).default(), content()],
             "RibbonButton" => vec![
                 P::unlabeled("label", Ty::Str),
                 P::new("icon", self.icon.clone()),
