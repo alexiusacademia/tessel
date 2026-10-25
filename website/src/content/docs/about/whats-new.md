@@ -11,6 +11,18 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.15.2
+
+*October 25, 2026*
+
+- **Releases are on GitHub.** Tessel's packages are now
+  [GitHub releases](https://github.com/alexiusacademia/tessel/releases),
+  and the install commands have new addresses (see
+  [Installation](/start/installation/)). `tessel update` and the
+  installers download from there, and still find the versions up to
+  0.15.1 in the old place. Earlier versions of Tessel update to this one
+  as before.
+
 ## 0.15.1
 
 *October 25, 2026*
