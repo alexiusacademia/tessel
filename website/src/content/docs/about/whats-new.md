@@ -11,6 +11,26 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.16.0
+
+*October 25, 2026*
+
+- **An app's own documents.** A `[[app.documents]]` in `tessel.toml` with
+  `owned = true` is the app's own kind of file: double-clicking one opens
+  it with the app, and `icon = "note.png"` gives the files an icon of
+  their own (the app's icon without it), on macOS and, through the
+  installer, on Windows. See [The app's own documents](/start/project/#the-apps-own-documents).
+- **Changed:** kinds of files that aren't marked `owned`, those in
+  `documentTypes:` among them, only offer the app (in Open With), and keep
+  the app and icon they have. On Windows the installer used to make the app
+  open them. Add `owned = true` to your app's own formats.
+- **Ribbons in a narrow window.** After their items become small, ribbon
+  groups fold into one button each, which opens the group under it, so
+  every command stays in reach. `RibbonGroup(icon:)` chooses the button's
+  icon. See [When the window is narrow](/ui/ribbons/#when-the-window-is-narrow).
+- A ribbon section in the course: [21. Forms, tables and rich
+  text](/learn/21-forms-tables/#a-ribbon-of-commands).
+
 ## 0.15.3
 
 *October 25, 2026*
