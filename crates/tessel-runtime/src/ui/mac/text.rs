@@ -225,17 +225,18 @@ impl TextEngine {
             let mut advance: f64 = 0.0;
             for (start, count, line) in &made {
                 let (mut asc, mut desc, mut lead) = (fa, fd, fl);
-                let mut visible = 0.0;
+                let (mut visible, mut full) = (0.0, 0.0);
                 if let Some(l) = line {
                     let w = CTLineGetTypographicBounds(l.get(), &mut asc, &mut desc, &mut lead);
                     visible = (w - CTLineGetTrailingWhitespaceWidth(l.get())).max(0.0);
+                    full = w;
                     advance = advance.max(w);
                 }
                 widest = widest.max(visible);
-                measured.push((*start, *count, asc, desc, lead, visible));
+                measured.push((*start, *count, asc, desc, lead, visible, full));
             }
             let mut top = 0.0;
-            for ((start, count, line), (_, _, asc, desc, lead, visible)) in made.into_iter().zip(measured) {
+            for ((start, count, line), (_, _, asc, desc, lead, visible, full)) in made.into_iter().zip(measured) {
                 let (h, baseline) = match height {
                     LineHeight::Natural => (asc + desc + lead, lead / 2.0 + asc),
                     LineHeight::Absolute(h) => (h, (h - asc - desc) / 2.0 + asc),
@@ -266,10 +267,14 @@ impl TextEngine {
                 }
                 stops.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
                 stops.dedup_by_key(|s| s.0);
-                let end_x = x + visible;
-                // The line break: where the line ends.
+                // Where the caret stands at the line's end: after its
+                // spaces too (an indent on a line of its own), and before
+                // its line break, which is where CoreText puts that.
+                let mut end_x = x + full;
                 if text[range.clone()].ends_with('\n') {
                     let nl = range.end - 1;
+                    let at = stops.iter().find(|s| s.0 == nl).map(|s| s.1);
+                    end_x = at.unwrap_or_else(|| stops.iter().filter(|s| s.0 < nl).map(|s| s.1).fold(x, f64::max).max(x + visible));
                     stops.retain(|s| s.0 != nl);
                     stops.push((nl, end_x));
                 }

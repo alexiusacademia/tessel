@@ -393,4 +393,30 @@ mod tests {
         assert_eq!(l.offset_at(1000.0, 1.0), 2);
         assert_eq!(l.offset_at(1000.0, 30.0), 5);
     }
+
+    /// After Enter in a block, the caret stands after the new line's indent,
+    /// with the line's break after it or at the end of the text.
+    #[test]
+    fn caret_after_indent() {
+        let mut e = TextEngine::new();
+        let space = e.code_layout("abcd", 13.0).caret(4, 1.0).unwrap().x0 / 4.0;
+        for t in ["a {\n    \n}", "a {\n    "] {
+            let l = e.code_layout(t, 13.0);
+            let x = l.caret(8, 1.0).unwrap().x0;
+            assert!((x - 4.0 * space).abs() < 0.5, "{t:?}: caret at {x}, a space is {space}");
+        }
+    }
+
+    /// A space typed at the end of a line moves the caret past it, at the
+    /// end of the text and before a line break.
+    #[test]
+    fn caret_after_trailing_space() {
+        let mut e = TextEngine::new();
+        let space = e.code_layout("abcd", 13.0).caret(4, 1.0).unwrap().x0 / 4.0;
+        for t in ["ab ", "ab \ncd", "ab  "] {
+            let n = t.find('\n').unwrap_or(t.len());
+            let x = e.code_layout(t, 13.0).caret(n, 1.0).unwrap().x0;
+            assert!((x - n as f64 * space).abs() < 0.5, "{t:?}: caret at {x}, a space is {space}");
+        }
+    }
 }
