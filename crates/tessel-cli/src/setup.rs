@@ -21,8 +21,19 @@ pub struct Package {
     pub publisher: String,
     /// The app's file name, like `Forebay.exe`.
     pub exe: String,
-    /// Each document type: its name and extensions.
-    pub documents: Vec<(String, Vec<String>)>,
+    pub documents: Vec<DocumentType>,
+}
+
+/// A kind of file the app opens.
+pub struct DocumentType {
+    pub name: String,
+    pub extensions: Vec<String>,
+    /// The app's own: its files open with it, rather than it only being
+    /// offered for them.
+    pub owned: bool,
+    /// The icon group of its icon in the app's `.exe` (the app's icon
+    /// otherwise).
+    pub icon: Option<u16>,
 }
 
 /// The function of the runtime the installer's `main` calls.
@@ -40,7 +51,7 @@ pub fn resources(package: &Package, exe: &[u8]) -> Vec<u8> {
     let documents: Vec<serde_json::Value> = package
         .documents
         .iter()
-        .map(|(name, extensions)| serde_json::json!({ "name": name, "extensions": extensions }))
+        .map(|d| serde_json::json!({ "name": d.name, "extensions": d.extensions, "owned": d.owned, "icon": d.icon }))
         .collect();
     let header = serde_json::json!({
         "name": package.name,
@@ -109,7 +120,7 @@ mod tests {
             version: "1.2.0".into(),
             publisher: "Ada".into(),
             exe: "Notes.exe".into(),
-            documents: vec![("Note".into(), vec!["note".into()])],
+            documents: vec![DocumentType { name: "Note".into(), extensions: vec!["note".into()], owned: true, icon: Some(2) }],
         };
         let exe = b"MZ pretend app ".repeat(100);
         let res = resources(&package, &exe);
@@ -121,6 +132,8 @@ mod tests {
         let header: serde_json::Value = serde_json::from_slice(&data[12..12 + len]).unwrap();
         assert_eq!(header["exe"], "Notes.exe");
         assert_eq!(header["documents"][0]["extensions"][0], "note");
+        assert_eq!(header["documents"][0]["owned"], true);
+        assert_eq!(header["documents"][0]["icon"], 2);
         let mut app = Vec::new();
         std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&data[12 + len..]), &mut app).unwrap();
         assert_eq!(app, exe);

@@ -266,7 +266,8 @@ started with (an argument that's an existing file, as "Open with" passes it)
 comes to `.onOpenFile` too.
 
 To have the system offer the app for some kinds of files, list their
-extensions in `documentTypes:`:
+extensions in `documentTypes:` (a file format of the app's own, with its
+icon, is declared in `tessel.toml`: see [below](#the-apps-own-file-types)):
 
 ```tessel
 app Notes(width: 420, height: 280, documentTypes: ["note"]) {
@@ -319,6 +320,26 @@ with a name for each kind of file.
   started to open, waits until there is one.
 - Files dropped on the window go to [`.onDrop`](/reference/modifiers/#ondrop)
   instead.
+
+### The app's own file types
+
+The app's own formats, like the Notes app's `.note`, are declared in the
+project's [`tessel.toml`](/start/project/#the-apps-own-documents) with
+`owned = true`, and can have an icon for their files:
+
+```toml
+[[app.documents]]
+name = "Note"
+extensions = ["note"]
+owned = true
+icon = "note-icon.png"
+```
+
+Built with `--bundle` (on Windows, once the installer has installed it), the
+app opens `.note` files when they're double-clicked, and they show
+`note-icon.png` in Finder and Explorer (the app's icon without `icon`).
+The types in `documentTypes:` aren't the app's own: the app is offered in
+Open With for those files, and they stay with the app that opens them now.
 
 ## Asking before closing
 

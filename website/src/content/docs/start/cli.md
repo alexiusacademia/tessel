@@ -365,9 +365,10 @@ to install the app and then:
   shortcut to the desktop**,
 - lists it in **Settings → Apps → Installed apps**, from where it can be
   uninstalled,
-- makes Explorer open the app's [`documentTypes:`](/ui/menus-windows/#opening-documents)
-  files with it (a kind of file another app already opens stays with that
-  app, and yours is offered in **Open with**).
+- makes Explorer open the app's [own document types](/start/project/#the-apps-own-documents)
+  (`owned = true`) with it, showing their icons, and offers the app in
+  **Open with** for the other kinds of files it opens
+  ([`documentTypes:`](/ui/menus-windows/#opening-documents) among them).
 
 Opening a newer installer updates the app in the same place, even while it's
 running (it's the new version from its next start). Uninstalling removes
@@ -396,7 +397,10 @@ how to get what's missing. See [Building for Android](/guides/android/).
 
 On macOS, an app whose `app` lists [`documentTypes:`](/ui/menus-windows/#opening-documents)
 (like `app Notes(documentTypes: ["note"])`) gets them in its bundle, so
-Finder opens those files with it.
+Finder offers it in Open With for those files. The app's own types
+(`owned = true` in [`tessel.toml`](/start/project/#the-apps-own-documents))
+are declared in the bundle as its own, with their icons, so Finder opens
+their files with the app.
 
 ### How big an app is
 

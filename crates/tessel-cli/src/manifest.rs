@@ -12,6 +12,8 @@
 //! [[app.documents]]
 //! name = "Tally Workbook"
 //! extensions = ["tly"]
+//! owned = true
+//! icon = "workbook.png"
 //! ```
 //!
 //! Builds use the app's part: the bundle's name, identifier, version and
@@ -91,6 +93,14 @@ pub struct Document {
     pub extensions: Vec<String>,
     /// "editor" (the default) or "viewer".
     pub role: Option<String>,
+    /// Whether the type is the app's own: declared to the system as the
+    /// app's, with its icon, and opened with the app by default. Otherwise
+    /// the app is only offered for these files (in Open With).
+    #[serde(default)]
+    pub owned: bool,
+    /// The files' icon, a PNG relative to the manifest (an owned type's
+    /// files have the app's icon otherwise).
+    pub icon: Option<String>,
 }
 
 /// A manifest, and the file it was read from.
@@ -162,6 +172,12 @@ fn check(app: &App) -> Vec<String> {
                 out.push(format!("`role = \"{r}\"`: it's \"editor\" (the default) or \"viewer\""));
             }
         }
+        if d.icon.is_some() && !d.owned {
+            out.push(format!(
+                "`icon = \"{}\"`: only the app's own types have its icons; add `owned = true` to this `[[app.documents]]`",
+                d.icon.as_deref().unwrap_or_default()
+            ));
+        }
     }
     out
 }
@@ -202,6 +218,11 @@ pub fn keystore(found: Option<&Found>) -> Option<(PathBuf, Option<String>)> {
     Some((file, android.key.clone()))
 }
 
+/// Where a document type's icon is: its `icon`, relative to the manifest.
+pub fn document_icon(found: Option<&Found>, document: &Document) -> Option<PathBuf> {
+    Some(found?.file.parent().unwrap_or(Path::new(".")).join(document.icon.as_ref()?))
+}
+
 pub fn icon_path(found: Option<&Found>) -> Option<PathBuf> {
     let found = found?;
     let icon = found.manifest.app.icon.as_ref()?;
@@ -233,6 +254,10 @@ mod tests {
         .unwrap();
         assert_eq!(m.app.name.as_deref(), Some("Tally"));
         assert_eq!(m.app.documents[0].extensions, ["tly", "tlx"]);
+        assert!(!m.app.documents[0].owned);
+        let owned = read("[[app.documents]]\nextensions = [\"tly\"]\nowned = true\nicon = \"tly.png\"\n").unwrap();
+        assert!(owned.app.documents[0].owned);
+        assert_eq!(owned.app.documents[0].icon.as_deref(), Some("tly.png"));
         assert_eq!(m.app.category_type().as_deref(), Some("public.app-category.productivity"));
         assert!(read("tessel = \"0.1.35\"\n").unwrap().app.name.is_none());
     }
@@ -244,5 +269,6 @@ mod tests {
         assert!(read("[app]\ncategory = \"games2\"\n").unwrap_err().contains("isn't one of"));
         assert!(read("[[app.documents]]\nextensions = [\".tly\"]\n").unwrap_err().contains("without the dot"));
         assert!(read("[app]\nversion = 2\n").is_err());
+        assert!(read("[[app.documents]]\nextensions = [\"tly\"]\nicon = \"tly.png\"\n").unwrap_err().contains("owned = true"));
     }
 }

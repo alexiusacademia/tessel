@@ -559,6 +559,13 @@ fn build_sources(sources: &mut SourceMap, out: &Path, program: Option<&Path>) ->
         Some(res) => icon::Icon::of_program(program, manifest::icon_path(found.as_ref()).as_deref())
             .and_then(|icon| {
                 let mut bytes = icon.windows_resources();
+                // The icons of the app's own document types (see `document_icon_group`).
+                let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
+                for (i, d) in documents(&info, app.as_ref()).iter().enumerate() {
+                    if let (Some(group), Some(file)) = (document_icon_group(i, d), manifest::document_icon(found.as_ref(), d)) {
+                        icon::Icon::of_document(&file)?.windows_icon(&mut bytes, group);
+                    }
+                }
                 bytes.extend(icon::version_resource(&version_info(found.as_ref(), app_name.as_deref(), program, out)));
                 std::fs::write(res, bytes).map_err(|e| format!("can't write `{}`: {e}", res.display()))
             })
@@ -764,7 +771,22 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     let id = escape(&info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(name)));
     let version = escape(info.version.as_deref().unwrap_or("1.0"));
     let build = info.build.as_deref().map_or(version.clone(), escape);
-    let mut extra = document_types_plist(&documents(&info, app));
+    // Each owned type's icon: its own, or the app's.
+    let mut kinds = Vec::new();
+    for (i, d) in documents(&info, app).into_iter().enumerate() {
+        let icon = match manifest::document_icon(found.as_ref(), &d).filter(|_| d.owned) {
+            Some(file) => {
+                let icns = icon::Icon::of_document(&file)?.icns();
+                let name = format!("Document{}", i + 1);
+                std::fs::write(contents.join("Resources").join(format!("{name}.icns")), icns)
+                    .map_err(|e| format!("can't write a document icon: {e}"))?;
+                name
+            }
+            None => "AppIcon".to_string(),
+        };
+        kinds.push((d, icon));
+    }
+    let mut extra = document_types_plist(&kinds, &id);
     if let Some(c) = &info.copyright {
         extra.push_str(&format!("\n    <key>NSHumanReadableCopyright</key><string>{}</string>", escape(c)));
     }
@@ -812,10 +834,13 @@ fn make_installer(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> 
         publisher: info.author.clone().unwrap_or_default(),
         exe: format!("{}.exe", setup::file_name(&name).trim_end_matches(" Setup.exe")),
         documents: documents(&info, app)
-            .into_iter()
-            .map(|d| {
-                let name = d.name.unwrap_or_else(|| format!("{} file", d.extensions.first().map_or(String::new(), |e| e.to_uppercase())));
-                (name, d.extensions)
+            .iter()
+            .enumerate()
+            .map(|(i, d)| setup::DocumentType {
+                name: document_name(d),
+                extensions: d.extensions.clone(),
+                owned: d.owned,
+                icon: document_icon_group(i, d),
             })
             .collect(),
         name,
@@ -847,30 +872,67 @@ fn documents(info: &manifest::App, app: Option<&AppInfo>) -> Vec<manifest::Docum
     let mut documents: Vec<manifest::Document> = info.documents.clone();
     for ext in app.map_or(&[][..], |a| a.document_types.as_slice()) {
         if !documents.iter().any(|d| d.extensions.contains(ext)) {
-            documents.push(manifest::Document { name: None, extensions: vec![ext.clone()], role: None });
+            documents.push(manifest::Document { name: None, extensions: vec![ext.clone()], role: None, owned: false, icon: None });
         }
     }
     documents
 }
 
-/// `CFBundleDocumentTypes` for an app that opens these kinds of files:
-/// Finder offers it in "Open With", and opens them with it.
-fn document_types_plist(documents: &[manifest::Document]) -> String {
+/// A document type's name: its `name`, or "NOTE file" for `.note`.
+fn document_name(d: &manifest::Document) -> String {
+    d.name.clone().unwrap_or_else(|| format!("{} file", d.extensions.first().map_or(String::new(), |e| e.to_uppercase())))
+}
+
+/// The icon group of document type `i` in a Windows app's `.exe`, when it
+/// has an icon of its own (the app's icon is group 1).
+fn document_icon_group(i: usize, d: &manifest::Document) -> Option<u16> {
+    (d.owned && d.icon.is_some()).then(|| 2 + i as u16)
+}
+
+/// The identifier macOS knows an owned document type by: the app's, and
+/// the type's first extension (`com.example.notes.note`).
+fn document_uti(app_id: &str, d: &manifest::Document) -> String {
+    let ext: String = d.extensions.first().map_or("document".into(), |e| {
+        e.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '-' }).collect()
+    });
+    format!("{app_id}.{ext}")
+}
+
+/// `CFBundleDocumentTypes` for an app that opens these kinds of files, each
+/// with the name of its icon file in the bundle's Resources (for the owned
+/// ones): Finder offers it in "Open With". The owned types are declared as
+/// the app's (`UTExportedTypeDeclarations`), with their icons, so their
+/// files open with it and look like its documents.
+fn document_types_plist(documents: &[(manifest::Document, String)], app_id: &str) -> String {
     if documents.is_empty() {
         return String::new();
     }
     let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut out = String::from("\n    <key>CFBundleDocumentTypes</key>\n    <array>");
-    for d in documents {
-        let name = d.name.clone().unwrap_or_else(|| format!("{} file", d.extensions.first().map_or(String::new(), |e| e.to_uppercase())));
+    let mut exported = String::new();
+    for (d, icon) in documents {
+        let name = escape(&document_name(d));
         let role = if d.role.as_deref() == Some("viewer") { "Viewer" } else { "Editor" };
         let extensions: String = d.extensions.iter().map(|e| format!("<string>{}</string>", escape(e))).collect();
+        let owned = if d.owned {
+            let uti = escape(&document_uti(app_id, d));
+            let icon = escape(icon);
+            exported.push_str(&format!(
+                "\n        <dict>\n            <key>UTTypeIdentifier</key><string>{uti}</string>\n            <key>UTTypeDescription</key><string>{name}</string>\n            <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.content</string></array>\n            <key>UTTypeIconFile</key><string>{icon}</string>\n            <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array>{extensions}</array></dict>\n        </dict>"
+            ));
+            format!("\n            <key>LSItemContentTypes</key><array><string>{uti}</string></array>\n            <key>CFBundleTypeIconFile</key><string>{icon}</string>")
+        } else {
+            String::new()
+        };
+        let rank = if d.owned { "Owner" } else { "Alternate" };
         out.push_str(&format!(
-            "\n        <dict>\n            <key>CFBundleTypeName</key><string>{}</string>\n            <key>CFBundleTypeRole</key><string>{role}</string>\n            <key>LSHandlerRank</key><string>Default</string>\n            <key>CFBundleTypeExtensions</key><array>{extensions}</array>\n        </dict>",
-            escape(&name)
+            "\n        <dict>\n            <key>CFBundleTypeName</key><string>{name}</string>\n            <key>CFBundleTypeRole</key><string>{role}</string>\n            <key>LSHandlerRank</key><string>{rank}</string>\n            <key>CFBundleTypeExtensions</key><array>{extensions}</array>{owned}\n        </dict>"
         ));
     }
     out.push_str("\n    </array>");
+    if !exported.is_empty() {
+        out.push_str(&format!("\n    <key>UTExportedTypeDeclarations</key>\n    <array>{exported}\n    </array>"));
+    }
     out
 }
 
@@ -1079,6 +1141,33 @@ mod tests {
     use super::*;
 
     /// Every file of the IDE is built into `tessel`, and together they check.
+    #[test]
+    fn document_types_say_which_are_the_apps() {
+        let doc = |ext: &str, owned: bool, icon: Option<&str>| manifest::Document {
+            name: None,
+            extensions: vec![ext.into()],
+            role: None,
+            owned,
+            icon: icon.map(str::to_string),
+        };
+        let kinds = [
+            (doc("note", true, Some("note.png")), "Document1".to_string()),
+            (doc("csv", false, None), "AppIcon".to_string()),
+        ];
+        let plist = document_types_plist(&kinds, "com.example.notes");
+        // The owned type: declared as the app's, with its icon.
+        assert!(plist.contains("<key>LSHandlerRank</key><string>Owner</string>"));
+        assert!(plist.contains("<key>LSItemContentTypes</key><array><string>com.example.notes.note</string></array>"));
+        assert!(plist.contains("<key>CFBundleTypeIconFile</key><string>Document1</string>"));
+        assert!(plist.contains("<key>UTTypeIdentifier</key><string>com.example.notes.note</string>"));
+        assert_eq!(plist.matches("<key>UTTypeIdentifier</key>").count(), 1);
+        // The other: only offered.
+        assert!(plist.contains("<key>LSHandlerRank</key><string>Alternate</string>"));
+        assert_eq!(document_icon_group(0, &kinds[0].0), Some(2));
+        assert_eq!(document_icon_group(1, &kinds[1].0), None);
+        assert_eq!(document_uti("a.b", &doc("my file", true, None)), "a.b.my-file");
+    }
+
     #[test]
     fn ide_sources_are_complete() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ide");

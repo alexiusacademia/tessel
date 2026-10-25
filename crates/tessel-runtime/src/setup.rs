@@ -62,8 +62,7 @@ struct Package {
     publisher: String,
     /// The app's file name, like `Forebay.exe`.
     exe: String,
-    /// Each document type: its name and its extensions (without dots).
-    documents: Vec<(String, Vec<String>)>,
+    documents: Vec<DocumentType>,
     /// The `.exe`, compressed (zlib).
     compressed: &'static [u8],
 }
@@ -142,7 +141,12 @@ fn package() -> Result<Package, String> {
                 .map(|d| {
                     let extensions = d["extensions"].as_array().into_iter().flatten();
                     let extensions = extensions.filter_map(|e| e.as_str().map(str::to_string)).collect();
-                    (d["name"].as_str().unwrap_or_default().to_string(), extensions)
+                    DocumentType {
+                        name: d["name"].as_str().unwrap_or_default().to_string(),
+                        extensions,
+                        owned: d["owned"].as_bool().unwrap_or(false),
+                        icon: d["icon"].as_u64().map(|g| g as u16),
+                    }
                 })
                 .collect()
         })
@@ -239,20 +243,20 @@ impl Package {
         set_dword(&key, "NoModify", 1)?;
         set_dword(&key, "NoRepair", 1)?;
 
-        // The app's documents open with it.
-        for (name, extensions) in &self.documents {
-            let prog_id = self.prog_id(extensions);
+        // The app's own documents open with it, with their icon; it's
+        // offered in Open with for the others.
+        for d in &self.documents {
+            let prog_id = self.prog_id(&d.extensions);
             let classes = format!(r"Software\Classes\{prog_id}");
-            set_string(&create_key(&classes)?, "", name)?;
-            set_string(&create_key(&format!(r"{classes}\DefaultIcon"))?, "", &format!("{},0", app.display()))?;
+            set_string(&create_key(&classes)?, "", &d.name)?;
+            // (`,-2` is the icon group with that number, `,0` the app's icon.)
+            let icon = d.icon.map_or(",0".to_string(), |g| format!(",-{g}"));
+            set_string(&create_key(&format!(r"{classes}\DefaultIcon"))?, "", &format!("{}{icon}", app.display()))?;
             set_string(&create_key(&format!(r"{classes}\shell\open\command"))?, "", &format!("{} \"%1\"", quoted(&app)))?;
-            for ext in extensions {
+            for ext in &d.extensions {
                 let key = format!(r"Software\Classes\.{ext}");
-                // (A type another app already opens stays with it; the app is
-                // offered in Open with.)
-                let current = get_string(&key, "").unwrap_or_default();
                 let ext_key = create_key(&key)?;
-                if current.is_empty() || current == prog_id {
+                if d.owned {
                     set_string(&ext_key, "", &prog_id)?;
                 }
                 set_string(&create_key(&format!(r"{key}\OpenWithProgids"))?, &prog_id, "")?;
@@ -276,10 +280,10 @@ impl Package {
         for link in self.shortcuts() {
             let _ = std::fs::remove_file(link);
         }
-        for (_, extensions) in &self.documents {
-            let prog_id = self.prog_id(extensions);
+        for d in &self.documents {
+            let prog_id = self.prog_id(&d.extensions);
             delete_tree(&format!(r"Software\Classes\{prog_id}"));
-            for ext in extensions {
+            for ext in &d.extensions {
                 let key = format!(r"Software\Classes\.{ext}");
                 delete_value(&format!(r"{key}\OpenWithProgids"), &prog_id);
                 if get_string(&key, "").as_deref() == Some(prog_id.as_str()) {
@@ -293,6 +297,17 @@ impl Package {
         delete_tree(&self.uninstall_key());
         Ok(dir)
     }
+}
+
+/// A kind of file the app opens (see the CLI's `setup::DocumentType`).
+struct DocumentType {
+    name: String,
+    /// Without dots.
+    extensions: Vec<String>,
+    /// The app's own: its files open with it.
+    owned: bool,
+    /// Its icon's group in the app's `.exe`.
+    icon: Option<u16>,
 }
 
 /// The installer's dialogs, and what they've done.

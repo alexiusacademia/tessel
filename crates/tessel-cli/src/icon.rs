@@ -35,6 +35,12 @@ impl Icon {
         Icon::decode(&bytes).map_err(|e| format!("can't use `{}` as the app's icon: {e}", file.display()))
     }
 
+    /// A document type's icon: the PNG `file`.
+    pub fn of_document(file: &Path) -> Result<Icon, String> {
+        let bytes = std::fs::read(file).map_err(|e| format!("can't read the documents' icon `{}`: {e}", file.display()))?;
+        Icon::decode(&bytes).map_err(|e| format!("can't use `{}` as the documents' icon: {e}", file.display()))
+    }
+
     fn decode(bytes: &[u8]) -> Result<Icon, String> {
         let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
         // 8 bits per channel, and no palettes.
@@ -139,6 +145,17 @@ impl Icon {
     /// the `.exe`'s: icon group 1 (the runtime gives it to the window too),
     /// from 16 to 256 pixels.
     pub fn windows_resources(&self) -> Vec<u8> {
+        // The file starts with an empty resource.
+        let mut out = Vec::new();
+        resource(&mut out, 0, 0, 0, &[]);
+        self.windows_icon(&mut out, 1);
+        out
+    }
+
+    /// Appends this icon to a `.res` file as icon group `group`: a document
+    /// type's is group 2 or more (`<app>.exe,-<group>` in the registry).
+    /// Group `g`'s images are icons `(g - 1) * 16 + 1` and on.
+    pub fn windows_icon(&self, out: &mut Vec<u8>, group_id: u16) {
         const ICON: u16 = 3;
         const GROUP_ICON: u16 = 14;
         // Small sizes are bitmaps, which every version of Windows reads; 256 is a PNG.
@@ -151,16 +168,13 @@ impl Icon {
             })
             .collect();
 
-        // The file starts with an empty resource.
-        let mut out = Vec::new();
-        resource(&mut out, 0, 0, 0, &[]);
         let mut group = Vec::new();
         for n in [0, 1, images.len() as u16] {
             group.extend(n.to_le_bytes());
         }
         for (i, (size, data)) in images.iter().enumerate() {
-            let id = i as u16 + 1;
-            resource(&mut out, ICON, id, 0x1010, data);
+            let id = (group_id - 1) * 16 + i as u16 + 1;
+            resource(out, ICON, id, 0x1010, data);
             // 0 stands for 256 pixels.
             group.extend([*size as u8, *size as u8, 0, 0]);
             group.extend(1u16.to_le_bytes()); // color planes
@@ -168,8 +182,7 @@ impl Icon {
             group.extend((data.len() as u32).to_le_bytes());
             group.extend(id.to_le_bytes());
         }
-        resource(&mut out, GROUP_ICON, 1, 0x1030, &group);
-        out
+        resource(out, GROUP_ICON, group_id, 0x1030, &group);
     }
 
     /// The image as Windows icons hold it: a bitmap header, the pixels from
@@ -361,6 +374,20 @@ mod tests {
         assert_eq!(group[..6], [0, 0, 1, 0, 6, 0]);
         assert_eq!(group[6..8], [16, 16]);
         assert_eq!(u32_at(group, 6 + 8, false) as usize, found[1].2.len());
+    }
+
+    #[test]
+    fn a_document_icon_is_its_own_group() {
+        let mut res = Vec::new();
+        Icon::of_program(None, None).unwrap().windows_icon(&mut res, 3);
+        let (mut at, mut found) = (0, Vec::new());
+        while at < res.len() {
+            let (data, header) = (u32_at(&res, at, false) as usize, u32_at(&res, at + 4, false) as usize);
+            let number = |i: usize| u16::from_le_bytes([res[at + i], res[at + i + 1]]);
+            found.push((number(10), number(14)));
+            at += (header + data).next_multiple_of(4);
+        }
+        assert_eq!(found, [(3, 33), (3, 34), (3, 35), (3, 36), (3, 37), (3, 38), (14, 3)]);
     }
 
     #[test]

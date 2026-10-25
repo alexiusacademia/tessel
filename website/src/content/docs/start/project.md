@@ -1,6 +1,6 @@
 ---
 title: The project file
-description: "tessel.toml: the version of Tessel a project uses, and what the app says about itself: its name, identifier, version, author, icon and the files it opens."
+description: "tessel.toml: the version of Tessel a project uses, and what the app says about itself: its name, identifier, version, author, icon, and the files it opens, with their icons."
 ---
 
 A project can have a `tessel.toml` next to its code. It says which version
@@ -26,6 +26,8 @@ category = "productivity"
 [[app.documents]]
 name = "Tally Workbook"
 extensions = ["tly"]
+owned = true
+icon = "assets/workbook.png"
 
 [[app.documents]]
 name = "Comma-separated values"
@@ -107,13 +109,39 @@ they come to are kept in `tessel.lock`, next to `tessel.toml`. Commit both.
 
 ## Documents
 
-Each `[[app.documents]]` is a kind of file the app opens: its `extensions`
-(without the dot), a `name` for the kind, and its `role`: `"editor"` (the
-default) for files the app changes, `"viewer"` for ones it only shows. On
-macOS, Finder then offers the app for those files, and opens them with it;
-they come to the app's [`.onOpenFile`](/ui/menus-windows/#opening-documents).
+Each `[[app.documents]]` is a kind of file the app opens:
+
+| Key | |
+|---|---|
+| `extensions` | The files' extensions, without the dot. |
+| `name` | What the kind of file is called (Finder's "Kind", Explorer's "Type"). |
+| `role` | `"editor"` (the default) for files the app changes, `"viewer"` for ones it only shows. |
+| `owned` | `true` for the app's own kind of file, like a Tally workbook. |
+| `icon` | For an owned kind: the files' icon, a PNG (1024 × 1024 is best), relative to `tessel.toml`. |
+
+Files the app opens come to its [`.onOpenFile`](/ui/menus-windows/#opening-documents).
 Extensions listed in the code's `app Name(documentTypes: […])` are added to
-these.
+these, as kinds the app doesn't own.
+
+### The app's own documents
+
+A kind with `owned = true` is the app's: the app declares it to the system
+(on macOS, in its bundle; on Windows, when [its installer](/start/cli/#the-installer-of-a-windows-app)
+installs it). Then:
+
+- double-clicking one of its files opens it with the app;
+- its files show `icon`, or the app's icon when there's no `icon`;
+- Finder and Explorer call them by `name`.
+
+Mark only the app's own formats as owned. For kinds other apps make too,
+like `csv` or `png`, leave `owned` out: the app is then offered for those
+files (in **Open With** on macOS, **Open with** on Windows), and they keep
+the app and the icon the user already has for them. `icon` without
+`owned = true` is a mistake, which the build reports.
+
+Owned types and icons are part of a built app: `tessel build --bundle` on
+macOS, and the installer on Windows. Under `tessel run`, the app isn't
+installed, so nothing is declared.
 
 ## In the app
 

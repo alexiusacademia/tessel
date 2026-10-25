@@ -1,6 +1,6 @@
 ---
 title: 22. Sound, video, the web and the desktop
-description: Play sounds and videos, show web pages, send notifications, live in the menu bar or the taskbar's tray, fill the screen, and drag files out of your app.
+description: Play sounds and videos, show web pages, send notifications, live in the menu bar or the taskbar's tray, fill the screen, drag files out of your app, and give your app's documents their own icon.
 ---
 
 Your apps so far live inside their window. Desktop apps also make sounds,
@@ -17,6 +17,8 @@ In this lesson you'll learn:
 - how `.trayIcon` puts an icon and a menu in the menu bar (macOS) or the
   taskbar's tray (Windows), and keeps the app running there
 - `setFullScreen`, and `.dragFile` for files dragged out of the app
+- how your app's own kind of file opens with it when double-clicked, with
+  its own icon
 - how to check all of this without a window
 
 You'll finish with a focus timer that lives in the tray.
@@ -189,6 +191,47 @@ app Export(width: 320, height: 200) {
 }
 ```
 
+## Your app's own documents
+
+An app that saves its work in a format of its own, like a `.note` for a
+notes app, wants those files to open with it when they're double-clicked,
+and to look like its documents. Say so in the project's `tessel.toml`:
+
+```toml
+[app]
+name = "Notes"
+
+[[app.documents]]
+name = "Note"
+extensions = ["note"]
+owned = true
+icon = "note-icon.png"
+```
+
+- `owned = true` says `.note` is the app's own kind of file.
+- `icon` is a PNG for the files (1024 × 1024 is best). Without it, they show
+  the app's icon.
+- The app gets the file in `.onOpenFile`, as in [Opening
+  documents](/ui/menus-windows/#opening-documents):
+
+```tessel
+app Notes(width: 420, height: 280) {
+    state path = ""
+    state text = ""
+
+    TextField("Note", text: text, lines: 10)
+        .onOpenFile { file in
+            path = file
+            text = readFile(path: file) ?? ""
+        }
+}
+```
+
+It takes effect in the built app: `tessel build --bundle` on a Mac, and the
+installer on Windows. Leave `owned` out for kinds of files other apps make
+too (`csv`, `png`): your app is then offered in **Open With** for them,
+and they keep the app and icon they have.
+
 ## Worked example: a focus timer
 
 A timer for working in 25-minute blocks: it counts down in the tray, says
@@ -281,6 +324,12 @@ the app.
 A `WebView` is the system's own view, put over your window, so it covers
 popovers and sheets that open over it. Open those beside it, or hide the
 page while one is open.
+
+### Claiming files that aren't yours
+
+`owned = true` on `csv` or `txt` would take those files from the apps
+people use for them. Mark only your app's own format as owned; for others,
+the app is offered in Open With.
 
 ### A tray app with no way back
 
@@ -400,7 +449,9 @@ app Tally(width: 260, height: 160) {
   menu in the menu bar or tray; `showWindow()` brings its window back.
 - **`setFullScreen`**, **`isFullScreen`**, and **`.dragFile(path)`** for files
   dragged out of the app.
-- For more, see [Sound and video](/ui/media/), [Web pages](/ui/web/) and
-  [The desktop](/ui/desktop/).
+- **`owned = true`** and **`icon`** in a `[[app.documents]]` of `tessel.toml`
+  make a kind of file the app's own: it opens with the app, with its icon.
+- For more, see [Sound and video](/ui/media/), [Web pages](/ui/web/),
+  [The desktop](/ui/desktop/) and [The project file](/start/project/#documents).
 
 **Next:** [23. Where to go next](/learn/21-next-steps/)

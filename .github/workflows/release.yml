@@ -329,10 +329,12 @@ jobs:
             # The installer of a Windows app (--bundle): it installs the app,
             # which runs, and its uninstaller removes it.
             mkdir -p dist/smoke/notes
-            printf 'app Notes(documentTypes: ["note"]) {\n    Text("notes")\n}\n' > dist/smoke/notes/main.tsl
-            printf '[app]\nname = "Smoke Notes"\nid = "dev.tessel.smokenotes"\nversion = "1.2.3"\n' > dist/smoke/notes/tessel.toml
+            # .note is its own type, with an icon; .memo it only opens.
+            printf 'app Notes(documentTypes: ["memo"]) {\n    Text("notes")\n}\n' > dist/smoke/notes/main.tsl
+            printf '[app]\nname = "Smoke Notes"\nid = "dev.tessel.smokenotes"\nversion = "1.2.3"\n\n[[app.documents]]\nname = "Note"\nextensions = ["note"]\nowned = true\nicon = "note.png"\n' > dist/smoke/notes/tessel.toml
+            cp crates/tessel-cli/assets/icon.png dist/smoke/notes/note.png
             run "$t" build dist/smoke/notes --bundle -o dist/smoke/notes-setup/notes.exe
-            pwsh -File install/check-setup.ps1 -Setup "dist/smoke/notes-setup/Smoke Notes Setup.exe" -Name "Smoke Notes" -Id dev.tessel.smokenotes -Extension note
+            pwsh -File install/check-setup.ps1 -Setup "dist/smoke/notes-setup/Smoke Notes Setup.exe" -Name "Smoke Notes" -Id dev.tessel.smokenotes -Extension note -Icon 2 -Offered memo
           fi
 
       - name: Archive
