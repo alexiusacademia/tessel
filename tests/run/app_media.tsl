@@ -1,0 +1,26 @@
+// VideoPlayer and playSound. A headless run's player plays nothing, says
+// every file is a minute long, and keeps time on the script's clock.
+
+app Media(width: 480, height: 360) {
+    state playing = false
+    state at = 0.0
+    state sound: Sound? = nil
+    state status = ""
+    VStack {
+        VideoPlayer("crates/tessel-runtime/tests/media/clip.mp4", playing: playing, position: at)
+            .frame(width: 400, height: 225)
+        Text("playing {playing} at {Int(at)}")
+        HStack {
+            Button("Play") { playing = true }
+            Button("Jump") { at = 30.0 }
+            Button("Ding") { sound = playSound("crates/tessel-runtime/tests/media/clip.mp4", volume: 0.5) }
+            Button("Check") {
+                if let s = sound {
+                    status = "{s.isPlaying()} {s.position()} of {s.duration()}"
+                    s.stop()
+                }
+            }
+        }
+        Text(status)
+    }
+}

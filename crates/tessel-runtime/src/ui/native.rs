@@ -24,6 +24,27 @@ use super::menu::{Entry, Shortcut, Std};
 thread_local! {
     /// The path (indices, menu by menu) of each item of the menu bar, by tag.
     static PATHS: RefCell<Vec<Vec<usize>>> = const { RefCell::new(Vec::new()) };
+    /// The same, for the items of the tray icon's menu.
+    static TRAY_PATHS: RefCell<Vec<Vec<usize>>> = const { RefCell::new(Vec::new()) };
+}
+
+extern "C-unwind" fn tray_chosen(_this: *mut AnyObject, _cmd: Sel, sender: *mut AnyObject) {
+    if sender.is_null() {
+        return;
+    }
+    let tag: isize = unsafe { msg_send![sender, tag] };
+    if let Some(path) = TRAY_PATHS.with(|p| p.borrow().get(tag as usize).cloned()) {
+        shell_post(Shell::Tray(path));
+    }
+}
+
+/// The menu of the tray icon: `items`, whose choices come as `Shell::Tray`.
+pub fn tray_menu(items: &[Entry]) -> Retained<AnyObject> {
+    let mut paths = Vec::new();
+    let menu = unsafe { new_menu("") };
+    unsafe { add_items(&menu, items, &mut Vec::new(), &mut paths, sel!(tesselTrayChosen:)) };
+    TRAY_PATHS.with(|p| *p.borrow_mut() = paths);
+    menu
 }
 
 extern "C-unwind" fn open_urls(_this: *mut AnyObject, _cmd: Sel, _app: *mut AnyObject, urls: *mut AnyObject) {
@@ -89,6 +110,8 @@ pub fn install() {
         objc2::ffi::class_addMethod(class, sel!(application:openURLs:), open, c"v@:@@".as_ptr());
         objc2::ffi::class_addMethod(class, sel!(applicationShouldTerminate:), terminate, c"Q@:@".as_ptr());
         objc2::ffi::class_addMethod(class, sel!(tesselMenuChosen:), chosen, c"v@:@".as_ptr());
+        let tray = std::mem::transmute::<Chosen, Imp>(tray_chosen);
+        objc2::ffi::class_addMethod(class, sel!(tesselTrayChosen:), tray, c"v@:@".as_ptr());
         // The app's arguments aren't files for AppKit to open: the app gives
         // those to `.onOpenFile` itself (as on the other systems).
         let defaults: *mut AnyObject = msg_send![class!(NSUserDefaults), standardUserDefaults];
@@ -144,7 +167,9 @@ unsafe fn new_menu(title: &str) -> Retained<AnyObject> {
     }
 }
 
-unsafe fn add_items(menu: &AnyObject, items: &[Entry], path: &mut Vec<usize>, paths: &mut Vec<Vec<usize>>) {
+/// Adds `items` to `menu`: the app's own go to `chosen` (with their tags,
+/// places in `paths`).
+unsafe fn add_items(menu: &AnyObject, items: &[Entry], path: &mut Vec<usize>, paths: &mut Vec<Vec<usize>>, chosen: Sel) {
     for (i, e) in items.iter().enumerate() {
         path.push(i);
         unsafe {
@@ -161,7 +186,7 @@ unsafe fn add_items(menu: &AnyObject, items: &[Entry], path: &mut Vec<usize>, pa
                         super::menu::Command::Std(Std::ShowAll) => sel!(unhideAllApplications:),
                         super::menu::Command::Std(Std::Minimize) => sel!(performMiniaturize:),
                         super::menu::Command::Std(Std::Zoom) => sel!(performZoom:),
-                        _ => sel!(tesselMenuChosen:),
+                        _ => chosen,
                     };
                     let (key, mask) = shortcut.as_ref().map_or((String::new(), 0), key_equivalent);
                     let (title, key) = (NSString::from_str(label), NSString::from_str(&key));
@@ -176,7 +201,7 @@ unsafe fn add_items(menu: &AnyObject, items: &[Entry], path: &mut Vec<usize>, pa
                 }
                 Entry::Sub { title, enabled, items } => {
                     let sub = new_menu(title);
-                    add_items(&sub, items, path, paths);
+                    add_items(&sub, items, path, paths, chosen);
                     let name = NSString::from_str(title);
                     let empty = NSString::from_str("");
                     let alloc: Allocated<AnyObject> = msg_send![class!(NSMenuItem), alloc];
@@ -203,7 +228,7 @@ pub fn set_menu_bar(menus: &[Entry]) {
         }
         let bar = new_menu("");
         let mut path = Vec::new();
-        add_items(&bar, menus, &mut path, &mut paths);
+        add_items(&bar, menus, &mut path, &mut paths, sel!(tesselMenuChosen:));
         let _: () = msg_send![app, setMainMenu: &*bar];
         // The Window menu lists the app's windows.
         let index = menus.iter().position(|m| matches!(m, Entry::Sub { title, .. } if title == "Window"));

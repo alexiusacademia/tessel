@@ -27,6 +27,10 @@ pub(crate) mod rich;
 mod svg;
 mod print;
 mod text;
+mod tray;
+mod desktop;
+pub(crate) mod media;
+mod webview;
 
 // The renderer: what draws, lays text out and reads pictures. With the
 // `native` feature, the system's: `mac` on macOS and `win` on Windows;
@@ -64,6 +68,10 @@ pub use theme::tsl_is_dark_mode;
 #[cfg(target_os = "macos")]
 #[doc(hidden)]
 pub use native::check_menu_bar;
+#[doc(hidden)]
+pub use media::check_video;
+#[doc(hidden)]
+pub use webview::check_web_view;
 
 // ===== callbacks =====
 
@@ -244,13 +252,22 @@ pub enum Kind {
     TabView { selection: Callback, close: Option<Callback> },
     /// A hairline separator across its stack.
     Divider,
+    /// `WebView(url:html:)`: a web page, shown by a view of the system's put
+    /// over this one (see `webview`).
+    WebView { url: String, html: String },
+    /// `VideoPlayer(path, playing:position:controls:loop:volume:)`: a video,
+    /// drawn by the runtime (see `media`). `playing` locates a `Bool` and
+    /// `position` a `Float` (seconds), when they're bound.
+    Video { path: String, playing: Option<Callback>, position: Option<Callback>, controls: bool, looping: bool, volume: f64 },
     /// The text of a `RichTextEditor`: its id (for its toolbar), its text
     /// (see `rich`), and what's told of each change (`fn(env, String)`,
     /// with the text's JSON).
     RichEditor { id: i64, doc: std::rc::Rc<rich::Doc>, on_change: Callback },
     /// An SVG drawing: a built-in icon (with its name), `Svg("…")`, or an SVG file.
     Svg { source: std::rc::Rc<str>, icon: Option<&'static str> },
-    /// `style` is a `PickerStyle` tag: 0 segmented, 1 radio buttons.
+    /// `style` is a `PickerStyle` tag: 0 segmented, 1 radio buttons, 2 a
+    /// menu (a box with the chosen option, opening a list of them: see
+    /// `controls::OPEN_MENU`).
     Picker { selection: Callback, style: u8 },
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
@@ -428,6 +445,8 @@ pub struct Mods {
     /// `.draggable("payload")`: the view can be dragged onto a `.dropTarget`,
     /// which gets this text.
     pub draggable: Option<String>,
+    /// `.dragFile(path)`: dragging the view drags that file out of the app.
+    pub drag_file: Option<String>,
     /// `.dropTarget(isTargeted:) { payload, x, y in … }`.
     pub drop_target: Option<DropTarget>,
     /// `.tooltip("…")`: shown next to the pointer when it rests on the view.
@@ -443,12 +462,21 @@ pub struct Mods {
     pub context_menu: Option<Box<Node>>,
     /// `.menuBar { … }`: the app's menus (a `MenuList` of `Menu`s).
     pub menu_bar: Option<Box<Node>>,
+    /// `.trayIcon(icon, title:keepRunning:) { … }`: the app's icon in the
+    /// menu bar (macOS) or the taskbar's notification area (Windows).
+    pub tray: Option<Box<Tray>>,
     /// `.onOpenFile { path in … }`: called with each file the system asks
     /// the app to open.
     pub on_open_file: Option<Callback>,
     /// `.onCloseRequest { … }`: called instead of closing the window (or
     /// quitting) when the user asks to.
     pub on_close_request: Option<Callback>,
+    /// `.rotation(degrees)`: turned (clockwise) around its center; it takes
+    /// the room of the box around it turned.
+    pub rotation: f64,
+    /// `.scale(…)`: made larger or smaller across and down, around its
+    /// center (none is 1 and 1); it takes the room of its new size.
+    pub scale: Option<(f64, f64)>,
     /// `.gridCellColumns(n)`: how many columns of its `Grid` the cell takes.
     pub grid_columns: Option<usize>,
     /// `.gridColumnAlignment(…)`: how the cells of its column line up
@@ -463,6 +491,16 @@ pub struct Mods {
     /// Which view expression of the source this is, for `tessel preview`:
     /// its number among the ones the compiler listed.
     pub source: Option<u32>,
+}
+
+/// A `.trayIcon`: its built-in icon's name, a title beside it (macOS), whether
+/// the app goes on running in it once its window is closed, and its menu's
+/// items (a `MenuList`).
+pub struct Tray {
+    pub icon: &'static str,
+    pub title: String,
+    pub keep_running: bool,
+    pub items: Node,
 }
 
 /// A `.dropTarget`: `action` gets what's dropped (`fn(env, String, x, y)`),
@@ -651,6 +689,8 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::Grid { .. } => 40,
         Kind::GridRow => 41,
         Kind::RichEditor { .. } => 42,
+        Kind::Video { .. } => 43,
+        Kind::WebView { .. } => 44,
     }
 }
 
@@ -857,6 +897,7 @@ pub fn build_all(root: &Callback) -> Built {
 /// must happen before the process ends: Windows may have unloaded the
 /// libraries they belong to by the time thread-local values are dropped.
 pub fn release_caches() {
+    media::forget_all();
     canvas::forget_all();
     scene3d::forget_all();
     image::forget_all();
@@ -906,6 +947,36 @@ pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, flags: u8, l
     // (A secret is one line: its dots don't wrap; so is a search.)
     let lines = if secure || search { 1 } else { lines.clamp(1, 1000) as u32 };
     with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure, lines, search }));
+}
+
+/// `WebView(url:html:)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_web_view(url: *const Str, html: *const Str) {
+    let (url, html) = unsafe { (text_of(url), text_of(html)) };
+    with_builder(|b| b.leaf(Kind::WebView { url, html }));
+}
+
+/// `VideoPlayer(path, playing:position:controls:loop:volume:)`. The
+/// locators are null when they aren't bound.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_ui_video(
+    path: *const Str,
+    playing_f: *const c_void,
+    playing_env: *mut Header,
+    position_f: *const c_void,
+    position_env: *mut Header,
+    controls: u8,
+    looping: u8,
+    volume: f64,
+) {
+    // (Its play and pause buttons are built-in icons.)
+    svg::enable_icons();
+    let path = unsafe { text_of(path) };
+    let playing = (!playing_f.is_null()).then(|| Callback::new(playing_f, playing_env));
+    let position = (!position_f.is_null()).then(|| Callback::new(position_f, position_env));
+    let volume = if volume.is_finite() { volume.clamp(0.0, 1.0) } else { 1.0 };
+    with_builder(|b| b.leaf(Kind::Video { path, playing, position, controls: controls != 0, looping: looping != 0, volume }));
 }
 
 /// `__RichEditor(id:json:onChange:)`: the text of a `RichTextEditor`.
@@ -1099,6 +1170,29 @@ pub extern "C" fn tsl_ui_end_attached(which: i32) {
     });
 }
 
+/// Opens the items of a `.trayIcon`; `tsl_ui_end_tray` gives them to the last view.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_begin_tray() {
+    with_builder(|b| {
+        let anchor = b.last().map_or(0, |n| n.key);
+        b.begin_keyed(Kind::MenuList, hash_key((anchor, "tray")));
+    });
+}
+
+/// `.trayIcon(icon, title:keepRunning:)`: `icon` is an `IconName` case.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_end_tray(icon: i32, title: *const Str, keep_running: u8) {
+    svg::enable_icons();
+    let title = unsafe { text_of(title) };
+    let icon = svg::ICONS.get(icon as usize).map_or("", |(name, _)| name);
+    with_builder(|b| {
+        let items = b.stack.pop().expect("unbalanced end");
+        if let Some(n) = b.last() {
+            n.mods.tray = Some(Box::new(Tray { icon, title, keep_running: keep_running != 0, items }));
+        }
+    });
+}
+
 /// The `edge` of a popover that's a sheet.
 pub const SHEET: u8 = 4;
 
@@ -1224,7 +1318,11 @@ pub unsafe extern "C" fn tsl_ui_begin_split(vertical: u8, f: *const c_void, env:
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_ui_begin_picker(style: i32, f: *const c_void, env: *mut Header) {
     let selection = Callback::new(f, env);
-    with_builder(|b| b.begin(Kind::Picker { selection, style: style.clamp(0, 1) as u8 }, 0));
+    // (A menu's arrow and check mark are built-in icons.)
+    if style == 2 {
+        svg::enable_icons();
+    }
+    with_builder(|b| b.begin(Kind::Picker { selection, style: style.clamp(0, 2) as u8 }, 0));
 }
 
 /// `Grid(alignment:spacing:rowSpacing:)`: a `rowSpacing` that's not a
@@ -1252,6 +1350,20 @@ pub extern "C" fn tsl_ui_grid_cell_columns(n: i64) {
 pub extern "C" fn tsl_ui_grid_column_alignment(align: i32) {
     let (h, _) = align_2d(align.clamp(0, 8) as u8);
     modify(|m| m.grid_align = Some(h));
+}
+
+/// `.rotation(degrees)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_rotation(degrees: f64) {
+    modify(|m| m.rotation = if degrees.is_finite() { degrees } else { 0.0 });
+}
+
+/// `.scale(factor, x:, y:)`: across `factor * x`, down `factor * y`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_scale(factor: f64, x: f64, y: f64) {
+    let ok = |v: f64| if v.is_finite() { v.max(0.0) } else { 1.0 };
+    let (sx, sy) = (ok(factor) * ok(x), ok(factor) * ok(y));
+    modify(|m| m.scale = ((sx, sy) != (1.0, 1.0)).then_some((sx, sy)));
 }
 
 /// `.selectable(on)`.
@@ -1557,6 +1669,13 @@ pub unsafe extern "C" fn tsl_ui_draggable(payload: *const Str) {
     modify(|m| m.draggable = Some(payload));
 }
 
+/// `.dragFile(path)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_drag_file(path: *const Str) {
+    let path = unsafe { text_of(path) };
+    modify(|m| m.drag_file = (!path.is_empty()).then_some(path));
+}
+
 /// `.dropTarget(isTargeted:) { payload, x, y in … }`: `f` is called as
 /// `f(env, String, x, y)`; `targeted_f` (a locator) is null without `isTargeted`.
 #[unsafe(no_mangle)]
@@ -1692,7 +1811,7 @@ mod tests {
 
         let mut list = draw::DrawList::new();
         let ui = render::Interaction::default();
-        render::Painter { scene: &mut list, ui: &ui, scale: 2.0, offset: (0.0, 0.0), clip: None, marks: Vec::new() }.paint(&tree);
+        render::Painter { scene: &mut list, ui: &ui, scale: 2.0, offset: (0.0, 0.0), turn: kurbo::Affine::IDENTITY, clip: None, marks: Vec::new() }.paint(&tree);
         let path = std::env::temp_dir().join("tessel-runtime-counter.png");
         let pixels = backend::Offscreen::default().rgba(&list, 640, 520, Some(theme::theme().colors[theme::BACKGROUND]));
         assert!(backend::save_rgba(path.to_str().unwrap(), 640, 520, pixels));

@@ -1,0 +1,26 @@
+// Rotation and scale, the menu picker, the tray icon, sound, video and web
+// views are checked like everything else.
+
+app Desk {
+    state choice = 1
+    state on = false
+
+    VStack {
+        Text("a").rotation("left") // error: expected `Float`, found `String`
+        Text("b").scale(x: true) // error: expected `Float`, found `Bool`
+        Picker(selection: choice, style: .dropdown) { // error: `PickerStyle` has no case `.dropdown`
+            Text("One").tag(1)
+        }
+        VideoPlayer("clip.mp4", playing: true) // error: needs something it can change
+        WebView(url: 3) // error: expected `String`, found `Int`
+        Button("Go") {
+            let s = playSound("ding.wav")
+            s.rewind() // error: `Sound` has no method `rewind`
+            showNotification(3) // error: expected `String`, found `Int`
+            setFullScreen("yes") // error: expected `Bool`, found `String`
+        }
+    }
+    .trayIcon(.rocket) { // error: `IconName` has no case `.rocket`
+        MenuItem("Quit") { quit() }
+    }
+}

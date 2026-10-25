@@ -1,0 +1,16 @@
+// WebView: a page from the web, or the program's own HTML.
+
+app Browser(width: 480, height: 360) {
+    state page = 0
+    VStack {
+        Picker(selection: page) {
+            Text("Web").tag(0)
+            Text("Own").tag(1)
+        }
+        if page == 0 {
+            WebView(url: "https://tessel-lang.syncster.dev")
+        } else {
+            WebView(html: "<h1>Hello</h1><p>From Tessel.</p>")
+        }
+    }
+}

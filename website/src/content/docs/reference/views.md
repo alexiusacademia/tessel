@@ -205,6 +205,37 @@ Text in the accent color that opens `url` with
 Link("Privacy policy", url: "https://example.com/privacy")
 ```
 
+## VideoPlayer
+
+```text
+VideoPlayer(_ path: String, playing: bind Bool = …, position: bind Float = …,
+            controls: Bool = true, loop: Bool = false, volume: Float = 1.0)
+```
+
+A video file (MP4, MOV), decoded by the system and drawn by Tessel, with
+controls: play and pause, a bar to go along it, and its time.
+
+```tessel
+VideoPlayer("intro.mp4", playing: playing, position: at)
+```
+
+- `playing` plays or pauses it, and is set back to `false` at its end;
+  `position` is where it is in seconds, kept up to date, and jumps when
+  it's set. Both are optional.
+- Its own size, made smaller to fit; a `.frame` scales it to fit.
+- See [Sound and video](/ui/media/).
+
+## WebView
+
+```text
+WebView(url: String = "", html: String = "")
+```
+
+A web page (or an HTML file, or HTML of the program's own), shown by the
+system's browser engine in a view of the system's over the window. It takes
+all the space it's offered, and loads again when `url` or `html` changes.
+See [Web pages](/ui/web/).
+
 ## RichTextEditor
 
 ```text
@@ -256,8 +287,9 @@ Toggle(isOn: isOn)
 Picker(selection: bind T, style: PickerStyle = .segmented, content: View)
 ```
 
-A control for choosing one of several options: a row of segments, or with
-`style: .radio`, radio buttons one above the other. Each view in the
+A control for choosing one of several options: a row of segments; with
+`style: .radio`, radio buttons one above the other; with `style: .menu`, a
+box with the chosen option that opens a list of them. Each view in the
 block is one option; give each option a [`.tag(value)`](/reference/modifiers/#tag).
 The option whose tag equals `selection` is highlighted, and clicking an option
 sets `selection` to its tag.

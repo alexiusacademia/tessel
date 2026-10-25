@@ -274,6 +274,24 @@ then `joinPath(appDataFolder("HighScores"), "scores.json")`.
 Use a name that belongs to your program, so different programs don't mix up
 each other's files.
 
+### Files that come with your program
+
+Some files aren't the user's data but part of the program: a word list, a
+help page, a sound. Keep them next to the program, and find them with
+`appFolder()`, the folder the program is in (its source folder, under
+`tessel run`):
+
+```tessel
+fn main() {
+    let words = readText(joinPath(appFolder(), "words.txt")).value() ?? ""
+    print("{words.lines().count} words")
+}
+```
+
+`appPath()` is the program file itself. Unlike the current folder, these
+are the same wherever the program is started from, and wherever it's
+installed.
+
 ## Saving structs as JSON
 
 Saving plain text is easy. But your data is usually more than text: a list

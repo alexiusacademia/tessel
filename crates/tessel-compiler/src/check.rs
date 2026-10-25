@@ -4010,7 +4010,7 @@ impl Checker<'_> {
                 }
             },
             // `BackgroundJob`: its methods are the runtime's too.
-            t if *t == builtins::JOB => match builtins::method_of(&recv, n) {
+            t if *t == builtins::JOB || *t == builtins::SOUND => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     self.args(&what, &m.sig.params, args, trailing, span);
@@ -4022,7 +4022,8 @@ impl Checker<'_> {
                 }
                 None => {
                     let names = builtins::member_names(&recv).iter().map(|s| s.to_string()).collect();
-                    self.no_member(name, &format!("`BackgroundJob` has no method `{n}`"), names);
+                    let ty = if recv == builtins::SOUND { "Sound" } else { "BackgroundJob" };
+                    self.no_member(name, &format!("`{ty}` has no method `{n}`"), names);
                     Ty::Error
                 }
             },
@@ -4259,7 +4260,7 @@ impl Checker<'_> {
         match self.builtins.modifier(n) {
             Some(params) => {
                 self.next_content = Some(match n {
-                    "contextMenu" => Content::Menu,
+                    "contextMenu" | "trayIcon" => Content::Menu,
                     "menuBar" => Content::MenuBar,
                     _ => Content::Layout,
                 });

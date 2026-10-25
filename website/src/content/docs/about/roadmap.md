@@ -31,7 +31,9 @@ its first releases came so quickly. The dates on
   `Text` (selectable, or cut short), `Button`, `TextField`, `SearchField`,
   `Link`, `Toggle`, `Picker` (segments or radio buttons), `TabView`, grids,
   scrolling either or both ways (and from code), split views, a rich text
-  editor, tables with cells edited in place,
+  editor, tables with cells edited in place, views turned and scaled, a
+  dropdown picker, sound and video, web pages, notifications, a tray icon,
+  full screen, files dragged out of the app,
   `CodeEditor` with syntax colors, `Table` and `Tree`, `Divider`, over 100 built-in icons, SVG,
   PNG and JPEG pictures, text written in Markdown, keyboard shortcuts, hover
   and pressed states, and the layout and styling modifiers. Every control

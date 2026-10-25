@@ -97,6 +97,9 @@ pub struct Box {
     /// For text cut short by its `.lineLimit`: it shows only the start of
     /// its text, then "…".
     pub cut: bool,
+    /// For a view that's turned or scaled: its size as it is (`size` is
+    /// the room it takes, turned).
+    pub turned: Option<Size>,
     /// For grids: how its columns and rows came out (see `grid`).
     pub grid: Option<std::rc::Rc<GridSizes>>,
     /// Inherited style, resolved for this node.
@@ -221,6 +224,12 @@ const SEGMENT_PAD: f64 = 12.0;
 /// A radio button (`Picker(style: .radio)`), the room between it and its
 /// option, and between options.
 pub const RADIO: f64 = 16.0;
+/// A menu picker's room before its option, its arrow, the room for the
+/// check mark before each option in its list, and the least height of a row.
+pub const MENU_PAD: f64 = 10.0;
+pub const MENU_ARROW: f64 = 22.0;
+pub const MENU_CHECK: f64 = 22.0;
+const MENU_ROW: f64 = 20.0;
 const RADIO_GAP: f64 = 6.0;
 const RADIO_ROWS: f64 = 6.0;
 const SWITCH: Size = Size { w: 38.0, h: 22.0 };
@@ -446,6 +455,17 @@ impl Layouter<'_> {
             w: grow(n.mods.width, n.mods.max_width, offered.w, inner.w + pad.horizontal()).max(n.mods.min_width.unwrap_or(0.0)),
             h: grow(n.mods.height, n.mods.max_height, offered.h, inner.h + pad.vertical()).max(n.mods.min_height.unwrap_or(0.0)),
         };
+        // Turned or scaled, it takes the room of the box around it as it shows.
+        n.layout.turned = None;
+        if transformed(n) {
+            let s = n.layout.size;
+            n.layout.turned = Some(s);
+            let (sx, sy) = n.mods.scale.unwrap_or((1.0, 1.0));
+            let (w, h) = (s.w * sx, s.h * sy);
+            let a = n.mods.rotation.to_radians();
+            let (c, si) = (a.cos().abs(), a.sin().abs());
+            n.layout.size = Size { w: w * c + h * si, h: w * si + h * c };
+        }
         n.layout.size
     }
 
@@ -495,6 +515,24 @@ impl Layouter<'_> {
                 n.layout.text = Some(t);
                 n.layout.placeholder = Some(ph);
                 Size { w: w.min(avail.w.max(60.0)), h: line_h + 2.0 * FIELD_PAD.1 }
+            }
+            Kind::Video { .. } => {
+                // The video's own size (16:9 until it's known), made smaller to
+                // fit the space there is; a `.frame` scales it to fit.
+                let (player_size, time) = super::media::VIDEOS.with(|v| {
+                    let v = v.borrow();
+                    let p = v.get(&n.key).map(|(_, p)| p);
+                    (p.and_then(super::media::Player::size), p.map(|p| (p.position(), p.duration())))
+                });
+                let (w, h) = player_size.unwrap_or((320.0, 180.0));
+                let s = (avail.w / w).min(avail.h / h);
+                let framed = n.mods.width.is_some() || n.mods.height.is_some();
+                let s = if framed && s.is_finite() { s } else { s.min(1.0) };
+                // Its time, for its controls.
+                let (at, of) = time.unwrap_or((0.0, 0.0));
+                let label = Style { size: 11.0, color: super::Rgba([255, 255, 255, 255]), ..*style };
+                n.layout.text = Some(self.text_layout(&format!("{} / {}", clock_text(at), clock_text(of)), &label, None));
+                Size { w: w * s, h: h * s }
             }
             Kind::RichEditor { doc, .. } => {
                 // As large as it's let be; its text wraps inside (again when
@@ -656,11 +694,21 @@ impl Layouter<'_> {
             }
             Kind::Spacer => Size::default(),
             Kind::Image { .. } => Size { w: 64.0, h: 64.0 },
-            // A canvas takes the space it's offered.
-            Kind::Canvas { .. } | Kind::Scene3D { .. } => Size {
+            // A canvas takes the space it's offered (and a web view).
+            Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::WebView { .. } => Size {
                 w: if avail.w.is_finite() { avail.w } else { 300.0 },
                 h: if avail.h.is_finite() { avail.h } else { 150.0 },
             },
+            Kind::Picker { style: 2, .. } => {
+                // A menu: a box as wide as the widest option, with an arrow.
+                let (mut w, mut h): (f64, f64) = (0.0, 0.0);
+                for c in &mut n.children {
+                    let s = self.measure(c, Size { w: f64::INFINITY, h: f64::INFINITY }, style);
+                    w = w.max(s.w);
+                    h = h.max(s.h);
+                }
+                Size { w: w + 2.0 * MENU_PAD + MENU_ARROW, h: h + 12.0 }
+            }
             Kind::Picker { style: 1, .. } => {
                 // Radio buttons: an option a line, with its button before it.
                 let room = Size { w: (avail.w - RADIO - RADIO_GAP).max(0.0), h: avail.h };
@@ -895,6 +943,10 @@ impl Layouter<'_> {
     }
 
     fn place(&mut self, n: &mut Node, mut rect: Rect) {
+        // Turned or scaled: laid out at its own size, in the middle of its room.
+        if let Some(s) = n.layout.turned {
+            rect = Rect { x: rect.x + (rect.w - s.w) / 2.0, y: rect.y + (rect.h - s.h) / 2.0, w: s.w, h: s.h };
+        }
         // A stack may offer a flexible view more than its max size.
         let (max_w, max_h) = (n.mods.max_width.unwrap_or(f64::INFINITY), n.mods.max_height.unwrap_or(f64::INFINITY));
         if rect.w > max_w || rect.h > max_h {
@@ -1027,6 +1079,36 @@ impl Layouter<'_> {
                     self.place(c, r);
                     y += c.layout.size.h + GROUP_SPACING;
                 }
+            }
+            Kind::Picker { style: 2, selection } => {
+                // Closed: the chosen option in the box. Open: all of them in a
+                // list under it (over it, without room), inside the window.
+                let current = selection.locate();
+                let chosen = n.children.iter().position(|c| c.mods.tag.as_ref().is_some_and(|t| t.equals(current)));
+                let open = super::controls::OPEN_MENU.get() == Some(n.key);
+                let window = WINDOW.with(|w| w.get());
+                let row_h = n.children.iter().map(|c| c.layout.size.h).fold(MENU_ROW, f64::max) + 4.0;
+                let widest = n.children.iter().map(|c| c.layout.size.w).fold(0.0, f64::max);
+                let list_w = (widest + 2.0 * MENU_PAD + MENU_CHECK).max(content.w);
+                let list_h = row_h * n.children.len() as f64 + 8.0;
+                let below = content.y + content.h + 4.0;
+                let list_y = if below + list_h <= window.h - 4.0 || content.y - 4.0 - list_h < 4.0 { below } else { content.y - 4.0 - list_h };
+                let list_x = content.x.min(window.w - list_w - 4.0).max(4.0);
+                let mut segments = Vec::new();
+                for (i, c) in n.children.iter_mut().enumerate() {
+                    let s = c.layout.size;
+                    let r = if open {
+                        let row = Rect { x: list_x + 4.0, y: list_y + 4.0 + i as f64 * row_h, w: list_w - 8.0, h: row_h };
+                        segments.push(row);
+                        Rect { x: row.x + MENU_CHECK, y: row.y + (row_h - s.h) / 2.0, w: s.w, h: s.h }
+                    } else if Some(i) == chosen {
+                        Rect { x: content.x + MENU_PAD, y: content.y + (content.h - s.h) / 2.0, w: s.w, h: s.h }
+                    } else {
+                        Rect { x: content.x, y: content.y, w: 0.0, h: 0.0 }
+                    };
+                    self.place(c, r);
+                }
+                n.layout.segments = segments;
             }
             Kind::Picker { style: 1, .. } => {
                 let mut y = content.y;
@@ -1239,9 +1321,33 @@ impl Layouter<'_> {
     }
 }
 
+/// A time in seconds as a clock shows it: `1:05`, `1:02:03`.
+fn clock_text(seconds: f64) -> String {
+    let s = seconds.max(0.0).floor() as i64;
+    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+    if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
+}
+
+/// Whether a view is turned or scaled (`.rotation`, `.scale`).
+fn transformed(n: &Node) -> bool {
+    n.mods.rotation.rem_euclid(360.0) != 0.0 || n.mods.scale.is_some()
+}
+
+/// How a view that's turned or scaled is drawn: around its middle.
+pub fn turn_of(n: &Node) -> Option<kurbo::Affine> {
+    if !transformed(n) {
+        return None;
+    }
+    let r = n.layout.rect;
+    let c = kurbo::Vec2::new(r.x + r.w / 2.0, r.y + r.h / 2.0);
+    let (sx, sy) = n.mods.scale.unwrap_or((1.0, 1.0));
+    Some(kurbo::Affine::translate(c) * kurbo::Affine::rotate(n.mods.rotation.to_radians()) * kurbo::Affine::scale_non_uniform(sx, sy) * kurbo::Affine::translate(-c))
+}
+
 /// Does `n` stretch along `axis` inside a parent laid out along `parent`?
 fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
-    if n.mods.hidden {
+    // (A view that's turned or scaled has the size it shows at.)
+    if n.mods.hidden || transformed(n) {
         return false;
     }
     let fixed = match axis {
@@ -1268,7 +1374,7 @@ fn flex(n: &Node, axis: Axis, parent: Option<Axis>) -> bool {
         }),
         Kind::GridRow => n.children.iter().any(|c| flex(c, axis, Some(Axis::X))),
         Kind::Disclosure { .. } => axis == Axis::X,
-        Kind::Scroll(_) | Kind::Split { .. } | Kind::CodeEditor { .. } | Kind::RichEditor { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
+        Kind::Scroll(_) | Kind::Split { .. } | Kind::CodeEditor { .. } | Kind::RichEditor { .. } | Kind::WebView { .. } | Kind::TabView { .. } | Kind::Canvas { .. } | Kind::Scene3D { .. } | Kind::Table(_) => true,
         Kind::TableRow(_) => axis == Axis::X,
         // A divider spans across its stack.
         Kind::Divider => parent.is_some() && parent != Some(axis),

@@ -599,6 +599,37 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_text_field", &[label, secure, lines], loc);
                 self.release(label, &Ty::Str);
             }
+            "WebView" => {
+                let (url, html) = (string(self, a(0)), string(self, a(1)));
+                self.call_rt("tsl_ui_web_view", &[url, html]);
+                self.release(url, &Ty::Str);
+                self.release(html, &Ty::Str);
+            }
+            "VideoPlayer" => {
+                let path = string(self, a(0));
+                let mut all = vec![path];
+                for i in 1..3 {
+                    let loc = a(i).map(|x| self.locator(x));
+                    all.extend(self.closure_parts(loc));
+                }
+                let flag = |g: &mut Self, x: Option<&Expr>, default: bool| -> Val<'ctx> {
+                    match x {
+                        Some(x) => {
+                            let v = g.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                            g.to_c_bool(v)
+                        }
+                        None => g.i8().const_int(default as u64, false).into(),
+                    }
+                };
+                all.push(flag(self, a(3), true));
+                all.push(flag(self, a(4), false));
+                all.push(match a(5) {
+                    Some(x) => self.expr_as(x, &Ty::Float).unwrap(),
+                    None => self.ctx.f64_type().const_float(1.0).into(),
+                });
+                self.call_rt("tsl_ui_video", &all);
+                self.release(path, &Ty::Str);
+            }
             "__RichEditor" => {
                 let id = self.expr_as(a(0).unwrap(), &Ty::Int).unwrap();
                 let json = self.expr_as(a(1).unwrap(), &Ty::Str).unwrap();
@@ -1283,6 +1314,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_drop", &[], action);
             }
+            "dragFile" => {
+                let path = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
+                self.call_rt("tsl_ui_drag_file", &[path]);
+                self.release(path, &Ty::Str);
+            }
             "draggable" => {
                 let payload = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
                 self.call_rt("tsl_ui_draggable", &[payload]);
@@ -1304,6 +1340,24 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "onResize" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Float, Ty::Float], Ty::Void)).unwrap();
                 self.pass_closure("tsl_ui_on_resize", &[], action);
+            }
+            "trayIcon" => {
+                let icon = int(self, a(0).unwrap());
+                let title = match a(1) {
+                    Some(x) => self.expr_as(x, &Ty::Str).unwrap(),
+                    None => self.str_lit("").into(),
+                };
+                let keep = match a(2) {
+                    Some(x) => {
+                        let v = self.expr_as(x, &Ty::Bool).unwrap().into_int_value();
+                        self.to_c_bool(v)
+                    }
+                    None => self.i8().const_zero().into(),
+                };
+                self.call_rt("tsl_ui_begin_tray", &[]);
+                self.content_inline(a(3).unwrap());
+                self.call_rt("tsl_ui_end_tray", &[icon, title, keep]);
+                self.release(title, &Ty::Str);
             }
             "contextMenu" | "menuBar" => {
                 let which = self.ctx.i32_type().const_int((name == "menuBar") as u64, false);
@@ -1352,6 +1406,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "gridColumnAlignment" => {
                 let a = int(self, a(0).unwrap());
                 self.call_rt("tsl_ui_grid_column_alignment", &[a]);
+            }
+            "rotation" => {
+                let d = float(self, a(0), 0.0);
+                self.call_rt("tsl_ui_rotation", &[d]);
+            }
+            "scale" => {
+                let (f, x, y) = (float(self, a(0), 1.0), float(self, a(1), 1.0), float(self, a(2), 1.0));
+                self.call_rt("tsl_ui_scale", &[f, x, y]);
             }
             "selectable" => {
                 let b = flag(self, a(0));

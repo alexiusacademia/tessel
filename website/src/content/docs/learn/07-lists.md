@@ -460,6 +460,43 @@ Text inside a list is shown in quotes, so you can tell `["a b"]` (one item)
 from `["a", "b"]` (two). To show the items your own way, loop over them, or
 join a list of strings with `joined(separator: ", ")`.
 
+## Functions that take any number of values
+
+Some functions take as many values as you give them. `print` is one:
+`print("Total:", total, "kg")` prints them with spaces between. Your own
+functions can do the same: write `...` after a parameter's type, and inside
+the function, that parameter is a list:
+
+```tessel
+fn average(_ values: Float...) -> Float {
+    if values.isEmpty {
+        return 0.0
+    }
+    var total = 0.0
+    for v in values {
+        total += v
+    }
+    total / Float(values.count)
+}
+
+fn main() {
+    print(average(2.0, 4.0, 9.0))
+    print(average(7.5))
+    let scores = [6.0, 8.0]
+    print(average(scores...))
+}
+```
+
+```text
+5.0
+7.5
+7.0
+```
+
+`values` is a `[Float]`. With no values, it's an empty list. To pass a list
+you already have, write `...` after it: `average(scores...)`. `min` and
+`max` take any number too: `max(a, b, c)`.
+
 ## Lists are values: copies are separate
 
 When you assign a list to another variable, you get a **copy**. Changing
@@ -775,5 +812,7 @@ fn main() {
 - `contains`, `sorted()`, `reversed()`, `filter { … }` and `map { … }` answer
   questions or make new lists, leaving the original alone.
 - Lists are values: assigning or passing a list makes a copy.
+- A parameter written `values: Float...` takes any number of values, as a
+  list; `f(list...)` passes a list you have.
 
 **Next:** [8. Working with text](/learn/08-text/)

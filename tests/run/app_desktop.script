@@ -1,0 +1,14 @@
+tray
+click "Notify"
+click "Full screen"
+tree
+click "Leave full screen"
+dragto "report.pdf" "Ticks: 0"
+click "Close"
+tree
+tray "Tick"
+tray "Tick"
+tray
+tray "Show"
+tree
+tray "Quit"

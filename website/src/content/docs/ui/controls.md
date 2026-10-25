@@ -234,6 +234,30 @@ Clicking an option or its button chooses it; with the keyboard on the
 picker, the arrows move the choice. In a [form](/ui/layout/#grids) the
 options line up beside their label.
 
+### A menu
+
+`style: .menu` shows only the chosen option, in a box with an arrow; a
+click opens the list of all of them, with a check by the chosen one. It
+suits long lists, and forms where room is short:
+
+```tessel
+app Shipping(width: 320, height: 200) {
+    state country = "Philippines"
+
+    HStack {
+        Text("Country")
+        Picker(selection: country, style: .menu) {
+            for c in ["Japan", "Philippines", "Singapore", "Vietnam"] {
+                Text(c).tag(c)
+            }
+        }
+    }
+}
+```
+
+With the keyboard on it, Enter or Space opens the list, the arrows choose,
+and Escape closes it.
+
 ## Slider, Stepper and ColorPicker
 
 These three edit a number or a color:

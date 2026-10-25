@@ -1,0 +1,19 @@
+// Picker(style: .menu): a box with the chosen option, and a list of them.
+
+enum Unit { meters, feet, inches }
+
+app Units(width: 360, height: 260) {
+    state unit = Unit.meters
+    VStack(alignment: .leading) {
+        HStack {
+            Text("Units")
+            Picker(selection: unit, style: .menu) {
+                Text("Meters").tag(Unit.meters)
+                Text("Feet").tag(Unit.feet)
+                Text("Inches").tag(Unit.inches)
+            }
+        }
+        Text("Chosen: {unit}")
+    }
+    .padding(20)
+}

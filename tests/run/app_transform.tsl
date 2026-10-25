@@ -1,0 +1,18 @@
+// .rotation and .scale: a view turned or scaled takes the room of its box
+// as it shows, and clicks follow its shape.
+
+app Turn(width: 400, height: 300) {
+    state angle = 0.0
+    state taps = 0
+    VStack(spacing: 12) {
+        HStack {
+            Text("A")
+            Button("Tap {taps}") { taps += 1 }
+                .rotation(angle)
+            Text("B")
+        }
+        Text("Big").scale(2)
+        Text("Wide").scale(x: 2, y: 1)
+        Button("Turn") { angle += 90 }
+    }
+}

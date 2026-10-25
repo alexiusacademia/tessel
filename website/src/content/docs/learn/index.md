@@ -73,7 +73,9 @@ the ideas stick.
 - [18. Project: a to-do list in the terminal](/learn/18-project-cli/)
 - [19. Your first app with a window](/learn/19-first-app/)
 - [20. Project: a complete app](/learn/20-project-app/)
-- [21. Where to go next](/learn/21-next-steps/)
+- [21. Forms, tables and rich text](/learn/21-forms-tables/)
+- [22. Sound, video, the web and the desktop](/learn/22-media-desktop/)
+- [23. Where to go next](/learn/21-next-steps/)
 
 Ready? Start with [1. Your first program](/learn/01-first-program/).
 

@@ -693,4 +693,4 @@ how to build every one of them.
 - A script in a file, run with `TESSEL_SCRIPT`, checks the whole app in
   seconds.
 
-**Next:** [21. Where to go next](/learn/21-next-steps/)
+**Next:** [21. Forms, tables and rich text](/learn/21-forms-tables/)

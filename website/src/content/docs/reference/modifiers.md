@@ -1003,6 +1003,53 @@ Text("Welcome to Tessel.\nLet's build something.")
   `alignment:` or its frame's.
 - Inherited: set it on a stack to align all the text inside.
 
+## rotation
+
+```text
+.rotation(_ degrees: Float)
+```
+
+Turns the view (and what's in it) clockwise around its middle. It takes
+the room of the box around it as it shows, so the views around it move to
+make room; clicks follow its shape.
+
+```tessel
+Icon(.arrowUp).rotation(heading)
+```
+
+## scale
+
+```text
+.scale(_ factor: Float = 1, x: Float = 1, y: Float = 1)
+```
+
+Makes the view larger or smaller around its middle: across by
+`factor * x`, down by `factor * y`. `.scale(2)` doubles it;
+`.scale(x: -1)` mirrors it. Like `.rotation`, it takes the room of its new
+size.
+
+## trayIcon
+
+```text
+.trayIcon(_ icon: IconName, title: String = "", keepRunning: Bool = false, items: View)
+```
+
+The app's icon in the menu bar (macOS) or the taskbar's tray (Windows),
+with a menu of `MenuItem`s, `MenuDivider`s and `Menu`s. `title` shows beside
+it (macOS) or as its tooltip (Windows). With `keepRunning`, closing the
+main window hides it and the app goes on; `showWindow()` brings it back.
+See [The desktop](/ui/desktop/#a-tray-icon).
+
+## dragFile
+
+```text
+.dragFile(_ path: String)
+```
+
+The view can be dragged out of the app as the file at `path`: onto the
+desktop, into a folder, or into another app. See
+[Dragging files out](/ui/desktop/#dragging-files-out).
+
 ## lineLimit
 
 ```text

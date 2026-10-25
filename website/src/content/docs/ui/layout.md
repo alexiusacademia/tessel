@@ -284,6 +284,27 @@ app Signup(width: 420, height: 260) {
   makes one row of the grid it's in. Rows from `for` and `if` work too.
 - Outside a `Grid`, a `GridRow` is laid out like an `HStack`.
 
+## Turning and scaling
+
+`.rotation(degrees)` turns a view clockwise around its middle, and
+`.scale(…)` makes it larger or smaller. Unlike [`.offset`](/reference/modifiers/#offset),
+they change the layout: the view takes the room of the box around it as
+it now shows, and the views around it move:
+
+```tessel
+app Labels(width: 300, height: 220) {
+    HStack(spacing: 12) {
+        Text("Normal")
+        Text("Turned").rotation(-90)
+        Text("Big").scale(1.6)
+        Text("Wide").scale(x: 2, y: 1)
+    }
+}
+```
+
+The text turned by a quarter takes a column as tall as it was wide. Clicks
+go by the view's new shape, and what's in it turns and grows with it.
+
 ## Padding
 
 `.padding` adds space around a view, inside its background and border. You

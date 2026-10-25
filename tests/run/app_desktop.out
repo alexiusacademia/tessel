@@ -1,0 +1,36 @@
+Tray clock "0"
+MenuItem "Tick"
+MenuItem "Show"
+MenuDivider
+MenuItem "Quit"
+(notification "Timer" "It's been 0 ticks")
+Root
+  View
+    VStack
+      Text "Ticks: 0"
+      Button "Notify"
+      Button "Leave full screen"
+      Text "report.pdf"
+      Button "Close"
+(drag file "tests/run/app_desktop.tsl" out)
+Root (hidden)
+  View
+    VStack
+      Text "Ticks: 0"
+      Button "Notify"
+      Button "Full screen"
+      Text "report.pdf"
+      Button "Close"
+Tray clock "2"
+MenuItem "Tick"
+MenuItem "Show"
+MenuDivider
+MenuItem "Quit"
+Root
+  View
+    VStack
+      Text "Ticks: 2"
+      Button "Notify"
+      Button "Full screen"
+      Text "report.pdf"
+      Button "Close"

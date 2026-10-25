@@ -1,0 +1,6 @@
+dump
+click "Turn"
+dump
+click 200 70
+click 175 93
+tree

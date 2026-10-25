@@ -1818,6 +1818,59 @@ Button("Open…") {
 
 In a program without a window, it does nothing.
 
+### setFullScreen and isFullScreen
+
+```text
+setFullScreen(_ on: Bool)
+isFullScreen() -> Bool
+```
+
+`setFullScreen(true)` makes the main window fill the screen;
+`setFullScreen(false)` puts it back. `isFullScreen()` says which it is. See
+[The desktop](/ui/desktop/#full-screen).
+
+### showWindow
+
+```text
+showWindow()
+```
+
+Shows the main window again, in front, after it was closed while a
+[tray icon](/ui/desktop/#a-tray-icon) with `keepRunning: true` kept the app
+running.
+
+### showNotification
+
+```text
+showNotification(_ title: String, message: String = "")
+```
+
+A notification from the system, seen even when the app isn't in front. The
+first time, the user is asked whether the app may send them. See
+[Notifications](/ui/desktop/#notifications).
+
+```tessel
+showNotification("Export done", message: "Saved 12 pages.")
+```
+
+A headless run prints it: `(notification "Export done" "Saved 12 pages.")`.
+
+### playSound
+
+```text
+playSound(_ path: String, volume: Float = 1.0, loop: Bool = false) -> Sound
+```
+
+Plays a sound file (MP3, M4A, WAV, …), at `volume` from 0 to 1, over and
+over with `loop: true`. The `Sound` it gives controls it: `pause()`,
+`resume()`, `stop()`, `seek(to:)`, `setVolume(_:)`, `isPlaying()`,
+`position()` and `duration()` (in seconds). See
+[Sound and video](/ui/media/).
+
+```tessel
+let music = playSound(joinPath(appFolder(), "theme.mp3"), volume: 0.6, loop: true)
+```
+
 ### showNotice
 
 ```text

@@ -992,6 +992,15 @@ view __RichMark(label: String, name: String, on: Bool, weight: Weight = .regular
         .onTap { action() }
 }
 
+// ---- Sound ----
+
+// `playSound("chime.mp3")`: plays a sound file (MP3, M4A, WAV, …), at
+// `volume` from 0 to 1, over and over with `loop: true`. What it gives can
+// pause, stop or move it, and say where it is.
+fn playSound(_ path: String, volume: Float = 1.0, loop: Bool = false) -> Sound {
+    Sound(id: __playSound(path, volume, loop))
+}
+
 // ---- Links ----
 
 // `Link("Tessel", url: "https://…")`: text in the accent color that opens a

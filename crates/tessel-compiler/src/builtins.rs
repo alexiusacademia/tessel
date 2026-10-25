@@ -36,7 +36,7 @@ pub const SCROLL_AXES_CASES: &[&str] = &["vertical", "horizontal", "both"];
 /// Where `scrollTo` puts a view (the runtime relies on the order).
 pub const SCROLL_ALIGN_CASES: &[&str] = &["nearest", "top", "center", "bottom"];
 /// How a `Picker` shows its options (the runtime relies on the order).
-pub const PICKER_STYLE_CASES: &[&str] = &["segmented", "radio"];
+pub const PICKER_STYLE_CASES: &[&str] = &["segmented", "radio", "menu"];
 
 /// Pointers for `.cursor(…)` (the runtime relies on the order).
 pub const CURSOR_STYLES: &[&str] = &[
@@ -174,6 +174,13 @@ pub fn structs() -> Vec<StructDef> {
             fields: vec![field("width", Ty::Float), field("height", Ty::Float)],
             methods: Vec::new(),
         },
+        // A sound playing (`playSound`): its methods are in `method_of`.
+        StructDef {
+            name: "Sound".into(),
+            span: Span::default(),
+            fields: vec![field("id", Ty::Int)],
+            methods: Vec::new(),
+        },
     ]
 }
 
@@ -191,6 +198,8 @@ pub const KEY_EVENT: Ty = Ty::Struct(4);
 pub const JOB: Ty = Ty::Struct(5);
 /// The `Scene` struct (see `structs`).
 pub const SCENE: Ty = Ty::Struct(6);
+/// The `Sound` struct (see `structs`).
+pub const SOUND: Ty = Ty::Struct(7);
 
 /// The built-in enums, by their place in `enums`.
 pub const COLOR: Ty = Ty::Enum(0);
@@ -228,7 +237,7 @@ pub const VIEW_NAMES: &[&str] =
         "CodeEditor", "TabView", "Divider", "Icon", "Svg", "Markdown", "Canvas", "Scene3D", "Slider", "Stepper", "ColorPicker",
         "DisclosureGroup", "LazyVStack", "MenuItem", "MenuDivider", "Menu", "Window", "Ribbon", "RibbonTab", "RibbonGroup",
         "RibbonButton", "RibbonToggle", "RibbonMenu", "Table", "TableColumn", "Tree", "HSplit", "VSplit",
-        "Grid", "GridRow", "LazyHStack", "SearchField", "__RichEditor",
+        "Grid", "GridRow", "LazyHStack", "SearchField", "__RichEditor", "VideoPlayer", "WebView",
     ];
 
 /// Built-in views whose names a program may take for its own types (a
@@ -259,6 +268,15 @@ impl Builtins {
                 P::new("onChange", Ty::func(vec![Ty::Str], Ty::Void)),
             ],
             "SearchField" => vec![P::unlabeled("placeholder", Ty::Str).default(), P::new("text", Ty::Str).bind()],
+            "WebView" => vec![P::new("url", Ty::Str).default(), P::new("html", Ty::Str).default()],
+            "VideoPlayer" => vec![
+                P::unlabeled("path", Ty::Str),
+                P::new("playing", Ty::Bool).bind().default(),
+                P::new("position", Ty::Float).bind().default(),
+                P::new("controls", Ty::Bool).default(),
+                P::new("loop", Ty::Bool).default(),
+                P::new("volume", Ty::Float).default(),
+            ],
             "CodeEditor" => vec![
                 P::new("text", Ty::Str).bind(),
                 P::new("errorLines", Ty::list(Ty::Int)).default(),
@@ -472,6 +490,7 @@ impl Builtins {
             "clipped" => vec![P::unlabeled("isClipped", Ty::Bool).default()],
             "onDrop" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
             "draggable" => vec![P::unlabeled("payload", Ty::Str)],
+            "dragFile" => vec![P::unlabeled("path", Ty::Str)],
             "dropTarget" => vec![
                 P::new("isTargeted", Ty::Bool).bind().default(),
                 P::unlabeled("action", Ty::func(vec![Ty::Str, Ty::Float, Ty::Float], Ty::Void)),
@@ -479,6 +498,12 @@ impl Builtins {
             "tooltip" | "accessibilityLabel" => vec![P::unlabeled("text", Ty::Str)],
             "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "contextMenu" | "menuBar" => vec![P::unlabeled("items", Ty::View)],
+            "trayIcon" => vec![
+                P::unlabeled("icon", self.icon.clone()),
+                P::new("title", Ty::Str).default(),
+                P::new("keepRunning", Ty::Bool).default(),
+                P::unlabeled("items", Ty::View),
+            ],
             "popover" => vec![
                 P::new("isPresented", Ty::Bool).bind(),
                 P::new("edge", EDGE).default(),
@@ -498,6 +523,8 @@ impl Builtins {
             "gridCellColumns" => vec![P::unlabeled("count", Ty::Int)],
             "gridColumnAlignment" => vec![P::unlabeled("alignment", self.alignment.clone())],
             "selectable" => vec![P::unlabeled("isSelectable", Ty::Bool).default()],
+            "rotation" => vec![P::unlabeled("degrees", Ty::Float)],
+            "scale" => vec![P::unlabeled("factor", Ty::Float).default(), P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
             "lineLimit" => vec![P::unlabeled("lines", Ty::Int)],
             _ => return None,
         })
@@ -777,6 +804,14 @@ impl Builtins {
                 ret: Ty::Int,
             },
             "setWindowTitle" => FnSig { params: vec![P::unlabeled("title", Ty::Str)], ret: Ty::Void },
+            "setFullScreen" => FnSig { params: vec![P::unlabeled("on", Ty::Bool)], ret: Ty::Void },
+            "showWindow" => FnSig { params: vec![], ret: Ty::Void },
+            "__playSound" => FnSig {
+                params: vec![P::unlabeled("path", Ty::Str), P::unlabeled("volume", Ty::Float), P::unlabeled("loop", Ty::Bool)],
+                ret: Ty::Int,
+            },
+            "showNotification" => FnSig { params: vec![P::unlabeled("title", Ty::Str), P::new("message", Ty::Str).default()], ret: Ty::Void },
+            "isFullScreen" => FnSig { params: vec![], ret: Ty::Bool },
             "undoTextEdit" | "redoTextEdit" => FnSig { params: vec![], ret: Ty::Void },
             "quit" | "closeWindow" | "dismiss" => FnSig { params: vec![], ret: Ty::Void },
             "showNotice" => FnSig { params: vec![P::unlabeled("text", Ty::Str), P::new("seconds", Ty::Float).default()], ret: Ty::Void },
@@ -811,7 +846,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "chooseFolder", "__openFiles", "__messageDialog", "__printFile", "__dateParts",
     "cancelRequest", "sendWebSocketData", "writeImage", "__imageSize", "__imagePixels", "__appInfo", "__dbOpen", "__dbClose", "__dbLastInsertId", "__dbExecute", "__dbQuery",
-    "__dbNoColumn", "setWindowTitle", "renderImage", "writePDF",
+    "__dbNoColumn", "setWindowTitle", "setFullScreen", "isFullScreen", "showWindow", "showNotification", "__playSound", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow", "dismiss", "showNotice",
     "textOutline", "__textGlyphs", "__fontMetrics", "__fontStyleNames", "__fontStyleKinds",
@@ -956,6 +991,14 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
         },
         t if *t == GRAPHICS => return graphics_method(name),
         t if *t == SCENE => return scene_method(name),
+        t if *t == SOUND => match name {
+            "pause" | "resume" | "stop" => method(vec![], Ty::Void),
+            "seek" => method(vec![P::new("to", Ty::Float)], Ty::Void),
+            "setVolume" => method(vec![P::unlabeled("volume", Ty::Float)], Ty::Void),
+            "isPlaying" => method(vec![], Ty::Bool),
+            "position" | "duration" => method(vec![], Ty::Float),
+            _ => return None,
+        },
         t if *t == JOB => match name {
             "progress" => method(vec![P::unlabeled("fraction", Ty::Float), P::new("note", Ty::Str).default()], Ty::Void),
             "isCancelled" => method(vec![], Ty::Bool),
@@ -1235,12 +1278,14 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "save", "restore",
         ],
         t if *t == JOB => &["id", "progress", "isCancelled", "cancel"],
+        t if *t == SOUND => &["id", "pause", "resume", "stop", "seek", "setVolume", "isPlaying", "position", "duration"],
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
             "tooltip", "accessibilityLabel", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
             "onCloseRequest", "gridCellColumns", "gridColumnAlignment", "selectable", "lineLimit",
+            "rotation", "scale", "trayIcon", "dragFile",
         ],
         _ => &[],
     }
@@ -1372,6 +1417,11 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "__dbQuery" => rt("tsl_db_query"),
         "__dbNoColumn" => rt("tsl_db_no_column"),
         "setWindowTitle" => rt("tsl_set_window_title"),
+        "setFullScreen" => rt("tsl_set_full_screen"),
+        "showWindow" => rt("tsl_show_window"),
+        "__playSound" => rt("tsl_play_sound"),
+        "showNotification" => rt_d("tsl_show_notification", &[Dflt::Req, Dflt::Str("")]),
+        "isFullScreen" => rt("tsl_is_full_screen"),
         "undoTextEdit" => rt("tsl_undo_text_edit"),
         "redoTextEdit" => rt("tsl_redo_text_edit"),
         "quit" => rt("tsl_quit"),
@@ -1444,6 +1494,14 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (t, "progress") if *t == JOB => rt_d("tsl_job_progress", &[Dflt::Req, Dflt::Str("")]),
         (t, "isCancelled") if *t == JOB => rt("tsl_job_is_cancelled"),
         (t, "cancel") if *t == JOB => rt("tsl_job_cancel"),
+        (t, "pause") if *t == SOUND => rt("tsl_sound_pause"),
+        (t, "resume") if *t == SOUND => rt("tsl_sound_resume"),
+        (t, "stop") if *t == SOUND => rt("tsl_sound_stop"),
+        (t, "seek") if *t == SOUND => rt("tsl_sound_seek"),
+        (t, "setVolume") if *t == SOUND => rt("tsl_sound_set_volume"),
+        (t, "isPlaying") if *t == SOUND => rt("tsl_sound_is_playing"),
+        (t, "position") if *t == SOUND => rt("tsl_sound_position"),
+        (t, "duration") if *t == SOUND => rt("tsl_sound_duration"),
         _ => return None,
     })
 }

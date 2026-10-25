@@ -1,0 +1,12 @@
+dump
+click "Meters"
+dump
+click "Feet"
+tree
+click "Feet"
+key down
+key enter
+tree
+click "Inches"
+key escape
+tree

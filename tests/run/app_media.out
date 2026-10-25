@@ -1,0 +1,66 @@
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" paused 0.0/60.0
+      Text "playing false at 0"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text ""
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" playing 2.5/60.0
+      Text "playing true at 2"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text ""
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" playing 30.0/60.0
+      Text "playing true at 30"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text ""
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" paused 30.0/60.0
+      Text "playing false at 30"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text ""
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" paused 60.0/60.0
+      Text "playing false at 60"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text ""
+Root
+  View
+    VStack
+      VideoPlayer "crates/tessel-runtime/tests/media/clip.mp4" paused 60.0/60.0
+      Text "playing false at 60"
+      HStack
+        Button "Play"
+        Button "Jump"
+        Button "Ding"
+        Button "Check"
+      Text "true 1.0 of 60.0"

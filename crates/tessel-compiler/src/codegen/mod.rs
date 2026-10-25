@@ -1651,9 +1651,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_begin_grid" => (vec![i32t, f64t, f64t], None),
             "tsl_ui_begin_grid_row" => (vec![], None),
             "tsl_ui_rich_editor" => (vec![i, p, p, p], None),
+            "tsl_ui_web_view" => (vec![p, p], None),
+            "tsl_ui_video" => (vec![p, p, p, p, p, i8t, i8t, f64t], None),
             "tsl_ui_grid_cell_columns" | "tsl_ui_line_limit" => (vec![i], None),
             "tsl_ui_grid_column_alignment" => (vec![i32t], None),
             "tsl_ui_selectable" => (vec![i8t], None),
+            "tsl_ui_rotation" => (vec![f64t], None),
+            "tsl_ui_begin_tray" => (vec![], None),
+            "tsl_ui_end_tray" => (vec![i32t, p, i8t], None),
+            "tsl_ui_scale" => (vec![f64t, f64t, f64t], None),
             "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),
             "tsl_ui_on_key_event" => (vec![p, p, i8t], None),
             "tsl_ui_slider" => (vec![p, p, f64t, f64t, f64t, p, p], None),
@@ -1665,7 +1671,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_table_column" => (vec![p, i8t, f64t, self.ctx.i32_type().into(), p, p, p, p], None),
             "tsl_ui_table_end" => (vec![i, f64t, p, p, p, p, p, p, p, p, i8t, p, p], None),
             "tsl_ui_tree" => (vec![p, p, f64t, p, p, p, p, p, p], None),
-            "tsl_ui_draggable" => (vec![p], None),
+            "tsl_ui_draggable" | "tsl_ui_drag_file" => (vec![p], None),
             "tsl_ui_cursor" => (vec![i32t], None),
             "tsl_ui_offset" => (vec![f64t, f64t], None),
             "tsl_ui_clipped" => (vec![i8t], None),
@@ -5307,7 +5313,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             // (The receiver is borrowed; the arguments are released below.)
             let mut vals = if call.no_receiver {
                 Vec::new()
-            } else if *recv == builtins::JOB {
+            } else if *recv == builtins::JOB || *recv == builtins::SOUND {
                 // A `BackgroundJob` goes as its `id`.
                 let id = self.b.build_extract_value(v.into_struct_value(), 0, "").unwrap();
                 vec![(id, Ty::Int)]

@@ -1,0 +1,15 @@
+tree
+click "Play"
+wait 2.5
+tree
+click "Jump"
+tree
+click 240 100
+tree
+click 240 100
+wait 40
+tree
+click "Ding"
+wait 1
+click "Check"
+tree

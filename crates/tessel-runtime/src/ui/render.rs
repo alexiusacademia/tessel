@@ -257,6 +257,9 @@ pub struct Painter<'a> {
     /// How far the view being drawn is from where layout put it (while it's
     /// animated to its place), in points.
     pub offset: (f64, f64),
+    /// How the views around the one being drawn are turned and scaled
+    /// (`.rotation`, `.scale`), in points.
+    pub turn: Affine,
     /// The part of the window that shows, inside scroll views: what's
     /// outside needn't be drawn.
     pub clip: Option<Rect>,
@@ -268,7 +271,7 @@ pub struct Painter<'a> {
 
 impl Painter<'_> {
     fn t(&self) -> Affine {
-        Affine::scale(self.scale) * Affine::translate(self.offset)
+        Affine::scale(self.scale) * self.turn * Affine::translate(self.offset)
     }
 
     /// Draws the scroll bars of a scroll view or code editor, over its content.
@@ -324,11 +327,35 @@ impl Painter<'_> {
 
     /// Draws the open `ColorPicker`'s palette over the rest of the window.
     pub fn paint_overlay(&mut self, tree: &Node) {
+        self.paint_menu_list(tree);
         let Some(key) = super::controls::OPEN_PICKER.get() else { return };
         let Some(palette) = tree.find(key).and_then(|n| n.children.first()) else { return };
         let r = palette.layout.rect;
         self.fill(Rect { x: r.x, y: r.y + 2.0, w: r.w, h: r.h }.inset(-1.5), 9.5, Rgba([0, 0, 0, 24]));
         self.paint(palette);
+    }
+
+    /// Draws the open list of a menu picker, over everything else: its
+    /// options, a check mark by the chosen one, and the one under the pointer.
+    fn paint_menu_list(&mut self, tree: &Node) {
+        let Some(n) = super::controls::OPEN_MENU.get().and_then(|k| tree.find(k)) else { return };
+        let Kind::Picker { selection, .. } = &n.kind else { return };
+        let (Some(first), Some(last)) = (n.layout.segments.first(), n.layout.segments.last()) else { return };
+        let r = Rect { x: first.x - 4.0, y: first.y - 4.0, w: first.w + 8.0, h: last.y + last.h - first.y + 8.0 };
+        self.fill(Rect { x: r.x, y: r.y + 3.0, ..r }.inset(-1.5), 9.5, Rgba([0, 0, 0, 26]));
+        self.fill(r, 8.0, theme().popup);
+        self.stroke(r, 8.0, 1.0, theme().field_border);
+        let current = selection.locate();
+        for (c, row) in n.children.iter().zip(&n.layout.segments) {
+            if self.ui.pointer.is_some_and(|(x, y)| row.contains(x, y)) {
+                self.fill(*row, 5.0, theme().selection);
+            }
+            if c.mods.tag.as_ref().is_some_and(|t| t.equals(current)) {
+                let s = 11.0;
+                self.svg("check", Rect { x: row.x + (super::layout::MENU_CHECK - s) / 2.0, y: row.y + (row.h - s) / 2.0, w: s, h: s }, theme().accent);
+            }
+            self.paint(c);
+        }
     }
 
     /// Draws the view being dragged (`.draggable`) under the pointer, see-through.
@@ -338,7 +365,7 @@ impl Painter<'_> {
         let r = n.layout.rect;
         let (dx, dy) = (d.at.0 - d.grab.0 - r.x, d.at.1 - d.grab.1 - r.y);
         let mut copy = DrawList::new();
-        let mut painter = Painter { scene: &mut copy, ui: self.ui, scale: self.scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
+        let mut painter = Painter { scene: &mut copy, ui: self.ui, scale: self.scale, offset: (0.0, 0.0), turn: Affine::IDENTITY, clip: None, marks: Vec::new() };
         painter.paint(n);
         // On a card, lifted off the window.
         let t = self.t();
@@ -488,6 +515,16 @@ impl Painter<'_> {
         if n.mods.hidden {
             return;
         }
+        // Turned or scaled: it, and what's in it.
+        let around = self.turn;
+        if let Some(turn) = super::layout::turn_of(n) {
+            self.turn = around * turn;
+        }
+        self.paint_turned(n);
+        self.turn = around;
+    }
+
+    fn paint_turned(&mut self, n: &Node) {
         // While the view is animated, its frame (background, border) is drawn
         // where it is now, and its content moved along with it.
         let placed = n.layout.rect;
@@ -616,6 +653,49 @@ impl Painter<'_> {
                     self.paint_scroll_bars(n);
                 }
             }
+            // (The system's web view is over it. Without one, a box says what it shows.)
+            Kind::WebView { .. } => {
+                self.fill(content, 0.0, theme().colors[theme::BACKGROUND]);
+                self.stroke(content, 0.0, 1.0, theme().field_border);
+            }
+            Kind::Video { controls, .. } => {
+                self.fill(content, 0.0, Rgba([0, 0, 0, 255]));
+                let (picture, playing, at, of) = super::media::VIDEOS.with(|v| {
+                    let v = v.borrow();
+                    let p = v.get(&n.key).map(|(_, p)| p);
+                    (p.and_then(|p| p.picture.clone()), p.is_some_and(super::media::Player::playing), p.map_or(0.0, |p| p.position()), p.map_or(0.0, |p| p.duration()))
+                });
+                if let Some(pic) = picture {
+                    // Fitted inside, in the middle.
+                    let s = (content.w / pic.width.max(1.0)).min(content.h / pic.height.max(1.0));
+                    let (w, h) = (pic.width * s, pic.height * s);
+                    let t = self.t() * Affine::translate((content.x + (content.w - w) / 2.0, content.y + (content.h - h) / 2.0)) * Affine::scale(s);
+                    self.scene.image(pic, t, 1.0);
+                }
+                let over = self.ui.pointer.is_some_and(|(x, y)| content.contains(x, y));
+                if *controls && (over || !playing) {
+                    let (bar, button, track) = video_parts(n);
+                    self.fill(bar, 0.0, Rgba([0, 0, 0, 140]));
+                    let white = Rgba([255, 255, 255, 255]);
+                    if playing {
+                        // Pause: two bars.
+                        let (w, h) = (4.0, 12.0);
+                        let (x, y) = (button.x + button.w / 2.0, button.y + (button.h - h) / 2.0);
+                        self.fill(Rect { x: x - 5.0, y, w, h }, 1.0, white);
+                        self.fill(Rect { x: x + 1.0, y, w, h }, 1.0, white);
+                    } else {
+                        self.svg("play", button.inset(4.0), white);
+                    }
+                    self.fill(track, 2.0, Rgba([255, 255, 255, 70]));
+                    let part = if of > 0.0 { (at / of).clamp(0.0, 1.0) } else { 0.0 };
+                    self.fill(Rect { w: track.w * part, ..track }, 2.0, white);
+                    let knob = 10.0;
+                    self.fill(Rect { x: track.x + track.w * part - knob / 2.0, y: track.y + track.h / 2.0 - knob / 2.0, w: knob, h: knob }, knob / 2.0, white);
+                    if let Some(t) = &n.layout.text {
+                        self.text(t, bar.x + bar.w - t.width() - 10.0, bar.y + (bar.h - t.height()) / 2.0, None);
+                    }
+                }
+            }
             Kind::RichEditor { doc, .. } => {
                 let editing = self.ui.shown_editing(n.key);
                 self.fill(content, 6.0, theme().field);
@@ -680,6 +760,26 @@ impl Painter<'_> {
                 self.scene.fill(FillRule::NonZero, t, Rgba([255, 255, 255, 255]), &Circle::new((knob_x, sw.y + 11.0), 9.0));
                 if let Some(label) = &n.layout.text {
                     self.text(label, content.x, content.y + (content.h - label.height()) / 2.0, None);
+                }
+            }
+            Kind::Picker { selection, style: 2 } => {
+                // The box: the chosen option, and an arrow.
+                let bg = if pressed { theme().control_pressed } else if hovered { theme().control_hover } else { theme().field };
+                self.fill(content, 6.0, bg);
+                self.stroke(content, 6.0, 1.0, theme().field_border);
+                let arrow = 10.0;
+                let a = Rect { x: content.x + content.w - super::layout::MENU_ARROW + (super::layout::MENU_ARROW - arrow) / 2.0 - 2.0, y: content.y + (content.h - arrow) / 2.0, w: arrow, h: arrow };
+                self.svg("chevronDown", a, theme().colors[theme::SECONDARY]);
+                let current = selection.locate();
+                let chosen = n.children.iter().find(|c| c.mods.tag.as_ref().is_some_and(|t| t.equals(current)));
+                if let Some(c) = chosen {
+                    // (While the list is open, the option is there: drawn in the box too.)
+                    let at = (content.x + super::layout::MENU_PAD, content.y + (content.h - c.layout.size.h) / 2.0);
+                    let shift = (at.0 - c.layout.rect.x, at.1 - c.layout.rect.y);
+                    let around = self.turn;
+                    self.turn = around * Affine::translate(shift);
+                    self.paint(c);
+                    self.turn = around;
                 }
             }
             Kind::Picker { selection, style: 1 } => {
@@ -1149,6 +1249,19 @@ pub fn field_origin(n: &Node) -> (f64, f64) {
     };
     let left = if matches!(n.kind, Kind::TextField { search: true, .. }) { super::layout::SEARCH_LEFT } else { 8.0 };
     (content.x + left, content.y + (content.h - line_h) / 2.0)
+}
+
+/// A video's controls: their bar along its bottom, the play (or pause)
+/// button, and the track that shows (and sets) where it is.
+pub fn video_parts(n: &Node) -> (Rect, Rect, Rect) {
+    let c = n.layout.rect.inset_by(n.mods.padding);
+    let h = 34.0f64.min(c.h);
+    let bar = Rect { x: c.x, y: c.y + c.h - h, w: c.w, h };
+    let button = Rect { x: bar.x + 6.0, y: bar.y + (h - 24.0) / 2.0, w: 24.0, h: 24.0 };
+    let time = n.layout.text.as_ref().map_or(60.0, |t| t.width());
+    let left = button.x + button.w + 10.0;
+    let track = Rect { x: left, y: bar.y + h / 2.0 - 2.0, w: (bar.x + bar.w - time - 20.0 - left).max(0.0), h: 4.0 };
+    (bar, button, track)
 }
 
 /// A search field's clear button, when it has text to clear.

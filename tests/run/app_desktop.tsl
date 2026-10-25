@@ -1,0 +1,24 @@
+// The desktop: a tray icon that keeps the app running, notifications, full
+// screen, and a file dragged out of the app. (A headless run says what it
+// would do.)
+
+app Timer(width: 300, height: 220) {
+    state ticks = 0
+    state full = false
+    VStack {
+        Text("Ticks: {ticks}")
+        Button("Notify") { showNotification("Timer", message: "It's been {ticks} ticks") }
+        Button(if full { "Leave full screen" } else { "Full screen" }) {
+            setFullScreen(!isFullScreen())
+            full = isFullScreen()
+        }
+        Text("report.pdf").dragFile("tests/run/app_desktop.tsl")
+        Button("Close") { closeWindow() }
+    }
+    .trayIcon(.clock, title: "{ticks}", keepRunning: true) {
+        MenuItem("Tick") { ticks += 1 }
+        MenuItem("Show") { showWindow() }
+        MenuDivider()
+        MenuItem("Quit") { quit() }
+    }
+}

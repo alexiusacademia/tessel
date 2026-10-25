@@ -181,6 +181,18 @@ enum Clock {
     Virtual(f64),
 }
 
+/// The app's clock, in seconds (a script's own, in a headless run).
+pub(super) fn clock() -> f64 {
+    now()
+}
+
+/// Wakes the app up (from a sound that started playing: it looks after it).
+pub(super) fn wake_for_media() {
+    if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
+        let _ = proxy.send_event(());
+    }
+}
+
 fn now() -> f64 {
     CLOCK.with(|c| match &*c.borrow() {
         Clock::Real(start) => start.elapsed().as_secs_f64(),
@@ -819,6 +831,10 @@ enum Hit {
     Split(u64),
     /// A search field's button that clears it.
     SearchClear(u64),
+    /// A menu picker's box: it opens (or closes) its list.
+    MenuPicker(u64),
+    /// A video: its play button (0), its track (1), or elsewhere on it (2).
+    Video(u64, u8),
 }
 
 impl Hit {
@@ -830,7 +846,7 @@ impl Hit {
             Hit::Disclosure(k) => k,
             Hit::Tab(k, _) | Hit::TabClose(k, _) => k,
             Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _) => k,
-            Hit::Split(k) | Hit::SearchClear(k) => k,
+            Hit::Split(k) | Hit::SearchClear(k) | Hit::MenuPicker(k) | Hit::Video(k, _) => k,
         }
     }
 }
@@ -898,6 +914,13 @@ struct App {
     sizes: HashMap<u64, (f64, f64)>,
     /// The menu that's open (a context menu, or one of the drawn menu bar's).
     menu: Option<OpenMenu>,
+    /// The app's `.trayIcon`, as the tree last described it.
+    tray: Option<super::tray::TrayInfo>,
+    /// The main window is to be hidden (true: closed while the app goes on
+    /// in its tray icon) or shown again (`showWindow()`, the tray icon).
+    show_main: Option<bool>,
+    /// Whether the main window is hidden that way.
+    main_hidden: bool,
 }
 
 /// What a window shows and what's going on in it: the App's fields from
@@ -942,6 +965,32 @@ thread_local! {
     /// Windows `closeWindow()` closed, and whether `quit()` was called.
     static CLOSING: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static QUITTING: Cell<bool> = const { Cell::new(false) };
+    /// `showWindow()` was called.
+    static SHOWING: Cell<bool> = const { Cell::new(false) };
+    /// `showNotification`s not yet shown: the title and the message.
+    pub(super) static NOTIFYING: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// `showWindow()`: shows the main window again (after it was closed with a
+/// tray icon keeping the app running), in front.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_show_window() {
+    SHOWING.with(|s| s.set(true));
+}
+
+/// `showNotification(title, message:)`: a notification from the system. A
+/// headless run only says so.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_show_notification(title: *const Str, message: *const Str) {
+    let (title, message) = unsafe { (crate::str_text(title).to_string(), crate::str_text(message).to_string()) };
+    if std::env::var_os("TESSEL_SCRIPT").is_some() {
+        println!("(notification {title:?} {message:?})");
+        return;
+    }
+    NOTIFYING.with(|n| n.borrow_mut().push((title, message)));
+    if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
+        let _ = proxy.send_event(());
+    }
 }
 
 /// `closeWindow()`: closes the window whose event is handled (for the main
@@ -1003,6 +1052,11 @@ pub(super) enum Shell {
     Menu(Vec<usize>),
     OpenFile(String),
     Quit,
+    /// An item of the tray icon's menu (its path), or a click on the icon
+    /// itself (which shows the main window).
+    Tray(Vec<usize>),
+    #[cfg_attr(not(windows), allow(dead_code))]
+    TrayClick,
 }
 
 pub(super) static SHELL: Mutex<Vec<Shell>> = Mutex::new(Vec::new());
@@ -1035,6 +1089,10 @@ const TIP_DELAY: f64 = 0.6;
 thread_local! {
     /// `setWindowTitle(…)`: the title the window takes at its next update.
     static NEW_TITLE: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// `setFullScreen(on)`, done when the main window is next drawn; and
+    /// whether it fills the screen.
+    static FULL_SCREEN: Cell<Option<bool>> = const { Cell::new(None) };
+    static IS_FULL_SCREEN: Cell<bool> = const { Cell::new(false) };
     /// `undoTextEdit()` (false) or `redoTextEdit()` (true), done at the next update.
     static UNDO: Cell<Option<bool>> = const { Cell::new(None) };
 }
@@ -1049,6 +1107,20 @@ pub extern "C" fn tsl_undo_text_edit() {
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_redo_text_edit() {
     UNDO.with(|u| u.set(Some(true)));
+}
+
+/// `setFullScreen(on)`: the main window fills the screen (or doesn't).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_set_full_screen(on: u8) {
+    FULL_SCREEN.with(|f| f.set(Some(on != 0)));
+    // (Said at once; the window says how it is once it's drawn again.)
+    IS_FULL_SCREEN.with(|f| f.set(on != 0));
+}
+
+/// `isFullScreen()`: whether the main window fills the screen.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_is_full_screen() -> u8 {
+    IS_FULL_SCREEN.with(Cell::get) as u8
 }
 
 /// `setWindowTitle(title)`: changes the text in the window's title bar.
@@ -1156,6 +1228,11 @@ impl App {
             self.undo(redo);
         }
         self.each_surface(|a| a.finish_cell_edit());
+        let mut playing = false;
+        self.each_surface(|a| {
+            playing |= a.tick_videos().0;
+        });
+        let _ = playing;
         let commands = super::rich::COMMANDS.with(|q| std::mem::take(&mut *q.borrow_mut()));
         if !commands.is_empty() {
             self.each_surface(|a| a.rich_commands(&commands));
@@ -1178,6 +1255,7 @@ impl App {
                 let built = build_all(&self.root);
                 self.distribute(built);
                 self.run_on_appear();
+                self.each_surface(|a| a.sync_videos());
                 self.each_surface(|a| {
                     a.sync_editor_lines();
                     a.track_editor_texts();
@@ -1453,6 +1531,12 @@ impl App {
         let bar = menu::bar(user, &self.title, self.native_bar, &keys);
         self.has_menu_bar = has_menu_bar;
         self.bar = bar;
+        self.tray = self.find_in_main(|n| n.mods.tray.is_some()).and_then(|n| n.mods.tray.as_deref()).map(|t| super::tray::TrayInfo {
+            icon: t.icon,
+            title: t.title.clone(),
+            keep_running: t.keep_running,
+            items: menu::entries(&t.items),
+        });
         let asks = self.find_in_main(|n| n.mods.on_close_request.is_some()).is_some();
         ASKS_TO_CLOSE.store(asks, std::sync::atomic::Ordering::Relaxed);
     }
@@ -1484,11 +1568,21 @@ impl App {
         for key in CLOSING.with(|c| std::mem::take(&mut *c.borrow_mut())) {
             self.close_window(key);
         }
+        if SHOWING.with(|s| s.replace(false)) {
+            self.show_main = Some(true);
+            self.main_hidden = false;
+        }
     }
 
     /// Closes a window (the main one: the app ends).
     fn close_window(&mut self, key: u64) {
         if key == 0 {
+            // With a tray icon that keeps the app running: it's hidden.
+            if self.tray.as_ref().is_some_and(|t| t.keep_running) {
+                self.show_main = Some(false);
+                self.main_hidden = true;
+                return;
+            }
             self.quit = true;
             return;
         }
@@ -1739,7 +1833,13 @@ impl App {
 
     /// Chooses an item of the menu bar by its titles (`menu` script command).
     fn choose_bar_item(&mut self, labels: &[String]) -> Result<(), String> {
-        let mut items: &[Entry] = &self.bar;
+        let bar = self.bar.clone();
+        self.choose_item(&bar, labels)
+    }
+
+    /// Chooses the item of `menus` that `labels` name (menu by menu).
+    fn choose_item(&mut self, menus: &[Entry], labels: &[String]) -> Result<(), String> {
+        let mut items: &[Entry] = menus;
         let mut found = None;
         for (i, label) in labels.iter().enumerate() {
             let Some(e) = items.iter().find(|e| e.label() == label) else {
@@ -2655,7 +2755,7 @@ impl App {
         let at = now();
         self.ui.anim.leave(at);
         let mut views = super::draw::DrawList::new();
-        let mut painter = Painter { scene: &mut views, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
+        let mut painter = Painter { scene: &mut views, ui: &self.ui, scale, offset: (0.0, 0.0), turn: kurbo::Affine::IDENTITY, clip: None, marks: Vec::new() };
         painter.paint(tree);
         let marks = std::mem::take(&mut painter.marks);
         let views = std::rc::Rc::new(views);
@@ -2667,7 +2767,7 @@ impl App {
             list.pop();
         }
         self.ui.anim.drew(views, marks);
-        let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), clip: None, marks: Vec::new() };
+        let mut painter = Painter { scene: &mut list, ui: &self.ui, scale, offset: (0.0, 0.0), turn: kurbo::Affine::IDENTITY, clip: None, marks: Vec::new() };
         painter.paint_overlay(tree);
         painter.paint_dragged(tree);
         painter.paint_popup();
@@ -2680,6 +2780,14 @@ impl App {
 
     fn hit(&self, x: f64, y: f64) -> Option<Hit> {
         fn visit(n: &Node, x: f64, y: f64) -> Option<Hit> {
+            // In a view that's turned or scaled: the point as it is in the view.
+            let (x, y) = match super::layout::turn_of(n) {
+                Some(t) => {
+                    let p = t.inverse() * kurbo::Point::new(x, y);
+                    (p.x, p.y)
+                }
+                None => (x, y),
+            };
             // Nothing of a clipped view shows outside it.
             if n.mods.clipped && !n.layout.rect.contains(x, y) {
                 return None;
@@ -2720,6 +2828,10 @@ impl App {
                     super::RibbonRole::Toggle(_) => Hit::Toggle(n.key),
                     super::RibbonRole::Menu => Hit::RibbonMenu(n.key),
                 });
+            }
+            if let Kind::Picker { style: 2, .. } = n.kind {
+                // (Its list's options are found first, above.)
+                return n.layout.rect.contains(x, y).then_some(Hit::MenuPicker(n.key));
             }
             if let Kind::Picker { .. } = n.kind {
                 if let Some(i) = n.layout.segments.iter().position(|s| s.contains(x, y)) {
@@ -2782,6 +2894,19 @@ impl App {
                     Some(Hit::Stepper(n.key, dir))
                 }
                 Kind::Swatch(_) => Some(Hit::Swatch(n.key)),
+                Kind::Video { controls, .. } => {
+                    let (bar, button, track) = render::video_parts(n);
+                    let part = if !controls || !bar.contains(x, y) {
+                        2
+                    } else if button.inset(-4.0).contains(x, y) {
+                        0
+                    } else if (Rect { y: track.y - 10.0, h: track.h + 20.0, ..track }).contains(x, y) {
+                        1
+                    } else {
+                        2
+                    };
+                    Some(Hit::Video(n.key, part))
+                }
                 Kind::TableRow(ref row) => {
                     let c = n.layout.content;
                     let arrow = c.x + super::table::CELL_PAD + row.depth as f64 * super::table::INDENT;
@@ -2795,6 +2920,12 @@ impl App {
                 _ if n.mods.on_drag.is_some() => Some(Hit::Drag(n.key)),
                 _ if n.mods.on_tap.is_some() => Some(Hit::Tap(n.key)),
                 _ => None,
+            }
+        }
+        // An open menu picker's list is over everything else.
+        if let Some(n) = super::controls::OPEN_MENU.get().and_then(|k| self.node(k)) {
+            if let Some(i) = n.layout.segments.iter().position(|s| s.contains(x, y)) {
+                return Some(Hit::Segment(n.key, i));
             }
         }
         // An open color picker's palette is over everything else.
@@ -3085,7 +3216,7 @@ impl App {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y, target));
-            let has = if target { n.mods.drop_target.is_some() } else { n.mods.draggable.is_some() };
+            let has = if target { n.mods.drop_target.is_some() } else { n.mods.draggable.is_some() || n.mods.drag_file.is_some() };
             inner.or_else(|| (has && n.layout.rect.contains(x, y)).then_some(n.key))
         }
         if self.palette().is_some_and(|p| p.layout.rect.contains(x, y)) {
@@ -3372,6 +3503,132 @@ impl App {
             }
         }
         self.dirty = true;
+    }
+
+    // ===== web views =====
+
+    /// The web views showing in this window (by key): what they show, and where.
+    fn web_views(&self) -> HashMap<u64, super::webview::Wanted> {
+        fn visit(n: &Node, clip: Rect, out: &mut HashMap<u64, super::webview::Wanted>) {
+            if n.mods.hidden {
+                return;
+            }
+            if let Kind::WebView { url, html } = &n.kind {
+                let r = n.layout.rect.inset_by(n.mods.padding);
+                let visible = r.w > 0.0 && r.h > 0.0 && r.x < clip.x + clip.w && r.y < clip.y + clip.h && r.x + r.w > clip.x && r.y + r.h > clip.y;
+                out.insert(n.key, super::webview::Wanted { url: url.clone(), html: html.clone(), rect: r, visible });
+            }
+            for c in n.visible_children() {
+                visit(c, clip, out);
+            }
+        }
+        let mut out = HashMap::new();
+        if let Some(t) = &self.tree {
+            visit(t, Rect { x: 0.0, y: 0.0, w: self.width, h: self.height }, &mut out);
+        }
+        out
+    }
+
+    // ===== video =====
+
+    /// The video views of this window: each one's key, path, bindings, and
+    /// whether it loops and how loud it is.
+    fn videos(&self) -> Vec<(u64, String, Option<Callback>, Option<Callback>, bool, f64)> {
+        fn visit(n: &Node, out: &mut Vec<(u64, String, Option<Callback>, Option<Callback>, bool, f64)>) {
+            if let Kind::Video { path, playing, position, looping, volume, .. } = &n.kind {
+                out.push((n.key, path.clone(), playing.clone(), position.clone(), *looping, *volume));
+            }
+            n.children.iter().for_each(|c| visit(c, out));
+        }
+        let mut out = Vec::new();
+        if let Some(t) = &self.tree {
+            visit(t, &mut out);
+        }
+        out
+    }
+
+    /// After a build: each video view has its player (of its file), which
+    /// plays, pauses and goes where its bindings say.
+    fn sync_videos(&mut self) {
+        for (key, path, playing, position, looping, volume) in self.videos() {
+            super::media::VIDEOS.with(|v| {
+                let mut v = v.borrow_mut();
+                if v.get(&key).is_none_or(|(p, _)| *p != path) {
+                    match super::media::Player::open(&path, true) {
+                        Some(p) => {
+                            v.insert(key, (path.clone(), p));
+                        }
+                        None => {
+                            v.remove(&key);
+                            return;
+                        }
+                    }
+                }
+                let Some((_, p)) = v.get_mut(&key) else { return };
+                p.looping = looping;
+                p.set_volume(volume);
+                if let Some(cb) = &position {
+                    let want = unsafe { *(cb.locate() as *const f64) };
+                    if (want - p.told).abs() > 0.01 {
+                        p.seek(want);
+                        p.told = want;
+                    }
+                }
+                if let Some(cb) = &playing {
+                    let want = unsafe { *cb.locate() } & 1 != 0;
+                    if want != p.playing() {
+                        if want {
+                            p.play();
+                        } else {
+                            p.pause();
+                        }
+                    }
+                }
+            });
+        }
+        super::media::keep_only(&self.keys);
+    }
+
+    /// As time goes by: each video's newest picture, and its bindings told
+    /// where it is (and that it stopped, at its end). Whether any plays, and
+    /// whether the app is to be built again (its time or bindings changed).
+    fn tick_videos(&mut self) -> (bool, bool) {
+        let (mut playing_any, mut changed) = (false, false);
+        let mut fresh = false;
+        for (key, _, playing, position, _, _) in self.videos() {
+            super::media::VIDEOS.with(|v| {
+                let mut v = v.borrow_mut();
+                let Some((_, p)) = v.get_mut(&key) else { return };
+                let now = p.tick();
+                playing_any |= now;
+                fresh |= p.take_picture();
+                // It came to its end (and doesn't loop): `playing` says so.
+                if let (Some(cb), true, false) = (&playing, p.was_playing, now) {
+                    if unsafe { *cb.locate() } & 1 != 0 {
+                        unsafe { *cb.locate() = 0 };
+                        changed = true;
+                    }
+                }
+                p.was_playing = now;
+                let at = p.position();
+                if let Some(cb) = &position {
+                    if (at - p.told).abs() >= 0.25 || (!now && (at - p.told).abs() > 0.01) {
+                        unsafe { *(cb.locate() as *mut f64) = at };
+                        p.told = at;
+                        changed = true;
+                    }
+                }
+                // (Its time shows the seconds: laid out again when they change.)
+                if at.floor() as i64 != p.shown {
+                    p.shown = at.floor() as i64;
+                    changed = true;
+                }
+            });
+        }
+        if changed {
+            self.dirty = true;
+        }
+        (playing_any || fresh, changed)
     }
 
     // ===== rich text editors =====
@@ -3688,10 +3945,16 @@ impl App {
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
         }
+        // An open menu picker's list closes at any click (on it, once its option is chosen).
+        let menu_open = super::controls::OPEN_MENU.get();
+        if menu_open.is_some() && !matches!(hit, Some(Hit::Segment(k, _) | Hit::MenuPicker(k)) if Some(k) == menu_open) {
+            super::controls::OPEN_MENU.set(None);
+            self.dirty = true;
+        }
         let on_palette = self.close_palette_unless(&hit);
         // The keyboard goes to the control clicked.
         self.ui.focused = match &hit {
-            Some(Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Disclosure(k)) => Some(*k),
+            Some(Hit::Slider(k) | Hit::Stepper(k, _) | Hit::ColorPicker(k) | Hit::Disclosure(k) | Hit::MenuPicker(k)) => Some(*k),
             Some(Hit::TableHeader(k, _) | Hit::TableResize(k, _) | Hit::TableRow(k, _) | Hit::TreeArrow(k, _)) => Some(*k),
             _ if on_palette => self.ui.focused,
             _ => None,
@@ -3831,7 +4094,45 @@ impl App {
                     close.call_with(bytes.as_mut_ptr());
                 }
             }
-            (Hit::Segment(_, i), Kind::Picker { selection, .. }) => {
+            // A video plays or pauses, or goes where its track is clicked.
+            (Hit::Video(key, part), Kind::Video { playing, position, .. }) => {
+                let (key, part) = (*key, *part);
+                let (playing, position) = (playing.clone(), position.clone());
+                let track = render::video_parts(node).2;
+                super::media::VIDEOS.with(|v| {
+                    let mut v = v.borrow_mut();
+                    let Some((_, p)) = v.get_mut(&key) else { return };
+                    if part == 1 {
+                        let to = ((x - track.x) / track.w.max(1.0)).clamp(0.0, 1.0) * p.duration();
+                        p.seek(to);
+                        p.told = to;
+                        if let Some(cb) = &position {
+                            unsafe { *(cb.locate() as *mut f64) = to };
+                        }
+                    } else {
+                        let now = !p.playing();
+                        if now {
+                            p.play();
+                        } else {
+                            p.pause();
+                        }
+                        if let Some(cb) = &playing {
+                            unsafe { *cb.locate() = now as u8 };
+                        }
+                    }
+                });
+                self.dirty = true;
+            }
+            (Hit::MenuPicker(key), Kind::Picker { .. }) => {
+                let key = *key;
+                let open = super::controls::OPEN_MENU.get() == Some(key);
+                super::controls::OPEN_MENU.set((!open).then_some(key));
+                self.ui.focused = Some(key);
+            }
+            (Hit::Segment(_, i), Kind::Picker { selection, style, .. }) => {
+                if *style == 2 {
+                    super::controls::OPEN_MENU.set(None);
+                }
                 if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
                     unsafe { tag.store_to(selection.locate()) };
                 }
@@ -4004,6 +4305,7 @@ impl App {
                     | (Kind::ColorPicker { .. } | Kind::Button { .. } | Kind::Toggle { .. }, "enter" | "space")
                     | (Kind::Disclosure { .. }, "enter" | "space" | "left" | "right")
                     | (Kind::Picker { .. } | Kind::TabView { .. }, "left" | "right" | "up" | "down")
+                    | (Kind::Picker { style: 2, .. }, "enter" | "space" | "escape")
             );
         if took {
             self.ui.focus_ring = true;
@@ -4026,6 +4328,13 @@ impl App {
             (Kind::Toggle { is_on, .. }, "enter" | "space") => {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+                self.dirty = true;
+                true
+            }
+            // Enter or Space opens a menu picker's list (or closes it); Escape closes it.
+            (Kind::Picker { style: 2, .. }, "enter" | "space" | "escape") => {
+                let open = super::controls::OPEN_MENU.get() == Some(key);
+                super::controls::OPEN_MENU.set((!open && name != "escape").then_some(key));
                 self.dirty = true;
                 true
             }
@@ -4780,7 +5089,20 @@ impl App {
                     }
                     out
                 }
+                Kind::WebView { url, html } => {
+                    if url.is_empty() { format!("WebView html {:?}", html.chars().take(40).collect::<String>()) } else { format!("WebView {url:?}") }
+                }
+                Kind::Video { path, .. } => {
+                    let state = super::media::VIDEOS.with(|v| {
+                        v.borrow().get(&n.key).map(|(_, p)| format!("{} {:.1}/{:.1}", if p.playing() { "playing" } else { "paused" }, p.position(), p.duration()))
+                    });
+                    format!("VideoPlayer {path:?} {}", state.unwrap_or_else(|| "can't be played".into()))
+                }
                 Kind::Picker { style: 1, .. } => "Picker radio".to_string(),
+                Kind::Picker { style: 2, .. } => {
+                    let open = if super::controls::OPEN_MENU.get() == Some(n.key) { " open" } else { "" };
+                    format!("Picker menu{open}")
+                }
                 Kind::Picker { .. } => "Picker".to_string(),
                 Kind::Grid { .. } => {
                     let columns = n.layout.grid.as_ref().map_or(0, |g| g.widths.len());
@@ -4945,6 +5267,10 @@ impl App {
         let mut out = String::new();
         if let Some(t) = &self.tree {
             visit(t, 0, &mut out, positions, &self.ui);
+            // (The main window, hidden while the app goes on in its tray icon.)
+            if self.main_hidden && self.current == 0 {
+                out = out.replacen("Root", "Root (hidden)", 1);
+            }
         }
         out
     }
@@ -4970,6 +5296,8 @@ impl App {
                 Kind::TextField { .. } => "TextField",
                 Kind::Toggle { .. } => "Toggle",
                 Kind::RichEditor { .. } => "RichTextEditor",
+                Kind::Video { .. } => "VideoPlayer",
+                Kind::WebView { .. } => "WebView",
                 Kind::Picker { .. } => "Picker",
                 Kind::VStack(..) => "VStack",
                 Kind::HStack(..) => "HStack",
@@ -5075,6 +5403,9 @@ pub unsafe extern "C" fn tsl_ui_run(
         others: Vec::new(),
         bar: Vec::new(),
         has_menu_bar: false,
+        tray: None,
+        show_main: None,
+        main_hidden: false,
         native_bar: cfg!(target_os = "macos"),
         open_files: Vec::new(),
         quit: false,
@@ -5329,6 +5660,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     _ => (None, None),
                 };
                 let key = from.and_then(|(x, y)| app.drag_view_at(x, y, false));
+                // (A file dragged out of the app: a headless run only says so.)
+                if let Some(path) = key.and_then(|k| app.node(k)).and_then(|n| n.mods.drag_file.clone()) {
+                    println!("(drag file {path:?} out)");
+                    continue;
+                }
                 let (Some(key), Some(from), Some(to)) = (key, from, to) else {
                     eprintln!("script: nothing to drag for `{cmd}` (it needs a view with `.draggable`, and a place to drag it to)");
                     return 2;
@@ -5600,6 +5936,20 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 menu::describe(&app.bar, 0, &mut out);
                 print!("{out}");
             }
+            // `tray`: what the tray icon shows; `tray "Tick"`: chooses an item of its menu.
+            "tray" => {
+                let Some(tray) = app.tray.clone() else {
+                    eprintln!("script: the app has no `.trayIcon`");
+                    return 2;
+                };
+                let labels = quoted(rest);
+                if labels.is_empty() {
+                    print!("Tray {}", tray.describe());
+                } else if let Err(e) = app.choose_item(&tray.items, &labels) {
+                    eprintln!("script: {e}");
+                    return 2;
+                }
+            }
             "menubar" => {
                 app.native_bar = rest == "native";
                 app.menu = None;
@@ -5800,6 +6150,8 @@ struct WindowApp {
     /// The other open windows (`Window`s, or the main one), parked while
     /// another one's events are handled (see `focus`).
     parked: Vec<Win>,
+    /// The tray icon the system shows, as `TrayInfo::describe` says it.
+    tray_shown: Option<String>,
     /// The menu bar the system shows (macOS), as `menu::describe` lists it,
     /// and the app's build it was last compared with.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -5927,6 +6279,7 @@ fn run_window(app: App) -> i32 {
         phone: Phone::default(),
         parked: Vec::new(),
         native_menu: (None, u64::MAX),
+        tray_shown: None,
         key: 0,
         screen: None,
         window: None,
@@ -5962,6 +6315,7 @@ fn run_window(app: App) -> i32 {
             1
         }
     };
+    super::tray::shutdown();
     w.app.tree = None;
     for s in &mut w.app.others {
         s.tree = None;
@@ -6146,6 +6500,29 @@ impl WindowApp {
         }
         self.sync_windows(event_loop);
         self.sync_native_menu();
+        self.sync_tray();
+    }
+
+    /// Gives the system the app's tray icon when it changed, hides or shows
+    /// the main window, and shows the notifications asked for.
+    fn sync_tray(&mut self) {
+        let main = if self.key == 0 { self.window.clone() } else { self.parked.iter().find(|w| w.key == 0).and_then(|w| w.window.clone()) };
+        if let Some(show) = self.app.show_main.take() {
+            if let Some(w) = &main {
+                w.set_visible(show);
+                if show {
+                    w.focus_window();
+                }
+            }
+        }
+        let wanted = self.app.tray.as_ref().map(super::tray::TrayInfo::describe);
+        if wanted != self.tray_shown {
+            super::tray::set(main.as_deref(), self.app.tray.as_ref());
+            self.tray_shown = wanted;
+        }
+        for (title, message) in NOTIFYING.with(|n| std::mem::take(&mut *n.borrow_mut())) {
+            super::tray::notify(main.as_deref(), &self.app.title, &title, &message);
+        }
     }
 
     /// Gives the system the app's menu bar (macOS) when it changed.
@@ -6187,6 +6564,16 @@ impl WindowApp {
                     self.app.dirty = true;
                 }
                 Shell::Quit => self.app.request_quit(),
+                Shell::Tray(path) => {
+                    let item = self.app.tray.as_ref().and_then(|t| menu::at(&t.items, &path).cloned());
+                    if let Some(e @ Entry::Item { enabled: true, .. }) = item {
+                        self.app.run_entry(&e);
+                    }
+                }
+                Shell::TrayClick => {
+                    self.app.show_main = Some(true);
+                    self.app.main_hidden = false;
+                }
             }
         }
         any
@@ -6399,11 +6786,17 @@ impl WindowApp {
                 window.set_title(&title);
                 self.app.title = title;
             }
+            if let Some(on) = FULL_SCREEN.with(Cell::take) {
+                window.set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+            }
+            IS_FULL_SCREEN.with(|f| f.set(window.fullscreen().is_some()));
         }
         let scale = window.scale_factor();
         let size = window.inner_size();
         self.app.width = (size.width as f64 - left - right).max(1.0) / scale;
         self.app.height = (size.height as f64 - top - bottom).max(1.0) / scale;
+        // The system's web views, where theirs are laid out.
+        super::webview::sync(window, scale, &self.app.web_views());
         let list = self.app.scene(scale);
         // The caret, brought back above the keyboard if it's under it now
         // (where what it's in can scroll).
@@ -6742,7 +7135,15 @@ impl ApplicationHandler for WindowApp {
                 if let (Some((key, (sx, sy))), None) = (self.drag_start, &self.app.ui.dragging) {
                     if (self.cursor.0 - sx).hypot(self.cursor.1 - sy) > 4.0 {
                         self.drag_start = None;
-                        self.app.begin_drag(key, sx, sy);
+                        // A file goes out of the app, as the system drags files.
+                        let file = self.app.node(key).and_then(|n| n.mods.drag_file.clone());
+                        match (file, self.window.clone()) {
+                            (Some(path), Some(window)) => {
+                                self.app.ui.pressed = None;
+                                super::desktop::drag_file(&window, &path);
+                            }
+                            _ => self.app.begin_drag(key, sx, sy),
+                        }
                     }
                 }
                 if self.app.ui.dragging.is_some() {
@@ -7039,13 +7440,25 @@ impl ApplicationHandler for WindowApp {
         if fire_timers() {
             self.app.dirty = true;
         }
+        // Sounds and videos playing: the next picture, soon.
+        let mut media = super::media::tick_sounds();
+        let mut frames = false;
+        self.app.each_surface(|a| {
+            let (playing, _) = a.tick_videos();
+            frames |= playing;
+        });
+        if frames {
+            self.request_all();
+        }
+        media |= frames;
         if self.app.tip_due() | self.app.notice_sync() {
             self.request_redraw();
         }
         self.after_app(event_loop);
         // Wake for the next timer, for a tooltip that's waiting to show, or
         // for a notice that's to go.
-        let next = [next_timer(), self.app.tip_time(), notice_time()].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
+        let soon = media.then(|| now() + 1.0 / 60.0);
+        let next = [next_timer(), self.app.tip_time(), notice_time(), soon].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
         let next = next.map(|t| Instant::now() + Duration::from_secs_f64((t - now()).max(0.0)));
         let held = self.long_press(event_loop);
         match [next, held].into_iter().flatten().min() {

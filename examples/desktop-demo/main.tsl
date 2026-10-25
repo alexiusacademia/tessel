@@ -1,0 +1,237 @@
+// A tour of Tessel's desktop features: turning and scaling, the menu
+// picker, full screen, notifications, the tray icon, dragging a file out,
+// sound, video, web pages, and the forms, tables and rich text before them.
+//
+// Run it with `tessel run examples/desktop-demo`. The files it plays are
+// next to it (found with `appFolder()`).
+
+enum Shape { square, wide, tall }
+
+struct Row {
+    name: String
+    count: Int
+}
+
+app DesktopDemo(title: "Tessel desktop demo", width: 900, height: 640) {
+    state tab = 0
+    state ticks = 0
+
+    TabView(selection: tab) {
+        TransformsTab().tabItem("Turn and scale").tag(0)
+        MediaTab().tabItem("Sound and video").tag(1)
+        WebTab().tabItem("Web").tag(2)
+        DesktopTab(ticks: ticks).tabItem("Desktop").tag(3)
+        FormsTab().tabItem("Forms and text").tag(4)
+    }
+    // The tray icon: closing the window leaves the app here.
+    .trayIcon(.star, title: "{ticks}", keepRunning: true) {
+        MenuItem("Add a tick") { ticks += 1 }
+        MenuItem("Notify me") { showNotification("From the tray", message: "Ticks so far: {ticks}") }
+        MenuItem("Show window") { showWindow() }
+        MenuDivider()
+        MenuItem("Quit") { quit() }
+    }
+}
+
+// ---- Turning and scaling, and the menu picker ----
+
+view TransformsTab() {
+    state angle = 30.0
+    state size = 1.0
+    state shape = Shape.square
+    state taps = 0
+
+    VStack(spacing: 16, alignment: .leading) {
+        Text("Drag the sliders: the button turns and grows, and the views beside it make room.")
+            .color(.secondary)
+        HStack(spacing: 16) {
+            Text("Left")
+            Button("Click me ({taps})") { taps += 1 }
+                .rotation(angle)
+                .scale(size)
+            Text("Right")
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .background(.lightGray, radius: 8)
+        Grid(spacing: 10) {
+            GridRow {
+                Text("Angle").gridColumnAlignment(.trailing)
+                Slider(value: angle, from: -180, to: 180)
+                Text("{Int(angle)}°").frame(width: 50)
+            }
+            GridRow {
+                Text("Size")
+                Slider(value: size, from: 0.5, to: 2.5)
+                Text("{size.formatted(decimals: 1)}×").frame(width: 50)
+            }
+            GridRow {
+                Text("Stretch")
+                Picker(selection: shape, style: .menu) {
+                    Text("Square").tag(Shape.square)
+                    Text("Wide").tag(Shape.wide)
+                    Text("Tall").tag(Shape.tall)
+                }
+                Spacer()
+            }
+        }
+        HStack(spacing: 30) {
+            Icon(.arrowUp).font(size: 36).rotation(angle)
+            Text("Stretched")
+                .padding(8)
+                .background(.yellow, radius: 4)
+                .scale(x: if shape == Shape.wide { 2 } else { 1 }, y: if shape == Shape.tall { 2 } else { 1 })
+        }
+        .frame(maxWidth: .infinity, minHeight: 100)
+    }
+    .padding(20)
+}
+
+// ---- Sound and video ----
+
+view MediaTab() {
+    state playing = false
+    state at = 0.0
+    state music: Sound? = nil
+    state info = ""
+
+    VStack(spacing: 12, alignment: .leading) {
+        VideoPlayer(joinPath(appFolder(), "clip.mp4"), playing: playing, position: at)
+            .frame(width: 560, height: 315)
+        HStack {
+            Button(if playing { "Pause" } else { "Play" }) { playing = !playing }
+            Button("Back to the start") { at = 0.0 }
+            Button("Jump to 8 s") { at = 8.0 }
+            Text("{at.formatted(decimals: 1)} s").frame(width: 60)
+        }
+        Divider()
+        HStack {
+            Button("Ding") { playSound(joinPath(appFolder(), "ding.wav")) }
+            Button("Music (loops)") { music = playSound(joinPath(appFolder(), "music.m4a"), volume: 0.6, loop: true) }
+            Button("Pause music") { music?.pause() }
+            Button("Resume") { music?.resume() }
+            Button("Stop") {
+                music?.stop()
+                music = nil
+            }
+            Button("Where is it?") {
+                if let m = music {
+                    info = "{m.isPlaying()}, {m.position().formatted(decimals: 1)} of {m.duration().formatted(decimals: 1)} s"
+                }
+            }
+        }
+        Text(info).color(.secondary)
+    }
+    .padding(20)
+}
+
+// ---- Web pages ----
+
+view WebTab() {
+    state own = false
+    state typed = "https://tessel-lang.syncster.dev"
+    state address = "https://tessel-lang.syncster.dev"
+
+    VStack(spacing: 8) {
+        HStack {
+            Picker(selection: own) {
+                Text("Website").tag(false)
+                Text("Own HTML").tag(true)
+            }
+            TextField("Address", text: typed).onSubmit { address = typed }
+            Button("Go") { address = typed }
+        }
+        if own {
+            WebView(html: "<body style='font-family: system-ui; padding: 20px'><h1>Hello from Tessel</h1><p>This page is HTML the app made. <a href='https://example.com'>A link</a> works too.</p></body>")
+        } else {
+            WebView(url: address)
+        }
+    }
+    .padding(12)
+}
+
+// ---- The desktop: notifications, full screen, dragging out, the tray ----
+
+view DesktopTab(ticks: Int) {
+    state made = false
+    let report = joinPath(tempFolder(), "tessel-demo-report.txt")
+
+    VStack(spacing: 14, alignment: .leading) {
+        Text("Tray icon: look for the star in the menu bar (the taskbar's tray on Windows). It shows {ticks} ticks.")
+        Text("Close this window: the app goes on in the tray. Its menu's \"Show window\" brings it back.")
+            .color(.secondary)
+        Divider()
+        HStack {
+            Button("Send a notification") {
+                showNotification("Hello from Tessel", message: "Sent at {formatDate(now(), format: "HH:mm:ss")}")
+            }
+            Button("Notify in 5 seconds") {
+                after(seconds: 5) {
+                    showNotification("Five seconds later", message: "Switch to another app to see this one.")
+                }
+            }
+        }
+        Button(if isFullScreen() { "Leave full screen" } else { "Full screen" }) {
+            setFullScreen(!isFullScreen())
+        }
+        Divider()
+        HStack {
+            Button("Make the report") {
+                writeText(path: report, text: "Tessel demo report\nTicks: {ticks}\nMade {formatDate(now(), format: "d MMM yyyy HH:mm")}\n")
+                made = true
+            }
+            if made {
+                HStack {
+                    Icon(.fileText)
+                    Text("tessel-demo-report.txt")
+                }
+                .padding(8)
+                .background(.lightGray, radius: 6)
+                .dragFile(report)
+                Text("← drag it to the desktop or a folder").color(.secondary)
+            }
+        }
+    }
+    .padding(20)
+}
+
+// ---- Forms, tables, search and rich text ----
+
+view FormsTab() {
+    state rows = [Row(name: "Bolts", count: 120), Row(name: "Nuts", count: 80), Row(name: "Washers", count: 300)]
+    state selected: [Int] = []
+    state query = ""
+    state split = 340.0
+    state note = RichText("Select some text and press Cmd+B, or use the buttons. Copy it into Pages or Mail: the styles go along.")
+
+    let shown = rows.enumerated().filter { p in query == "" || p.1.name.lowercase().contains(query.lowercase()) }.map { p in p.0 }
+
+    HSplit(size: split) {
+        VStack(alignment: .leading) {
+            SearchField(text: query)
+            Table(rows: shown.count, selection: selected) {
+                TableColumn("Item", onEdit: { r, text in rows[shown[r]].name = text }) { r in
+                    Text(rows[shown[r]].name)
+                }
+                TableColumn("Count", width: 70, alignment: .trailing, onEdit: { r, text in
+                    if let n = Int(text) {
+                        rows[shown[r]].count = n
+                    }
+                }) { r in
+                    Text("{rows[shown[r]].count}")
+                }
+            }
+            Text("Double-click a cell to edit it. This text can be selected and copied.")
+                .selectable()
+                .lineLimit(2)
+                .color(.secondary)
+            Link("Tessel's docs", url: "https://tessel-lang.syncster.dev/ui/desktop/")
+        }
+        .padding(12)
+        .frame(minWidth: 240)
+        VStack(alignment: .leading) {
+            RichTextEditor(text: note)
+            Text(note.markdown).lineLimit(1).color(.secondary)
+        }
+        .padding(12)
+    }
+}

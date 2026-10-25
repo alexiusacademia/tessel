@@ -68,9 +68,16 @@ windows = { version = "0.62", optional = true, features = [
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dxgi_Common",
+    # The tray icon's picture (see ui/tray.rs).
+    "Win32_Graphics_Gdi",
     "Win32_Graphics_Imaging",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    # Sound and video (see ui/media.rs).
+    "Win32_Media_MediaFoundation",
+    # Dragging files out of the app (see ui/desktop.rs).
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
     "Win32_System_Variant",
     # The installer of Windows apps (see setup.rs).
     "Win32_Security",
@@ -117,6 +124,18 @@ crate-type = ["staticlib", "rlib"]
 # test harness). Only with TESSEL_NATIVE_TEST=1: it talks to the window server.
 [[test]]
 name = "native_menu"
+harness = false
+
+# Plays a video with the system's player (see ui::check_video), on the main
+# thread. Only with TESSEL_NATIVE_TEST=1.
+[[test]]
+name = "media"
+harness = false
+
+# Shows a page in the system's web view (see ui::check_web_view). Only with
+# TESSEL_NATIVE_TEST=1.
+[[test]]
+name = "web"
 harness = false
 
 [lints]

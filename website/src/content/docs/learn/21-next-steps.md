@@ -1,5 +1,5 @@
 ---
-title: 21. Where to go next
+title: 23. Where to go next
 description: A look back at what you've learned, ideas for projects to build next, how to use the reference, and advice for growing as a programmer.
 ---
 
@@ -36,7 +36,7 @@ You designed your own types: **structs** that group values together, and
 and `sorted`. **Interfaces** let different types share abilities, and
 **generics** let one function or type work with any type.
 
-### Building real programs (lessons 16–20)
+### Building real programs (lessons 16–22)
 
 You made programs remember things with **files** and **JSON**, and split
 them into several files. You looked at **algorithms**: searching, sorting,
@@ -44,7 +44,11 @@ recursion and memos, and how to tell a fast approach from a slow one by
 timing it. You built two complete projects, a **to-do list in the terminal**
 and a **flashcards app**, and in between learned how **apps** work: views,
 `state`, bindings, and describing what the window shows rather than
-drawing it step by step.
+drawing it step by step. Then you gave apps the pieces real ones have:
+**forms** that line up in a grid, pickers, search, **tables edited in
+place**, **rich text**, turned and scaled views, **sound and video**, **web
+pages**, **notifications**, a **tray icon**, and files dragged out of the
+app.
 
 Most importantly, you practiced the real skill underneath all of this:
 breaking a problem into small steps, and turning each step into code.
