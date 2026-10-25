@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.16.1
+
+*October 25, 2026*
+
+Fixed:
+
+- On macOS, a window no longer blinks while it's resized: AppKit redrew
+  it, empty, between Tessel's frames. A larger window shows its
+  background where the next frame isn't drawn yet, rather than the last
+  frame stretched.
+
 ## 0.16.0
 
 *October 25, 2026*
