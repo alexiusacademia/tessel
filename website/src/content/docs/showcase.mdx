@@ -1,6 +1,6 @@
 ---
 title: Built with Tessel
-description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a math notebook and engineering apps among them.
+description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a media player, a math notebook and engineering apps among them.
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
@@ -13,6 +13,7 @@ import forebay from '../../assets/showcase/forebay.jpg';
 import girder from '../../assets/showcase/girder.jpg';
 import keystone from '../../assets/showcase/keystone.jpg';
 import mathpad from '../../assets/showcase/mathpad.jpg';
+import reel from '../../assets/showcase/reel.jpg';
 import ide from '../../assets/screens/ide.png';
 
 Tessel is made for real desktop apps, and the best proof is apps people use.
@@ -77,6 +78,30 @@ writers for Microsoft Project XML, Primavera P6 XER and Excel are Tessel code;
 it schedules 2,000 tasks in about 10 ms.
 
 <LinkButton href="https://keystone.syncster.dev/" icon="external">keystone.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={reel} loading="eager" alt="Reel playing Big Buck Bunny with captions, a strip of scene thumbnails and a preview above the seek bar" />
+
+## Reel
+
+A media player that plays the files VLC plays, with no FFmpeg inside: every
+container and every decoder is written in Tessel. H.264, HEVC, AV1, VP9 and
+VP8, MPEG-2, VC-1 and ProRes; AAC, Opus, AC-3, DTS-HD Master Audio and Dolby
+TrueHD; MKV, MP4, transport streams, DVD and Blu-ray folders. On top of that, a
+library of films, shows and music, find in dialogue, seek previews, an
+equalizer, picture settings, network streams and lossless clip export.
+
+About 170,000 lines of Tessel, checked picture by picture against the codecs'
+conformance streams: all 146 HEVC and all 242 AV1 test streams decode
+bit-exact. The heavy decoders run as parse and reconstruct stages in
+background jobs, so a 1080p HEVC picture takes about 20 ms. Reel is open
+source.
+
+<LinkButton href="https://reel.syncster.dev/" icon="external">reel.syncster.dev</LinkButton>
+<LinkButton href="https://github.com/alexiusacademia/reel" variant="secondary" icon="github">Source</LinkButton>
 
 </section>
 
