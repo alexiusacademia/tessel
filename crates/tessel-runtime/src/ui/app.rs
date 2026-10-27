@@ -317,11 +317,29 @@ pub(crate) fn wake() {
     }
 }
 
+/// Whether a wake for background results is on its way and their
+/// delivery hasn't started: one wake at a time is enough.
+static WAKE_SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn post(event: Event) {
     EVENTS.lock().unwrap().push(event);
+    // A wake for each result would starve timers and drawing: winit hands
+    // the app wakes for as long as more arrive, and a result's block can
+    // start work that finishes before the next wake is looked for (#56).
+    // So a result that comes while one wake waits is left to `about_to_wait`.
+    if WAKE_SENT.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
         let _ = proxy.send_event(());
     }
+}
+
+/// Runs the blocks of background results in `about_to_wait`: from here,
+/// results that come wake the app again.
+fn deliver_background_and_rearm() -> bool {
+    WAKE_SENT.store(false, std::sync::atomic::Ordering::SeqCst);
+    deliver_background()
 }
 
 /// Loads `http(s)://…` or `file://…` as text; `None` if it fails.
@@ -7512,7 +7530,7 @@ impl ApplicationHandler for WindowApp {
             let _ = std::io::Write::flush(&mut std::io::stdout());
             unsafe { libc::_exit(0) };
         }
-        if self.take_shell_events() | deliver_background() {
+        if self.take_shell_events() | deliver_background_and_rearm() {
             self.app.dirty = true;
         }
         if fire_timers() {

@@ -1,0 +1,24 @@
+// Optional chains that end in a list's map with a closure (#55).
+struct B {
+    xs: [Int] = []
+    names: [String] = []
+}
+
+fn main() {
+    let b: B? = B(xs: [1, 2], names: ["a", "bb"])
+    let ys: [Bool] = b?.xs.map { x in x > 1 } ?? []
+    print("{ys}")
+    let none: B? = nil
+    let zs: [Bool] = none?.xs.map { x in x > 1 } ?? []
+    print("{zs}")
+    let ls: [Int] = b?.names.map { n in n.count } ?? []
+    print("{ls}")
+    let fs: [String] = b?.names.map({ n in n + "!" }) ?? []
+    print("{fs}")
+    let ev: [Int] = b?.xs.filter { x in x > 1 } ?? []
+    print("{ev}")
+    let s: String = b?.names.map { n in n.uppercase() }.joined(",") ?? "-"
+    print(s)
+    let c = b?.xs.map { x in x * 10 }
+    print("{c ?? []}")
+}

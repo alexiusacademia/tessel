@@ -4930,8 +4930,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         return None;
                     }
                     let info2 = info.clone();
-                    let r = self.optional_chain(ov, &ot, &t, |g, v| {
-                        g.builtin_on_value(&recv, &name, v, &info2, &arg, e.span).unwrap()
+                    let r = self.optional_chain(ov, &ot, &t, |g, v| match (&recv, name.as_str()) {
+                        // `x?.list.map { … }`: the closure is compiled here, not passed as a value.
+                        (Ty::List(elem), "map") => g.list_map(v, elem, args, trailing, e.span),
+                        _ => g.builtin_on_value(&recv, &name, v, &info2, &arg, e.span).unwrap(),
                     });
                     return Some(r);
                 }
@@ -5216,28 +5218,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(self.b.build_insert_value(s, v, 1, "").unwrap().into_struct_value().into())
             }
             (Ty::List(elem), "map") => {
-                let f_expr = match (args, trailing) {
-                    ([], Some(tr)) => tr,
-                    ([a], _) => &a.value,
-                    _ => unreachable!(),
-                };
-                let ft = self.ty(f_expr);
-                let Ty::Fn(_, out_t) = &ft else { unreachable!() };
-                let out_t = (**out_t).clone();
-                let f = self.expr(f_expr).unwrap();
                 let list = self.expr(object).unwrap();
-                let elem = (**elem).clone();
-                let info_ptr = self.type_info(&out_t);
-                let len = self.call_rt("tsl_list_len", &[list]).unwrap();
-                let out = self.call_rt("tsl_list_new", &[info_ptr.into(), len]).unwrap();
-                let out_slot = self.spill(&Ty::List(Box::new(out_t.clone())), out);
-                self.each(list, &elem, span, |g, item| {
-                    let r = g.call_fn_value(f, &ft, &[item]).unwrap();
-                    g.push_item(out_slot, r, &out_t);
-                });
+                let r = self.list_map(list, elem, args, trailing, span);
                 self.release(list, recv);
-                self.release(f, &ft);
-                Some(self.b.build_load(self.ptr_ty(), out_slot, "").unwrap())
+                Some(r)
             }
             _ => {
                 let v = self.expr(object).unwrap();
@@ -5248,6 +5232,29 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 r
             }
         }
+    }
+
+    /// `list.map(f)`: a new list of `f(item)` for each item of a borrowed `list`.
+    fn list_map<'e>(&mut self, list: Val<'ctx>, elem: &Ty, args: &'e [Arg], trailing: Option<&'e Expr>, span: Span) -> Val<'ctx> {
+        let f_expr = match (args, trailing) {
+            ([], Some(tr)) => tr,
+            ([a], _) => &a.value,
+            _ => unreachable!(),
+        };
+        let ft = self.ty(f_expr);
+        let Ty::Fn(_, out_t) = &ft else { unreachable!() };
+        let out_t = (**out_t).clone();
+        let f = self.expr(f_expr).unwrap();
+        let info_ptr = self.type_info(&out_t);
+        let len = self.call_rt("tsl_list_len", &[list]).unwrap();
+        let out = self.call_rt("tsl_list_new", &[info_ptr.into(), len]).unwrap();
+        let out_slot = self.spill(&Ty::List(Box::new(out_t.clone())), out);
+        self.each(list, elem, span, |g, item| {
+            let r = g.call_fn_value(f, &ft, &[item]).unwrap();
+            g.push_item(out_slot, r, &out_t);
+        });
+        self.release(f, &ft);
+        self.b.build_load(self.ptr_ty(), out_slot, "").unwrap()
     }
 
     /// Calls `f(item)` (with an owned item) for each element of `list`.
