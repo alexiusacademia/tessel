@@ -11,6 +11,18 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.16.3
+
+*October 27, 2026*
+
+Fixed:
+
+- An optional chain that ends in a list's `map` with a closure
+  (`b?.xs.map { x in x > 1 } ?? []`) no longer crashes the compiler.
+- Timers (`every`, `after`) and drawing no longer stop while
+  `background` results arrive back to back, as when each result's block
+  starts the next job.
+
 ## 0.16.2
 
 *October 26, 2026*
