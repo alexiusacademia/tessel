@@ -125,6 +125,11 @@ Ribbon(selection: tab) {
 }
 ```
 
+A view whose body comes out empty (an `if` that's false) takes no room in
+the ribbon, so the groups after it line up with the others. A modifier on
+such a view, like `.disabled(true)`, applies to the tab, group or items it
+makes.
+
 ## When the window is narrow
 
 When the groups don't fit, the ribbon makes room in two steps, each starting

@@ -499,6 +499,164 @@ pub struct Mods {
 }
 
 impl Mods {
+    /// Puts modifiers given to a custom view (`self`) on a view of its body
+    /// (`inner`), when the body is taken out of the view (see
+    /// `lift_ribbon_parts`): a modifier on a view applies to its whole body.
+    /// What the body's view set itself stays, except that flags add up
+    /// (`disabled`, `hidden`), as do paddings, offsets, turns, scales,
+    /// opacities and shortcuts.
+    fn wrap(self, inner: &mut Mods) {
+        let Mods {
+            padding,
+            width,
+            height,
+            min_width,
+            min_height,
+            max_width,
+            max_height,
+            text_align,
+            frame_align,
+            font_size,
+            weight,
+            italic,
+            family,
+            color,
+            background,
+            border,
+            opacity,
+            hidden,
+            disabled,
+            on_tap,
+            on_drag,
+            tag,
+            shortcuts,
+            on_appear,
+            on_submit,
+            autofocus,
+            tab_title,
+            hover_background,
+            animation,
+            on_pointer,
+            on_key,
+            on_key_event,
+            key_releases,
+            cursor,
+            offset,
+            clipped,
+            on_drop,
+            draggable,
+            drag_file,
+            drop_target,
+            tooltip,
+            access_label,
+            on_resize,
+            context_menu,
+            menu_bar,
+            tray,
+            on_open_file,
+            on_close_request,
+            rotation,
+            scale,
+            grid_columns,
+            grid_align,
+            selectable,
+            line_limit,
+            source: _,
+        } = self;
+        fn or<T>(inner: &mut Option<T>, outer: Option<T>) {
+            if inner.is_none() {
+                *inner = outer;
+            }
+        }
+        let m = inner;
+        m.padding.top += padding.top;
+        m.padding.leading += padding.leading;
+        m.padding.bottom += padding.bottom;
+        m.padding.trailing += padding.trailing;
+        or(&mut m.width, width);
+        or(&mut m.height, height);
+        or(&mut m.min_width, min_width);
+        or(&mut m.min_height, min_height);
+        or(&mut m.max_width, max_width);
+        or(&mut m.max_height, max_height);
+        or(&mut m.text_align, text_align);
+        or(&mut m.frame_align, frame_align);
+        or(&mut m.font_size, font_size);
+        or(&mut m.weight, weight);
+        or(&mut m.italic, italic);
+        or(&mut m.family, family);
+        or(&mut m.color, color);
+        or(&mut m.background, background);
+        or(&mut m.border, border);
+        m.opacity = match (m.opacity, opacity) {
+            (Some(a), Some(b)) => Some(a * b),
+            (a, b) => a.or(b),
+        };
+        m.hidden |= hidden;
+        m.disabled |= disabled;
+        or(&mut m.on_tap, on_tap);
+        or(&mut m.on_drag, on_drag);
+        or(&mut m.tag, tag);
+        m.shortcuts.extend(shortcuts);
+        or(&mut m.on_appear, on_appear);
+        or(&mut m.on_submit, on_submit);
+        m.autofocus |= autofocus;
+        or(&mut m.tab_title, tab_title);
+        or(&mut m.hover_background, hover_background);
+        or(&mut m.animation, animation);
+        or(&mut m.on_pointer, on_pointer);
+        or(&mut m.on_key, on_key);
+        or(&mut m.on_key_event, on_key_event);
+        m.key_releases |= key_releases;
+        or(&mut m.cursor, cursor);
+        m.offset.0 += offset.0;
+        m.offset.1 += offset.1;
+        m.clipped |= clipped;
+        or(&mut m.on_drop, on_drop);
+        or(&mut m.draggable, draggable);
+        or(&mut m.drag_file, drag_file);
+        or(&mut m.drop_target, drop_target);
+        or(&mut m.tooltip, tooltip);
+        or(&mut m.access_label, access_label);
+        or(&mut m.on_resize, on_resize);
+        or(&mut m.context_menu, context_menu);
+        or(&mut m.menu_bar, menu_bar);
+        or(&mut m.tray, tray);
+        or(&mut m.on_open_file, on_open_file);
+        or(&mut m.on_close_request, on_close_request);
+        m.rotation += rotation;
+        m.scale = match (m.scale, scale) {
+            (Some(a), Some(b)) => Some((a.0 * b.0, a.1 * b.1)),
+            (a, b) => a.or(b),
+        };
+        or(&mut m.grid_columns, grid_columns);
+        or(&mut m.grid_align, grid_align);
+        or(&mut m.selectable, selectable);
+        or(&mut m.line_limit, line_limit);
+    }
+
+    /// The modifiers that each view of a body taken out of its custom view
+    /// gets, when there are several: those that the views in a view
+    /// inherit (the first view gets all of them).
+    fn inherited(&self) -> Mods {
+        Mods {
+            text_align: self.text_align,
+            font_size: self.font_size,
+            weight: self.weight,
+            italic: self.italic,
+            family: self.family,
+            color: self.color,
+            opacity: self.opacity,
+            hidden: self.hidden,
+            disabled: self.disabled,
+            animation: self.animation,
+            cursor: self.cursor,
+            selectable: self.selectable,
+            line_limit: self.line_limit,
+            ..Mods::default()
+        }
+    }
+
     /// What an empty custom view still does, with nothing to show: it then
     /// isn't dropped from a ribbon or a grid.
     fn acts_alone(&self) -> bool {
@@ -861,7 +1019,17 @@ fn lift_ribbon_parts(node: &mut Node) {
     fn lift(parent: &Kind, children: Vec<Node>, out: &mut Vec<Node>) {
         for c in children {
             if only_parts(parent, &c) {
-                lift(parent, c.children, out);
+                // The view's modifiers go on what's taken out of it.
+                let Node { children: mut parts, mods, .. } = c;
+                let shared = mods.inherited();
+                let mut mods = Some(mods);
+                for part in &mut parts {
+                    match mods.take() {
+                        Some(m) => m.wrap(&mut part.mods),
+                        None => shared.inherited().wrap(&mut part.mods),
+                    }
+                }
+                lift(parent, parts, out);
             } else {
                 out.push(c);
             }
