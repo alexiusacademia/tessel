@@ -159,31 +159,92 @@ fn repl_sessions() {
     }
 }
 
-/// Runs `tests/net/servers.tsl` against two servers on this computer: one
-/// that sends a file very slowly (for cancelling a download and a request),
-/// and a WebSocket server that echoes (for binary messages).
+/// Answers one request to the HTTP server of `network_with_servers`.
+fn serve_http(mut stream: std::net::TcpStream) {
+    use std::io::{Read, Write};
+    use std::time::Duration;
+    let mut request = [0u8; 2048];
+    let n = stream.read(&mut request).unwrap_or(0);
+    let request = String::from_utf8_lossy(&request[..n]).to_string();
+    let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let header = |name: &str| {
+        request
+            .lines()
+            .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.trim().to_string()))
+    };
+    // A piece of a `Transfer-Encoding: chunked` body.
+    let chunk = |stream: &mut std::net::TcpStream, text: &str| write!(stream, "{:x}\r\n{text}\r\n", text.len()).is_ok();
+    match path.as_str() {
+        // A file sent very slowly: 20 KB every 50 ms, over three minutes,
+        // unless the other side gives up.
+        "/slow" => {
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4000000\r\nContent-Type: application/octet-stream\r\n\r\n");
+            let piece = [7u8; 20_000];
+            for _ in 0..200 {
+                if stream.write_all(&piece).is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+        // A short body that comes in five pieces, a while apart.
+        "/pieces" => {
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n");
+            for i in 0..5 {
+                if !chunk(&mut stream, &format!("piece {i}\n")) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(30));
+            }
+            let _ = stream.write_all(b"0\r\n\r\n");
+        }
+        // A stream that doesn't end (for a few minutes), like internet radio.
+        "/radio" => {
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Test Radio\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+            );
+            for i in 0..10_000 {
+                if !chunk(&mut stream, &format!("sound {i}\n")) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        "/redirect" => {
+            let _ = stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /hello\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+        "/hello" => {
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello");
+        }
+        // Sends back the request's `X-Token` header, as a header and in the body.
+        "/token" => {
+            let body = format!("token {}", header("x-token").unwrap_or_default());
+            let token = header("x-token").unwrap_or_default();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nX-Token-Was: {token}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+        _ => {
+            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+    }
+}
+
+/// Runs `tests/net/servers.tsl` against two servers on this computer: an
+/// HTTP server (`serve_http`: a file sent very slowly, for cancelling a
+/// download and a request; streams; a redirect; a header sent back), and a
+/// WebSocket server that echoes (for binary messages). Then the app
+/// `tests/net/stream_app.tsl`, headless, with the HTTP server.
 #[test]
 fn network_with_servers() {
-    use std::io::{Read, Write};
     use std::net::TcpListener;
     let slow = TcpListener::bind("127.0.0.1:0").unwrap();
     let slow_port = slow.local_addr().unwrap().port();
     std::thread::spawn(move || {
         for stream in slow.incoming().flatten() {
-            std::thread::spawn(move || {
-                let mut stream = stream;
-                let mut request = [0u8; 2048];
-                let _ = stream.read(&mut request);
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4000000\r\nContent-Type: application/octet-stream\r\n\r\n");
-                // 20 KB every 50 ms: over three minutes, unless the other side gives up.
-                let piece = [7u8; 20_000];
-                for _ in 0..200 {
-                    if stream.write_all(&piece).is_err() {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            });
+            std::thread::spawn(move || serve_http(stream));
         }
     });
     let echo = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -217,14 +278,36 @@ fn network_with_servers() {
     let expected = [
         "closed: closed",
         "data: [0, 1, 254, 255]",
+        "download headers: 200 abc true",
         "download under way: true",
+        "downloaded with a header: true token abc",
         "file: false, part: false",
+        "not redirected: true",
+        "part right after cancelling: false",
+        "pieces: headers 200 text/plain 0, in order: true, text: [\"piece 0\", \"piece 1\", \"piece 2\", \"piece 3\", \"piece 4\"], done: 200 true 0 true",
+        "radio stopped: true",
+        "radio: 200 Test Radio",
+        "redirected: 200 hello true",
         "sent: true true",
         "text: hello",
     ];
     assert_eq!(lines, expected, "got:\n{stdout}");
     // Cancelled, the program doesn't wait for the slow server.
     assert!(started.elapsed() < std::time::Duration::from_secs(60), "took {:?}", started.elapsed());
+
+    // An app, headless: a stream, stopped, and a redirect.
+    let dir = repo().join("tests/net");
+    let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+        .args(["run", "tests/net/stream_app.tsl"])
+        .current_dir(repo())
+        .env("SLOW_PORT", slow_port.to_string())
+        .env("TESSEL_SCRIPT", std::fs::read_to_string(dir.join("stream_app.script")).unwrap())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "failed ({}):\n{stdout}{}", out.status, String::from_utf8_lossy(&out.stderr));
+    let expected = std::fs::read_to_string(dir.join("stream_app.out")).unwrap();
+    assert_eq!(stdout, expected);
 }
 
 /// Runs a copy of `tests/hot` with `tessel run --hot` and its script: the app

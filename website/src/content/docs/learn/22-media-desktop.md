@@ -13,6 +13,8 @@ In this lesson you'll learn:
 - how `playSound` plays a sound, and what you can do with the `Sound` it gives
 - how `VideoPlayer` shows a video with its own controls
 - how `WebView` shows a web page, or HTML of your own
+- how `request` reads a stream from the web, like internet radio, as it
+  arrives
 - how `showNotification` tells the user something from outside the window
 - how `.trayIcon` puts an icon and a menu in the menu bar (macOS) or the
   taskbar's tray (Windows), and keeps the app running there
@@ -116,6 +118,50 @@ app Help(width: 640, height: 480) {
 the pictures next to it). `html:` shows HTML your program made. The page
 fills the place it's given. It's shown by a view of the system's, over
 your window, so a popover can't appear over it.
+
+## Streams from the web
+
+[`request`](/ui/async/#talking-to-a-web-server-with-request) usually waits
+for the whole answer. An internet radio station never finishes its answer.
+Give `request` an `onData:` block, and it gets the sound in pieces as it
+arrives. `onHeaders:` comes first, with the station's headers:
+
+```tessel
+app Tuner(width: 300, height: 120) {
+    state station = "Not playing"
+    state kilobytes = 0
+    state playing: Int? = nil
+
+    VStack(spacing: 8) {
+        Text(station)
+        Text("{kilobytes} KB received")
+        Button(if playing == nil { "Listen" } else { "Stop" }) {
+            if let id = playing {
+                cancelRequest(id)
+                playing = nil
+                station = "Not playing"
+            } else {
+                var bytes = 0
+                playing = request(url: "https://radio.example.com/jazz", onHeaders: { r in
+                    station = r.headers["icy-name"] ?? "Radio"
+                }, onData: { piece in
+                    bytes += piece.count
+                    kilobytes = bytes / 1024
+                }) { r in
+                    station = "The station stopped"
+                    playing = nil
+                }
+            }
+        }
+    }
+    .padding(16)
+}
+```
+
+The pieces come in order. The body isn't kept, so the last block's `text`
+and `data` are empty and memory doesn't fill up. `cancelRequest` stops the
+stream. If the station redirects you elsewhere, the response's `finalUrl`
+says where you ended up.
 
 ## Notifications
 
@@ -443,6 +489,8 @@ app Tally(width: 260, height: 160) {
   drawn by Tessel; its bindings play, pause and jump.
 - **`WebView(url:)`** and **`WebView(html:)`** show web pages with the
   system's browser engine.
+- **`request(url:onHeaders:onData:)`** reads a stream as it arrives;
+  **`cancelRequest`** stops it.
 - **`showNotification(title, message:)`** tells the user something from
   outside the window.
 - **`.trayIcon(icon, title:keepRunning:) { … }`** gives the app an icon and a

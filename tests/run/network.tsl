@@ -9,10 +9,38 @@ fn main() {
             print("refused: {r.status} {r.ok} {r.error != ""}")
             download(url: "http://127.0.0.1:1/file", to: joinPath(tempFolder(), "tessel-none.bin")) { ok in
                 print("download: {ok}")
+                streamed()
             }
         }
     }
     if let parsed: [Int] = fromJson("[1, 2, 3]") {
         print("typed if let: {parsed.sum()}")
+    }
+}
+
+// A file streamed with `onHeaders` and `onData`, and downloaded with them
+// (and with headers, which a file ignores).
+fn streamed() {
+    let url = "file://tests/run/fetch_data.txt"
+    var pieces = 0
+    var size = 0
+    let none: fn(HttpResponse)? = nil
+    request(url: url, onHeaders: none ?? { r in
+        print("stream headers: {r.status} {r.finalUrl == url} {r.text == ""}")
+    }, onData: { data in
+        pieces += 1
+        size += data.count
+    }) { r in
+        print("streamed: {pieces > 0} {size > 0} {r.ok} {r.data.count} {r.finalUrl == url}")
+        let copy = joinPath(tempFolder(), "tessel-streamed-copy.txt")
+        download(url: url, to: copy, headers: ["X-A": "1"], onHeaders: { r in
+            print("download headers: {r.status} {r.finalUrl == url}")
+        }) { ok in
+            print("downloaded: {ok} {(readData(copy)?.count ?? 0) == size}")
+            deleteFile(copy)
+            request(url: url, onHeaders: none, onData: nil) { r in
+                print("no blocks: {r.data.count == size}")
+            }
+        }
     }
 }

@@ -2,3 +2,8 @@ typed if let: 6
 file: 200 true true true
 refused: 0 false true
 download: false
+stream headers: 200 true true
+streamed: true true true 0 true
+download headers: 200 true
+downloaded: true true
+no blocks: true

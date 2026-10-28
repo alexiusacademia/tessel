@@ -1,0 +1,20 @@
+Root
+  View
+    VStack
+      Text "Station: stopped"
+      Text "Hearing it"
+      Text "Quiet since Stop: true"
+      Button "Listen"
+      Button "Stop"
+      Button "Page"
+      Text ""
+Root
+  View
+    VStack
+      Text "Station: stopped"
+      Text "Hearing it"
+      Text "Quiet since Stop: true"
+      Button "Listen"
+      Button "Stop"
+      Button "Page"
+      Text "hello from hello"

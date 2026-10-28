@@ -1,0 +1,46 @@
+// An app that listens to a stream (headless, with the HTTP server of the
+// test in SLOW_PORT): the station's name from the headers, the sound as it
+// comes, and Stop.
+
+app Radio(width: 300, height: 200) {
+    state station = ""
+    state heard = 0
+    state playing: Int? = nil
+    state page = ""
+    state stoppedAt = -1
+
+    VStack(spacing: 8) {
+        Text("Station: {station}")
+        Text(if heard > 0 { "Hearing it" } else { "Silence" })
+        Text("Quiet since Stop: {heard == stoppedAt}")
+        Button("Listen") { listen() }
+        Button("Stop") {
+            if let id = playing {
+                cancelRequest(id)
+                playing = nil
+                station = "stopped"
+                stoppedAt = heard
+            }
+        }
+        Button("Page") {
+            request(url: "{base()}/redirect") { r in
+                page = "{r.text} from {r.finalUrl.split("/").last ?? ""}"
+            }
+        }
+        Text(page)
+    }
+
+    fn base() -> String {
+        "http://127.0.0.1:{environment("SLOW_PORT") ?? ""}"
+    }
+
+    fn listen() {
+        playing = request(url: "{base()}/radio", onHeaders: { r in
+            station = r.headers["icy-name"] ?? "?"
+        }, onData: { data in
+            heard += data.count
+        }) { r in
+            station = "ended"
+        }
+    }
+}

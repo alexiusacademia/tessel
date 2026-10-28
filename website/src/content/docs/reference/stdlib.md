@@ -2328,7 +2328,8 @@ For other methods (like POST), headers, or the status code, use
 
 ```text
 request(url: String, method: String = "GET", headers: [String: String] = [:],
-        body: String = "", done: fn(HttpResponse)) -> Int
+        body: String = "", onHeaders: fn(HttpResponse)? = nil,
+        onData: fn(Data)? = nil, done: fn(HttpResponse)) -> Int
 ```
 
 Sends an HTTP request in the background, then calls `done` with the
@@ -2368,10 +2369,30 @@ app Todos {
 - A response with an error status (like 404 or 500) is still a response:
   `done` gets it, with its status and body. Check `ok` or `status`.
 - `file://` URLs read a local file, with status 200.
+- Redirects are followed. The response's `finalUrl` is the URL that answered.
+- `onHeaders`, if given, is called once the status and headers are in,
+  before the body, with an `HttpResponse` whose `text` and `data` are empty.
+- `onData`, if given, gets the body in pieces as it arrives, in order,
+  between `onHeaders` and `done`. Then the body isn't kept: `done`'s `text`
+  and `data` are empty. This reads streams that never end, like internet
+  radio. Pieces that wait for a slow app are joined into one, and reading
+  pauses while about 1 MB waits, so memory stays bounded.
+  [`cancelRequest`](#cancelrequest) stops the stream.
+
+```tessel
+var received = 0
+let radio = request(url: "https://radio.example.com/live", onHeaders: { r in
+    print("Playing {r.headers["icy-name"] ?? "a station"}")
+}, onData: { piece in
+    received += piece.count
+}) { r in
+    print("The stream ended: {r.error}")
+}
+```
 
 ### HttpResponse
 
-What `request` gives its block. It's a built-in struct with these fields:
+What `request` gives its blocks (and `download` its `onHeaders`). It's a built-in struct with these fields:
 
 | Field | Type | |
 |---|---|---|
@@ -2381,6 +2402,7 @@ What `request` gives its block. It's a built-in struct with these fields:
 | `data` | `Data` | The body as bytes, for images and other files that aren't text. |
 | `headers` | `[String: String]` | The response's headers. The names are in lower case: `response.headers["content-type"]`. |
 | `error` | `String` | Why there was no response (the server couldn't be reached, the URL is invalid, …), or `""`. |
+| `finalUrl` | `String` | The URL that answered, after any redirects. Resolve relative links in the body against it. |
 
 To read a JSON answer, pass `text` to [`fromJson`](#fromjson):
 
@@ -2395,7 +2417,9 @@ request(url: "https://example.com/api/todos") { response in
 ### download
 
 ```text
-download(url: String, to: String, progress: fn(Float)? = nil, done: fn(Bool)) -> Int
+download(url: String, to: String, headers: [String: String] = [:],
+         onHeaders: fn(HttpResponse)? = nil, progress: fn(Float)? = nil,
+         done: fn(Bool)) -> Int
 ```
 
 Downloads a URL straight into a file, which suits large files. `progress`,
@@ -2429,6 +2453,11 @@ app Downloader {
   `1.0` exactly once, when everything has arrived.
 - `http://`, `https://` and `file://` URLs can be downloaded; `file://`
   copies a local file.
+- `headers` are sent with the request, as with [`request`](#request).
+- `onHeaders`, if given, gets the answer's status and headers (and
+  `finalUrl`) before the file arrives, as an [`HttpResponse`](#httpresponse)
+  with no body. It's called for an error status too, before `done` gets
+  `false`.
 
 ### cancelRequest
 
@@ -2437,8 +2466,9 @@ cancelRequest(_ id: Int)
 ```
 
 Gives up a [`request`](#request) or a [`download`](#download) that's under
-way. Its `done` block is never called (nor `progress`), and a cancelled
-download leaves no file behind, not even a partial one.
+way. Its `done` block is never called (nor `progress`, `onHeaders` or
+`onData`), and a cancelled download leaves no file behind, not even a
+partial one: its `.part` file is removed before `cancelRequest` returns.
 
 ```tessel
 app Downloader {

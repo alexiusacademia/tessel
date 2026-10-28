@@ -371,9 +371,58 @@ has:
 - `headers`: the response headers, with lower-case names.
 - `error`: if the server couldn't be reached at all, why. Then `status` is
   `0`.
+- `finalUrl`: the URL that answered. `request` follows redirects, so this
+  can differ from the one you asked for. Resolve relative links in the
+  answer against it.
 
 [`toJson`](/reference/stdlib/#tojson) and [`fromJson`](/reference/stdlib/#fromjson)
 turn your structs into the JSON that most web APIs use, and back.
+
+### Reading a body as it arrives
+
+Some answers never end: internet radio, or a live feed. Others are big, and
+you want to start on them before the end. Give `request` an `onData:` block,
+and it gets the body in pieces, as `Data`, while it arrives. An `onHeaders:`
+block gets the status and headers first, before any of the body:
+
+```tessel
+app Radio(width: 300, height: 120) {
+    state station = ""
+    state received = 0
+    state playing: Int? = nil
+
+    VStack(spacing: 8) {
+        Text("{station}: {received / 1024} KB")
+        Button("Listen") {
+            playing = request(url: "https://radio.example.com/stream", headers: ["Icy-MetaData": "1"], onHeaders: { r in
+                station = r.headers["icy-name"] ?? "Radio"
+            }, onData: { piece in
+                received += piece.count
+            }) { r in
+                station = if r.error == "" { "Ended" } else { "Lost: {r.error}" }
+                playing = nil
+            }
+        }
+        Button("Stop") {
+            if let id = playing {
+                cancelRequest(id)
+                playing = nil
+            }
+        }
+    }
+    .padding(16)
+}
+```
+
+- The pieces come in order, on the UI thread, after `onHeaders` and before
+  `done`.
+- With `onData`, `done` still runs when the body ends, but its `text` and
+  `data` are empty: the body went to `onData`, and isn't kept. So an endless
+  stream doesn't fill up memory.
+- If your blocks fall behind, the pieces that wait are joined into one. Once
+  about 1 MB waits, reading pauses until your app catches up.
+- [`cancelRequest`](/reference/stdlib/#cancelrequest) stops a stream: no
+  more pieces come, and `done` doesn't run.
 
 ## Downloading files
 
@@ -406,10 +455,23 @@ app Downloader(width: 360, height: 160) {
 arrives (when the server says how big the file is). `done` gets whether it
 worked. A failed download leaves no partial file behind.
 
+`download` can also send `headers:`, like `request`, for a server that wants
+a key or a cookie. An `onHeaders:` block gets the answer's status and
+headers (an `HttpResponse` with no body) before the file arrives:
+
+```tessel
+download(url: "https://example.com/report.pdf", to: file, headers: ["Authorization": "Bearer {token}"], onHeaders: { r in
+    size = r.headers["content-length"] ?? "?"
+}) { ok in
+    status = if ok { "Saved" } else { "Download failed" }
+}
+```
+
 Both `request` and `download` return an id. To give one up while it's under
 way (the user pressed Cancel, or left the page that needed it), pass the id to
 [`cancelRequest`](/reference/stdlib/#cancelrequest). Its `done` block then
-never runs, and a cancelled download leaves no file.
+never runs, and a cancelled download leaves no file: its `.part` file is
+gone as soon as `cancelRequest` returns.
 
 ## WebSockets
 
@@ -732,7 +794,8 @@ one second later
 ```
 
 A timer started with `every` keeps the program running until it's stopped
-with `stopTimer`, and an open WebSocket until it's closed. To end the program
+with `stopTimer`, an open WebSocket until it's closed, and a request with
+`onData` until its body ends or it's cancelled. To end the program
 right away, call [`exit`](/reference/stdlib/#exit).
 
 ## Testing code that waits
@@ -741,4 +804,7 @@ When you test an app with a [headless script](/ui/testing/), time doesn't pass
 by itself: the `wait` command moves the clock forward and fires the timers
 that are due, including `every` timers. `wait` also first lets running
 `fetch`, `request`, `download`, `runCommand` and `background` calls finish,
-so tests don't depend on how fast the machine is.
+so tests don't depend on how fast the machine is. A request with `onData`
+may never end, so `wait` treats it like an open WebSocket: it lets pieces
+arrive for a moment (half a second, or as long as the wait) and goes on. Use
+`waitfor` to wait for what the pieces bring about.

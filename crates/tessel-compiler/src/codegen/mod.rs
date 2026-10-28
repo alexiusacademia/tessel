@@ -5587,6 +5587,42 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         bx
     }
 
+    /// An optional block as the runtime takes it, `(fn, env)`: `fn` is null
+    /// for none. (The closure's reference moves to the runtime.)
+    fn raw_opt_block(&mut self, opt: Option<Val<'ctx>>) -> (Val<'ctx>, Val<'ctx>) {
+        let null = self.ptr_ty().const_null();
+        let Some(opt) = opt else { return (null.into(), null.into()) };
+        let opt = opt.into_struct_value();
+        let present = self.b.build_extract_value(opt, 0, "").unwrap().into_int_value();
+        let closure = self.b.build_extract_value(opt, 1, "").unwrap().into_struct_value();
+        let f = self.b.build_extract_value(closure, 0, "").unwrap().into_pointer_value();
+        let env = self.b.build_extract_value(closure, 1, "").unwrap();
+        (self.b.build_select(present, f, null, "").unwrap(), env)
+    }
+
+    /// An optional block of type `ft` as `(adapter, box)` for the runtime,
+    /// with the closure in a box (taken over): both null for none.
+    fn boxed_opt_block(&mut self, opt: Option<Val<'ctx>>, ft: &Ty, adapter: PointerValue<'ctx>) -> (Val<'ctx>, Val<'ctx>) {
+        let null = self.ptr_ty().const_null();
+        let Some(opt) = opt else { return (null.into(), null.into()) };
+        let opt = opt.into_struct_value();
+        let present = self.b.build_extract_value(opt, 0, "").unwrap().into_int_value();
+        let slot = self.alloca(self.ptr_ty().into(), "block");
+        self.b.build_store(slot, null).unwrap();
+        let (some, done) = (self.block_named("block"), self.block_named("boxed"));
+        self.b.build_conditional_branch(present, some, done).unwrap();
+        self.b.position_at_end(some);
+        let closure = self.b.build_extract_value(opt, 1, "").unwrap();
+        let bx = self.box_closure(ft, closure.into());
+        self.b.build_store(slot, bx).unwrap();
+        self.br(done);
+        self.b.position_at_end(done);
+        let bx = self.b.build_load(self.ptr_ty(), slot, "").unwrap().into_pointer_value();
+        let is_box = self.b.build_is_not_null(bx, "").unwrap();
+        let f = self.b.build_select(is_box, adapter, null, "").unwrap();
+        (f, bx.into())
+    }
+
     /// `adapter(box, ResponseC*)`: builds an `HttpResponse` and calls the `done` block in the box.
     fn response_adapter(&mut self) -> PointerValue<'ctx> {
         let name = "tsl_h_http_done";
@@ -5601,9 +5637,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let bx = f.get_nth_param(0).unwrap().into_pointer_value();
             let rc = f.get_nth_param(1).unwrap().into_pointer_value();
             let closure = g.load(&ft, g.box_data(bx));
-            // ResponseC: { i64 status, ptr text, ptr data, ptr headers, ptr error }
+            // ResponseC: { i64 status, ptr text, ptr data, ptr headers, ptr error, ptr finalUrl }
             let p = g.ptr_ty();
-            let ct = g.ctx.struct_type(&[g.i64().into(), p.into(), p.into(), p.into(), p.into()], false);
+            let ct = g.ctx.struct_type(&[g.i64().into(), p.into(), p.into(), p.into(), p.into(), p.into()], false);
             let field = |g: &mut Self, i: u32, t: BasicTypeEnum<'ctx>| {
                 let fp = g.b.build_struct_gep(ct, rc, i, "").unwrap();
                 g.b.build_load(t, fp, "").unwrap()
@@ -5616,7 +5652,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let mut s = st.get_undef();
             s = g.b.build_insert_value(s, status, 0, "").unwrap().into_struct_value();
             s = g.b.build_insert_value(s, ok, 1, "").unwrap().into_struct_value();
-            for (i, src) in [(2u32, 1u32), (3, 2), (4, 3), (5, 4)] {
+            for (i, src) in [(2u32, 1u32), (3, 2), (4, 3), (5, 4), (6, 5)] {
                 let v = field(g, src, p.into());
                 s = g.b.build_insert_value(s, v, i, "").unwrap().into_struct_value();
             }
@@ -6803,16 +6839,28 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     None => self.str_lit("").into(),
                 };
                 let ft = Ty::func(vec![builtins::HTTP_RESPONSE], Ty::Void);
-                let done = self.expr_as(arg(info.args[4].unwrap()), &ft).unwrap();
-                let bx = self.box_closure(&ft, done);
                 let adapter = self.response_adapter();
+                // `onHeaders` (boxed, with the adapter) and `onData`, or nulls for none.
+                let on_headers = info.args[4].map(|r| self.expr_as(arg(r), &Ty::opt(ft.clone())).unwrap());
+                let (hf, henv) = self.boxed_opt_block(on_headers, &ft, adapter);
+                let on_data = info.args[5].map(|r| self.expr_as(arg(r), &Ty::opt(Ty::func(vec![Ty::Data], Ty::Void))).unwrap());
+                let (df, denv) = self.raw_opt_block(on_data);
+                let done = self.expr_as(arg(info.args[6].unwrap()), &ft).unwrap();
+                let bx = self.box_closure(&ft, done);
                 let p = self.ptr_ty();
-                let f = self.declare_rt(
-                    "tsl_request",
-                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
-                    Some(self.i64().into()),
-                );
-                let args = [url.into(), method.into(), headers.into(), body.into(), adapter.into(), bx.into()];
+                let f = self.declare_rt("tsl_request", &[p.into(); 10], Some(self.i64().into()));
+                let args = [
+                    url.into(),
+                    method.into(),
+                    headers.into(),
+                    body.into(),
+                    hf.into(),
+                    henv.into(),
+                    df.into(),
+                    denv.into(),
+                    adapter.into(),
+                    bx.into(),
+                ];
                 let id = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 self.release(method, &Ty::Str);
@@ -6823,34 +6871,43 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "download" => {
                 let url = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
                 let to = self.expr_as(arg(info.args[1].unwrap()), &Ty::Str).unwrap();
-                let pt = Ty::opt(Ty::func(vec![Ty::Float], Ty::Void));
-                // The progress block, or null for none.
-                let (pf, penv): (Val, Val) = match info.args[2] {
-                    Some(r) => {
-                        let opt = self.expr_as(arg(r), &pt).unwrap().into_struct_value();
-                        let present = self.b.build_extract_value(opt, 0, "").unwrap().into_int_value();
-                        let closure = self.b.build_extract_value(opt, 1, "").unwrap().into_struct_value();
-                        let f = self.b.build_extract_value(closure, 0, "").unwrap().into_pointer_value();
-                        let env = self.b.build_extract_value(closure, 1, "").unwrap();
-                        let null = self.ptr_ty().const_null();
-                        (self.b.build_select(present, f, null, "").unwrap(), env)
+                let dict_t = Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str));
+                let headers = match info.args[2] {
+                    Some(r) => self.expr_as(arg(r), &dict_t).unwrap(),
+                    None => {
+                        let si = self.type_info(&Ty::Str);
+                        self.call_rt("tsl_dict_new", &[si.into(), si.into()]).unwrap()
                     }
-                    None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
                 };
+                // The `onHeaders` (boxed, with its adapter) and progress blocks, or nulls for none.
+                let ht = Ty::func(vec![builtins::HTTP_RESPONSE], Ty::Void);
+                let on_headers = info.args[3].map(|r| self.expr_as(arg(r), &Ty::opt(ht.clone())).unwrap());
+                let response_adapter = self.response_adapter();
+                let (hf, henv) = self.boxed_opt_block(on_headers, &ht, response_adapter);
+                let pt = Ty::opt(Ty::func(vec![Ty::Float], Ty::Void));
+                let progress = info.args[4].map(|r| self.expr_as(arg(r), &pt).unwrap());
+                let (pf, penv) = self.raw_opt_block(progress);
                 let dt = Ty::func(vec![Ty::Bool], Ty::Void);
-                let done = self.expr_as(arg(info.args[3].unwrap()), &dt).unwrap();
+                let done = self.expr_as(arg(info.args[5].unwrap()), &dt).unwrap();
                 let bx = self.box_closure(&dt, done);
                 let adapter = self.bool_adapter();
                 let p = self.ptr_ty();
-                let f = self.declare_rt(
-                    "tsl_download",
-                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
-                    Some(self.i64().into()),
-                );
-                let args = [url.into(), to.into(), pf.into(), penv.into(), adapter.into(), bx.into()];
+                let f = self.declare_rt("tsl_download", &[p.into(); 9], Some(self.i64().into()));
+                let args = [
+                    url.into(),
+                    to.into(),
+                    headers.into(),
+                    hf.into(),
+                    henv.into(),
+                    pf.into(),
+                    penv.into(),
+                    adapter.into(),
+                    bx.into(),
+                ];
                 let id = self.b.build_call(f, &args, "").unwrap().try_as_basic_value().basic();
                 self.release(url, &Ty::Str);
                 self.release(to, &Ty::Str);
+                self.release(headers, &dict_t);
                 id
             }
             "openWebSocket" => {
