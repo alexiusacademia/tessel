@@ -1034,13 +1034,25 @@ pub extern "C" fn tsl_close_window() {
 /// `.id` (a `String`'s hash) scroll so it shows. `align` is a `ScrollAlign`
 /// tag: 0 nearest, 1 top, 2 center, 3 bottom. It's done once the views are
 /// next laid out, so a view the same action adds is there to scroll to.
+/// With `scoped` (`in:`), only the view with `.id` `within` (a list, or a
+/// view around one) is looked in.
 #[unsafe(no_mangle)]
-pub extern "C" fn tsl_scroll_to(id: u64, align: i32) {
-    SCROLL_TARGET.with(|t| t.set(Some((id, align.clamp(0, 3) as u8))));
+pub extern "C" fn tsl_scroll_to(id: u64, align: i32, within: u64, scoped: u8) {
+    let target = ScrollTarget { id, align: align.clamp(0, 3) as u8, within: (scoped != 0).then_some(within) };
+    SCROLL_TARGET.with(|t| t.set(Some(target)));
+}
+
+/// What `scrollTo` asked for.
+#[derive(Clone, Copy)]
+struct ScrollTarget {
+    id: u64,
+    align: u8,
+    /// `in:`: the `.id` of the view to look in.
+    within: Option<u64>,
 }
 
 thread_local! {
-    static SCROLL_TARGET: Cell<Option<(u64, u8)>> = const { Cell::new(None) };
+    static SCROLL_TARGET: Cell<Option<ScrollTarget>> = const { Cell::new(None) };
     static DISMISSING: Cell<bool> = const { Cell::new(false) };
     /// `showNotice`: the text that shows, and until when (on the app's clock).
     static NOTICE: RefCell<Option<(String, f64)>> = const { RefCell::new(None) };
@@ -1343,14 +1355,16 @@ impl App {
     /// `scrollTo`: when the view asked for is in this window, its scroll
     /// views scroll so it shows (true: lay out again).
     fn scroll_to_target(&mut self) -> bool {
-        let Some((id, align)) = SCROLL_TARGET.with(Cell::get) else { return false };
+        let Some(ScrollTarget { id, align, within }) = SCROLL_TARGET.with(Cell::get) else { return false };
         // The view's rectangle, and the scroll views around it (outermost
         // first). Views with that `.id` first (`rows`: then a list's row).
-        fn find(n: &Node, id: u64, rows: bool, around: &mut Vec<u64>) -> Option<Rect> {
+        // With `in:`, only inside the view with that `.id` (`inside`: in it).
+        fn find(n: &Node, id: u64, rows: bool, within: Option<u64>, inside: bool, around: &mut Vec<u64>) -> Option<Rect> {
             if n.mods.hidden {
                 return None;
             }
-            if n.id == Some(id) && !rows {
+            let inside = inside || (within.is_some() && n.id == within);
+            if n.id == Some(id) && !rows && inside {
                 return Some(n.layout.rect);
             }
             let scrolls = matches!(n.kind, Kind::Scroll(_));
@@ -1358,12 +1372,12 @@ impl App {
                 around.push(n.key);
             }
             for c in n.visible_children() {
-                if let Some(r) = find(c, id, rows, around) {
+                if let Some(r) = find(c, id, rows, within, inside, around) {
                     return Some(r);
                 }
             }
             // A `LazyVStack`'s row (a `LazyHStack`'s column), by its number (built or not).
-            if let (Kind::Lazy { count, row_height, across, .. }, true) = (&n.kind, rows)
+            if let (Kind::Lazy { count, row_height, across, .. }, true) = (&n.kind, rows && inside)
                 && id < *count as u64
             {
                 let (row_height, along) = (*row_height, id as f64 * *row_height);
@@ -1381,7 +1395,10 @@ impl App {
         }
         let mut around = Vec::new();
         let tree = self.tree.as_ref();
-        let found = tree.and_then(|t| find(t, id, false, &mut around)).or_else(|| tree.and_then(|t| find(t, id, true, &mut around)));
+        let inside = within.is_none();
+        let found = tree
+            .and_then(|t| find(t, id, false, within, inside, &mut around))
+            .or_else(|| tree.and_then(|t| find(t, id, true, within, inside, &mut around)));
         let Some(mut target) = found else { return false };
         SCROLL_TARGET.with(|t| t.set(None));
         // Innermost first: scrolling one moves the view within the next.

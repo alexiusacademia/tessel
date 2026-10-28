@@ -262,7 +262,8 @@ Three more pieces for laying out a bigger window:
   and **`LazyHStack`** builds only the columns of a long row that show, as
   `LazyVStack` does for rows.
 - **`scrollTo(id)`** scrolls to the view with that `.id`, or to that row
-  (column) of a lazy list.
+  (column) of a lazy list. With two lazy lists in a window, give each an
+  `.id` and name the one you mean: `scrollTo(80, in: "results")`.
 
 ```tessel
 app Calendar365(width: 640, height: 300) {

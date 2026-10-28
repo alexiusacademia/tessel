@@ -197,6 +197,26 @@ app Log(width: 320, height: 240) {
 - In a [`LazyVStack`](/ui/lists/#long-lists-with-lazyvstack), a row's number
   is its id: `scrollTo(5000)` shows row 5000 even before it's built. A view
   with that `.id` elsewhere in the window comes first.
+- `in:` looks only inside the view with that `.id`. With two lazy lists in
+  one window, a row number goes to the first one; give each list an `.id`
+  and name the one you mean:
+
+  ```tessel
+  HStack {
+      Scroll {
+          LazyVStack(count: files.count, rowHeight: 24) { i in Text(files[i]) }
+              .id("files")
+      }
+      Scroll {
+          LazyVStack(count: matches.count, rowHeight: 24) { i in Text(matches[i]) }
+              .id("matches")
+      }
+  }
+  ```
+
+  `scrollTo(80, in: "matches")` then shows row 80 of the second list.
+  `in:` also keeps a view's `.id` from being mixed up with the same id
+  elsewhere in the window.
 
 ## Split views
 

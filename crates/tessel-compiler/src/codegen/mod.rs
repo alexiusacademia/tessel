@@ -1702,7 +1702,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_hidden" | "tsl_ui_disabled" => (vec![i8t], None),
             "tsl_ui_source" => (vec![i32t], None),
             "tsl_ui_next_id" => (vec![i], None),
-            "tsl_scroll_to" => (vec![i, i32t], None),
+            "tsl_scroll_to" => (vec![i, i32t, i, i8t], None),
             "tsl_ui_begin_split" => (vec![i8t, p, p], None),
             "tsl_ui_run" => (vec![p, f64t, f64t, i32t, p, p], None),
             "tsl_start" => (vec![p], Some(i32t)),
@@ -6467,21 +6467,27 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             "scrollTo" => {
                 // Ids are kept as numbers: a `String`'s hash (as `.id` does).
-                let x = arg(info.args[0].unwrap());
-                let t = self.ty(x);
-                let v = self.expr(x).unwrap();
-                let id = match t {
-                    Ty::Str => self.call_rt("tsl_str_hash", &[v]).unwrap(),
-                    _ => v,
-                };
-                if t == Ty::Str {
-                    self.release(v, &t);
+                // The view's id, then `in:`'s (the list to look in), if given.
+                let mut ids = Vec::new();
+                for r in [info.args[0], info.args.get(1).copied().flatten()].into_iter().flatten() {
+                    let x = arg(r);
+                    let t = self.ty(x);
+                    let v = self.expr(x).unwrap();
+                    ids.push(match t {
+                        Ty::Str => self.call_rt("tsl_str_hash", &[v]).unwrap(),
+                        _ => v,
+                    });
+                    if t == Ty::Str {
+                        self.release(v, &t);
+                    }
                 }
-                let align = match info.args.get(1).copied().flatten() {
+                let scoped = self.ctx.i8_type().const_int((ids.len() > 1) as u64, false).into();
+                let within = ids.get(1).copied().unwrap_or_else(|| self.ctx.i64_type().const_zero().into());
+                let align = match info.args.get(2).copied().flatten() {
                     Some(r) => self.expr(arg(r)).unwrap(),
                     None => self.ctx.i32_type().const_zero().into(),
                 };
-                self.call_rt("tsl_scroll_to", &[id, align]);
+                self.call_rt("tsl_scroll_to", &[ids[0], align, within, scoped]);
                 None
             }
             "print" | "printError" => {

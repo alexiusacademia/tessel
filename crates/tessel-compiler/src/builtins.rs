@@ -676,9 +676,9 @@ impl Builtins {
             "arguments" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             "exit" => FnSig { params: vec![P::unlabeled("code", Ty::Int).default()], ret: Ty::Void },
             "openURL" => FnSig { params: vec![P::unlabeled("url", Ty::Str)], ret: Ty::Bool },
-            // `id:` is an `Int` or a `String` (checked specially).
+            // `id:` and `in:` are an `Int` or a `String` (checked specially).
             "scrollTo" => FnSig {
-                params: vec![P::unlabeled("id", Ty::Any), P::new("align", SCROLL_ALIGN).default()],
+                params: vec![P::unlabeled("id", Ty::Any), P::new("in", Ty::Any).default(), P::new("align", SCROLL_ALIGN).default()],
                 ret: Ty::Void,
             },
             "copyToClipboard" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::Bool },

@@ -1519,6 +1519,12 @@ impl<'a> Parser<'a> {
                 let l = self.ident("a label")?;
                 self.bump(); // :
                 Some(l)
+            } else if *self.peek() == Tok::In && *self.peek_at(1) == Tok::Colon {
+                // `in:` is a label too (`scrollTo(80, in: "results")`).
+                let span = self.span();
+                self.bump();
+                self.bump(); // :
+                Some(Ident { name: "in".to_string(), span })
             } else {
                 None
             };

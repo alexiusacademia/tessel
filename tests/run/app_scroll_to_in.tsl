@@ -1,0 +1,30 @@
+// scrollTo(id, in:) with two lazy lists in one window: `in:` names the list
+// (by its `.id`, or the `.id` of a view around it) whose row to show (#49).
+// Without `in:`, the first list in the window scrolls, as before.
+
+app TwoLists(width: 400, height: 200) {
+    VStack {
+        HStack {
+            Button("Left 80") { scrollTo(80) }
+            Button("Right 50") { scrollTo(50, in: "right", align: .top) }
+            Button("Find 5") { scrollTo("five", in: "find") }
+            // (The same id outside the list named doesn't count.)
+            Text("five").id("five")
+        }
+        HStack {
+            Scroll {
+                LazyVStack(count: 100, rowHeight: 24) { i in Text("L{i}") }
+            }
+            Scroll {
+                LazyVStack(count: 100, rowHeight: 24) { i in Text("R{i}") }
+                    .id("right")
+            }
+            Scroll {
+                for i in 0..30 {
+                    Button("F{i}") { print("clicked F{i}") }.id(if i == 25 { "five" } else { "f{i}" })
+                }
+            }
+            .id("find")
+        }
+    }
+}
