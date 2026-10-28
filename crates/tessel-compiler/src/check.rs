@@ -24,6 +24,9 @@ pub struct Checked {
     /// `for` loop variables (by name span) that are places in the list,
     /// so changing them changes the list.
     pub loop_places: HashSet<Span>,
+    /// The bodies (by span) of functions returning `View` that list several
+    /// views: built like a view's body, all of them shown.
+    pub view_lists: HashSet<Span>,
     /// Arguments given to `bind` parameters: the caller's variable they
     /// name is shared with the callee (so it lives in a box).
     pub bind_args: HashSet<ExprId>,
@@ -288,6 +291,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         frames: Vec::new(),
         locals: HashMap::new(),
         loop_places: HashSet::new(),
+        view_lists: HashSet::new(),
         bind_args: HashSet::new(),
         sql_value: None,
         view_fns: HashMap::new(),
@@ -345,6 +349,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         fns,
         locals: c.locals,
         loop_places: c.loop_places,
+        view_lists: c.view_lists,
         bind_args: c.bind_args,
         sql_value: c.sql_value,
         views: program
@@ -511,6 +516,7 @@ struct Checker<'a> {
     frames: Vec<CallFrame>,
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
+    view_lists: HashSet<Span>,
     bind_args: HashSet<ExprId>,
     sql_value: Option<usize>,
     view_fns: HashMap<(String, String), FnSig>,
@@ -1251,20 +1257,27 @@ impl Checker<'_> {
                     MethodCall::Own(name) => methods.iter().any(|m| m.name == *name && m.mutating),
                     MethodCall::Field(field, name) => {
                         let ty = self.structs[*id].fields.iter().find(|f| f.name == *field).map(|f| &f.ty);
-                        match ty {
-                            Some(Ty::Struct(s)) => self.structs[*s].methods.iter().any(|m| m.name == *name && m.mutating),
-                            Some(Ty::Enum(e)) => self.enums[*e].methods.iter().any(|m| m.name == *name && m.mutating),
-                            Some(Ty::Iface(i)) => self.iface_method_mutates(*i, name),
-                            _ => false,
+                        ty.is_some_and(|t| self.ty_method_mutates(t, name))
+                    }
+                    // A method of something inside a field: follow the path's
+                    // types to the receiver and look the method up there.
+                    MethodCall::Deep(root, steps, name) => {
+                        let start = if root == "self" {
+                            Some(if *is_struct { Ty::Struct(*id) } else { Ty::Enum(*id) })
+                        } else {
+                            self.structs[*id].fields.iter().find(|f| f.name == *root).map(|f| f.ty.clone())
+                        };
+                        match start.and_then(|t| self.path_ty(t, steps)) {
+                            Some(t) => self.ty_method_mutates(&t, name),
+                            // Unknown receiver: any changing method of that name.
+                            None => self
+                                .structs
+                                .iter()
+                                .flat_map(|s| &s.methods)
+                                .chain(self.enums.iter().flat_map(|e| &e.methods))
+                                .any(|m| m.name == *name && m.mutating),
                         }
                     }
-                    // A method of a field's field: any changing method of that name.
-                    MethodCall::Deep(name) => self
-                        .structs
-                        .iter()
-                        .flat_map(|s| &s.methods)
-                        .chain(self.enums.iter().flat_map(|e| &e.methods))
-                        .any(|m| m.name == *name && m.mutating),
                 });
                 if mutates {
                     let methods = if *is_struct { &mut self.structs[*id].methods } else { &mut self.enums[*id].methods };
@@ -1279,6 +1292,48 @@ impl Checker<'_> {
         for i in 0..self.ifaces.len() {
             let names: Vec<String> = self.ifaces[i].methods.iter().map(|(n, _)| n.clone()).collect();
             self.ifaces[i].mutating = names.iter().map(|n| self.iface_method_mutates(i, n)).collect();
+        }
+    }
+
+    /// Does calling method `name` on a value of type `t` change it? Only
+    /// declared methods count here; built-in changing methods like `append`
+    /// are found by `expr_mutates`.
+    fn ty_method_mutates(&self, t: &Ty, name: &str) -> bool {
+        match t {
+            Ty::Struct(s) => self.structs[*s].methods.iter().any(|m| m.name == name && m.mutating),
+            Ty::Enum(e) => self.enums[*e].methods.iter().any(|m| m.name == name && m.mutating),
+            Ty::Iface(i) => self.iface_method_mutates(*i, name),
+            Ty::Opt(inner) => self.ty_method_mutates(inner, name),
+            _ => false,
+        }
+    }
+
+    /// The type reached from `t` by following `steps`, or `None` when it
+    /// can't be told before bodies are checked.
+    fn path_ty(&self, mut t: Ty, steps: &[Step]) -> Option<Ty> {
+        for step in steps {
+            while let Ty::Opt(inner) = t {
+                t = *inner;
+            }
+            t = match (step, &t) {
+                (Step::Index, Ty::List(elem)) => (**elem).clone(),
+                (Step::Index, Ty::Dict(_, value)) => Ty::opt((**value).clone()),
+                (Step::Member(n), Ty::Struct(s)) => {
+                    let def = &self.structs[*s];
+                    match def.fields.iter().find(|f| f.name == *n) {
+                        Some(f) => f.ty.clone(),
+                        None => def.methods.iter().find(|m| m.prop && m.name == *n)?.sig.ret.clone(),
+                    }
+                }
+                (Step::Member(n), Ty::Enum(e)) => {
+                    self.enums[*e].methods.iter().find(|m| m.prop && m.name == *n)?.sig.ret.clone()
+                }
+                _ => return None,
+            };
+        }
+        match t {
+            Ty::Generic(_) | Ty::Error | Ty::Any => None,
+            t => Some(t),
         }
     }
 
@@ -1437,6 +1492,85 @@ impl Checker<'_> {
             c.waits.pop();
             c.returns.pop();
         });
+        // A function returning `View` that lists several views shows them
+        // all, as a view's body does.
+        if ret == Ty::View && !f.is_async && self.drops_views(&f.body, true) {
+            self.view_list_rules(&f.body);
+            self.view_lists.insert(f.body.span);
+        }
+    }
+
+    /// Does block `b` have a view that isn't its value (with `tail`, the
+    /// value of the block is the function's)?
+    fn drops_views(&self, b: &Block, tail: bool) -> bool {
+        let n = b.stmts.len();
+        b.stmts.iter().enumerate().any(|(i, s)| match s {
+            Stmt::Expr(e) => self.expr_drops_views(e, tail && i + 1 == n),
+            Stmt::For { body, .. } | Stmt::While { body, .. } => self.drops_views(body, false),
+            _ => false,
+        })
+    }
+
+    fn expr_drops_views(&self, e: &Expr, tail: bool) -> bool {
+        match &e.kind {
+            ExprKind::If { then, otherwise, .. } => {
+                self.drops_views(then, tail)
+                    || match otherwise {
+                        Some(Else::Block(b)) => self.drops_views(b, tail),
+                        Some(Else::If(x)) => self.expr_drops_views(x, tail),
+                        None => false,
+                    }
+            }
+            ExprKind::Match { arms, .. } => arms.iter().any(|a| self.expr_drops_views(&a.body, tail)),
+            ExprKind::Block(b) => self.drops_views(b, tail),
+            _ => !tail && self.types.get(&e.id) == Some(&Ty::View),
+        }
+    }
+
+    /// A function that lists several views is built like a view's body, so
+    /// it can only hold what a view's body can.
+    fn view_list_rules(&mut self, b: &Block) {
+        for s in &b.stmts {
+            let (span, what) = match s {
+                Stmt::Let(_) => continue,
+                Stmt::Expr(e) => {
+                    self.view_list_expr_rules(e);
+                    continue;
+                }
+                Stmt::For { body, .. } => {
+                    self.view_list_rules(body);
+                    continue;
+                }
+                Stmt::Var(d) | Stmt::State(d) => (d.span, "`var` and `state`"),
+                Stmt::Fn(f) => (f.name.span, "functions"),
+                Stmt::Assign { span, .. } => (*span, "changing values"),
+                Stmt::Return { span, .. } => (*span, "`return`"),
+                Stmt::While { span, .. } => (*span, "`while`"),
+                Stmt::Break(span) | Stmt::Continue(span) => (*span, "`break` and `continue`"),
+            };
+            self.error(span, format!("{what} can't be used in a function that shows several views"))
+                .help("show its views in one stack instead, like `VStack { … }`, and return that");
+        }
+    }
+
+    fn view_list_expr_rules(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::If { then, otherwise, .. } => {
+                self.view_list_rules(then);
+                match otherwise {
+                    Some(Else::Block(b)) => self.view_list_rules(b),
+                    Some(Else::If(x)) => self.view_list_expr_rules(x),
+                    None => {}
+                }
+            }
+            ExprKind::Match { arms, .. } => {
+                for a in arms {
+                    self.view_list_expr_rules(&a.body);
+                }
+            }
+            ExprKind::Block(b) => self.view_list_rules(b),
+            _ => {}
+        }
     }
 
     /// The type of constant `i` (a function index). The first time, its
@@ -5616,8 +5750,30 @@ enum MethodCall {
     Own(String),
     /// `field.name(…)`: a method of one of the struct's fields.
     Field(String, String),
-    /// `field.a.name(…)`: a method of something inside a field.
-    Deep(String),
+    /// `field.a[i].name(…)`: a method of something inside a field or `self`:
+    /// the root name, the steps from it to the receiver, and the method.
+    Deep(String, Vec<Step>, String),
+}
+
+/// One step of a path like `a.b[i]` below its root name.
+enum Step {
+    Member(String),
+    Index,
+}
+
+/// The steps of a path like `a.b[i].c` below its root name `a`.
+fn path_steps(e: &Expr, out: &mut Vec<Step>) {
+    match &e.kind {
+        ExprKind::Member { object, name, .. } => {
+            path_steps(object, out);
+            out.push(Step::Member(name.name.clone()));
+        }
+        ExprKind::Index(object, _) => {
+            path_steps(object, out);
+            out.push(Step::Index);
+        }
+        _ => {}
+    }
 }
 
 /// The calls in a method body that could change its value, for
@@ -5632,7 +5788,10 @@ fn method_calls(b: &Block, roots: &HashSet<String>) -> Vec<MethodCall> {
                 ExprKind::Name(n) if n == "self" => out.push(MethodCall::Own(name.name.clone())),
                 ExprKind::Name(n) if roots.contains(n) => out.push(MethodCall::Field(n.clone(), name.name.clone())),
                 _ if root_name(object).is_some_and(|n| roots.contains(n) || n == "self") => {
-                    out.push(MethodCall::Deep(name.name.clone()))
+                    let root = root_name(object).unwrap_or_default().to_string();
+                    let mut steps = Vec::new();
+                    path_steps(object, &mut steps);
+                    out.push(MethodCall::Deep(root, steps, name.name.clone()))
                 }
                 _ => {}
             },

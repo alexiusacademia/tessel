@@ -1,0 +1,12 @@
+// A module with a changing method named like a built-in one (issue #46):
+// `String.trim()` elsewhere must not count as changing because of it.
+
+public struct Buffer {
+    items: [Int] = []
+
+    fn trim() -> Int {
+        let n = items.count
+        items = []
+        n
+    }
+}

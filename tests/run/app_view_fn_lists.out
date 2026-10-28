@@ -1,0 +1,62 @@
+Root
+  View
+    VStack
+      Text "first"
+      Text "second 0"
+      Button "Count"
+      Text "x"
+      Text "y"
+      Text "it"
+      Text "it!"
+      Text "names"
+      Text "a"
+      Text "b"
+      Text "flag off"
+      Text "Menu" contextMenu [MenuItem "One", MenuDivider, MenuItem "Two"]
+      View
+        VStack
+          Text "card 0"
+          Button "Inc"
+Root
+  View
+    VStack
+      Text "first"
+      Text "second 1"
+      Button "Count"
+      Text "x"
+      Text "y"
+      Text "it"
+      Text "it!"
+      Text "names"
+      Text "a"
+      Text "b"
+      Text "flag off"
+      Text "Menu" contextMenu [MenuItem "One", MenuDivider, MenuItem "Two"]
+      View
+        VStack
+          Text "card 1"
+          Button "Inc"
+ContextMenu
+  MenuItem "One"
+  MenuDivider
+  MenuItem "Two"
+Root
+  View
+    VStack
+      Text "first"
+      Text "second 1"
+      Button "Count"
+      Text "x"
+      Text "y"
+      Text "it"
+      Text "it!"
+      Text "names"
+      Text "a"
+      Text "b"
+      Text "flag off"
+      Text "Menu" contextMenu [MenuItem "One", MenuDivider, MenuItem "Two"]
+      View
+        VStack
+          Text "card 1"
+          Button "Inc"
+      Text "two"

@@ -2685,6 +2685,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     // ===== statements =====
 
     fn block(&mut self, b: &Block, want: Option<&Ty>) -> Option<Val<'ctx>> {
+        // A function returning `View` that lists several views: its value
+        // builds them all, as a view's body does.
+        if want == Some(&Ty::View) && self.checked.view_lists.contains(&b.span) {
+            return Some(self.make_closure(Body::Content(b), &Ty::View));
+        }
         self.push_scope();
         let mut result = None;
         let n = b.stmts.len();

@@ -217,6 +217,19 @@ app Tags {
 }
 ```
 
+A function can list several views, too, like a `view`'s body. They all show
+where it's called, in the stack or menu around the call:
+
+```tessel
+fn header(_ title: String) -> View {
+    Text(title).font(weight: .bold)
+    Divider()
+}
+```
+
+Such a function is built like a view's body: it can have `let`, `if`, `match`
+and `for`, but not `var`, `return` or code that changes values.
+
 Struct fields can't hold views, though: store the data, and build the view from
 it in a `view` or function.
 
