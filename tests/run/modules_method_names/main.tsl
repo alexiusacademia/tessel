@@ -1,0 +1,38 @@
+// A method counts as changing its value only when a call in it reaches a
+// changing method of that receiver's own type (issue #46).
+
+import "m"
+
+struct Reader {
+    texts: [String] = []
+
+    fn first() -> String {
+        texts[0].trim()
+    }
+}
+
+struct Holder {
+    buffers: [m.Buffer] = []
+
+    // Reaches m.Buffer.trim through a list: this one does change it.
+    fn drop() -> Int {
+        buffers[0].trim()
+    }
+
+    // A built-in changing method still counts.
+    fn add(n: Int) {
+        buffers[0].items.append(n)
+    }
+}
+
+fn main() {
+    let r = Reader(texts: [" a "])
+    print(r.first())
+    let b = m.Buffer()
+    print(b.items.count)
+    var h = Holder(buffers: [m.Buffer(items: [1, 2, 3])])
+    print(h.drop())
+    print(h.buffers[0].items.count)
+    h.add(n: 7)
+    print(h.buffers[0].items)
+}

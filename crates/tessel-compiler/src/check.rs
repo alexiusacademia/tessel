@@ -1248,20 +1248,27 @@ impl Checker<'_> {
                     MethodCall::Own(name) => methods.iter().any(|m| m.name == *name && m.mutating),
                     MethodCall::Field(field, name) => {
                         let ty = self.structs[*id].fields.iter().find(|f| f.name == *field).map(|f| &f.ty);
-                        match ty {
-                            Some(Ty::Struct(s)) => self.structs[*s].methods.iter().any(|m| m.name == *name && m.mutating),
-                            Some(Ty::Enum(e)) => self.enums[*e].methods.iter().any(|m| m.name == *name && m.mutating),
-                            Some(Ty::Iface(i)) => self.iface_method_mutates(*i, name),
-                            _ => false,
+                        ty.is_some_and(|t| self.ty_method_mutates(t, name))
+                    }
+                    // A method of something inside a field: follow the path's
+                    // types to the receiver and look the method up there.
+                    MethodCall::Deep(root, steps, name) => {
+                        let start = if root == "self" {
+                            Some(if *is_struct { Ty::Struct(*id) } else { Ty::Enum(*id) })
+                        } else {
+                            self.structs[*id].fields.iter().find(|f| f.name == *root).map(|f| f.ty.clone())
+                        };
+                        match start.and_then(|t| self.path_ty(t, steps)) {
+                            Some(t) => self.ty_method_mutates(&t, name),
+                            // Unknown receiver: any changing method of that name.
+                            None => self
+                                .structs
+                                .iter()
+                                .flat_map(|s| &s.methods)
+                                .chain(self.enums.iter().flat_map(|e| &e.methods))
+                                .any(|m| m.name == *name && m.mutating),
                         }
                     }
-                    // A method of a field's field: any changing method of that name.
-                    MethodCall::Deep(name) => self
-                        .structs
-                        .iter()
-                        .flat_map(|s| &s.methods)
-                        .chain(self.enums.iter().flat_map(|e| &e.methods))
-                        .any(|m| m.name == *name && m.mutating),
                 });
                 if mutates {
                     let methods = if *is_struct { &mut self.structs[*id].methods } else { &mut self.enums[*id].methods };
@@ -1276,6 +1283,48 @@ impl Checker<'_> {
         for i in 0..self.ifaces.len() {
             let names: Vec<String> = self.ifaces[i].methods.iter().map(|(n, _)| n.clone()).collect();
             self.ifaces[i].mutating = names.iter().map(|n| self.iface_method_mutates(i, n)).collect();
+        }
+    }
+
+    /// Does calling method `name` on a value of type `t` change it? Only
+    /// declared methods count here; built-in changing methods like `append`
+    /// are found by `expr_mutates`.
+    fn ty_method_mutates(&self, t: &Ty, name: &str) -> bool {
+        match t {
+            Ty::Struct(s) => self.structs[*s].methods.iter().any(|m| m.name == name && m.mutating),
+            Ty::Enum(e) => self.enums[*e].methods.iter().any(|m| m.name == name && m.mutating),
+            Ty::Iface(i) => self.iface_method_mutates(*i, name),
+            Ty::Opt(inner) => self.ty_method_mutates(inner, name),
+            _ => false,
+        }
+    }
+
+    /// The type reached from `t` by following `steps`, or `None` when it
+    /// can't be told before bodies are checked.
+    fn path_ty(&self, mut t: Ty, steps: &[Step]) -> Option<Ty> {
+        for step in steps {
+            while let Ty::Opt(inner) = t {
+                t = *inner;
+            }
+            t = match (step, &t) {
+                (Step::Index, Ty::List(elem)) => (**elem).clone(),
+                (Step::Index, Ty::Dict(_, value)) => Ty::opt((**value).clone()),
+                (Step::Member(n), Ty::Struct(s)) => {
+                    let def = &self.structs[*s];
+                    match def.fields.iter().find(|f| f.name == *n) {
+                        Some(f) => f.ty.clone(),
+                        None => def.methods.iter().find(|m| m.prop && m.name == *n)?.sig.ret.clone(),
+                    }
+                }
+                (Step::Member(n), Ty::Enum(e)) => {
+                    self.enums[*e].methods.iter().find(|m| m.prop && m.name == *n)?.sig.ret.clone()
+                }
+                _ => return None,
+            };
+        }
+        match t {
+            Ty::Generic(_) | Ty::Error | Ty::Any => None,
+            t => Some(t),
         }
     }
 
@@ -5595,8 +5644,30 @@ enum MethodCall {
     Own(String),
     /// `field.name(…)`: a method of one of the struct's fields.
     Field(String, String),
-    /// `field.a.name(…)`: a method of something inside a field.
-    Deep(String),
+    /// `field.a[i].name(…)`: a method of something inside a field or `self`:
+    /// the root name, the steps from it to the receiver, and the method.
+    Deep(String, Vec<Step>, String),
+}
+
+/// One step of a path like `a.b[i]` below its root name.
+enum Step {
+    Member(String),
+    Index,
+}
+
+/// The steps of a path like `a.b[i].c` below its root name `a`.
+fn path_steps(e: &Expr, out: &mut Vec<Step>) {
+    match &e.kind {
+        ExprKind::Member { object, name, .. } => {
+            path_steps(object, out);
+            out.push(Step::Member(name.name.clone()));
+        }
+        ExprKind::Index(object, _) => {
+            path_steps(object, out);
+            out.push(Step::Index);
+        }
+        _ => {}
+    }
 }
 
 /// The calls in a method body that could change its value, for
@@ -5611,7 +5682,10 @@ fn method_calls(b: &Block, roots: &HashSet<String>) -> Vec<MethodCall> {
                 ExprKind::Name(n) if n == "self" => out.push(MethodCall::Own(name.name.clone())),
                 ExprKind::Name(n) if roots.contains(n) => out.push(MethodCall::Field(n.clone(), name.name.clone())),
                 _ if root_name(object).is_some_and(|n| roots.contains(n) || n == "self") => {
-                    out.push(MethodCall::Deep(name.name.clone()))
+                    let root = root_name(object).unwrap_or_default().to_string();
+                    let mut steps = Vec::new();
+                    path_steps(object, &mut steps);
+                    out.push(MethodCall::Deep(root, steps, name.name.clone()))
                 }
                 _ => {}
             },
