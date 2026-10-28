@@ -1,0 +1,44 @@
+// In a headless run, loads that timers start finish during the `wait`
+// whose time they start in, and so do the loads their results start: a
+// timer that fetches, again and again, counts up as it would in a window.
+
+app Loader {
+    state started = 0.0
+    state n = 0
+    state busy = false
+    state chain: [String] = []
+
+    VStack {
+        Text("fetched {n} at {now() - started} s")
+        Text("chain {chain}")
+    }
+    .onAppear {
+        started = now()
+        every(seconds: 0.25) {
+            if !busy {
+                busy = true
+                after(seconds: 0.0) {
+                    let text = await fetch(url: "file://tests/run/fetch_data.txt")
+                    if text != nil {
+                        n += 1
+                    }
+                    busy = false
+                }
+            }
+        }
+        // A load whose result starts the next one, and that one's the next.
+        after(seconds: 1.5) {
+            fetch(url: "file://tests/run/fetch_data.txt") { a in
+                chain.append("a at {now() - started}")
+                fetch(url: "file://tests/run/fetch_data.txt") { b in
+                    chain.append("b")
+                    after(seconds: 0.25) {
+                        fetch(url: "file://tests/run/fetch_data.txt") { c in
+                            chain.append("c at {now() - started}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

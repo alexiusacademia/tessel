@@ -352,6 +352,10 @@ TESSEL_SCRIPT='tray; tray "Start"; wait 3; tray; click "Focus mode"; tree' tesse
 - A notification prints `(notification "Title" "message")`.
 - Its players play nothing, say every file is a minute long, and keep time
   on the script's clock, so `wait 3` moves them three seconds on.
+- `waitfor "20:00"` moves the script's clock on, timer by timer, until a
+  view with that label is there: after `tray "Start"`, five minutes on. `wait` and `waitfor` also let the loads and
+  `background` work a timer starts finish, so an app that downloads
+  something every few seconds is tested in an instant.
 - `tree` shows `Root (hidden)` while the window is closed into the tray, a
   `VideoPlayer` with where it is, and a `WebView` with what it shows.
 - `dragto "report.txt" "…"` prints `(drag file … out)`.
