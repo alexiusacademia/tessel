@@ -63,6 +63,7 @@ The file functions work immediately and return a result you can check:
 | `fileSize(path)` | `Int?` | The file's size in bytes. |
 | `modifiedTime(path)` | `Float?` | When the file last changed. |
 | `readData(path)` | `Data?` | The file's raw bytes, for files that aren't text. |
+| `readData(path, from:count:)` | `Data?` | Up to `count` bytes, starting at byte `from`. Only those bytes are read. |
 | `writeData(path:data:)` | `Bool` | Writes raw bytes to the file. |
 | `appendData(path:data:)` | `Bool` | Adds raw bytes to the end of the file. |
 
@@ -114,6 +115,34 @@ for name in names {
     }
 }
 ```
+
+### Reading part of a big file
+
+`readData(path, from:count:)` reads only part of a file: up to `count` bytes,
+starting at byte `from`. Only those bytes go into memory, so a program can
+work through a file bigger than memory, such as a video or a disk image, a
+piece at a time. Near the end you get fewer bytes, and at the end you get
+none. This counts the zero bytes in a file, a megabyte at a time:
+
+```tessel
+fn main() {
+    let path = "disk.img"
+    let size = fileSize(path) ?? 0
+    let piece = 1048576
+    var zeros = 0
+    var from = 0
+    while from < size {
+        if let data = readData(path, from: from, count: piece) {
+            zeros += data.bytes.filter { b in b == 0 }.count
+        }
+        from += piece
+    }
+    print("{zeros} of {size} bytes are zero")
+}
+```
+
+In an app, do this in [background work](#heavy-work-in-the-background), which
+can call `readData` like any other code.
 
 The file functions work in any program, including one with `fn main()`
 instead of an app.
@@ -371,6 +400,10 @@ has:
 - `headers`: the response headers, with lower-case names.
 - `error`: if the server couldn't be reached at all, why. Then `status` is
   `0`.
+
+`request` also reads `file://` URLs. Like a web server, it honours a
+`Range` header: `headers: ["Range": "bytes=1000-1999"]` gives status 206 and
+only those bytes, and only they are read from the disk.
 
 [`toJson`](/reference/stdlib/#tojson) and [`fromJson`](/reference/stdlib/#fromjson)
 turn your structs into the JSON that most web APIs use, and back.

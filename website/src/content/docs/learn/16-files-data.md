@@ -190,6 +190,32 @@ for line in (readFile("log.txt") ?? "").lines() {
 > Closed the door
 ```
 
+### Reading part of a file
+
+Pictures, sounds and videos aren't text. `writeData` and `readData` work
+with their raw bytes, as `Data`. A big file, like a film, can be larger than
+your computer's memory, so `readData` can also read just a part: `count`
+bytes, starting at byte `from`. Bytes are counted from 0:
+
+```tessel
+fn main() {
+    writeData(path: "letters.bin", data: Data(text: "abcdefghij"))
+    print(readData("letters.bin", from: 0, count: 3)?.text ?? "")
+    print(readData("letters.bin", from: 7, count: 100)?.text ?? "")
+    print(fileSize("letters.bin") ?? 0)
+}
+```
+
+```text
+abc
+hij
+10
+```
+
+The second read asks for more than is there, so it gives the last three
+bytes. `fileSize` tells you where the file ends, so you can read it a piece
+at a time.
+
 ## Folders, and checking what's there
 
 `fileExists` tells you whether a file (or folder) exists, `createFolder`

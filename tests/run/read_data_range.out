@@ -1,0 +1,26 @@
+true
+012
+456
+789
+0
+0
+0
+6789
+01
+0123456789
+true
+true
+true
+true
+readBytes: 23
+readBytes failed: true
+readBytes failed: true
+background: 56
+206 234 bytes 2-4/10 3
+206 89 bytes 8-9/10
+206 789 bytes 7-9/10
+206 6789 bytes 6-9/10
+416 0 bytes */10
+200 0123456789 10
+200 0123456789
+true

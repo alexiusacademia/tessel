@@ -144,10 +144,7 @@ fn failed(error: String) -> HttpResult {
 
 fn run_request(id: u64, url: &str, method: &str, headers: &[(String, String)], body: Vec<u8>) -> HttpResult {
     if let Some(path) = url.strip_prefix("file://") {
-        return match std::fs::read(path) {
-            Ok(b) => HttpResult { status: 200, headers: Vec::new(), body: b, error: String::new() },
-            Err(e) => failed(e.to_string()),
-        };
+        return read_file(path, headers);
     }
     let mut builder = ureq::http::Request::builder().method(method).uri(url);
     for (k, v) in headers {
@@ -180,6 +177,86 @@ fn run_request(id: u64, url: &str, method: &str, headers: &[(String, String)], b
         }
         Err(e) => failed(e.to_string()),
     }
+}
+
+/// A `file://` request: the whole file (200), or the part a `Range:
+/// bytes=a-b` header asks for (206), as an HTTP server would answer. Only
+/// that part is read.
+fn read_file(path: &str, headers: &[(String, String)]) -> HttpResult {
+    use std::io::{Seek, SeekFrom};
+    let range = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("range")).map(|(_, v)| v.as_str());
+    let (mut file, size) = match std::fs::File::open(path).and_then(|f| f.metadata().map(|m| (f, m))) {
+        Ok((_, m)) if m.is_dir() => return failed(std::io::Error::from(std::io::ErrorKind::IsADirectory).to_string()),
+        Ok((f, m)) => (f, m.len()),
+        Err(e) => return failed(e.to_string()),
+    };
+    let header = |k: &str, v: String| (k.to_string(), v);
+    let Some(range) = range.and_then(|r| byte_range(r, size)) else {
+        let mut body = Vec::with_capacity(size as usize);
+        return match file.read_to_end(&mut body) {
+            Ok(_) => HttpResult {
+                status: 200,
+                headers: vec![header("Accept-Ranges", "bytes".into()), header("Content-Length", body.len().to_string())],
+                body,
+                error: String::new(),
+            },
+            Err(e) => failed(e.to_string()),
+        };
+    };
+    let Some((start, end)) = range else {
+        return HttpResult {
+            status: 416,
+            headers: vec![header("Content-Range", format!("bytes */{size}")), header("Content-Length", "0".into())],
+            body: Vec::new(),
+            error: String::new(),
+        };
+    };
+    let mut body = Vec::with_capacity((end - start + 1) as usize);
+    match file.seek(SeekFrom::Start(start)).and_then(|_| (&mut file).take(end - start + 1).read_to_end(&mut body)) {
+        Ok(_) => HttpResult {
+            status: 206,
+            headers: vec![
+                header("Accept-Ranges", "bytes".into()),
+                header("Content-Range", format!("bytes {start}-{}/{size}", if body.is_empty() { end } else { start + body.len() as u64 - 1 })),
+                header("Content-Length", body.len().to_string()),
+            ],
+            body,
+            error: String::new(),
+        },
+        Err(e) => failed(e.to_string()),
+    }
+}
+
+/// The bytes a `Range` header asks for in a file of `size` bytes: `None`
+/// if the header is ignored (not one `bytes=` range), `Some(None)` if the
+/// range starts past the end (416), else the first and last byte.
+fn byte_range(header: &str, size: u64) -> Option<Option<(u64, u64)>> {
+    let spec = header.trim().strip_prefix("bytes=")?.trim();
+    if spec.contains(',') {
+        return None;
+    }
+    let (a, b) = spec.split_once('-')?;
+    let (a, b) = (a.trim(), b.trim());
+    let parse = |s: &str| if s.bytes().all(|c| c.is_ascii_digit()) { s.parse::<u64>().ok() } else { None };
+    let (start, end) = if a.is_empty() {
+        // The last `n` bytes.
+        let n = parse(b)?;
+        if n == 0 || size == 0 {
+            return Some(None);
+        }
+        (size.saturating_sub(n), size - 1)
+    } else {
+        let start = parse(a)?;
+        let end = if b.is_empty() { u64::MAX } else { parse(b)? };
+        if end < start {
+            return None;
+        }
+        if start >= size {
+            return Some(None);
+        }
+        (start, end.min(size - 1))
+    };
+    Some(Some((start, end)))
 }
 
 fn deliver_response(id: u64, r: HttpResult) {

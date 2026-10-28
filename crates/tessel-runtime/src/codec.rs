@@ -326,16 +326,75 @@ pub extern "C" fn tsl_float_bytes(x: f64, count: i64, big: u8) -> *mut List {
     byte_list(&bytes)
 }
 
-/// `readData(path)`: the file's bytes, or null if it can't be read.
+/// `readData(path, from:, count:)`: up to `count` bytes of the file from
+/// byte `from` (fewer at the end, none from the end on), or null if it
+/// can't be read or `from` or `count` is negative. Without `from` and
+/// `count` (0 and the largest Int), the whole file.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_read_data(path: *const Str) -> *mut Str {
+pub unsafe extern "C" fn tsl_read_data(path: *const Str, from: i64, count: i64) -> *mut Str {
     let path = unsafe { str_text(path) };
-    match std::fs::read(path) {
-        Ok(bytes) => data_new(&bytes),
+    if from < 0 || count < 0 {
+        crate::set_error(format!("can't read {path}: the start and the count can't be negative"));
+        return std::ptr::null_mut();
+    }
+    let read = if from == 0 && count == i64::MAX {
+        std::fs::read(path).map(|bytes| data_new(&bytes))
+    } else {
+        read_range(path, from as u64, count as u64).map(|(data, _)| data)
+    };
+    match read {
+        Ok(data) => data,
         Err(e) => {
             crate::file_error("read", path, &e);
             std::ptr::null_mut()
         }
+    }
+}
+
+/// Up to `count` bytes of a file from byte `from`, read straight into a new
+/// `Data` (only those bytes are in memory), and the file's size.
+pub(crate) fn read_range(path: &str, from: u64, count: u64) -> std::io::Result<(*mut Str, u64)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    let meta = file.metadata()?;
+    if meta.is_dir() {
+        return Err(std::io::Error::from(std::io::ErrorKind::IsADirectory));
+    }
+    let size = meta.len();
+    let want = count.min(size.saturating_sub(from)) as usize;
+    let data = data_new_zeroed(want);
+    if want > 0 {
+        let buf = unsafe { std::slice::from_raw_parts_mut((data as *mut u8).add(size_of::<Str>()), want) };
+        let mut got = 0;
+        let mut read = || -> std::io::Result<()> {
+            file.seek(SeekFrom::Start(from))?;
+            // The file may have shrunk since its size was read.
+            while got < buf.len() {
+                match file.read(&mut buf[got..]) {
+                    Ok(0) => break,
+                    Ok(n) => got += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(())
+        };
+        if let Err(e) = read() {
+            unsafe { crate::tsl_release(data as *mut crate::Header) };
+            return Err(e);
+        }
+        unsafe { (*data).len = got as i64 };
+    }
+    Ok((data, size))
+}
+
+/// A new `Data` of `len` zero bytes, to fill in place.
+fn data_new_zeroed(len: usize) -> *mut Str {
+    unsafe {
+        let s = new_object(size_of::<Str>() + len, crate::str_drop_fn()) as *mut Str;
+        (*s).len = len as i64;
+        std::ptr::write_bytes((s as *mut u8).add(size_of::<Str>()), 0, len);
+        s
     }
 }
 

@@ -491,6 +491,7 @@ if let time = modifiedTime("log.txt") {
 
 ```text
 readData(_ path: String) -> Data?
+readData(_ path: String, from: Int, count: Int) -> Data?
 ```
 
 The whole file as raw bytes ([`Data`](#data)), or `nil` if it can't be read.
@@ -502,6 +503,29 @@ if let data = readData("header.bin") {
     print(data.count)
 }
 ```
+
+With `from` and `count`, it reads only part of the file: up to `count` bytes,
+starting at byte `from` (the first byte is 0). Only those bytes are read into
+memory, so a program can work through a file bigger than memory a piece at a
+time. Use [`fileSize`](#filesize) to know where the file ends.
+
+- Near the end of the file, you get fewer bytes than `count`.
+- At or past the end, you get empty `Data`.
+- `nil` if the file can't be read, or if `from` or `count` is negative.
+- Leave out `count` to read to the end, or `from` to start at the beginning.
+
+```tessel
+// The 4 bytes at the start of a file, then the last 128.
+let path = "movie.mp4"
+print(readData(path, count: 4)?.bytes ?? [])
+if let size = fileSize(path) {
+    let tail = readData(path, from: max(size - 128, 0), count: 128)
+    print(tail?.count ?? 0)
+}
+```
+
+It works in [`background`](#background) work too, so a big file can be read
+in pieces without freezing the window.
 
 ### writeData
 
@@ -2367,7 +2391,11 @@ app Todos {
   [`toJson`](#tojson) to send a struct as JSON.
 - A response with an error status (like 404 or 500) is still a response:
   `done` gets it, with its status and body. Check `ok` or `status`.
-- `file://` URLs read a local file, with status 200.
+- `file://` URLs read a local file, with status 200. A `Range` header like
+  `["Range": "bytes=1000-1999"]` (or `bytes=1000-` to the end, or `bytes=-500`
+  for the last 500) reads only that part, with status 206 and the
+  `content-range` header, as a web server would; a range that starts past
+  the end gives 416.
 
 ### HttpResponse
 
@@ -3532,6 +3560,7 @@ Like [`appendFile`](#appendfile); `nil` means it worked.
 
 ```text
 readBytes(_ path: String) -> Result<Data>
+readBytes(_ path: String, from: Int, count: Int) -> Result<Data>
 ```
 
 Like [`readData`](#readdata), with a reason on failure.

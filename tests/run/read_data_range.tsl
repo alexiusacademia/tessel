@@ -1,0 +1,61 @@
+// Reading part of a file: readData(path, from:, count:), readBytes with the
+// same arguments, a read in background work, and file:// requests with a
+// Range header.
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-read-range.bin")
+    print(writeData(path: path, data: Data(text: "0123456789")))
+    print(readData(path, from: 0, count: 3)?.text ?? "nil")      // start
+    print(readData(path, from: 4, count: 3)?.text ?? "nil")      // middle
+    print(readData(path, from: 7, count: 100)?.text ?? "nil")    // runs past the end
+    print(readData(path, from: 10, count: 5)?.count ?? -1)       // at the end
+    print(readData(path, from: 50, count: 5)?.count ?? -1)       // past the end
+    print(readData(path, from: 3, count: 0)?.count ?? -1)        // nothing asked for
+    print(readData(path, from: 6)?.text ?? "nil")                // from 6 on
+    print(readData(path, count: 2)?.text ?? "nil")               // the first 2
+    print(readData(path)?.text ?? "nil")                         // the whole file
+    print(readData(path, from: -1, count: 2) == nil)             // negative
+    print(readData(path, from: 1, count: -2) == nil)
+    let missing = joinPath(tempFolder(), "tessel-no-such-file.bin")
+    print(readData(missing, from: 0, count: 2) == nil)
+    print(readData(tempFolder(), from: 0, count: 2) == nil)      // a folder
+    match readBytes(path, from: 2, count: 2) {
+        .ok(data) -> print("readBytes: {data.text ?? ""}")
+        .failure(e) -> print("readBytes failed: {e.message}")
+    }
+    match readBytes(path, from: -1, count: 2) {
+        .ok(_) -> print("readBytes: no")
+        .failure(e) -> print("readBytes failed: {e.message.contains("negative")}")
+    }
+    match readBytes(missing, count: 2) {
+        .ok(_) -> print("readBytes: no")
+        .failure(e) -> print("readBytes failed: {e.message.contains("no such file")}")
+    }
+
+    background(work: { readData(path, from: 5, count: 2)?.text ?? "nil" }) { text in
+        print("background: {text}")
+        let url = "file://" + path
+        request(url: url, headers: ["Range": "bytes=2-4"]) { r in
+            print("{r.status} {r.text} {r.headers["content-range"] ?? ""} {r.headers["content-length"] ?? ""}")
+            request(url: url, headers: ["range": "bytes=8-"]) { r in
+                print("{r.status} {r.text} {r.headers["content-range"] ?? ""}")
+                request(url: url, headers: ["Range": "bytes=-3"]) { r in
+                    print("{r.status} {r.text} {r.headers["content-range"] ?? ""}")
+                    request(url: url, headers: ["Range": "bytes=6-100"]) { r in
+                        print("{r.status} {r.text} {r.headers["content-range"] ?? ""}")
+                        request(url: url, headers: ["Range": "bytes=10-"]) { r in
+                            print("{r.status} {r.data.count} {r.headers["content-range"] ?? ""}")
+                            request(url: url, headers: ["Range": "lines=1-2"]) { r in
+                                print("{r.status} {r.text} {r.headers["content-length"] ?? ""}")
+                                request(url: url) { r in
+                                    print("{r.status} {r.text}")
+                                    print(deleteFile(path))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
