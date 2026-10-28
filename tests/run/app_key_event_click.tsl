@@ -1,0 +1,18 @@
+// A click gives the keyboard to the view with `.onKeyEvent` it lands in,
+// as it does for `.onKey` (#53).
+app T(width: 400, height: 300) {
+    state log = ""
+    VStack {
+        Text("log: {log}")
+        Canvas { g in g.fillRect(x: 0, y: 0, width: 50, height: 50, color: .red) }
+            .frame(width: 100, height: 100)
+            .onPointer { e in log = "{log} p" }
+            .onKeyEvent { e in log = "{log} A:{e.key}" }
+            .accessibilityLabel("A")
+        Canvas { g in g.fillRect(x: 0, y: 0, width: 50, height: 50, color: .blue) }
+            .frame(width: 100, height: 100)
+            .onPointer { e in log = "{log} q" }
+            .onKeyEvent { e in log = "{log} B:{e.key}" }
+            .accessibilityLabel("B")
+    }
+}

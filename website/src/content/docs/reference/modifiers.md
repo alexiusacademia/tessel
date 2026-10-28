@@ -452,6 +452,11 @@ Canvas { g in drawMap(g) }
 - If several views have `onKeyEvent`, the first one (from the top of the
   view tree) that is shown and enabled gets the key. When a view has
   `onKeyEvent`, no view's [`onKey`](#onkey) gets keys.
+- A click inside a view with `onKeyEvent` gives it the keyboard, as for
+  [`onKey`](#onkey): keys go to it rather than to the first view with
+  `onKeyEvent`, until a text field or code editor is clicked. So two canvases
+  side by side, each with its own `onKeyEvent`, each get the keys after a
+  click in them.
 
 ## cursor
 

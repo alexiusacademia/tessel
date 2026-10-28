@@ -3038,9 +3038,8 @@ impl App {
         }
     }
 
-    /// The view with `.onPointer` at a point.
-    /// The innermost shown view with `.onKey` that a point is in: a click
-    /// there gives it the keyboard.
+    /// The innermost shown view with `.onKey` or `.onKeyEvent` that a point
+    /// is in: a click there gives it the keyboard.
     fn on_key_at(&self, x: f64, y: f64) -> Option<u64> {
         fn find(n: &Node, x: f64, y: f64, found: &mut Option<u64>) {
             if n.mods.hidden || n.layout.style.disabled {
@@ -3050,7 +3049,7 @@ impl App {
             if x < r.x || y < r.y || x >= r.x + r.w || y >= r.y + r.h {
                 return;
             }
-            if n.mods.on_key.is_some() {
+            if n.mods.on_key.is_some() || n.mods.on_key_event.is_some() {
                 *found = Some(n.key);
             }
             n.visible_children().iter().for_each(|c| find(c, x, y, found));
@@ -3062,6 +3061,7 @@ impl App {
         found
     }
 
+    /// The view with `.onPointer` at a point.
     fn pointer_at(&self, x: f64, y: f64) -> Option<u64> {
         match self.hit(x, y) {
             Some(Hit::Pointer(key)) => Some(key),
@@ -3076,7 +3076,7 @@ impl App {
         let Some(on_pointer) = node.mods.on_pointer.clone() else { return };
         let origin = node.layout.rect.inset_by(node.mods.padding);
         // Pressing a view like a canvas ends text editing, and gives the
-        // keyboard to a view with `.onKey` it's in (or is).
+        // keyboard to a view with `.onKey` or `.onKeyEvent` it's in (or is).
         if kind == DOWN {
             self.ui.editing = None;
             self.ui.keys_to = self.on_key_at(at.0, at.1);
@@ -3367,7 +3367,14 @@ impl App {
         if name.is_empty() {
             return false;
         }
-        let Some((cb, releases)) = self.tree.as_ref().and_then(find) else { return false };
+        // The view with the keyboard first, then the first one with `.onKeyEvent`.
+        let to = self.ui.keys_to.and_then(|k| self.node(k)).filter(|n| !n.mods.hidden && !n.layout.style.disabled);
+        let Some((cb, releases)) = to
+            .and_then(|n| n.mods.on_key_event.as_ref().map(|cb| (cb.clone(), n.mods.key_releases)))
+            .or_else(|| self.tree.as_ref().and_then(find))
+        else {
+            return false;
+        };
         // (A key let go, or a modifier on its own, only where it's asked for.)
         if (up || MODIFIER_KEYS.contains(&name)) && !releases {
             return false;
@@ -4025,7 +4032,7 @@ impl App {
             _ => None,
         };
         self.ui.focus_ring = false;
-        // A click in a view with `.onKey` gives it the keyboard.
+        // A click in a view with `.onKey` or `.onKeyEvent` gives it the keyboard.
         self.ui.keys_to = if matches!(hit, Some(Hit::Field(_))) { None } else { self.on_key_at(x, y) };
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
