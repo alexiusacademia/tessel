@@ -21,18 +21,34 @@ use super::index::{self, Entry, Index};
 use super::version::Version;
 use super::{fail, fetch, library_manifest, Dep};
 
+const USAGE: &str = "usage: tessel publish [--dry-run]
+       tessel publish --check <entry.toml>
+
+Publishes the library in this folder (its tessel.toml has a [library]
+table): checks it, tags its git commit v<version>, pushes the tag and
+proposes it to the library index. With --dry-run, it only checks the
+library. With --check, it checks an entry of the index.";
+
 pub fn publish(args: &[String]) -> ExitCode {
-    if let Some(i) = args.iter().position(|a| a == "--check") {
-        let Some(file) = args.get(i + 1) else { return fail("usage: tessel publish --check <entry.toml>") };
-        return match check_entry(Path::new(file)) {
-            Ok(()) => {
-                println!("ok: {file}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => fail(e),
-        };
-    }
-    let dry = args.iter().any(|a| a == "--dry-run");
+    // (Anything not understood stops it before it tags or pushes.)
+    let dry = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        ["--help" | "-h"] => {
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        ["--check", file] => {
+            return match check_entry(Path::new(file)) {
+                Ok(()) => {
+                    println!("ok: {file}");
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e),
+            };
+        }
+        [] => false,
+        ["--dry-run"] => true,
+        _ => return fail(format!("`tessel publish {}`: not understood\n{USAGE}", args.join(" "))),
+    };
     match run(dry) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => fail(e),

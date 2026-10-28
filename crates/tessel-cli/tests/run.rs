@@ -677,6 +677,13 @@ fn libraries() {
     );
     write("app/main.tsl", "import textkit\n\nfn main() {\n    print(textkit.shout(\"hi\"))\n    print(textkit.area(2.0))\n}\n");
 
+    // `--help` and flags it doesn't know publish nothing (#37).
+    let (ok, out) = tessel("geokit", &["publish", "--help"]);
+    assert!(ok && out.starts_with("usage: tessel publish"), "{out}");
+    let (ok, out) = tessel("geokit", &["publish", "--dryrun"]);
+    assert!(!ok && out.contains("`tessel publish --dryrun`: not understood"), "{out}");
+    assert!(std::fs::read_dir(dir.join("index/packages")).unwrap().next().is_none(), "something was published");
+
     // Publishing: textkit needs geokit published first.
     let (ok, out) = tessel("textkit", &["publish"]);
     assert!(!ok && out.contains("there's no library `geokit` in the index"), "{out}");

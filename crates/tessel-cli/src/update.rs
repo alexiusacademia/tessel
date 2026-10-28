@@ -115,8 +115,19 @@ pub fn latest() -> Result<String, String> {
 
 /// `tessel update [version] [--check]`.
 pub fn run(args: &[String]) -> ExitCode {
+    const USAGE: &str = "usage: tessel update [version] [--check]\n\nUpdates Tessel to the latest release (or to <version>, like v0.1.2).\nWith --check, only says whether there's a newer one.";
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
     let check = args.iter().any(|a| a == "--check");
-    let wanted = args.iter().find(|a| !a.starts_with("--"));
+    let mut versions = args.iter().filter(|a| *a != "--check");
+    let wanted = versions.next();
+    // (Anything not understood stops it before it installs.)
+    if let Some(a) = wanted.filter(|a| a.starts_with('-')).or(versions.next()) {
+        eprintln!("tessel update: `{a}` isn't understood\n{USAGE}");
+        return ExitCode::FAILURE;
+    }
     match update(wanted.map(String::as_str), check) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

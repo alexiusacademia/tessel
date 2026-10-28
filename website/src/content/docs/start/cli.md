@@ -503,6 +503,8 @@ tessel publish
 Publishes the library in the current folder: checks it, tags its commit
 `v<version>`, pushes the tag, and opens the page that proposes it to the
 library index. See [Publishing](/guides/libraries/#publishing).
+`--dry-run` only checks the library. Any other option is an error, and
+publishes nothing; `tessel publish --help` shows what it takes.
 
 ## `tessel update`
 
@@ -514,7 +516,8 @@ tessel update v0.1.2     # to a specific version
 
 Replaces the installation this `tessel` runs from (the folder it's in) with
 another release, after checking the download against the release's
-checksums. See [Updating](/start/installation/#updating).
+checksums. See [Updating](/start/installation/#updating). An option it
+doesn't know is an error, and updates nothing.
 
 ## `tessel telemetry`
 

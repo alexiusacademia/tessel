@@ -144,6 +144,18 @@ pub fn hand_on(args: &mut Vec<String>) -> Option<ExitCode> {
 /// `tessel pin [version]`: writes the version (this one if none is named)
 /// into the `tessel.toml` of the current folder, keeping what else it holds.
 pub fn run(args: &[String]) -> ExitCode {
+    const USAGE: &str = "usage: tessel pin [version]\n\nMakes this project use this version of Tessel (or <version>), written in its tessel.toml.";
+    match args.first().map(String::as_str) {
+        Some("--help" | "-h") => {
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        Some(a) if a.starts_with('-') || args.len() > 1 => {
+            eprintln!("tessel pin: `{}` isn't understood\n{USAGE}", args.join(" "));
+            return ExitCode::FAILURE;
+        }
+        _ => {}
+    }
     let result = (|| -> Result<String, String> {
         let version = match args.first() {
             Some(v) => update::normalize(v)?,
