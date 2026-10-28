@@ -24,6 +24,9 @@ pub struct Checked {
     /// `for` loop variables (by name span) that are places in the list,
     /// so changing them changes the list.
     pub loop_places: HashSet<Span>,
+    /// The bodies (by span) of functions returning `View` that list several
+    /// views: built like a view's body, all of them shown.
+    pub view_lists: HashSet<Span>,
     /// Arguments given to `bind` parameters: the caller's variable they
     /// name is shared with the callee (so it lives in a box).
     pub bind_args: HashSet<ExprId>,
@@ -288,6 +291,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         frames: Vec::new(),
         locals: HashMap::new(),
         loop_places: HashSet::new(),
+        view_lists: HashSet::new(),
         bind_args: HashSet::new(),
         sql_value: None,
         view_fns: HashMap::new(),
@@ -345,6 +349,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         fns,
         locals: c.locals,
         loop_places: c.loop_places,
+        view_lists: c.view_lists,
         bind_args: c.bind_args,
         sql_value: c.sql_value,
         views: program
@@ -508,6 +513,7 @@ struct Checker<'a> {
     frames: Vec<CallFrame>,
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
+    view_lists: HashSet<Span>,
     bind_args: HashSet<ExprId>,
     sql_value: Option<usize>,
     view_fns: HashMap<(String, String), FnSig>,
@@ -1483,6 +1489,85 @@ impl Checker<'_> {
             c.waits.pop();
             c.returns.pop();
         });
+        // A function returning `View` that lists several views shows them
+        // all, as a view's body does.
+        if ret == Ty::View && !f.is_async && self.drops_views(&f.body, true) {
+            self.view_list_rules(&f.body);
+            self.view_lists.insert(f.body.span);
+        }
+    }
+
+    /// Does block `b` have a view that isn't its value (with `tail`, the
+    /// value of the block is the function's)?
+    fn drops_views(&self, b: &Block, tail: bool) -> bool {
+        let n = b.stmts.len();
+        b.stmts.iter().enumerate().any(|(i, s)| match s {
+            Stmt::Expr(e) => self.expr_drops_views(e, tail && i + 1 == n),
+            Stmt::For { body, .. } | Stmt::While { body, .. } => self.drops_views(body, false),
+            _ => false,
+        })
+    }
+
+    fn expr_drops_views(&self, e: &Expr, tail: bool) -> bool {
+        match &e.kind {
+            ExprKind::If { then, otherwise, .. } => {
+                self.drops_views(then, tail)
+                    || match otherwise {
+                        Some(Else::Block(b)) => self.drops_views(b, tail),
+                        Some(Else::If(x)) => self.expr_drops_views(x, tail),
+                        None => false,
+                    }
+            }
+            ExprKind::Match { arms, .. } => arms.iter().any(|a| self.expr_drops_views(&a.body, tail)),
+            ExprKind::Block(b) => self.drops_views(b, tail),
+            _ => !tail && self.types.get(&e.id) == Some(&Ty::View),
+        }
+    }
+
+    /// A function that lists several views is built like a view's body, so
+    /// it can only hold what a view's body can.
+    fn view_list_rules(&mut self, b: &Block) {
+        for s in &b.stmts {
+            let (span, what) = match s {
+                Stmt::Let(_) => continue,
+                Stmt::Expr(e) => {
+                    self.view_list_expr_rules(e);
+                    continue;
+                }
+                Stmt::For { body, .. } => {
+                    self.view_list_rules(body);
+                    continue;
+                }
+                Stmt::Var(d) | Stmt::State(d) => (d.span, "`var` and `state`"),
+                Stmt::Fn(f) => (f.name.span, "functions"),
+                Stmt::Assign { span, .. } => (*span, "changing values"),
+                Stmt::Return { span, .. } => (*span, "`return`"),
+                Stmt::While { span, .. } => (*span, "`while`"),
+                Stmt::Break(span) | Stmt::Continue(span) => (*span, "`break` and `continue`"),
+            };
+            self.error(span, format!("{what} can't be used in a function that shows several views"))
+                .help("show its views in one stack instead, like `VStack { … }`, and return that");
+        }
+    }
+
+    fn view_list_expr_rules(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::If { then, otherwise, .. } => {
+                self.view_list_rules(then);
+                match otherwise {
+                    Some(Else::Block(b)) => self.view_list_rules(b),
+                    Some(Else::If(x)) => self.view_list_expr_rules(x),
+                    None => {}
+                }
+            }
+            ExprKind::Match { arms, .. } => {
+                for a in arms {
+                    self.view_list_expr_rules(&a.body);
+                }
+            }
+            ExprKind::Block(b) => self.view_list_rules(b),
+            _ => {}
+        }
     }
 
     /// The type of constant `i` (a function index). The first time, its

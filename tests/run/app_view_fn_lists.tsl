@@ -1,0 +1,75 @@
+// A function returning `View` that lists several views shows them all, as
+// a view's body does (issue #47): at the top level, as a method, in a view,
+// in the app, and as a context menu's items.
+
+fn pair(_ a: String, _ b: String) -> View {
+    Text(a)
+    Text(b)
+}
+
+struct Item {
+    name: String
+
+    fn rows() -> View {
+        Text(name)
+        Text("{name}!")
+    }
+}
+
+fn many(_ names: [String], flag: Bool) -> View {
+    let head = "names"
+    Text(head)
+    for n in names {
+        Text(n)
+    }
+    if flag {
+        Text("flag on")
+        Text("twice")
+    } else {
+        Text("flag off")
+    }
+}
+
+fn menuItems(log: bind [String]) -> View {
+    MenuItem("One") { log.append("one") }
+    MenuDivider()
+    MenuItem("Two") { log.append("two") }
+}
+
+view Card(title: String) {
+    state n = 0
+
+    fn inner() -> View {
+        Text("{title} {n}")
+        Button("Inc") { n += 1 }
+    }
+
+    VStack {
+        inner()
+    }
+}
+
+app ViewLists(width: 300, height: 500) {
+    state count = 0
+    state log: [String] = []
+
+    fn two() -> View {
+        Text("first")
+        Text("second {count}")
+    }
+
+    VStack {
+        two()
+        Button("Count") { count += 1 }
+        pair("x", "y")
+        Item(name: "it").rows()
+        many(["a", "b"], flag: false)
+        Text("Menu").contextMenu {
+            menuItems(log: log)
+        }
+        Card(title: "card")
+        for line in log {
+            Text(line)
+        }
+    }
+}

@@ -1,0 +1,31 @@
+// A function returning `View` that lists several views is built like a
+// view's body (issue #47), so it can only hold what a view's body can.
+
+fn early(flag: Bool) -> View {
+    Text("a")
+    if flag {
+        return Text("b") // error: `return` can't be used in a function that shows several views
+    }
+    Text("c")
+}
+
+fn counted(items: [String]) -> View {
+    var n = 0 // error: `var` and `state` can't be used in a function that shows several views
+    for item in items {
+        Text(item)
+        n += 1 // error: changing values can't be used in a function that shows several views
+    }
+    Text("{n}")
+}
+
+// One view, with other code before it, is a function like any other.
+fn one(items: [String]) -> View {
+    var n = 0
+    for item in items {
+        n += item.count
+    }
+    if n > 3 {
+        return Text("long")
+    }
+    Text("{n}")
+}
