@@ -72,10 +72,11 @@ fn appendText(path: String, text: String) -> Error? {
     Error(message: __lastError())
 }
 
-/// The bytes of a file, or why it couldn't be read.
-fn readBytes(_ path: String) -> Result<Data> {
+/// The bytes of a file (or `count` of them from byte `from`), or why they
+/// couldn't be read.
+fn readBytes(_ path: String, from: Int = 0, count: Int = 9223372036854775807) -> Result<Data> {
     __clearError()
-    if let data = readData(path) {
+    if let data = readData(path, from: from, count: count) {
         return Result.ok(value: data)
     }
     Result.failure(error: Error(message: __lastError()))

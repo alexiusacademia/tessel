@@ -173,7 +173,7 @@ true
 | `readText(path)` | `Result<String>` | `readFile` |
 | `writeText(path:text:)` | `Error?` | `writeFile` |
 | `appendText(path:text:)` | `Error?` | `appendFile` |
-| `readBytes(path)` | `Result<Data>` | `readData` |
+| `readBytes(path)` | `Result<Data>` | `readData` (also with `from:count:`) |
 | `writeBytes(path:data:)` | `Error?` | `writeData` |
 | `parseInt(text)` | `Result<Int>` | `Int(text)` |
 | `parseFloat(text)` | `Result<Float>` | `Float(text)` |

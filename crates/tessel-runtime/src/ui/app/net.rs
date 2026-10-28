@@ -279,9 +279,7 @@ impl Answer<'_> {
 fn ask<'a>(response: &'a mut Option<ureq::http::Response<ureq::Body>>, url: &str, method: &str, headers: &[(String, String)], body: Vec<u8>) -> Result<Answer<'a>, String> {
     use ureq::ResponseExt;
     if let Some(path) = url.strip_prefix("file://") {
-        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        let size = file.metadata().ok().map(|m| m.len());
-        return Ok(Answer { status: 200, headers: Vec::new(), url: url.to_string(), body: Box::new(file), size });
+        return read_file(path, url, headers);
     }
     let mut builder = ureq::http::Request::builder().method(method).uri(url);
     for (k, v) in headers {
@@ -326,6 +324,69 @@ fn run_request(id: u64, url: &str, method: &str, headers: &[(String, String)], b
             Err(e) => break HttpResult { error: e.to_string(), ..answer.head() },
         }
     }
+}
+
+/// A `file://` request, up to its body: the whole file (200), or the part a
+/// `Range: bytes=a-b` header asks for (206), as an HTTP server would
+/// answer. Only that part is read, as the body is read.
+fn read_file(path: &str, url: &str, headers: &[(String, String)]) -> Result<Answer<'static>, String> {
+    use std::io::{Seek, SeekFrom};
+    let range = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("range")).map(|(_, v)| v.as_str());
+    let (mut file, size) = match std::fs::File::open(path).and_then(|f| f.metadata().map(|m| (f, m))) {
+        Ok((_, m)) if m.is_dir() => return Err(std::io::Error::from(std::io::ErrorKind::IsADirectory).to_string()),
+        Ok((f, m)) => (f, m.len()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let header = |k: &str, v: String| (k.to_string(), v);
+    let answer = |status, headers, body: Box<dyn Read>, size| Answer { status, headers, url: url.to_string(), body, size: Some(size) };
+    let Some(range) = range.and_then(|r| byte_range(r, size)) else {
+        let headers = vec![header("Accept-Ranges", "bytes".into()), header("Content-Length", size.to_string())];
+        return Ok(answer(200, headers, Box::new(file), size));
+    };
+    let Some((start, end)) = range else {
+        let headers = vec![header("Content-Range", format!("bytes */{size}")), header("Content-Length", "0".into())];
+        return Ok(answer(416, headers, Box::new(std::io::empty()), 0));
+    };
+    file.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    let len = end - start + 1;
+    let headers = vec![
+        header("Accept-Ranges", "bytes".into()),
+        header("Content-Range", format!("bytes {start}-{end}/{size}")),
+        header("Content-Length", len.to_string()),
+    ];
+    Ok(answer(206, headers, Box::new(file.take(len)), len))
+}
+
+/// The bytes a `Range` header asks for in a file of `size` bytes: `None`
+/// if the header is ignored (not one `bytes=` range), `Some(None)` if the
+/// range starts past the end (416), else the first and last byte.
+fn byte_range(header: &str, size: u64) -> Option<Option<(u64, u64)>> {
+    let spec = header.trim().strip_prefix("bytes=")?.trim();
+    if spec.contains(',') {
+        return None;
+    }
+    let (a, b) = spec.split_once('-')?;
+    let (a, b) = (a.trim(), b.trim());
+    let parse = |s: &str| if s.bytes().all(|c| c.is_ascii_digit()) { s.parse::<u64>().ok() } else { None };
+    let (start, end) = if a.is_empty() {
+        // The last `n` bytes.
+        let n = parse(b)?;
+        if n == 0 || size == 0 {
+            return Some(None);
+        }
+        (size.saturating_sub(n), size - 1)
+    } else {
+        let start = parse(a)?;
+        let end = if b.is_empty() { u64::MAX } else { parse(b)? };
+        if end < start {
+            return None;
+        }
+        if start >= size {
+            return Some(None);
+        }
+        (start, end.min(size - 1))
+    };
+    Some(Some((start, end)))
 }
 
 /// The `HttpResponse` for `r` (its parts owned by the receiver).

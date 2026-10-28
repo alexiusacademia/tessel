@@ -732,7 +732,10 @@ impl Builtins {
             "sendWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("text", Ty::Str)], ret: Ty::Bool },
             "sendWebSocketData" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("data", Ty::Data)], ret: Ty::Bool },
             "closeWebSocket" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
-            "readData" => FnSig { params: vec![P::unlabeled("path", Ty::Str)], ret: Ty::opt(Ty::Data) },
+            "readData" => FnSig {
+                params: vec![P::unlabeled("path", Ty::Str), P::new("from", Ty::Int).default(), P::new("count", Ty::Int).default()],
+                ret: Ty::opt(Ty::Data),
+            },
             "writeImage" => FnSig {
                 params: vec![
                     P::new("path", Ty::Str),
@@ -1420,7 +1423,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "sendWebSocket" => rt("tsl_send_web_socket"),
         "sendToCommand" => rt("tsl_send_to_command"),
         "closeWebSocket" => rt("tsl_close_web_socket"),
-        "readData" => rt("tsl_read_data"),
+        "readData" => rt_d("tsl_read_data", &[Dflt::Req, Dflt::Int(0), Dflt::Int(i64::MAX)]),
         "writeImage" => rt("tsl_write_image"),
         "__imageSize" => rt("tsl_image_size"),
         "__appInfo" => rt("tsl_app_info"),
