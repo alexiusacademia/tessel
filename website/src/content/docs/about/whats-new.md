@@ -11,6 +11,39 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.17.0
+
+*October 28, 2026*
+
+- **`scrollTo(_:in:)`.** With several lazy lists in a window, `in:`
+  names the one to scroll: the `.id` of the list or of a view around it.
+  See [Scrolling from code](/ui/layout/#scrolling-from-code).
+- **Functions that return several views.** A function returning `View`
+  can list several views, like a `view`'s body; all of them show (they
+  used to be cut to the last one). Such a function follows a view body's
+  rules: `let`, `if`, `match` and `for`, but no `var` or `return`.
+- **Setting a `Data` byte.** `d[i] = 7` changes one byte in place (it
+  passed `tessel check`, then crashed).
+
+Fixed:
+
+- A `Text` keeps its trailing spaces: `Text("int ")` beside
+  `Text("total")` reads "int total".
+- `.frame(alignment:)` on a custom view lines up its body; it was
+  centered.
+- Modifiers on a custom view (`.disabled`, `.hidden`…) reach the grid
+  rows and ribbon parts it makes, and empty custom views take no room in a
+  ribbon or grid.
+- A click gives the keyboard to a view with `.onKeyEvent`, as it does for
+  `.onKey`.
+- A method of your own named like a built-in one (`trim`) no longer
+  makes the built-in count as changing its value.
+- `unique()` is fast on long lists of strings, numbers and other
+  key-like items (40,000 strings: milliseconds instead of seconds).
+- `tessel publish`, `tessel update` and `tessel pin` show their help for
+  `--help` and refuse options they don't know (`tessel publish --help`
+  published, and `tessel update --help` updated).
+
 ## 0.16.3
 
 *October 27, 2026*
