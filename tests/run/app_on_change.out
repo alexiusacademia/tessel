@@ -1,0 +1,17 @@
+switch true
+switch false
+bold true
+shape square
+size large
+unit ft
+name ab
+name a
+name ab
+secret 3
+notes 2
+notes 3
+query "q"
+query ""
+code x
+reset
+reset

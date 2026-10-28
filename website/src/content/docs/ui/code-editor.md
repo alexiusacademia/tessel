@@ -45,6 +45,7 @@ CodeEditor(text: source, errorLines: problems, line: currentLine)
 | `breakpoints:` | `[Int]` | Lines to mark with a red dot in the margin. Optional; see [For a debugger](#for-a-debugger). |
 | `stoppedLine:` | `Int` | A line to highlight in yellow, as where a program is stopped. 0 (the default) for none. |
 | `onBreakpoint:` | `fn(Int)` | Called with the line when the margin is clicked. |
+| `onChange:` | `fn()` | Called after each edit that changes `text` (not when your program sets it). Optional. |
 
 Line numbers start at 1, as they do in the gutter.
 

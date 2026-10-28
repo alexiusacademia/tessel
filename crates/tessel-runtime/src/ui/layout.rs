@@ -1120,7 +1120,7 @@ impl Layouter<'_> {
                     y += c.layout.size.h + GROUP_SPACING;
                 }
             }
-            Kind::Picker { style: 2, selection } => {
+            Kind::Picker { style: 2, selection, .. } => {
                 // Closed: the chosen option in the box. Open: all of them in a
                 // list under it (over it, without room), inside the window.
                 let current = selection.locate();

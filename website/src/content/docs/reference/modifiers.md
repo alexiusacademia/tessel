@@ -288,6 +288,9 @@ Text("Click me").onTap {
   view.
 - Controls inside the view (buttons, toggles, text fields) handle their own
   clicks; clicks on other parts of the view run `action`.
+- On a control itself (a `Toggle`, `Picker`, `Slider` or text field), the
+  control takes the click, so `action` doesn't run. To know when the user
+  changes it, use the control's `onChange`.
 - Doesn't run while the view is disabled or hidden.
 
 ## onDrag

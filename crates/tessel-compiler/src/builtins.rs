@@ -259,15 +259,20 @@ impl Builtins {
                 P::new("text", Ty::Str).bind(),
                 P::new("secure", Ty::Bool).default(),
                 P::new("lines", Ty::Int).default(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
             ],
-            "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind()],
+            "Toggle" => vec![P::unlabeled("label", Ty::Str).default(), P::new("isOn", Ty::Bool).bind(), P::new("onChange", Ty::func(vec![], Ty::Void)).default()],
             // The text of the prelude's `RichTextEditor` (see the runtime's `rich`).
             "__RichEditor" => vec![
                 P::new("id", Ty::Int),
                 P::new("json", Ty::Str),
                 P::new("onChange", Ty::func(vec![Ty::Str], Ty::Void)),
             ],
-            "SearchField" => vec![P::unlabeled("placeholder", Ty::Str).default(), P::new("text", Ty::Str).bind()],
+            "SearchField" => vec![
+                P::unlabeled("placeholder", Ty::Str).default(),
+                P::new("text", Ty::Str).bind(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
+            ],
             "WebView" => vec![P::new("url", Ty::Str).default(), P::new("html", Ty::Str).default()],
             "VideoPlayer" => vec![
                 P::unlabeled("path", Ty::Str),
@@ -287,11 +292,12 @@ impl Builtins {
                 P::new("breakpoints", Ty::list(Ty::Int)).default(),
                 P::new("stoppedLine", Ty::Int).default(),
                 P::new("onBreakpoint", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
             ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
                 selection.sets_tag = true;
-                vec![selection, P::new("style", PICKER_STYLE).default(), content()]
+                vec![selection, P::new("style", PICKER_STYLE).default(), P::new("onChange", Ty::func(vec![], Ty::Void)).default(), content()]
             }
             "TabView" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
@@ -422,6 +428,7 @@ impl Builtins {
                 P::new("icon", self.icon.clone()),
                 P::new("size", RIBBON_SIZE).default(),
                 P::new("isOn", Ty::Bool).bind(),
+                P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
             ],
             "RibbonMenu" => vec![
                 P::unlabeled("label", Ty::Str),

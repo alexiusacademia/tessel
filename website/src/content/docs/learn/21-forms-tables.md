@@ -12,6 +12,7 @@ In this lesson you'll learn:
 
 - how a `Grid` lines up a form's labels and fields
 - the three ways a `Picker` can look: segments, radio buttons and a menu
+- how `onChange` tells you the user changed a toggle, a picker or a field
 - `SearchField` and `Link`
 - how to cut text short with `.lineLimit`, and let it be copied with `.selectable`
 - how to edit a table's cells in place
@@ -109,6 +110,49 @@ app Choices(width: 420, height: 300) {
 
 In each, `.tag(…)` says which value an option stands for, and the arrow
 keys change the choice once the picker has the keyboard.
+
+## Knowing when something changes
+
+A binding changes the state for you, so most forms need nothing more. But
+sometimes you want to *do* something when the user changes a value: save
+the settings, or mark a document as changed. Every control that edits a
+value takes an `onChange` block for that:
+
+```tessel
+app Settings(width: 360, height: 220) {
+    state dark = false
+    state units = "metric"
+    state name = ""
+    state changes = 0
+
+    VStack(spacing: 12, alignment: .leading) {
+        Toggle("Dark mode", isOn: dark) { changes += 1 }
+        Picker(selection: units, onChange: { changes += 1 }) {
+            Text("Metric").tag("metric")
+            Text("Imperial").tag("imperial")
+        }
+        TextField("Your name", text: name) { changes += 1 }
+        Text("{changes} changes")
+        Button("Reset") {
+            dark = false
+            units = "metric"
+            name = ""
+        }
+    }
+    .padding(20)
+}
+```
+
+- For a `Toggle` and a `TextField`, `onChange` is usually the block after
+  the call. A `Picker`'s block after the call is its options, so there you
+  write `onChange:` inside the parentheses.
+- It runs after the value has changed, so the block sees the new value.
+- A text field's `onChange` runs on each edit: typing "Ada" runs it three
+  times. For "the user is done", use `.onSubmit` (Enter).
+- It runs only for the user's changes. The Reset button above changes all
+  three values, and the count stays the same.
+- `Slider`, `Stepper`, `ColorPicker` and the date pickers take `onChange`
+  in the same way.
 
 ## Searching and linking
 
@@ -434,6 +478,16 @@ Views directly in a `Grid` are rows of their own, so this is two rows of
 one cell each, not a label beside a field. Put a row's cells in a
 `GridRow { … }`.
 
+### `.onTap` on a control
+
+```tessel
+Toggle("Dark mode", isOn: dark).onTap { save() }
+```
+
+The toggle takes the click itself, so `.onTap` never runs. The same goes
+for a picker, a slider and a text field. Use `onChange`:
+`Toggle("Dark mode", isOn: dark) { save() }`.
+
 ### Tags of the wrong type
 
 Every `.tag` of a picker must have the same type as its `selection`. With
@@ -574,6 +628,8 @@ Markdown is `**Hello**, world`: Markdown has no colors.
 - **`Grid`** with **`GridRow`**s lines up a form's labels and fields;
   `.gridColumnAlignment` and `.gridCellColumns` fine-tune it.
 - A **`Picker`** is segments, `.radio` buttons or a `.menu`.
+- **`onChange`** on a `Toggle`, `Picker`, `TextField` or `SearchField`
+  runs after the user changes the value, never when your program does.
 - **`SearchField`** is for what to look for; **`Link`** opens a page.
 - **`.lineLimit(n)`** cuts text short; **`.selectable()`** lets it be copied.
 - A **`TableColumn`** with **`onEdit:`** edits its cells in place.

@@ -305,7 +305,7 @@ pub unsafe extern "C" fn tsl_ui_table_end(
                 // The cell being edited: a text field with what's typed.
                 let text = Callback::new(cell_text as *const c_void, std::ptr::null_mut());
                 with_builder(|b| {
-                    b.leaf(Kind::TextField { placeholder: String::new(), text, secure: false, lines: 1, search: false });
+                    b.leaf(Kind::TextField { placeholder: String::new(), text, secure: false, lines: 1, search: false, on_change: None });
                     if let Some(n) = b.last() {
                         n.mods.autofocus = true;
                         n.mods.max_width = Some(f64::INFINITY);

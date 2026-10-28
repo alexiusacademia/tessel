@@ -1,0 +1,24 @@
+// onChange from the keyboard: Space turns a toggle, the arrows choose a
+// picker's option (and at the last option, choose nothing new).
+
+app Keys(width: 360, height: 200) {
+    state on = false
+    state pick = 1
+    state count = 0
+
+    VStack(alignment: .leading) {
+        Toggle("Loud", isOn: on) {
+            count += 1
+            print("loud {on}")
+        }
+        Picker(selection: pick, onChange: {
+            count += 1
+            print("pick {pick}")
+        }) {
+            Text("One").tag(1)
+            Text("Two").tag(2)
+        }
+        Text("{count} changes")
+    }
+    .padding(12)
+}

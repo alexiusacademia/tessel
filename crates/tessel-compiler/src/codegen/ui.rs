@@ -564,6 +564,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.call_rt(rt, &all);
     }
 
+    /// Like `pass_closure`, then the `onChange:` block `change` (or nulls
+    /// without one).
+    fn pass_closure_and_change(&mut self, rt: &str, leading: &[Val<'ctx>], closure: Val<'ctx>, change: Option<&Expr>) {
+        let s = closure.into_struct_value();
+        let f = self.b.build_extract_value(s, 0, "").unwrap();
+        let env = self.b.build_extract_value(s, 1, "").unwrap();
+        let (cf, cenv) = self.optional_action(change);
+        let mut all = leading.to_vec();
+        all.extend([f, env, cf, cenv]);
+        self.call_rt(rt, &all);
+    }
+
     fn builtin_view<'e>(&mut self, name: &str, info: &CallInfo, arg: &dyn Fn(ArgRef) -> &'e Expr) {
         let a = |i: usize| info.args.get(i).copied().flatten().map(arg);
         let string = |g: &mut Self, x: Option<&Expr>| match x {
@@ -596,7 +608,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
                     None => self.i64().const_int(1, false).into(),
                 };
-                self.pass_closure("tsl_ui_text_field", &[label, secure, lines], loc);
+                self.pass_closure_and_change("tsl_ui_text_field", &[label, secure, lines], loc, a(4));
                 self.release(label, &Ty::Str);
             }
             "WebView" => {
@@ -646,13 +658,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 // (Flags: 2 is a search field.)
                 let flags = self.i8().const_int(2, false).into();
                 let lines = self.i64().const_int(1, false).into();
-                self.pass_closure("tsl_ui_text_field", &[label, flags, lines], loc);
+                self.pass_closure_and_change("tsl_ui_text_field", &[label, flags, lines], loc, a(2));
                 self.release(label, &Ty::Str);
             }
             "Toggle" => {
                 let label = string(self, a(0));
                 let loc = self.locator(a(1).unwrap());
-                self.pass_closure("tsl_ui_toggle", &[label], loc);
+                self.pass_closure_and_change("tsl_ui_toggle", &[label], loc, a(2));
                 self.release(label, &Ty::Str);
             }
             "CodeEditor" => {
@@ -719,9 +731,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
                 };
+                let (cf, cenv) = self.optional_action(a(9));
                 self.call_rt(
                     "tsl_ui_code_editor",
-                    &[f, env, lines, line_f, line_env, completions, start, oc_f, oc_env, breakpoints, stopped, ob_f, ob_env],
+                    &[f, env, lines, line_f, line_env, completions, start, oc_f, oc_env, breakpoints, stopped, ob_f, ob_env, cf, cenv],
                 );
                 self.release(breakpoints, &list_t);
                 self.release(lines, &list_t);
@@ -734,8 +747,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     Some(x) => self.expr(x).unwrap(),
                     None => self.ctx.i32_type().const_zero().into(),
                 };
-                self.pass_closure("tsl_ui_begin_picker", &[style], loc);
-                self.content_inline(a(2).unwrap());
+                self.pass_closure_and_change("tsl_ui_begin_picker", &[style], loc, a(2));
+                self.content_inline(a(3).unwrap());
                 self.call_rt("tsl_ui_end", &[]);
             }
             "Grid" => {
@@ -840,7 +853,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     "RibbonToggle" => {
                         let loc = self.locator(a(3).unwrap());
-                        self.pass_closure("tsl_ui_ribbon_toggle", &[label, icon, size], loc);
+                        self.pass_closure_and_change("tsl_ui_ribbon_toggle", &[label, icon, size], loc, a(4));
                     }
                     _ => {
                         self.call_rt("tsl_ui_begin_ribbon_menu", &[label, icon, size]);

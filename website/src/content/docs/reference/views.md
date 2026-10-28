@@ -142,7 +142,8 @@ Button("Add one") {
 ## TextField
 
 ```text
-TextField(_ placeholder: String, text: bind String, secure: Bool = false, lines: Int = 1)
+TextField(_ placeholder: String, text: bind String, secure: Bool = false, lines: Int = 1,
+          onChange: fn() = …)
 ```
 
 A text input. `text` is changed as the user types. The placeholder is
@@ -171,13 +172,18 @@ TextField("Password", text: password, secure: true)
   **Cmd+Enter** (Ctrl+Enter on Windows) runs `.onSubmit` and stops editing;
   the up and down arrows move between lines. A `secure` field is always one
   line.
+- `onChange` runs after each edit that changes `text`: each key typed, a
+  paste, a cut, a deletion, an undo. It doesn't run when your program sets
+  `text`. It's usually the block after the call:
+  `TextField("Name", text: name) { dirty = true }`. To act once, when the
+  user is done, use `.onSubmit` instead.
 - [`.autofocus()`](/reference/modifiers/#autofocus) makes it start editing as
   soon as it appears.
 
 ## SearchField
 
 ```text
-SearchField(_ placeholder: String = "Search", text: bind String)
+SearchField(_ placeholder: String = "Search", text: bind String, onChange: fn() = …)
 ```
 
 A text field for what to look for, with a magnifying glass before its text
@@ -189,7 +195,13 @@ SearchField(text: query)
     .onSubmit { search() }
 ```
 
-Everything else is as for a one-line [`TextField`](#textfield).
+Everything else is as for a one-line [`TextField`](#textfield). `onChange`
+runs after each edit, and also when the clear button or Escape clears the
+text, so a search can follow what's typed:
+
+```tessel
+SearchField(text: query) { results = find(query) }
+```
 
 ## Link
 
@@ -266,7 +278,7 @@ RichTextEditor(text: note)
 ## Toggle
 
 ```text
-Toggle(_ label: String = "", isOn: bind Bool)
+Toggle(_ label: String = "", isOn: bind Bool, onChange: fn() = …)
 ```
 
 An on/off switch. Clicking it flips `isOn`. The label is optional.
@@ -274,17 +286,23 @@ An on/off switch. Clicking it flips `isOn`. The label is optional.
 ```tessel
 Toggle("Dark mode", isOn: isOn)
 Toggle(isOn: isOn)
+Toggle("Autosave", isOn: autosave) { saveSettings() }
 ```
 
 - The label sits on the leading side and the switch on the trailing side,
   8 points apart. If the toggle is wider than that (for example with
   `.frame(maxWidth: .infinity)`), the label and switch move apart.
-- Clicking anywhere on the toggle, label included, flips it.
+- Clicking anywhere on the toggle, label included, flips it. So does
+  Space or Enter when the keyboard is on it.
+- `onChange` runs after the user flips it (not when your program sets
+  `isOn`). It's usually the block after the call.
+- The toggle takes the click, so a `.onTap` on it doesn't run. Use
+  `onChange`.
 
 ## Picker
 
 ```text
-Picker(selection: bind T, style: PickerStyle = .segmented, content: View)
+Picker(selection: bind T, style: PickerStyle = .segmented, onChange: fn() = …, content: View)
 ```
 
 A control for choosing one of several options: a row of segments; with
@@ -309,6 +327,19 @@ Picker(selection: mode) {
   something nested inside them.
 - The options sit side by side, each with 12 points of space on either side.
   As radio buttons, each option is a line, with its button before it.
+- `onChange` runs after the user chooses another option, with a click or
+  the arrow keys, in every style. It doesn't run when the option clicked is
+  the one already chosen, or when your program sets `selection`. The block
+  after the call is the options, so write it as `onChange:`:
+
+  ```tessel
+  Picker(selection: mode, onChange: { savePrefs() }) {
+      Text("List").tag(Mode.list)
+      Text("Grid").tag(Mode.grid)
+  }
+  ```
+- The picker takes the clicks on its options, so a `.onTap` on it doesn't
+  run. Use `onChange`.
 
 ## Slider
 
@@ -924,7 +955,8 @@ Svg("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><circle cx='
 
 ```text
 CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …,
-           completions: [Completion] = [], completionStart: Int = …, onComplete: fn(Int) = …)
+           completions: [Completion] = [], completionStart: Int = …, onComplete: fn(Int) = …,
+           breakpoints: [Int] = [], stoppedLine: Int = 0, onBreakpoint: fn(Int) = …, onChange: fn() = …)
 ```
 
 A multi-line code editor with line numbers and Tessel syntax colors. It's
@@ -940,6 +972,7 @@ CodeEditor(text: code, errorLines: errors, line: line)
 | `errorLines` | Line numbers (starting at 1) to mark with a red band and a red bar in the margin. |
 | `line` | Optional. The line the caret is on, starting at 1. The editor updates it as the caret moves, and when your program sets it, the caret jumps to the start of that line. |
 | `completions`, `completionStart`, `onComplete` | Optional. Suggestions shown as the user types; see [Code completion](/ui/code-editor/#code-completion). |
+| `onChange` | Optional. Runs after each edit that changes `text` (not when your program sets it), as for a [`TextField`](#textfield). |
 
 - Text is drawn in a 13-point monospaced font, which `.font` doesn't change.
 - **Enter** keeps the current line's indentation, adding one level (4
@@ -1383,11 +1416,13 @@ A button of a ribbon: its [icon](/reference/icons/) and label, side by side
 ## RibbonToggle
 
 ```text
-RibbonToggle(_ label: String, icon: IconName, size: RibbonSize = .small, isOn: bind Bool)
+RibbonToggle(_ label: String, icon: IconName, size: RibbonSize = .small, isOn: bind Bool,
+             onChange: fn() = …)
 ```
 
 Like `RibbonButton`, but clicking it switches `isOn`, and it's highlighted
-while `isOn` is `true` (Bold, Italic, …).
+while `isOn` is `true` (Bold, Italic, …). `onChange` runs after a click
+switches it.
 
 ## RibbonMenu
 

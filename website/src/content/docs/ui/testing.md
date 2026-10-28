@@ -152,7 +152,10 @@ its middle without clicking, so a `snapshot` afterwards shows its
 `type` inserts text at the cursor of the field being edited. Everything after
 `type ` is typed; put it in quotes to keep leading or trailing spaces. Because
 `;` separates commands, typed text can't contain one. Typing into a code editor
-gets the same automatic indentation as real typing does. While no field is
+gets the same automatic indentation as real typing does. The text goes in as
+one edit, as a paste does, so the field's `onChange` runs once for it. `click`
+on a toggle or a picker's option, and `key` on one with the keyboard, run their
+`onChange` as a person's clicks and keys do. While no field is
 being edited, each character is a key press instead, as it would be on a
 keyboard (with Shift for capitals and for symbols like `%`), so it reaches
 `.onKeyEvent` and `.onKey`.

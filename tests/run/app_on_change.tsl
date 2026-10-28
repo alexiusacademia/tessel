@@ -1,0 +1,61 @@
+// onChange on Toggle, Picker (each style), TextField (one line, secure,
+// several lines), SearchField, RibbonToggle and CodeEditor: each block runs
+// after the user changes the value, not when the program does.
+
+enum Size { small, large }
+
+app Changes(width: 640, height: 640) {
+    state on = false
+    state bold = false
+    state shape = "circle"
+    state size = Size.small
+    state unit = "m"
+    state name = ""
+    state secret = ""
+    state notes = ""
+    state query = ""
+    state code = ""
+    state tab = "Home"
+
+    VStack(alignment: .leading) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Font") {
+                    RibbonToggle("Bold", icon: .bold, isOn: bold, onChange: { print("bold {bold}") })
+                }
+            }
+        }
+        Toggle("Switch", isOn: on) { print("switch {on}") }
+        Picker(selection: shape, onChange: { print("shape {shape}") }) {
+            Text("Circle").tag("circle")
+            Text("Square").tag("square")
+        }
+        Picker(selection: size, style: .radio, onChange: { print("size {size}") }) {
+            Text("Small").tag(Size.small)
+            Text("Large").tag(Size.large)
+        }
+        Picker(selection: unit, style: .menu, onChange: { print("unit {unit}") }) {
+            Text("Meters").tag("m")
+            Text("Feet").tag("ft")
+        }
+        TextField("Name", text: name) { print("name {name}") }
+        TextField("Password", text: secret, secure: true, onChange: { print("secret {secret.count}") })
+        TextField("Notes", text: notes, lines: 3, onChange: { print("notes {notes.count}") })
+        SearchField("Find", text: query) { print("query \"{query}\"") }
+        CodeEditor(text: code, onChange: { print("code {code}") }).frame(height: 60)
+        Button("Reset") {
+            on = true
+            bold = true
+            shape = "square"
+            size = Size.large
+            unit = "ft"
+            name = "set"
+            secret = "set"
+            notes = "set"
+            query = "set"
+            code = "set"
+            print("reset")
+        }
+    }
+    .padding(12)
+}

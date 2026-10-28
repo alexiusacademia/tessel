@@ -1,0 +1,12 @@
+loud true
+loud false
+pick 2
+pick 1
+Root
+  View
+    VStack
+      Toggle "Loud" = false
+      Picker focused
+        Text "One"
+        Text "Two"
+      Text "4 changes"

@@ -2884,7 +2884,7 @@ impl App {
             if let Kind::RibbonItem { role, .. } = &n.kind {
                 return n.layout.rect.contains(x, y).then_some(match role {
                     super::RibbonRole::Button(_) => Hit::Button(n.key),
-                    super::RibbonRole::Toggle(_) => Hit::Toggle(n.key),
+                    super::RibbonRole::Toggle(..) => Hit::Toggle(n.key),
                     super::RibbonRole::Menu => Hit::RibbonMenu(n.key),
                 });
             }
@@ -4115,9 +4115,12 @@ impl App {
                 let action = action.clone();
                 action.call();
             }
-            (Hit::Toggle(_), Kind::RibbonItem { role: super::RibbonRole::Toggle(is_on), .. }) => {
+            (Hit::Toggle(_), Kind::RibbonItem { role: super::RibbonRole::Toggle(is_on, on_change), .. }) => {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+                if let Some(cb) = on_change.clone() {
+                    cb.call();
+                }
             }
             (Hit::RibbonGroup(key), _) => {
                 let key = *key;
@@ -4140,9 +4143,12 @@ impl App {
                     }
                 }
             }
-            (Hit::Toggle(_), Kind::Toggle { is_on, .. }) => {
+            (Hit::Toggle(_), Kind::Toggle { is_on, on_change, .. }) => {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+                if let Some(cb) = on_change.clone() {
+                    cb.call();
+                }
             }
             // A click in a code editor's margin, when that sets breakpoints.
             (Hit::Field(_), Kind::CodeEditor { on_breakpoint: Some(toggle), .. })
@@ -4162,11 +4168,16 @@ impl App {
                 }
             }
             // A search field's clear button: no text, and on to typing.
-            (Hit::SearchClear(key), Kind::TextField { text, .. }) => {
+            (Hit::SearchClear(key), Kind::TextField { text, on_change, .. }) => {
                 let key = *key;
+                let had = !read_string(text).is_empty();
                 set_string(text, "");
+                let told = on_change.clone().filter(|_| had);
                 self.ui.editing = Some(Editing::new(key, ""));
                 self.dirty = true;
+                if let Some(cb) = told {
+                    cb.call();
+                }
             }
             // Selectable text: the caret goes where it's clicked (unseen).
             (Hit::Field(key), Kind::Text(_) | Kind::RichEditor { .. }) => {
@@ -4223,12 +4234,17 @@ impl App {
                 super::controls::OPEN_MENU.set((!open).then_some(key));
                 self.ui.focused = Some(key);
             }
-            (Hit::Segment(_, i), Kind::Picker { selection, style, .. }) => {
+            (Hit::Segment(_, i), Kind::Picker { selection, style, on_change }) => {
                 if *style == 2 {
                     super::controls::OPEN_MENU.set(None);
                 }
                 if let Some(tag) = node.children.get(*i).and_then(|c| c.mods.tag.as_ref()) {
+                    // (Choosing the option that's chosen changes nothing.)
+                    let same = tag.equals(selection.locate());
                     unsafe { tag.store_to(selection.locate()) };
+                    if let Some(cb) = on_change.clone().filter(|_| !same) {
+                        cb.call();
+                    }
                 }
             }
             (Hit::Tap(_), _) => {
@@ -4419,10 +4435,14 @@ impl App {
                 self.dirty = true;
                 true
             }
-            (Kind::Toggle { is_on, .. }, "enter" | "space") => {
+            (Kind::Toggle { is_on, on_change, .. }, "enter" | "space") => {
                 let p = is_on.locate();
                 unsafe { *p = (*p & 1) ^ 1 };
+                let told = on_change.clone();
                 self.dirty = true;
+                if let Some(cb) = told {
+                    cb.call();
+                }
                 true
             }
             // Enter or Space opens a menu picker's list (or closes it); Escape closes it.
@@ -4443,8 +4463,17 @@ impl App {
                     (None, _) => 0,
                 };
                 if let Some(tag) = tagged.get(to).and_then(|&i| n.children[i].mods.tag.as_ref()) {
+                    let same = tag.equals(current);
                     unsafe { tag.store_to(selection.locate()) };
+                    // (A `TabView` has no `onChange`.)
+                    let told = match &n.kind {
+                        Kind::Picker { on_change, .. } => on_change.clone().filter(|_| !same),
+                        _ => None,
+                    };
                     self.dirty = true;
+                    if let Some(cb) = told {
+                        cb.call();
+                    }
                 }
                 true
             }
@@ -4547,7 +4576,10 @@ impl App {
         if matches!(node.kind, Kind::TextField { secure: true, .. }) && matches!(change, Edit::Copy | Edit::Cut) {
             return;
         }
+        let on_change = text_on_change(node);
+        let mut changed = false;
         if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard, multiline) {
+            changed = new != current;
             let slot = text.locate() as *mut *mut Str;
             unsafe {
                 let old = *slot;
@@ -4576,6 +4608,9 @@ impl App {
         if !self.dirty {
             self.follow_caret();
         }
+        if let Some(cb) = on_change.filter(|_| changed) {
+            cb.call();
+        }
     }
 
     /// Undo (or redo) the last change in the view being edited, or, while
@@ -4588,6 +4623,7 @@ impl App {
             return;
         }
         let Some(text) = self.node(key).and_then(editable_text).cloned() else { return };
+        let on_change = self.node(key).and_then(text_on_change);
         let current = read_string(&text);
         let editing = self.ui.editing.clone().filter(|e| e.key == key);
         let h = self.ui.history.entry(key).or_default();
@@ -4627,6 +4663,9 @@ impl App {
         self.ui.editing = Some(e);
         self.ui.last_edited = Some(key);
         self.dirty = true;
+        if let Some(cb) = on_change {
+            cb.call();
+        }
     }
 
     /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view
@@ -4815,11 +4854,17 @@ impl App {
             // Escape in a search field with text clears it first.
             "escape" if self.ui.editing.as_ref().and_then(|e| self.node(e.key)).is_some_and(|n| render::search_clear(n).is_some()) => {
                 let Some(key) = self.ui.editing.as_ref().map(|e| e.key) else { return };
-                if let Some(Kind::TextField { text, .. }) = self.node(key).map(|n| &n.kind) {
+                let mut told = None;
+                if let Some(Kind::TextField { text, on_change, .. }) = self.node(key).map(|n| &n.kind) {
+                    // (The clear button shows only while there's text.)
                     set_string(text, "");
+                    told = on_change.clone();
                 }
                 self.ui.editing = Some(Editing::new(key, ""));
                 self.dirty = true;
+                if let Some(cb) = told {
+                    cb.call();
+                }
                 return;
             }
             "enter" | "escape" => {
@@ -5162,7 +5207,7 @@ impl App {
                     let kind = if *search { "SearchField" } else { "TextField" };
                     format!("{kind} {placeholder:?} = {value:?}{composing}")
                 }
-                Kind::Toggle { label, is_on } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
+                Kind::Toggle { label, is_on, .. } => format!("Toggle {label:?} = {}", unsafe { *is_on.locate() } & 1 != 0),
                 Kind::RichEditor { doc, .. } => {
                     // Its runs, by the characters they're on, and how they look.
                     let at = |b: usize| doc.text[..b].chars().count();
@@ -5338,7 +5383,7 @@ impl App {
                     let size = if *large && !n.layout.compact { " large" } else { "" };
                     match role {
                         super::RibbonRole::Button(_) => format!("RibbonButton {label:?}{size}"),
-                        super::RibbonRole::Toggle(is_on) => {
+                        super::RibbonRole::Toggle(is_on, _) => {
                             let on = unsafe { *is_on.locate() } & 1 != 0;
                             format!("RibbonToggle {label:?}{size} = {on}")
                         }
@@ -5454,7 +5499,7 @@ impl App {
                 Kind::RibbonTab { .. } => "RibbonTab",
                 Kind::RibbonGroup { .. } => "RibbonGroup",
                 Kind::RibbonItem { role: super::RibbonRole::Button(_), .. } => "RibbonButton",
-                Kind::RibbonItem { role: super::RibbonRole::Toggle(_), .. } => "RibbonToggle",
+                Kind::RibbonItem { role: super::RibbonRole::Toggle(..), .. } => "RibbonToggle",
                 Kind::RibbonItem { role: super::RibbonRole::Menu, .. } => "RibbonMenu",
             };
             // What can be seen of it: the part inside the scroll views around it.
@@ -7707,6 +7752,15 @@ fn set_string(locator: &Callback, value: &str) {
         let old = *slot;
         *slot = crate::str_new(value);
         crate::tsl_release(old as *mut Header);
+    }
+}
+
+/// What a text field or code editor calls after its text is edited
+/// (its `onChange`).
+fn text_on_change(n: &Node) -> Option<Callback> {
+    match &n.kind {
+        Kind::TextField { on_change, .. } | Kind::CodeEditor { on_change, .. } => on_change.clone(),
+        _ => None,
     }
 }
 

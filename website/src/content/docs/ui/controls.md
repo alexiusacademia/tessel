@@ -66,6 +66,18 @@ TextField("Search", text: query)
 Every key press changes the bound string right away, so anything that uses it
 updates as the user types.
 
+To run something when the user edits the text, give the field an `onChange`
+block (the block after the call). It runs after each edit that changes the
+text: a key typed, a paste, a deletion, an undo. It doesn't run when your
+program sets the text itself:
+
+```tessel
+TextField("Title", text: title) { unsaved = true }
+```
+
+`onChange` works the same on secure fields, fields of several lines and
+search fields.
+
 A text field is as wide as it's allowed to be: in a stack it stretches across
 the available width. Give it a `.frame(width:)` to make it a fixed size.
 
@@ -152,7 +164,8 @@ app Contacts(width: 320, height: 300) {
 
 The placeholder is "Search" unless you give one. Like a `TextField`, it
 changes `text:` as the user types, and runs [`.onSubmit`](#submitting-with-enter)
-on Enter, for a search that's too slow to run on every key.
+on Enter, for a search that's too slow to run on every key. Its `onChange`
+block runs after each edit, and when the text is cleared.
 
 ## Link
 
@@ -179,6 +192,13 @@ Toggle(isOn: todo.done)
 ```
 
 The label is optional. Clicking the switch or its label flips the value.
+
+An `onChange` block (the block after the call) runs after the user flips it,
+but not when your program sets the value:
+
+```tessel
+Toggle("Show grid", isOn: showGrid) { saveSettings() }
+```
 
 ## Picker
 
@@ -208,6 +228,21 @@ long as every `.tag` has the same type as the selection. Options are usually
 
 `.tag` only means something on the options of a `Picker` and the pages of a
 [`TabView`](/ui/tabs/); anywhere else it's a compile error.
+
+`onChange:` runs a block after the user chooses another option (by a click
+or the arrow keys, in every style below). The block after the call holds the
+options, so `onChange:` goes inside the parentheses:
+
+```tessel
+Picker(selection: filter, onChange: { page = 0 }) {
+    Text("All").tag(.all)
+    Text("Active").tag(.active)
+    Text("Done").tag(.done)
+}
+```
+
+It doesn't run when the user clicks the option that's already chosen, or
+when your program sets `selection`.
 
 ### Radio buttons
 
@@ -305,7 +340,9 @@ app Symbol(width: 340, height: 220) {
 
 Each takes an optional `onChange` block (the block after the call), which
 runs after the user changes the value: the place to redraw a map or
-recompute something.
+recompute something. `Toggle`, `Picker`, `TextField` and `SearchField` take
+one too, and so do the [date pickers](#dates). It runs only for the user's
+changes, never when your program sets the value.
 
 ![The color picker's palette open: rows of colors from light to dark, and a hex field](../../../assets/screens/ui-color-picker.png)
 
@@ -373,6 +410,10 @@ HStack {
 Add [`.hoverBackground`](/ui/styling/#hover-backgrounds) so people can see it's
 clickable. If a clickable view contains a button or another clickable view, a
 click goes to the innermost one.
+
+A control takes its own clicks, so `.onTap` on a `Toggle`, a `Picker`, a
+`Slider` or a text field doesn't run. To know when the user changes one, use
+its `onChange` block.
 
 ## Dragging
 

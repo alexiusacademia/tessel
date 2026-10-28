@@ -75,7 +75,8 @@ filter, sum, function and more, for ribbons and toolbars):
 
 - `RibbonButton("Cut", icon: .cut) { … }` runs its block when clicked.
 - `RibbonToggle("Bold", icon: .bold, isOn: bold)` switches a `Bool` on and
-  off, and shows when it's on.
+  off, and shows when it's on. Its `onChange` block (the block after the
+  call) runs after a click switches it.
 - `RibbonMenu("Sort", icon: .sortAscending) { … }` opens a menu of
   `MenuItem`s, `MenuDivider`s and submenus, as a
   [context menu](/ui/menus-windows/#context-menus) does.

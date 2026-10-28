@@ -784,7 +784,7 @@ impl Painter<'_> {
                     self.text(label, content.x, content.y + (content.h - label.height()) / 2.0, None);
                 }
             }
-            Kind::Picker { selection, style: 2 } => {
+            Kind::Picker { selection, style: 2, .. } => {
                 // The box: the chosen option, and an arrow.
                 let bg = if pressed { theme().control_pressed } else if hovered { theme().control_hover } else { theme().field };
                 self.fill(content, 6.0, bg);
@@ -804,7 +804,7 @@ impl Painter<'_> {
                     self.turn = around;
                 }
             }
-            Kind::Picker { selection, style: 1 } => {
+            Kind::Picker { selection, style: 1, .. } => {
                 // Radio buttons: a ring, filled with a dot when it's chosen.
                 let current = selection.locate();
                 let size = super::layout::RADIO;
@@ -991,7 +991,7 @@ impl Painter<'_> {
                 use super::layout::{RIBBON_ICON, RIBBON_PAD};
                 let r = placed;
                 let on = match role {
-                    super::RibbonRole::Toggle(is_on) => (unsafe { *is_on.locate() } & 1) != 0,
+                    super::RibbonRole::Toggle(is_on, _) => (unsafe { *is_on.locate() } & 1) != 0,
                     _ => false,
                 };
                 let open = self.ui.menus.first().is_some() && pressed;

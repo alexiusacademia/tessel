@@ -325,7 +325,7 @@ fn build_palette(b: &mut Builder) {
         n.mods.font_size = Some(12.0);
         n.mods.color = Some(super::theme::theme().colors[super::theme::SECONDARY]);
     }
-    b.leaf(Kind::TextField { placeholder: "Hex".into(), text: Callback::new(hex_text as *const c_void, std::ptr::null_mut()), secure: false, lines: 1, search: false });
+    b.leaf(Kind::TextField { placeholder: "Hex".into(), text: Callback::new(hex_text as *const c_void, std::ptr::null_mut()), secure: false, lines: 1, search: false, on_change: None });
     if let Some(n) = b.last() {
         n.mods.width = Some(120.0);
         n.mods.autofocus = FOCUS_HEX.replace(false);

@@ -1,0 +1,26 @@
+click "Switch"
+click "Switch"
+click "Bold"
+click "Square"
+click "Square"
+click "Large"
+click "Meters"
+click "Feet"
+click "Name"
+type "ab"
+key backspace
+key cmd+z
+key enter
+click "Password"
+type "xyz"
+click "Notes"
+type "hi"
+key enter
+click "Find"
+type "q"
+key escape
+key escape
+click editor 1
+type "x"
+click "Reset"
+click "Reset"

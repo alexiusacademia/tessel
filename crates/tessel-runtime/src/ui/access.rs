@@ -156,10 +156,10 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
         Kind::Text(text) => Some(Item { value: text.clone(), ..item(Role::Text, n.mods.access_label.clone().unwrap_or_default()) }),
         Kind::Button { label, .. } => Some(Item { press: true, ..item(Role::Button, called(label)) }),
         Kind::RibbonItem { label, role, .. } => Some(match role {
-            RibbonRole::Toggle(is_on) => Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) },
+            RibbonRole::Toggle(is_on, _) => Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) },
             _ => Item { press: true, ..item(Role::Button, called(label)) },
         }),
-        Kind::Toggle { label, is_on } => Some(Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) }),
+        Kind::Toggle { label, is_on, .. } => Some(Item { press: true, on: Some(bit(is_on)), ..item(Role::Switch, called(label)) }),
         Kind::TextField { placeholder, text, secure, lines, .. } => Some(Item {
             value: if *secure { String::new() } else { read_string(text) },
             press: true,

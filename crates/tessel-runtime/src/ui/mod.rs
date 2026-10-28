@@ -232,8 +232,12 @@ pub enum Kind {
     /// field is that many lines high (and scrolls).
     /// `search`: a `SearchField`, with a magnifying glass before its text
     /// and a button that clears it after.
-    TextField { placeholder: String, text: Callback, secure: bool, lines: u32, search: bool },
-    Toggle { label: String, is_on: Callback },
+    /// `on_change` (`onChange:`) is called after each edit that changes
+    /// its text (not when the program changes it).
+    TextField { placeholder: String, text: Callback, secure: bool, lines: u32, search: bool, on_change: Option<Callback> },
+    /// `Toggle(label, isOn:onChange:)`: `on_change` is called after a
+    /// click (or Enter or Space) turns it.
+    Toggle { label: String, is_on: Callback, on_change: Option<Callback> },
     /// A multi-line code editor with line numbers and Tessel syntax colors.
     CodeEditor {
         text: Callback,
@@ -250,6 +254,8 @@ pub enum Kind {
         breakpoints: Vec<i64>,
         stopped_line: i64,
         on_breakpoint: Option<Callback>,
+        /// Called after each edit that changes its text.
+        on_change: Option<Callback>,
     },
     /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
     TabView { selection: Callback, close: Option<Callback> },
@@ -270,8 +276,9 @@ pub enum Kind {
     Svg { source: std::rc::Rc<str>, icon: Option<&'static str> },
     /// `style` is a `PickerStyle` tag: 0 segmented, 1 radio buttons, 2 a
     /// menu (a box with the chosen option, opening a list of them: see
-    /// `controls::OPEN_MENU`).
-    Picker { selection: Callback, style: u8 },
+    /// `controls::OPEN_MENU`). `on_change` is called after another
+    /// option is chosen.
+    Picker { selection: Callback, style: u8, on_change: Option<Callback> },
     /// Spacing, and alignment across the stack (0 leading, 1 center, 2 trailing).
     VStack(f64, u8),
     HStack(f64, u8),
@@ -365,8 +372,8 @@ pub enum Kind {
 /// What a ribbon's item does when it's clicked.
 pub enum RibbonRole {
     Button(Callback),
-    /// Flips the `Bool` it locates.
-    Toggle(Callback),
+    /// Flips the `Bool` it locates, then calls its `onChange` (if any).
+    Toggle(Callback, Option<Callback>),
     /// Opens a menu of its items.
     Menu,
 }
@@ -1127,11 +1134,21 @@ pub unsafe extern "C" fn tsl_ui_button(label: *const Str, f: *const c_void, env:
 }
 
 /// `TextField` (and `SearchField`): `flags` has 1 for a secure field, 2
-/// for a search field.
+/// for a search field. `change_f` is null without `onChange`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, flags: u8, lines: i64, f: *const c_void, env: *mut Header) {
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_ui_text_field(
+    placeholder: *const Str,
+    flags: u8,
+    lines: i64,
+    f: *const c_void,
+    env: *mut Header,
+    change_f: *const c_void,
+    change_env: *mut Header,
+) {
     let placeholder = unsafe { text_of(placeholder) };
     let text = Callback::new(f, env);
+    let on_change = (!change_f.is_null()).then(|| Callback::new(change_f, change_env));
     let (secure, search) = (flags & 1 != 0, flags & 2 != 0);
     if search {
         // (Its magnifying glass and clear button are built-in icons.)
@@ -1139,7 +1156,7 @@ pub unsafe extern "C" fn tsl_ui_text_field(placeholder: *const Str, flags: u8, l
     }
     // (A secret is one line: its dots don't wrap; so is a search.)
     let lines = if secure || search { 1 } else { lines.clamp(1, 1000) as u32 };
-    with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure, lines, search }));
+    with_builder(|b| b.leaf(Kind::TextField { placeholder, text, secure, lines, search, on_change }));
 }
 
 /// `WebView(url:html:)`.
@@ -1180,11 +1197,13 @@ pub unsafe extern "C" fn tsl_ui_rich_editor(id: i64, json: *const Str, f: *const
     with_builder(|b| b.leaf(Kind::RichEditor { id, doc: std::rc::Rc::new(doc), on_change }));
 }
 
+/// `Toggle(label, isOn:onChange:)`. `change_f` is null without `onChange`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_toggle(label: *const Str, f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_toggle(label: *const Str, f: *const c_void, env: *mut Header, change_f: *const c_void, change_env: *mut Header) {
     let label = unsafe { text_of(label) };
     let is_on = Callback::new(f, env);
-    with_builder(|b| b.leaf(Kind::Toggle { label, is_on }));
+    let on_change = (!change_f.is_null()).then(|| Callback::new(change_f, change_env));
+    with_builder(|b| b.leaf(Kind::Toggle { label, is_on, on_change }));
 }
 
 /// A `Completion` value (label, detail, kind).
@@ -1195,8 +1214,9 @@ pub struct Suggestion {
     pub kind: String,
 }
 
-/// `CodeEditor(text:errorLines:line:completions:completionStart:onComplete:breakpoints:stoppedLine:onBreakpoint:)`.
-/// The lists are borrowed; `line_f` and `complete_f` are null when not given.
+/// `CodeEditor(text:errorLines:line:completions:completionStart:onComplete:breakpoints:stoppedLine:onBreakpoint:onChange:)`.
+/// The lists are borrowed; `line_f`, `complete_f`, `breakpoint_f` and
+/// `change_f` are null when not given.
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn tsl_ui_code_editor(
@@ -1213,7 +1233,10 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
     stopped_line: i64,
     breakpoint_f: *const c_void,
     breakpoint_env: *mut Header,
+    change_f: *const c_void,
+    change_env: *mut Header,
 ) {
+    let on_change = (!change_f.is_null()).then(|| Callback::new(change_f, change_env));
     let numbers = |list: *const crate::List| -> Vec<i64> {
         let n = unsafe { crate::tsl_list_len(list) };
         (0..n).map(|i| unsafe { *(crate::tsl_list_get(list, i, std::ptr::null()) as *const i64) }).collect()
@@ -1245,6 +1268,7 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
             breakpoints,
             stopped_line,
             on_breakpoint,
+            on_change,
         })
     });
 }
@@ -1508,14 +1532,16 @@ pub unsafe extern "C" fn tsl_ui_begin_split(vertical: u8, f: *const c_void, env:
     with_builder(|b| b.begin(Kind::Split { vertical: vertical != 0, size }, 0));
 }
 
+/// `Picker(selection:style:onChange:)`. `change_f` is null without `onChange`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_begin_picker(style: i32, f: *const c_void, env: *mut Header) {
+pub unsafe extern "C" fn tsl_ui_begin_picker(style: i32, f: *const c_void, env: *mut Header, change_f: *const c_void, change_env: *mut Header) {
     let selection = Callback::new(f, env);
+    let on_change = (!change_f.is_null()).then(|| Callback::new(change_f, change_env));
     // (A menu's arrow and check mark are built-in icons.)
     if style == 2 {
         svg::enable_icons();
     }
-    with_builder(|b| b.begin(Kind::Picker { selection, style: style.clamp(0, 2) as u8 }, 0));
+    with_builder(|b| b.begin(Kind::Picker { selection, style: style.clamp(0, 2) as u8, on_change }, 0));
 }
 
 /// `Grid(alignment:spacing:rowSpacing:)`: a `rowSpacing` that's not a
@@ -1976,8 +2002,8 @@ mod tests {
             tsl_ui_button(str_new("-"), f, std::ptr::null_mut());
             tsl_ui_button(str_new("+"), f, std::ptr::null_mut());
             tsl_ui_end();
-            tsl_ui_text_field(str_new("Your name"), 0, 1, name as *const c_void, std::ptr::null_mut());
-            tsl_ui_toggle(str_new("Enabled"), flag as *const c_void, std::ptr::null_mut());
+            tsl_ui_text_field(str_new("Your name"), 0, 1, name as *const c_void, std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut());
+            tsl_ui_toggle(str_new("Enabled"), flag as *const c_void, std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut());
             tsl_ui_end();
             tsl_ui_padding(24.0, 24.0, 24.0, 24.0);
         }
@@ -2048,11 +2074,22 @@ pub unsafe extern "C" fn tsl_ui_ribbon_button(label: *const Str, icon: i32, size
     with_builder(|b| b.leaf(Kind::RibbonItem { label, icon: ribbon_icon(icon), large: size == 1, role }));
 }
 
-/// `RibbonToggle(label, icon:, size:, isOn:)`: `f` locates the `Bool`.
+/// `RibbonToggle(label, icon:, size:, isOn:onChange:)`: `f` locates the
+/// `Bool`; `change_f` is null without `onChange`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_ribbon_toggle(label: *const Str, icon: i32, size: i32, f: *const c_void, env: *mut Header) {
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_ui_ribbon_toggle(
+    label: *const Str,
+    icon: i32,
+    size: i32,
+    f: *const c_void,
+    env: *mut Header,
+    change_f: *const c_void,
+    change_env: *mut Header,
+) {
     let label = unsafe { text_of(label) };
-    let role = RibbonRole::Toggle(Callback::new(f, env));
+    let on_change = (!change_f.is_null()).then(|| Callback::new(change_f, change_env));
+    let role = RibbonRole::Toggle(Callback::new(f, env), on_change);
     with_builder(|b| b.leaf(Kind::RibbonItem { label, icon: ribbon_icon(icon), large: size == 1, role }));
 }
 
