@@ -498,6 +498,22 @@ pub struct Mods {
     pub source: Option<u32>,
 }
 
+impl Mods {
+    /// What an empty custom view still does, with nothing to show: it then
+    /// isn't dropped from a ribbon or a grid.
+    fn acts_alone(&self) -> bool {
+        !self.shortcuts.is_empty()
+            || self.on_appear.is_some()
+            || self.on_key.is_some()
+            || self.on_key_event.is_some()
+            || self.on_drop.is_some()
+            || self.menu_bar.is_some()
+            || self.tray.is_some()
+            || self.on_open_file.is_some()
+            || self.on_close_request.is_some()
+    }
+}
+
 /// A `.trayIcon`: its built-in icon's name, a title beside it (macOS), whether
 /// the app goes on running in it once its window is closed, and its menu's
 /// items (a `MenuList`).
@@ -834,9 +850,13 @@ fn lift_ribbon_parts(node: &mut Node) {
             _ => false,
         }
     }
-    /// Whether a custom view holds only such parts (in views of its own too).
+    /// Whether a custom view holds only such parts (in views of its own
+    /// too). One that's empty (its body made nothing) holds none: it's
+    /// dropped, so that it takes no room.
     fn only_parts(parent: &Kind, c: &Node) -> bool {
-        matches!(c.kind, Kind::Group) && !c.children.is_empty() && c.children.iter().all(|g| wanted(parent, g) || only_parts(parent, g))
+        matches!(c.kind, Kind::Group)
+            && (!c.children.is_empty() || !c.mods.acts_alone())
+            && c.children.iter().all(|g| wanted(parent, g) || only_parts(parent, g))
     }
     fn lift(parent: &Kind, children: Vec<Node>, out: &mut Vec<Node>) {
         for c in children {
