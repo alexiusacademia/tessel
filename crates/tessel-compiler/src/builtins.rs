@@ -106,6 +106,8 @@ pub fn structs() -> Vec<StructDef> {
             field("data", Ty::Data),
             field("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))),
             field("error", Ty::Str),
+            // The URL that answered, after any redirects.
+            field("finalUrl", Ty::Str),
         ],
         methods: Vec::new(),
         },
@@ -693,6 +695,8 @@ impl Builtins {
                     P::new("method", Ty::Str).default(),
                     P::new("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))).default(),
                     P::new("body", Ty::Str).default(),
+                    P::new("onHeaders", Ty::opt(Ty::func(vec![HTTP_RESPONSE], Ty::Void))).default(),
+                    P::new("onData", Ty::opt(Ty::func(vec![Ty::Data], Ty::Void))).default(),
                     P::new("done", Ty::func(vec![HTTP_RESPONSE], Ty::Void)),
                 ],
                 ret: Ty::Int,
@@ -702,6 +706,8 @@ impl Builtins {
                 params: vec![
                     P::new("url", Ty::Str),
                     P::new("to", Ty::Str),
+                    P::new("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))).default(),
+                    P::new("onHeaders", Ty::opt(Ty::func(vec![HTTP_RESPONSE], Ty::Void))).default(),
                     P::new("progress", Ty::opt(Ty::func(vec![Ty::Float], Ty::Void))).default(),
                     P::new("done", Ty::func(vec![Ty::Bool], Ty::Void)),
                 ],

@@ -268,6 +268,10 @@ enum Event {
     Line(u64, String),
     Exited(u64, i32),
     Responded(u64, net::HttpResult),
+    /// A request's or download's status and headers, before its body.
+    Headers(u64, net::HttpResult),
+    /// More of a streamed body has arrived (see `net::stream`).
+    Chunk(u64),
     Progress(u64, f64),
     Downloaded(u64, bool),
     Message(u64, String),

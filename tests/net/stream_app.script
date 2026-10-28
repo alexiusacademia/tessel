@@ -1,0 +1,9 @@
+click "Listen"
+waitfor "Station: Test Radio"
+waitfor "Hearing it"
+click "Stop"
+wait 0.3
+tree
+click "Page"
+wait 0
+tree

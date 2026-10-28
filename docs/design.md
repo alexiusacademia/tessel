@@ -513,7 +513,9 @@ example a text field being edited) follows its item when the list reorders.
 
   The built-ins: `fetch` (text), `request` (any HTTP method, headers and
   body; the block gets an `HttpResponse` with `status`, `ok`, `text`,
-  `data`, `headers` and `error`), `download` (to a file, with progress),
+  `data`, `headers`, `error` and `finalUrl`; `onHeaders` and `onData`
+  read a body as it arrives, for streams), `download` (to a file, with
+  request headers, `onHeaders` and progress),
   WebSockets (`openWebSocket`, `sendWebSocket`, `closeWebSocket`), timers
   (`after`, `every`/`stopTimer`) and `runCommand`. In a program with only
   `fn main`, the program keeps running after `main` returns until all of

@@ -1,6 +1,7 @@
 // Networking against the two little servers the test starts (their ports
 // are in SLOW_PORT and ECHO_PORT): giving up a download and a request that
-// are under way, and binary WebSocket messages.
+// are under way, streamed bodies, redirects, download headers, and binary
+// WebSocket messages.
 
 fn main() {
     let slow = "http://127.0.0.1:{environment("SLOW_PORT") ?? ""}/slow"
@@ -21,9 +22,63 @@ fn main() {
         // Cancelling again, or something that isn't there, does nothing.
         cancelRequest(loading)
         cancelRequest(12345)
+        // The .part file goes at once.
+        print("part right after cancelling: {fileExists("{target}.part")}")
         after(seconds: 0.3) {
             print("file: {fileExists(target)}, part: {fileExists("{target}.part")}")
         }
+    }
+
+    let base = "http://127.0.0.1:{environment("SLOW_PORT") ?? ""}"
+
+    // A body in pieces: the headers first, then the pieces in order, then
+    // `done`, with no body (it went to `onData`).
+    var events: [String] = []
+    var streamed = ""
+    request(url: "{base}/pieces", onHeaders: { r in
+        events.append("headers {r.status} {r.headers["content-type"] ?? ""} {r.data.count}")
+    }, onData: { data in
+        events.append("data")
+        streamed += data.text ?? "?"
+    }) { r in
+        let order = events.count > 1 && events[0].hasPrefix("headers") && events.dropFirst().all { e in e == "data" }
+        print("pieces: {events[0]}, in order: {order}, text: {streamed.lines()}, done: {r.status} {r.ok} {r.data.count} {r.error == ""}")
+    }
+
+    // An endless stream, given up once some of it has come: then nothing more comes.
+    var radio = 0
+    var heard = 0
+    radio = request(url: "{base}/radio", onHeaders: { r in
+        print("radio: {r.status} {r.headers["icy-name"] ?? ""}")
+    }, onData: { data in
+        heard += data.count
+        if heard >= 100 && radio != 0 {
+            cancelRequest(radio)
+            radio = 0
+            let then = heard
+            after(seconds: 0.3) {
+                print("radio stopped: {heard == then}")
+            }
+        }
+    }) { r in
+        print("radio done (it shouldn't be)")
+    }
+
+    // Redirects are followed; `finalUrl` is where they led.
+    request(url: "{base}/redirect") { r in
+        print("redirected: {r.status} {r.text} {r.finalUrl == "{base}/hello"}")
+    }
+    request(url: "{base}/hello", onHeaders: { r in
+        print("not redirected: {r.finalUrl == "{base}/hello"}")
+    }) { r in }
+
+    // A download with request headers, and its response's headers.
+    let saved = joinPath(tempFolder(), "tessel-token-test-{environment("SLOW_PORT") ?? ""}.txt")
+    download(url: "{base}/token", to: saved, headers: ["X-Token": "abc"], onHeaders: { r in
+        print("download headers: {r.status} {r.headers["x-token-was"] ?? ""} {r.finalUrl == "{base}/token"}")
+    }) { ok in
+        print("downloaded with a header: {ok} {readFile(saved) ?? ""}")
+        deleteFile(saved)
     }
 
     // The echo server sends back what it gets, text as text and bytes as bytes.
