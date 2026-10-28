@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.18.0
+
+*October 28, 2026*
+
+- **License terms in Windows installers.** `license = "terms.txt"` under
+  `[app]` in tessel.toml makes the installer of `tessel build --windows
+  --bundle` start with a page asking to accept the app's terms: a link
+  opens them, and Next stays off until "I accept the license terms" is
+  ticked. A silent install (`/S`) accepts them. See
+  [The project file](/start/project/).
+
 ## 0.17.0
 
 *October 28, 2026*
