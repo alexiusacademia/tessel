@@ -3,18 +3,17 @@
 #
 # Each release has the packages, SHA256SUMS, latest-<platform>.txt (which
 # `tessel update` and the install scripts read from the latest release) and
-# the install scripts. Releases up to 0.15.1 were only in the bucket
-# gs://tessel-releases; it still gets a copy of each release, so the
-# `tessel update` of those versions finds the new ones. The bucket also
-# holds the packages between the jobs (staging).
+# the install scripts. (Releases up to 0.16.3 were also copied to the bucket
+# gs://tessel-releases, which the `tessel update` of 0.15.1 and older reads.
+# Its latest is 0.16.3, whose `tessel update` reads GitHub.)
 #
 # The packages contain `tessel` with LLVM and its linker built in, the runtime
 # library and sdk/. They need nothing else installed.
 #
-# The macOS job runs on a self-hosted runner (the maintainer's Mac: no Actions
-# minutes, and it signs there); the Windows job on GitHub's runners (about
-# 20 minutes). A tag builds both, and publishes only if both succeed, so the
-# two platforms are always at the same version. A manual run builds macOS,
+# Everything runs on GitHub's runners (free for a public repository), and the
+# packages go from the package jobs to the publish job as artifacts. A tag
+# builds both platforms, and publishes only if both succeed, so the two
+# platforms are always at the same version. A manual run builds macOS,
 # and Windows too if `windows` is ticked. Each platform has its own
 # latest-<platform>.txt.
 name: Release
@@ -44,11 +43,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.event_name == 'push' || inputs.windows) && '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":["self-hosted","macOS","ARM64"],"target":"aarch64-apple-darwin"}]') }}
+        include: ${{ fromJSON((github.event_name == 'push' || inputs.windows) && '[{"name":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin"},{"name":"windows-x64","runner":"windows-latest","target":"x86_64-pc-windows-msvc"}]' || '[{"name":"macos-arm64","runner":"macos-15","target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-      id-token: write # to sign in to Google Cloud (staging the package)
     steps:
       - uses: actions/checkout@v4
 
@@ -62,18 +60,25 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # The self-hosted Mac already has Rust; don't change its toolchains.
       - uses: dtolnay/rust-toolchain@stable
-        if: runner.os == 'Windows'
         with:
           # On Windows, apps use the MinGW-w64 runtime (x86_64-pc-windows-gnullvm)
-          # so the package can include everything linking them needs.
-          targets: ${{ matrix.target }}${{ runner.os == 'Windows' && ',x86_64-pc-windows-gnullvm' || '' }}
+          # so the package can include everything linking them needs. On
+          # macOS, the runtime is built for Android too.
+          targets: ${{ matrix.target }}${{ runner.os == 'Windows' && ',x86_64-pc-windows-gnullvm' || ',aarch64-linux-android' }}
 
       # ---- macOS: LLVM's official static build, linked with its own lld ----
 
-      # On the self-hosted Mac, downloads stay in the runner's tool folder
-      # between runs (not in the home folder).
+      # LLVM (the parts the build needs) and zstd stay in the cache between runs.
+      - name: Cache LLVM (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.tool_cache }}/llvm/${{ env.LLVM_VERSION }}
+            ${{ runner.tool_cache }}/tessel-staticlibs
+          key: llvm-${{ env.LLVM_VERSION }}-macos-arm64-zstd-1.5.7
+
       - name: Install LLVM (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -184,14 +189,13 @@ jobs:
       # The runtime Android apps are linked with. It isn't in the package:
       # `tessel build --android` downloads it the first time (it's the same
       # for every computer apps are built on). Needs the Android NDK, which
-      # the Mac that builds releases has.
+      # GitHub's macOS runners have.
       - name: Build the runtime for Android (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
           ndk="$(ls -d "$sdk"/ndk/* | sort -V | tail -1)/toolchains/llvm/prebuilt/darwin-x86_64/bin"
-          rustup target add aarch64-linux-android
           # (Not the Mac's linker settings: nothing is linked here.)
           RUSTFLAGS="" CC_aarch64_linux_android="$ndk/aarch64-linux-android30-clang" AR_aarch64_linux_android="$ndk/llvm-ar" \
             cargo build --release -p tessel-runtime --target aarch64-linux-android
@@ -254,8 +258,7 @@ jobs:
           echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
-          # Remember the keychain search list, to restore it afterwards (on a
-          # self-hosted Mac it's the maintainer's own).
+          # Remember the keychain search list, to restore it afterwards.
           security list-keychains -d user | tr -d '"' | xargs > "$RUNNER_TEMP/keychains.txt"
           security list-keychains -d user -s "$keychain" $(cat "$RUNNER_TEMP/keychains.txt")
           rm "$RUNNER_TEMP/cert.p12"
@@ -351,61 +354,37 @@ jobs:
           fi
           ls -la ..
 
-      # (For looking at a build by hand; publishing doesn't use it, so a
-      # full artifact storage can't stop a release.)
+      # For the publish job (and for looking at a build by hand).
       - uses: actions/upload-artifact@v4
-        continue-on-error: true
         with:
           name: tessel-${{ matrix.name }}
           path: dist/tessel-*
-          retention-days: 1
-
-      # The package waits in the bucket's staging folder until the publish
-      # job has both platforms'. (gcloud is installed on the Mac; GitHub's
-      # Windows runners need it installed.)
-      - if: github.ref_type == 'tag' || inputs.publish
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
-          service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
-
-      - if: (github.ref_type == 'tag' || inputs.publish) && runner.os == 'Windows'
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Stage the package
-        if: github.ref_type == 'tag' || inputs.publish
-        shell: bash
-        run: |
-          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          gcloud storage cp dist/tessel-* "gs://tessel-releases/staging/$version/"
+          retention-days: 3
+          compression-level: 0
 
   publish:
     name: Publish
     needs: package
     if: github.ref_type == 'tag' || inputs.publish
-    # On the self-hosted Mac (which has gcloud), so that publishing doesn't
-    # depend on GitHub's hosted runners.
-    runs-on: [self-hosted, macOS, ARM64]
+    # On a Mac, to check that the Mac's tessel builds Windows apps.
+    runs-on: macos-15
     permissions:
       contents: write # to make the GitHub release
-      id-token: write # to sign in to Google Cloud without a stored key
     steps:
       - uses: actions/checkout@v4
 
-      - uses: google-github-actions/auth@v2
+      # The package jobs' packages, all in dist/.
+      - uses: actions/download-artifact@v4
         with:
-          workload_identity_provider: projects/424819481976/locations/global/workloadIdentityPools/github/providers/github
-          service_account: tessel-release@tessel-lang.iam.gserviceaccount.com
+          pattern: tessel-*
+          path: dist
+          merge-multiple: true
 
       - name: Upload
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          # The packages the package jobs staged.
-          rm -rf dist
-          mkdir -p dist
-          gcloud storage cp "gs://tessel-releases/staging/$version/*" dist/
           ls -la dist
           # The Mac's tessel builds a Windows app with the Windows parts
           # (`tessel build --windows`), before anything is published.
@@ -421,9 +400,7 @@ jobs:
             rm -rf dist/check
           fi
           (cd dist && shasum -a 256 tessel-* > SHA256SUMS)
-          gcloud storage cp dist/* "gs://tessel-releases/$version/"
-          # The newest version for each platform built this time, and the
-          # install scripts. They change with releases: no long caching.
+          # The newest version for each platform built this time.
           pointers=()
           for platform in macos windows; do
             if ls dist/tessel-*-"$platform"-* > /dev/null 2>&1; then
@@ -433,10 +410,6 @@ jobs:
           done
           # latest.txt: for older install scripts (which are macOS or Windows alike).
           [[ -f latest-macos.txt ]] && cp latest-macos.txt latest.txt && pointers+=(latest.txt)
-          gcloud storage cp "${pointers[@]}" install/install.sh install/install.ps1 gs://tessel-releases/ \
-            --cache-control="no-cache, max-age=0"
-          gcloud storage rm -r "gs://tessel-releases/staging/$version/" || true
-          echo "Copied to https://storage.googleapis.com/tessel-releases/$version/"
 
           # The GitHub release: the packages, their checksums, the pointers
           # and the install scripts. It's marked the latest unless a newer
@@ -446,13 +419,27 @@ jobs:
           if [[ -n "$newest" && "$(printf '%s\n%s\n' "$newest" "$version" | sort -V | tail -1)" != "$version" ]]; then
             latest=false
           fi
-          # The notes: the release commit's message, after its title.
-          { git log -1 --format=%b
+          # The notes: the release commit's message after its first line
+          # (with or without a blank line after it).
+          { git log -1 --format=%B | tail -n +2 | sed '/./,$!d'
             echo
             echo "What's new: https://tessel-lang.syncster.dev/about/whats-new/"
           } > "$RUNNER_TEMP/notes.md"
-          gh release create "$version" dist/* "${pointers[@]}" install/install.sh install/install.ps1 \
-            --verify-tag --title "Tessel ${version#v}" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+          # A draft first, then each file (again when an upload times out),
+          # and only then the release, so that nobody gets it half there. A
+          # run that's run again finds its draft.
+          if ! gh release view "$version" > /dev/null 2>&1; then
+            gh release create "$version" --draft --verify-tag --title "Tessel ${version#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          for file in dist/* "${pointers[@]}" install/install.sh install/install.ps1; do
+            for try in 1 2 3 4 5; do
+              gh release upload "$version" "$file" --clobber && break
+              [[ $try == 5 ]] && { echo "::error::can't upload $file"; exit 1; }
+              echo "Uploading $file again ($try)"
+              sleep 15
+            done
+          done
+          gh release edit "$version" --draft=false --latest="$latest"
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$version"
 
       # The Homebrew formula (alexiusacademia/homebrew-tessel) gets the new

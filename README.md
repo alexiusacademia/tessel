@@ -181,9 +181,10 @@ commands.
 
 ### Releases
 
-Packages are built by `.github/workflows/release.yml` when a `v*` tag is
-pushed, and published as a GitHub release (and copied to the old
-`tessel-releases` bucket, which Tessel 0.15.1 and earlier update from). A
+Packages are built on GitHub's runners by `.github/workflows/release.yml`
+when a `v*` tag is pushed, and published as a GitHub release. (Releases up
+to 0.16.3 were also copied to the old `tessel-releases` bucket, which
+Tessel 0.15.1 and earlier update from; its latest is 0.16.3.) A
 package holds
 `tessel`, the runtime library, and `sdk/`: stubs of the macOS libraries
 apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
