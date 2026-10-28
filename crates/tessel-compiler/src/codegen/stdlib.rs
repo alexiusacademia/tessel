@@ -144,25 +144,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.b.build_call(f, &[list.into()], "").unwrap().try_as_basic_value().basic().unwrap()
             }
             "unique" => {
+                // (In a hash table where the items can be hashed: see the runtime.)
                 let info = self.type_info(elem);
-                let zero = self.i64().const_zero();
-                let out = self.call_rt("tsl_list_new", &[info.into(), zero.into()]).unwrap();
-                let out_slot = self.spill(&Ty::list(elem.clone()), out);
-                self.counted_loop(len, &mut |g, i| {
-                    let item = g.item(list, elem, i);
-                    let p = g.spill(elem, item);
-                    let current = g.b.build_load(g.ptr_ty(), out_slot, "").unwrap();
-                    let seen = g.call_rt("tsl_list_contains", &[current, p.into()]);
-                    let seen = g.truthy(seen);
-                    let (add, next) = (g.block_named("new"), g.block_named("seen"));
-                    g.b.build_conditional_branch(seen, next, add).unwrap();
-                    g.b.position_at_end(add);
-                    g.retain(item, elem);
-                    g.call_rt("tsl_list_push", &[out_slot.into(), p.into()]);
-                    g.br(next);
-                    g.b.position_at_end(next);
-                });
-                self.b.build_load(self.ptr_ty(), out_slot, "").unwrap()
+                let p = self.ptr_ty();
+                let f = self.declare_rt("tsl_list_distinct", &[p.into(), p.into()], Some(p.into()));
+                self.b.build_call(f, &[list.into(), info.into()], "").unwrap().try_as_basic_value().basic().unwrap()
             }
             "randomElement" => {
                 let opt = Ty::opt(elem.clone());

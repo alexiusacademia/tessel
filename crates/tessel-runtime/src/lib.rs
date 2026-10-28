@@ -1169,6 +1169,61 @@ pub unsafe extern "C" fn tsl_list_eq(a: *const List, b: *const List) -> bool {
     }
 }
 
+/// `list.unique()`: a new list (of `elem`s) of the items of `l`, each the
+/// first of those equal to it, in order. Items that can be hashed (those a
+/// dictionary's keys can be) are found in a hash table, in time in
+/// proportion to the list's length; others are compared with each kept one.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_distinct(l: *const List, elem: *const TslType) -> *mut List {
+    unsafe {
+        let n = (*l).len;
+        let out = tsl_list_new(elem, 0);
+        let keep = |item: *mut u8| {
+            reserve(out, 1);
+            ptr::copy_nonoverlapping(item, elem_at(out, (*out).len), elem_size(out));
+            elem_retain(elem, elem_at(out, (*out).len));
+            (*out).len += 1;
+        };
+        let Some(eq) = (*elem).eq else {
+            // (Nothing to compare by: as `contains` finds nothing, all are kept.)
+            for i in 0..n {
+                keep(elem_at(l, i));
+            }
+            return out;
+        };
+        if (*elem).kind == 0 && (*elem).hash.is_none() {
+            for i in 0..n {
+                let item = elem_at(l, i);
+                if !(0..(*out).len).any(|j| eq(elem_at(out, j), item)) {
+                    keep(item);
+                }
+            }
+            return out;
+        }
+        // Open addressing: each slot holds an index into `out`, at most half full.
+        let size = ((n as usize) * 2).next_power_of_two().max(8);
+        let mask = size - 1;
+        let mut slots = vec![EMPTY; size];
+        for i in 0..n {
+            let item = elem_at(l, i);
+            let mut pos = key_hash(elem, item) as usize & mask;
+            loop {
+                let e = slots[pos];
+                if e == EMPTY {
+                    slots[pos] = (*out).len as u32;
+                    keep(item);
+                    break;
+                }
+                if key_eq(elem, elem_at(out, e as i64), item) {
+                    break;
+                }
+                pos = (pos + 1) & mask;
+            }
+        }
+        out
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_list_contains(l: *const List, value: *const u8) -> bool {
     unsafe {

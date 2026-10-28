@@ -1,0 +1,18 @@
+[3, 1, 2]
+["b", "a", "c", ""]
+[true, false]
+[blue, red, green]
+["1,2", "2,1"]
+2
+[1.5, 0.0, 2.0]
+[[1, 2], [2], []]
+[circle, square, circle]
+[nil, 1, 2]
+2
+[]
+["w0", "w1", "w2", "w3", "w4", "w5", "w6"]
+1000
+50000
+path/number/0.c
+path/number/49999.c
+true

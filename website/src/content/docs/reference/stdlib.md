@@ -3128,7 +3128,7 @@ empty list needs its type from context: `var names: [String] = []`.
 | `dropFirst(_ count: Int = 1)` | `[T]` | Without the first `count` items. |
 | `dropLast(_ count: Int = 1)` | `[T]` | Without the last `count` items. |
 | `slice(from: Int, to: Int)` | `[T]` | The items from index `from` up to `to`. |
-| `unique()` | `[T]` | Without repeated items. |
+| `unique()` | `[T]` | Without repeated items: the first of each, in order. For items a dictionary could have as keys (`Int`s, text, `Bool`s and others), it takes time in proportion to the list's length. |
 | `shuffled()` | `[T]` | The items in random order. |
 | `randomElement()` | `T?` | A random item, or `nil` if empty. |
 | `enumerated()` | `[(Int, T)]` | Each item with its index: `for (i, x) in list.enumerated()`. |

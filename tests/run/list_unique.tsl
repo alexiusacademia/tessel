@@ -1,0 +1,61 @@
+// `unique()` keeps the first of equal items, in order, for every kind of
+// item (#42): those that can be hashed are found in a hash table, so a long
+// list takes time in proportion to its length.
+
+enum Hue { red, green, blue }
+
+enum Shape {
+    circle(r: Int)
+    square(side: Int)
+}
+
+struct Point {
+    x: Int
+    y: Int
+}
+
+struct Named {
+    name: String
+    at: Point
+}
+
+fn main() {
+    print([3, 1, 3, 2, 1, 3].unique())
+    print(["b", "a", "b", "c", "a", ""].unique())
+    print([true, true, false, true].unique())
+    print([Hue.blue, Hue.red, Hue.blue, Hue.green, Hue.red].unique())
+    print([Point(x: 1, y: 2), Point(x: 2, y: 1), Point(x: 1, y: 2)].unique().map { p in "{p.x},{p.y}" })
+    let named = [Named(name: "a", at: Point(x: 0, y: 0)), Named(name: "a", at: Point(x: 0, y: 1)), Named(name: "a", at: Point(x: 0, y: 0))]
+    print(named.unique().count)
+
+    // Items that aren't hashed are compared one by one, with the same result.
+    print([1.5, 0.0, 1.5, -0.0, 2.0].unique())
+    print([[1, 2], [2], [1, 2], []].unique())
+    print([Shape.circle(r: 1), Shape.square(side: 1), Shape.circle(r: 1), Shape.circle(r: 2)].unique())
+    let maybe: [Int?] = [nil, 1, nil, 2, 1]
+    print(maybe.unique())
+    print([Data(bytes: [1]), Data(bytes: [2]), Data(bytes: [1])].unique().count)
+    let none: [String] = []
+    print(none.unique())
+
+    // The kept items are the first ones, and the list itself isn't changed.
+    var words: [String] = []
+    for i in 0..1000 {
+        words.append("w{i % 7}")
+    }
+    let kept = words.unique()
+    print(kept)
+    print(words.count)
+
+    // A long list: 200,000 strings, 50,000 different, is quick.
+    var paths: [String] = []
+    for i in 0..200000 {
+        paths.append("path/number/{i % 50000}.c")
+    }
+    let start = now()
+    let distinct = paths.unique()
+    print(distinct.count)
+    print(distinct[0])
+    print(distinct[49999])
+    print(now() - start < 2.0)
+}
