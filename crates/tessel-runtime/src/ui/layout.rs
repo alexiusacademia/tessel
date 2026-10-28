@@ -1005,9 +1005,10 @@ impl Layouter<'_> {
         // Content with a size of its own sits in a larger frame by the frame's
         // alignment. Text and SVGs are centered by default; stacks lay out
         // their children across the whole frame unless an alignment is given.
+        // (So does a custom view's body, with the alignment given to the view.)
         let align = match &n.kind {
             Kind::Text(_) | Kind::Svg { .. } | Kind::Image { picture: Some(_), .. } => Some(n.mods.frame_align.unwrap_or(1)),
-            Kind::VStack(..) | Kind::HStack(..) | Kind::ZStack(_) => n.mods.frame_align,
+            Kind::VStack(..) | Kind::HStack(..) | Kind::ZStack(_) | Kind::Group => n.mods.frame_align,
             _ => None,
         };
         if let Some(align) = align {
