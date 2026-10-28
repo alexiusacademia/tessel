@@ -81,6 +81,10 @@ pub struct App {
     /// otherwise).
     pub icon: Option<String>,
     pub category: Option<String>,
+    /// A text file of the app's license terms, relative to the manifest:
+    /// the Windows installer shows them and installs only once they're
+    /// accepted.
+    pub license: Option<String>,
     #[serde(default)]
     pub documents: Vec<Document>,
 }
@@ -116,6 +120,20 @@ const CATEGORIES: &[&str] = &[
     "healthcare-fitness", "lifestyle", "medical", "music", "news", "photography", "productivity", "reference",
     "social-networking", "sports", "travel", "utilities", "video", "weather",
 ];
+
+/// The app's license terms (`license`), read from their file. None
+/// without them; an error when the file can't be read or is empty.
+pub fn license_text(found: Option<&Found>) -> Result<Option<String>, String> {
+    let Some(found) = found else { return Ok(None) };
+    let Some(file) = &found.manifest.app.license else { return Ok(None) };
+    let path = found.file.parent().unwrap_or(Path::new(".")).join(file);
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("`license = \"{file}\"`: can't read {}: {e}", path.display()))?;
+    let text = text.trim_start_matches('\u{feff}').to_string();
+    if text.trim().is_empty() {
+        return Err(format!("`license = \"{file}\"`: the file is empty"));
+    }
+    Ok(Some(text))
+}
 
 /// The nearest `tessel.toml` for a program at `path`, read and checked.
 pub fn find(path: &Path) -> Result<Option<Found>, String> {
@@ -239,6 +257,28 @@ pub fn parse_for_test(text: &str) -> Result<Manifest, String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn license_file() {
+        let dir = std::env::temp_dir().join(format!("tessel-license-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("tessel.toml");
+        let found = |m: Manifest| Found { file: file.clone(), manifest: m };
+        // None without `license`.
+        assert_eq!(license_text(Some(&found(read("[app]\nname = \"A\"\n").unwrap()))).unwrap(), None);
+        // The file's text, without a byte-order mark.
+        std::fs::write(dir.join("terms.txt"), "\u{feff}Use it well.\n").unwrap();
+        let m = read("[app]\nlicense = \"terms.txt\"\n").unwrap();
+        assert_eq!(license_text(Some(&found(m))).unwrap().as_deref(), Some("Use it well.\n"));
+        // A missing or empty file is an error that names it.
+        let m = read("[app]\nlicense = \"none.txt\"\n").unwrap();
+        assert!(license_text(Some(&found(m))).unwrap_err().contains("none.txt"));
+        std::fs::write(dir.join("empty.txt"), " \n").unwrap();
+        let m = read("[app]\nlicense = \"empty.txt\"\n").unwrap();
+        assert!(license_text(Some(&found(m))).unwrap_err().contains("empty"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     fn read(text: &str) -> Result<Manifest, String> {

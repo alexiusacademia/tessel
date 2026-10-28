@@ -843,6 +843,7 @@ fn make_installer(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> 
                 icon: document_icon_group(i, d),
             })
             .collect(),
+        license: manifest::license_text(found.as_ref())?,
         name,
     };
     let bytes = std::fs::read(exe).map_err(|e| format!("can't read `{}`: {e}", exe.display()))?;

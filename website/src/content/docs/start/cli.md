@@ -370,11 +370,17 @@ to install the app and then:
   **Open with** for the other kinds of files it opens
   ([`documentTypes:`](/ui/menus-windows/#opening-documents) among them).
 
+When `tessel.toml` names the app's [`license`](/start/project/#the-app)
+terms, the installer starts with them: **Read the license terms** opens
+them in Notepad, and **Next** waits until **I accept the license terms** is
+ticked. Uninstalling doesn't ask.
+
 Opening a newer installer updates the app in the same place, even while it's
 running (it's the new version from its next start). Uninstalling removes
 the app, its shortcuts and its file types; the documents made with it stay.
 
-`Name Setup.exe /S` installs without asking anything, and the uninstaller
+`Name Setup.exe /S` installs without asking anything (which accepts the
+license terms, if there are any), and the uninstaller
 (`uninstall.exe` in the app's folder) removes the app without asking with
 `/uninstall /S`, for installing on many computers. The exit code is 0 when
 it worked.

@@ -5,8 +5,8 @@
 //! The installer is the runtime's `tessel_setup_main`, linked like an app,
 //! with the app's icon and details, and the app inside it: resource RCDATA 1
 //! is `TSLSETUP`, the length of a JSON header (4 bytes, little-endian), the
-//! header (the app's name, id, version, publisher, file name and document
-//! types), then the app's `.exe` compressed with zlib.
+//! header (the app's name, id, version, publisher, file name, document
+//! types and license terms), then the app's `.exe` compressed with zlib.
 //!
 //! Author: Alexius Academia
 //! Date: 2026-10-24
@@ -22,6 +22,8 @@ pub struct Package {
     /// The app's file name, like `Forebay.exe`.
     pub exe: String,
     pub documents: Vec<DocumentType>,
+    /// The license terms the installer asks to accept first.
+    pub license: Option<String>,
 }
 
 /// A kind of file the app opens.
@@ -60,6 +62,7 @@ pub fn resources(package: &Package, exe: &[u8]) -> Vec<u8> {
         "publisher": package.publisher,
         "exe": package.exe,
         "documents": documents,
+        "license": package.license,
     })
     .to_string();
     let mut payload = b"TSLSETUP".to_vec();
@@ -121,6 +124,7 @@ mod tests {
             publisher: "Ada".into(),
             exe: "Notes.exe".into(),
             documents: vec![DocumentType { name: "Note".into(), extensions: vec!["note".into()], owned: true, icon: Some(2) }],
+            license: Some("Use it well.".into()),
         };
         let exe = b"MZ pretend app ".repeat(100);
         let res = resources(&package, &exe);
@@ -134,6 +138,7 @@ mod tests {
         assert_eq!(header["documents"][0]["extensions"][0], "note");
         assert_eq!(header["documents"][0]["owned"], true);
         assert_eq!(header["documents"][0]["icon"], 2);
+        assert_eq!(header["license"], "Use it well.");
         let mut app = Vec::new();
         std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&data[12 + len..]), &mut app).unwrap();
         assert_eq!(app, exe);

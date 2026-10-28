@@ -11,8 +11,11 @@
 //!   `uninstall.exe /uninstall`,
 //! - the app's document types, so Explorer opens those files with it.
 //!
-//! `/S` installs (or with `/uninstall` removes) without asking anything,
-//! and the exit code tells how it went.
+//! When the app has license terms (`license` in `tessel.toml`), the first
+//! page shows them (in Notepad, from a link) and installing waits until
+//! they're accepted. `/S` installs (or with `/uninstall` removes) without
+//! asking anything, which accepts them, and the exit code tells how it
+//! went.
 //!
 //! Author: Alexius Academia
 //! Date: 2026-10-24
@@ -32,7 +35,8 @@ use windows::Win32::System::Registry::{
 use windows::Win32::UI::Controls::{
     LoadIconWithScaleDown, TASKDIALOG_BUTTON, TASKDIALOG_COMMON_BUTTON_FLAGS, TASKDIALOG_NOTIFICATIONS, TASKDIALOGCONFIG,
     TD_ERROR_ICON, TDCBF_CANCEL_BUTTON, TDCBF_CLOSE_BUTTON, TDF_ALLOW_DIALOG_CANCELLATION, TDF_USE_HICON_MAIN,
-    TDM_NAVIGATE_PAGE, TDN_BUTTON_CLICKED, TDN_VERIFICATION_CLICKED, TaskDialogIndirect,
+    TDF_ENABLE_HYPERLINKS, TDM_ENABLE_BUTTON, TDM_NAVIGATE_PAGE, TDN_BUTTON_CLICKED, TDN_CREATED, TDN_HYPERLINK_CLICKED,
+    TDN_NAVIGATED, TDN_VERIFICATION_CLICKED, TaskDialogIndirect,
 };
 use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Shell::{
@@ -53,6 +57,7 @@ const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstal
 /// The buttons the dialogs add (besides Cancel and Close).
 const GO: i32 = 100;
 const OPEN: i32 = 101;
+const NEXT: i32 = 102;
 
 /// What the installer installs: the app's details and its `.exe`.
 struct Package {
@@ -63,6 +68,8 @@ struct Package {
     /// The app's file name, like `Forebay.exe`.
     exe: String,
     documents: Vec<DocumentType>,
+    /// The app's license terms, to be accepted before it's installed.
+    license: Option<String>,
     /// The `.exe`, compressed (zlib).
     compressed: &'static [u8],
 }
@@ -87,7 +94,17 @@ pub extern "C" fn tessel_setup_main() -> i32 {
             return 1;
         }
     };
-    let mut ui = Ui { package, uninstall, desktop: false, done: false, failed: false, pages: Vec::new(), remove_folder: None };
+    let mut ui = Ui {
+        package,
+        uninstall,
+        desktop: false,
+        on_license: false,
+        accepted: false,
+        done: false,
+        failed: false,
+        pages: Vec::new(),
+        remove_folder: None,
+    };
     let code = if silent {
         match ui.work() {
             Ok(()) => 0,
@@ -129,6 +146,11 @@ fn package() -> Result<Package, String> {
         let data = LoadResource(Some(module), found).map_err(|e| e.message())?;
         std::slice::from_raw_parts(LockResource(data) as *const u8, size)
     };
+    read_package(bytes)
+}
+
+/// The package from the bytes of the installer's resource.
+fn read_package(bytes: &'static [u8]) -> Result<Package, String> {
     let bad = || "Its contents can't be read.".to_string();
     let rest = bytes.strip_prefix(MAGIC.as_slice()).ok_or_else(bad)?;
     let len = u32::from_le_bytes(rest.get(..4).ok_or_else(bad)?.try_into().unwrap()) as usize;
@@ -158,6 +180,7 @@ fn package() -> Result<Package, String> {
         publisher: text("publisher"),
         exe: text("exe"),
         documents,
+        license: header["license"].as_str().filter(|t| !t.trim().is_empty()).map(str::to_string),
         compressed: &rest[4 + len..],
     };
     if package.name.is_empty() || package.id.is_empty() || package.exe.is_empty() {
@@ -316,6 +339,10 @@ struct Ui {
     uninstall: bool,
     /// Whether "Add a shortcut to the desktop" is ticked.
     desktop: bool,
+    /// Whether the license page is the one shown, and whether its "I
+    /// accept" is ticked.
+    on_license: bool,
+    accepted: bool,
     /// Whether the work is done, or failed.
     done: bool,
     failed: bool,
@@ -338,7 +365,45 @@ impl Ui {
         Ok(())
     }
 
-    fn first_page(&self) -> Page {
+    /// The first page: the license, when the app has one and is being
+    /// installed; the install page otherwise.
+    fn first_page(&mut self) -> Page {
+        if !self.uninstall && self.package.license.is_some() {
+            self.on_license = true;
+            return self.license_page();
+        }
+        self.install_page()
+    }
+
+    /// The license terms: a link opens them, and Next waits for "I accept".
+    fn license_page(&self) -> Page {
+        let p = &self.package;
+        let mut page = Page::new(
+            &format!("{} Setup", p.name),
+            &format!("{}'s license terms", p.name),
+            &format!("Read the terms under which you may use {}, and accept them to install it.\n\n<a href=\"license\">Read the license terms</a>", p.name),
+        );
+        page.links = true;
+        page.buttons = vec![(NEXT, "Next".into())];
+        page.common = TDCBF_CANCEL_BUTTON;
+        page.verification = Some("I accept the license terms".into());
+        page
+    }
+
+    /// Opens the license terms in Notepad, from a file in the temporary
+    /// folder.
+    fn show_license(&self) {
+        let Some(text) = &self.package.license else { return };
+        let path = std::env::temp_dir().join(format!("{} license terms.txt", file_name(&self.package.name)));
+        // (Windows line ends, for any Notepad.)
+        let text = text.replace("\r\n", "\n").replace('\n', "\r\n");
+        if std::fs::write(&path, text).is_ok() {
+            let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
+        }
+    }
+
+    /// The page that asks to install, or to remove.
+    fn install_page(&self) -> Page {
         let p = &self.package;
         let title = format!("{} Setup", p.name);
         if self.uninstall {
@@ -410,8 +475,31 @@ unsafe extern "system" fn callback(hwnd: HWND, msg: TASKDIALOG_NOTIFICATIONS, wp
         return HRESULT(0);
     }
     let ui = unsafe { &mut *(data as *mut Ui) };
-    if msg == TDN_VERIFICATION_CLICKED {
-        ui.desktop = wparam.0 != 0;
+    let enable_next = |on: bool| unsafe {
+        SendMessageW(hwnd, TDM_ENABLE_BUTTON.0 as u32, Some(WPARAM(NEXT as usize)), Some(LPARAM(on as isize)));
+    };
+    if msg == TDN_CREATED || msg == TDN_NAVIGATED {
+        // Next waits until the license is accepted.
+        if ui.on_license {
+            enable_next(ui.accepted);
+        }
+    } else if msg == TDN_HYPERLINK_CLICKED {
+        ui.show_license();
+    } else if msg == TDN_VERIFICATION_CLICKED {
+        if ui.on_license {
+            ui.accepted = wparam.0 != 0;
+            enable_next(ui.accepted);
+        } else {
+            ui.desktop = wparam.0 != 0;
+        }
+    } else if msg == TDN_BUTTON_CLICKED && wparam.0 as i32 == NEXT {
+        if !ui.accepted {
+            return HRESULT(1);
+        }
+        ui.on_license = false;
+        let next = ui.install_page();
+        ui.navigate(hwnd, next);
+        return HRESULT(1);
     } else if msg == TDN_BUTTON_CLICKED && wparam.0 as i32 == GO {
         let next = match ui.work() {
             Ok(()) => ui.done_page(),
@@ -439,6 +527,8 @@ struct Page {
     buttons: Vec<(i32, String)>,
     common: TASKDIALOG_COMMON_BUTTON_FLAGS,
     error: bool,
+    /// Whether `<a href="…">` in the content is a link.
+    links: bool,
     // The text as Windows reads it, kept for as long as the page is shown.
     wide: Vec<Vec<u16>>,
     raw_buttons: Vec<TASKDIALOG_BUTTON>,
@@ -454,6 +544,7 @@ impl Page {
             buttons: Vec::new(),
             common: TDCBF_CLOSE_BUTTON,
             error: false,
+            links: false,
             wide: Vec::new(),
             raw_buttons: Vec::new(),
         }
@@ -497,6 +588,11 @@ impl Page {
         } else if let Some(icon) = app_icon() {
             config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_HICON_MAIN;
             config.Anonymous1.hMainIcon = icon;
+        }
+        if self.links {
+            // (A packed struct: its field is set whole.)
+            let flags = config.dwFlags;
+            config.dwFlags = flags | TDF_ENABLE_HYPERLINKS;
         }
         if let Some(module) = unsafe { GetModuleHandleW(None).ok() } {
             config.hInstance = module.into();
@@ -658,5 +754,42 @@ fn delete_tree(path: &str) {
 fn delete_value(path: &str, name: &str) {
     unsafe {
         let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(path), &HSTRING::from(name));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An installer's resource with this header and nothing compressed.
+    fn resource(header: &str) -> &'static [u8] {
+        let mut bytes = MAGIC.to_vec();
+        bytes.extend((header.len() as u32).to_le_bytes());
+        bytes.extend(header.as_bytes());
+        Box::leak(bytes.into_boxed_slice())
+    }
+
+    #[test]
+    fn reads_the_license() {
+        let p = read_package(resource(r#"{"name":"Notes","id":"dev.notes","version":"1.0","publisher":"","exe":"Notes.exe","documents":[],"license":"Use it well."}"#)).unwrap();
+        assert_eq!(p.license.as_deref(), Some("Use it well."));
+        let mut ui = Ui { package: p, uninstall: false, desktop: false, on_license: false, accepted: false, done: false, failed: false, pages: Vec::new(), remove_folder: None };
+        // Installing starts with the license; Next waits for "I accept".
+        let first = ui.first_page();
+        assert!(ui.on_license && first.links && first.buttons[0].0 == NEXT);
+        // Removing doesn't ask.
+        ui.uninstall = true;
+        ui.on_license = false;
+        let _ = ui.first_page();
+        assert!(!ui.on_license);
+    }
+
+    #[test]
+    fn no_license() {
+        let p = read_package(resource(r#"{"name":"Notes","id":"dev.notes","version":"1.0","publisher":"","exe":"Notes.exe","documents":[]}"#)).unwrap();
+        assert!(p.license.is_none());
+        let mut ui = Ui { package: p, uninstall: false, desktop: false, on_license: false, accepted: false, done: false, failed: false, pages: Vec::new(), remove_folder: None };
+        let first = ui.first_page();
+        assert!(!ui.on_license && first.buttons[0].0 == GO);
     }
 }

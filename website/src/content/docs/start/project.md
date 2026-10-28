@@ -62,6 +62,7 @@ The `[app]` table says what the app says about itself:
 | `copyright` | The copyright notice, like `© 2026 Example Surveys`. | — |
 | `icon` | A square PNG, relative to `tessel.toml`. See [the app's icon](/start/cli/#the-apps-icon). | `icon.png` next to the code |
 | `category` | Where the App Store and Finder file the app: `business`, `developer-tools`, `education`, `entertainment`, `finance`, `games`, `graphics-design`, `healthcare-fitness`, `lifestyle`, `medical`, `music`, `news`, `photography`, `productivity`, `reference`, `social-networking`, `sports`, `travel`, `utilities`, `video` or `weather`. | — |
+| `license` | A text file of the app's license terms, relative to `tessel.toml`. The [Windows installer](/start/cli/#the-installer-of-a-windows-app) shows them first and installs only once they're accepted. | — |
 
 On macOS, [`tessel build --bundle`](/start/cli/#tessel-build) writes these
 into the bundle's `Info.plist` (and names the bundle after the app). On
