@@ -1,0 +1,28 @@
+// A headless `waitfor` moves the script's clock on to the next timer when
+// nothing else is going on, so what timers bring about appears: here a
+// timer that starts a load, whose result shows the label.
+
+app Ticker {
+    state started = 0.0
+    state ticks = 0
+    state status = "Waiting"
+
+    VStack {
+        Text("{ticks} ticks at {now() - started} s")
+        Text(status)
+    }
+    .onAppear {
+        started = now()
+        every(seconds: 0.5) {
+            ticks += 1
+            if ticks == 4 {
+                fetch(url: "file://tests/run/fetch_data.txt") { text in
+                    status = "Loaded: {text?.trim() ?? "nothing"}"
+                }
+            }
+        }
+        after(seconds: 120.0) {
+            status = "Two minutes"
+        }
+    }
+}

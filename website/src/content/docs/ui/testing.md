@@ -101,8 +101,8 @@ opens a window as usual.
 | `window "Table"` | Sends the commands after it to another [window](/reference/views/#window) (`window main`: back to the main one). |
 | `answer "notes/a.note"` | Sets the path the next [file dialog](#file-dialogs) returns. |
 | `answer cancel` | Makes the next file dialog return `nil`, as if the user cancelled. |
-| `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due. |
-| `waitfor "Done"` | Waits until a view with this label is there (for up to a minute): for what a program started with [`runCommand`](/reference/stdlib/#runcommand) and `input: true` brings about, which `wait` doesn't wait for. |
+| `wait 1.5` | Lets 1.5 seconds pass, running any timers that are due and letting background work they start finish. See [Time and background work](#time-and-background-work). |
+| `waitfor "Done"` | Waits until a view with this label is there: for what a load, a timer, or a program started with [`runCommand`](/reference/stdlib/#runcommand) and `input: true` brings about, which `wait` doesn't wait for. See [Time and background work](#time-and-background-work). |
 | `repeat 20 key down` | Runs a command several times. |
 | `compose "ni"` | Text an [input method](/ui/controls/#input-methods) is composing in the field being edited; `tree` shows it. A `type` after it is what it became. |
 | `reload` | With [`tessel run --hot`](/start/cli/#hot-reload): takes the program's new code now, if its files changed. (A scripted run doesn't watch the files by itself.) |
@@ -212,6 +212,30 @@ tree
 An open WebSocket doesn't finish by itself, so `wait` doesn't wait for it to
 close. Instead, while one is open, `wait` gives its messages real time to
 arrive: half a second, or the wait's length if that's longer.
+
+Background work that starts while `wait` moves the clock finishes the same
+way. Before the clock passes the next timer, `wait` lets work in progress
+finish and runs its callbacks, also for work those callbacks start. So a
+timer that starts a `fetch`, whose result starts the next one, keeps going
+as it would in a window, and each result arrives at the time its timer
+fired. This waiting takes at most a minute of real time per `wait`; after
+that, the clock moves on without it.
+
+`waitfor "label"` checks for the label, runs the callbacks of finished
+background work, and runs timers that are due. When nothing is running
+(no loads, `background` work, commands or open WebSockets), it moves the
+clock on to the next timer, so a label that only a timer brings about
+appears:
+
+```text
+waitfor "Saved"
+tree
+```
+
+`waitfor` gives up, and the script fails, if the label isn't there after a
+minute of real time, or after it has moved the clock an hour on. (An app
+with an `every` timer always has a next timer, so without the hour it
+would never stop.)
 
 ### File dialogs
 

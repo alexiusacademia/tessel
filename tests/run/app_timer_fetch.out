@@ -1,0 +1,20 @@
+Root
+  View
+    VStack
+      Text "fetched 0 at 0.0 s"
+      Text "chain []"
+Root
+  View
+    VStack
+      Text "fetched 4 at 1.0 s"
+      Text "chain []"
+Root
+  View
+    VStack
+      Text "fetched 8 at 2.0 s"
+      Text "chain [\"a at 1.5\", \"b\", \"c at 1.75\"]"
+Root
+  View
+    VStack
+      Text "fetched 12 at 3.0 s"
+      Text "chain [\"a at 1.5\", \"b\", \"c at 1.75\"]"

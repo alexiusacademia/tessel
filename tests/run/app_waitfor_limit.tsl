@@ -1,0 +1,13 @@
+// A headless `waitfor` looks for its label for at most an hour of the
+// app's time: an app whose timer goes on for ever doesn't keep it going.
+
+app Forever {
+    state ticks = 0
+
+    Text("{ticks} ticks")
+    .onAppear {
+        every(seconds: 1.0) {
+            ticks += 1
+        }
+    }
+}

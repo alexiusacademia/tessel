@@ -1,0 +1,10 @@
+Root
+  View
+    VStack
+      Text "4 ticks at 2.0 s"
+      Text "Loaded: Tessel loaded this file."
+Root
+  View
+    VStack
+      Text "240 ticks at 120.0 s"
+      Text "Two minutes"

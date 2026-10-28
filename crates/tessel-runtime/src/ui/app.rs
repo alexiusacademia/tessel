@@ -816,6 +816,30 @@ fn jobs_busy() -> bool {
         || net::working()
 }
 
+/// Anything running at all: background work, open WebSockets, commands
+/// (also ones that are written to). A headless `waitfor` moves the clock
+/// on only when there's none.
+fn anything_running() -> bool {
+    background_busy() || COMMANDS.with(|c| !c.borrow().is_empty())
+}
+
+/// How far a headless `waitfor` moves the clock, at most, looking for its
+/// label (an hour: an app with a repeating timer would go on for ever).
+const WAITFOR_SPAN: f64 = 3600.0;
+
+/// A headless run: lets background work in progress finish (until
+/// `deadline`), running the blocks of its results, and of work they start.
+fn settle(app: &mut App, deadline: Instant) {
+    while jobs_busy() && Instant::now() < deadline {
+        if deliver_background() {
+            app.dirty = true;
+            app.update();
+        } else {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
 // ===== the app model =====
 
 /// What a click landed on.
@@ -5980,10 +6004,12 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 app.scroll(x, y, dx, dy, mods);
             }
             // `waitfor "label"`: until a view with that label is there (what
-            // a running command, a load or a timer brings about).
+            // a running command, a load or a timer brings about). When
+            // nothing is running, the clock moves on to the next timer.
             "waitfor" => {
                 let label = rest.trim_matches('"');
                 let started = Instant::now();
+                let until = now() + WAITFOR_SPAN;
                 loop {
                     app.update();
                     if app.find_label(label).is_some() {
@@ -5995,22 +6021,28 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                     if deliver_background() | fire_timers() {
                         app.dirty = true;
+                    } else if !anything_running() {
+                        // Nothing to wait for but timers: on to the next one.
+                        // (An hour of the app's time is enough looking.)
+                        match next_timer() {
+                            Some(t) if t <= until => set_script_clock(t.max(now())),
+                            Some(_) => {
+                                eprintln!("script: `{label}` never appeared (in an hour of the app's time)");
+                                return 2;
+                            }
+                            None => std::thread::sleep(Duration::from_millis(5)),
+                        }
                     } else {
                         std::thread::sleep(Duration::from_millis(5));
                     }
                 }
             }
             "wait" => {
-                // Loads and commands in progress finish first (tests shouldn't depend on timing).
-                let started = Instant::now();
-                while jobs_busy() && started.elapsed() < Duration::from_secs(60) {
-                    if deliver_background() {
-                        app.dirty = true;
-                        app.update();
-                    } else {
-                        std::thread::sleep(Duration::from_millis(5));
-                    }
-                }
+                // Background work in progress finishes first, and its results
+                // arrive (tests shouldn't depend on timing): for at most a
+                // minute of real time in all.
+                let deadline = Instant::now() + Duration::from_secs(60);
+                settle(app, deadline);
                 let secs: f64 = rest.parse().unwrap_or(0.0);
                 // Open WebSockets: let their messages arrive for a moment
                 // (at least half a second, or as long as the wait).
@@ -6027,12 +6059,15 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 }
                 let end = now() + secs;
                 // Step through timers in order, so ones they add also fire.
+                // What they start finishes before the clock moves on, as
+                // what its results start does (#52).
                 while let Some(t) = next_timer().filter(|t| *t <= end) {
                     set_script_clock(t);
                     if fire_timers() {
                         app.dirty = true;
                         app.update();
                     }
+                    settle(app, deadline);
                 }
                 set_script_clock(end);
                 app.tip_due();
