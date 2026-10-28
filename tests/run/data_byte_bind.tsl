@@ -1,0 +1,11 @@
+// A byte of a `Data` can be set, but not given to a `bind` parameter.
+
+fn bump(_ n: bind Int) {
+    n += 1
+}
+
+fn main() {
+    var d = Data(bytes: [1, 2])
+    bump(d[0])
+    print(d.bytes)
+}

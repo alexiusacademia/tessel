@@ -157,6 +157,9 @@ values encoded with `toBinary`. Make one with `Data()`,
 let greeting = Data(text: "Hi")
 print(greeting.count)       // 2
 print(greeting[0])          // 72
+
+var bytes = Data(bytes: [0, 0])
+bytes[1] = 255              // change one byte of a `var`
 ```
 
 `a + b` joins two `Data` values, and `data += more`, `data.append(more)` and

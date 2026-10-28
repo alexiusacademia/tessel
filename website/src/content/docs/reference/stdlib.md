@@ -1175,8 +1175,11 @@ print(bytes == Data(text: "Hi!"))       // true
 | `append(byte: Int)` | | Adds one byte (from 0 to 255; other values are wrapped into that range, as in `Data(bytes:)`). |
 
 - `data[i]` is the byte at index `i` (from 0), as an `Int`. An index outside
-  the data stops the program with an error. Bytes can't be changed one at a
-  time; add to the end, or make a new `Data` (for example from `bytes`).
+  the data stops the program with an error.
+- `data[i] = byte` changes one byte of a `var` (values outside 0 to 255 are
+  wrapped into that range, as in `Data(bytes:)`), and so do `data[i] += 1`
+  and the other operators. An index outside the data stops the program with
+  an error. Other copies of the `Data` keep their bytes.
 - `a + b` is a new `Data` with the bytes of both.
 - `==` and `!=` compare the bytes.
 - Read and write files of bytes with [`readData`](#readdata) and
@@ -3591,7 +3594,7 @@ error: index 5 is out of range for a list of 3 items
 
 | Error | Caused by |
 |---|---|
-| `index … is out of range` | `list[i]`, `remove(at:)` or `insert(at:)` with an index outside the list, `removeFirst()` or `removeLast()` on an empty list, or `data[i]` outside the data. |
+| `index … is out of range` | `list[i]`, `remove(at:)` or `insert(at:)` with an index outside the list, `removeFirst()` or `removeLast()` on an empty list, or `data[i]` (read or set) outside the data. |
 | `integer overflow` | `Int` arithmetic whose result is too big for an `Int`. |
 | `division by zero` | `Int` division or remainder (`/`, `%`) by `0`. |
 | `negative shift amount` | `a << n` or `a >> n` with `n` less than `0`. |

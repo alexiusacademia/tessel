@@ -1,0 +1,2 @@
+error: index 4 is out of range for data with 4 bytes
+ --> tests/run/data_set_byte_range.tsl:7:5

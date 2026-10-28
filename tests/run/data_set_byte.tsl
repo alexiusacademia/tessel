@@ -1,0 +1,73 @@
+// Setting a byte of a `Data` by index (#40): in place, and a copy held
+// elsewhere keeps its bytes.
+
+struct Packet {
+    body: Data
+
+    fn mark(_ i: Int) {
+        body[i] = 0xff
+    }
+}
+
+fn zero(_ d: bind Data, _ i: Int) {
+    d[i] = 0
+}
+
+fn next(_ n: bind Int) -> Int {
+    n += 1
+    return n
+}
+
+fn main() {
+    var d = Data(bytes: [0, 0, 0, 0])
+    d[1] = 7
+    print(d[1])
+    print(d.bytes)
+
+    // Values outside 0–255 wrap, as in Data(bytes:).
+    d[2] = 258
+    d[3] = -1
+    print(d.bytes)
+
+    // `+=` and the other operators work on a byte.
+    d[1] += 3
+    d[1] *= 2
+    d[3] -= 15
+    print(d.bytes)
+
+    // A copy isn't changed.
+    let before = d
+    d[0] = 42
+    print(before.bytes)
+    print(d.bytes)
+
+    // Data that's been added to, and data from text.
+    var built = Data()
+    built.append(byte: 1)
+    built += Data(bytes: [2, 3])
+    built[0] = 9
+    built.append(byte: 4)
+    print(built.bytes)
+    var hi = Data(text: "hi")
+    hi[0] = 72
+    print(hi.text ?? "")
+
+    // In a `bind` parameter, a field and a list.
+    zero(d, 1)
+    print(d.bytes)
+    var p = Packet(body: Data(bytes: [1, 2, 3]))
+    let old = p.body
+    p.mark(1)
+    print(p.body.bytes)
+    print(old.bytes)
+    var list = [Data(bytes: [1, 2]), Data(bytes: [3, 4])]
+    list[1][0] = 30
+    print(list[1].bytes)
+
+    // The index is worked out once.
+    var i = -1
+    var e = Data(bytes: [5, 5, 5])
+    e[next(i)] += 1
+    print(e.bytes)
+    print(i)
+}

@@ -1,0 +1,9 @@
+// Setting a byte outside a `Data` stops the program, as reading one does.
+
+fn main() {
+    var d = Data(bytes: [1, 2, 3, 4])
+    d[3] = 0
+    print(d.bytes)
+    d[4] = 1
+    print("not reached")
+}

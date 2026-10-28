@@ -1,0 +1,9 @@
+error: `bump`'s `n:` changes its value, so it can't be given a byte of a `Data`
+ --> tests/run/data_byte_bind.tsl:9:10
+  |
+9 |     bump(d[0])
+  |          ^^^^
+  |
+  = help: copy the byte into a `var`, pass that, and set it back with `data[i] = byte`
+
+1 error found

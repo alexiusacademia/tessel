@@ -466,6 +466,9 @@ struct Local {
 
 enum PlaceErr {
     NotPlace,
+    /// `data[i]`: a byte can be set (`data[i] = 7`), but isn't storage of
+    /// its own to pass to `bind` or to call a method that changes it on.
+    Byte,
     Const { what: String, decl: Span, help: &'static str },
 }
 
@@ -1839,8 +1842,13 @@ impl Checker<'_> {
             return;
         }
         let tt = self.expr(target, None);
+        // (`data[i] = byte` sets a byte of a `Data` that can be changed.)
+        let place = match &target.kind {
+            ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::Data)) => self.place(object),
+            _ => self.place(target),
+        };
         if !tt.has_error()
-            && let Err(err) = self.place(target) {
+            && let Err(err) = place {
                 self.report_place(err, target.span, "change");
             }
         match op {
@@ -1939,6 +1947,7 @@ impl Checker<'_> {
                 })
             }
             ExprKind::Member { object, optional: false, .. } => self.place(object),
+            ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::Data)) => Err(PlaceErr::Byte),
             ExprKind::Index(object, _) => self.place(object),
             _ => Err(PlaceErr::NotPlace),
         }
@@ -1946,6 +1955,10 @@ impl Checker<'_> {
 
     fn report_place(&mut self, err: PlaceErr, span: Span, action: &str) {
         match err {
+            PlaceErr::Byte => {
+                self.error(span, format!("a byte of a `Data` can't {action} this way"))
+                    .help("set it with `data[i] = byte`");
+            }
             PlaceErr::NotPlace => {
                 self.error(span, format!("this can't {action}"))
                     .label("this is a value, not a variable")
@@ -4190,6 +4203,10 @@ impl Checker<'_> {
     fn mutating_receiver(&mut self, object: &Expr, method: &str) {
         match self.place(object) {
             Ok(()) => {}
+            Err(PlaceErr::Byte) => {
+                self.error(object.span, format!("`{method}` changes its value, but a byte of a `Data` can't be changed this way"))
+                    .help("copy the byte into a `var`, and set it back with `data[i] = byte`");
+            }
             Err(PlaceErr::NotPlace) => {
                 self.error(object.span, format!("`{method}` changes its value, but this is a temporary value"))
                     .help("store it in a `var` first");
@@ -4650,6 +4667,10 @@ impl Checker<'_> {
             match self.place(v) {
                 Ok(()) => {
                     self.bind_args.insert(v.id);
+                }
+                Err(PlaceErr::Byte) => {
+                    self.error(v.span, format!("{what}'s `{}:` changes its value, so it can't be given a byte of a `Data`", p.label))
+                        .help("copy the byte into a `var`, pass that, and set it back with `data[i] = byte`");
                 }
                 Err(PlaceErr::NotPlace) => {
                     self.error(v.span, format!("{what}'s `{}:` needs something it can change", p.label))

@@ -2763,6 +2763,29 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn assign(&mut self, target: &Expr, op: AssignOp, value: &Expr) {
         let tt = self.ty(target);
+        // `data[i] = byte` (and `data[i] += 1`): the byte is set where it
+        // is, or in a copy if the `Data` is held elsewhere too.
+        if let ExprKind::Index(object, index) = &target.kind
+            && self.ty(object) == Ty::Data
+        {
+            let v = self.expr_as(value, &Ty::Int).unwrap();
+            self.place_indexes(object);
+            let i = self.expr(index).unwrap();
+            let slot = self.write_ptr_of(object);
+            let l = self.loc(target.span);
+            let v = match op {
+                AssignOp::Set => v,
+                AssignOp::Op(bop) => {
+                    let d = self.b.build_load(self.ptr_ty(), slot, "").unwrap();
+                    let old = self.call_rt_generic_loc("tsl_data_get", d, i, l);
+                    self.arith(bop, old, v, &Ty::Int, target.span.to(value.span))
+                }
+            };
+            let p = self.ptr_ty();
+            let f = self.declare_rt("tsl_data_set", &[p.into(), self.i64().into(), self.i64().into(), p.into()], None);
+            self.b.build_call(f, &[slot.into(), i.into(), v.into(), l.into()], "").unwrap();
+            return;
+        }
         if op == AssignOp::Set || self.is_dict_entry(target) {
             let v = self.expr_as(value, &tt).unwrap();
             self.store_value(target, v);

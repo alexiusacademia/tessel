@@ -62,6 +62,31 @@ pub unsafe extern "C" fn tsl_data_get(d: *const Str, i: i64, loc: *const Loc) ->
     bytes[i as usize] as i64
 }
 
+/// `data[i] = byte`: sets the byte to `byte` modulo 256 (like
+/// `Data(bytes:)`); stops the program if `i` is out of range. In place if
+/// nothing else holds the `Data`, otherwise in a copy (the old value released).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_set(slot: *mut *mut Str, i: i64, byte: i64, loc: *const Loc) {
+    unsafe {
+        let d = *slot;
+        let len = (*d).len;
+        if i < 0 || i >= len {
+            let msg = format!("index {i} is out of range for data with {len} bytes");
+            crate::panic_at(loc, &msg);
+        }
+        let d = if crate::unique(d as *mut crate::Header) {
+            d
+        } else {
+            let bytes = data_bytes(d);
+            let copy = if is_growable(d) { growable_new(bytes) } else { data_new(bytes) };
+            crate::tsl_release(d as *mut crate::Header);
+            *slot = copy;
+            copy
+        };
+        *(d as *mut u8).add(size_of::<Str>() + i as usize) = byte as u8;
+    }
+}
+
 /// `Data(bytes: [Int])`: each Int is taken modulo 256.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_data_from_ints(list: *const List) -> *mut Str {
