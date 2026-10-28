@@ -255,7 +255,8 @@ in points; every row is the same height, which is how the list knows which
 rows show without building them. The block after it builds row `i`, from 0
 to `count - 1`. Put the list in a [`Scroll`](/ui/layout/#scroll), where
 it's as tall as all its rows. [`scrollTo(i)`](/ui/layout/#scrolling-from-code)
-shows row `i`, built or not.
+shows row `i`, built or not. With more than one lazy list in a window, give
+each an `.id` and say which one: `scrollTo(i, in: "results")`.
 
 ### Sideways with `LazyHStack`
 

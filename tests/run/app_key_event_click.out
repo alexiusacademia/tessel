@@ -1,0 +1,6 @@
+Root
+  View
+    VStack
+      Text "log:  A:x q q B:y p p A:z"
+      Canvas (1 fill)
+      Canvas (1 fill)

@@ -3651,12 +3651,18 @@ impl Checker<'_> {
                     "scrollTo" => {
                         let sig = self.builtins.function(n).unwrap();
                         self.args(&what, &sig.params, args, trailing, span);
-                        if let Some(a) = args.first().filter(|a| a.label.is_none()) {
+                        let id = args.first().filter(|a| a.label.is_none());
+                        let within = args.iter().find(|a| a.label.as_ref().is_some_and(|l| l.name == "in"));
+                        let helps = [
+                            (id, "give it the `.id(…)` of the view to scroll to"),
+                            (within, "give `in:` the `.id(…)` of the list (or other view) to scroll in"),
+                        ];
+                        for (a, help) in helps {
+                            let Some(a) = a else { continue };
                             let t = self.types.get(&a.value.id).cloned().unwrap_or(Ty::Error);
                             if !matches!(t, Ty::Int | Ty::Str | Ty::Error) {
                                 let what = self.a(&t);
-                                self.error(a.value.span, format!("`scrollTo` needs an `Int` or `String`, found {what}"))
-                                    .help("give it the `.id(…)` of the view to scroll to");
+                                self.error(a.value.span, format!("`scrollTo` needs an `Int` or `String`, found {what}")).help(help);
                             }
                         }
                         return Ty::Void;

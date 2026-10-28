@@ -1,4 +1,5 @@
-// scrollTo takes the `.id` of a view: an Int or a String.
+// scrollTo takes the `.id` of a view (and `in:`, of the list to look in): an
+// Int or a String.
 
 app Jump {
     state size = 100.0
@@ -7,6 +8,7 @@ app Jump {
         Button("Go") {
             scrollTo(1.5) // error: `scrollTo` needs an `Int` or `String`, found `Float`
             scrollTo("top", align: .left) // error: `ScrollAlign` has no case `.left`
+            scrollTo(3, in: true) // error: `scrollTo` needs an `Int` or `String`, found `Bool`
         }
         HSplit(size: 3) { // error: needs something it can change
             Text("a")

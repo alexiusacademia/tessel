@@ -1958,7 +1958,7 @@ Button("Don't Save") { quit() }
 ### scrollTo
 
 ```text
-scrollTo(_ id: Int or String, align: ScrollAlign = .nearest)
+scrollTo(_ id: Int or String, in: Int or String, align: ScrollAlign = .nearest)
 ```
 
 Scrolls the scroll views around the view with this
@@ -1974,7 +1974,13 @@ scrollTo("results", align: .top)
 
 It's done when the views are next laid out, so a view added in the same
 block can be scrolled to. In a `LazyVStack`, row `i` has the id `i`, even
-when it isn't built. See [Scrolling from code](/ui/layout/#scrolling-from-code).
+when it isn't built.
+
+`in:` names the view to look in, by its `.id`: with two lazy lists in a
+window, `scrollTo(80, in: "matches")` shows row 80 of the list with
+`.id("matches")` (or of the list inside the view with that id). Without
+`in:`, the whole window is looked in, and a row number goes to the first
+lazy list. See [Scrolling from code](/ui/layout/#scrolling-from-code).
 
 ### openURL
 

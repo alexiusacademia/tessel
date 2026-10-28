@@ -1,0 +1,6 @@
+click "Left 80"
+click "Right 50"
+click 290 190
+click "Find 5"
+click 290 190
+tree
