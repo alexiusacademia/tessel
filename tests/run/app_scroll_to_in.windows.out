@@ -1,0 +1,153 @@
+clicked F25
+Root
+  View
+    VStack
+      HStack
+        Button "Left 80"
+        Button "Right 50"
+        Button "Find 5"
+        Text "five"
+      HStack
+        Scroll
+          LazyVStack 100 rows, built 64..91
+            VStack
+              Text "L64"
+            VStack
+              Text "L65"
+            VStack
+              Text "L66"
+            VStack
+              Text "L67"
+            VStack
+              Text "L68"
+            VStack
+              Text "L69"
+            VStack
+              Text "L70"
+            VStack
+              Text "L71"
+            VStack
+              Text "L72"
+            VStack
+              Text "L73"
+            VStack
+              Text "L74"
+            VStack
+              Text "L75"
+            VStack
+              Text "L76"
+            VStack
+              Text "L77"
+            VStack
+              Text "L78"
+            VStack
+              Text "L79"
+            VStack
+              Text "L80"
+            VStack
+              Text "L81"
+            VStack
+              Text "L82"
+            VStack
+              Text "L83"
+            VStack
+              Text "L84"
+            VStack
+              Text "L85"
+            VStack
+              Text "L86"
+            VStack
+              Text "L87"
+            VStack
+              Text "L88"
+            VStack
+              Text "L89"
+            VStack
+              Text "L90"
+        Scroll
+          LazyVStack 100 rows, built 40..67
+            VStack
+              Text "R40"
+            VStack
+              Text "R41"
+            VStack
+              Text "R42"
+            VStack
+              Text "R43"
+            VStack
+              Text "R44"
+            VStack
+              Text "R45"
+            VStack
+              Text "R46"
+            VStack
+              Text "R47"
+            VStack
+              Text "R48"
+            VStack
+              Text "R49"
+            VStack
+              Text "R50"
+            VStack
+              Text "R51"
+            VStack
+              Text "R52"
+            VStack
+              Text "R53"
+            VStack
+              Text "R54"
+            VStack
+              Text "R55"
+            VStack
+              Text "R56"
+            VStack
+              Text "R57"
+            VStack
+              Text "R58"
+            VStack
+              Text "R59"
+            VStack
+              Text "R60"
+            VStack
+              Text "R61"
+            VStack
+              Text "R62"
+            VStack
+              Text "R63"
+            VStack
+              Text "R64"
+            VStack
+              Text "R65"
+            VStack
+              Text "R66"
+        Scroll
+          Button "F0"
+          Button "F1"
+          Button "F2"
+          Button "F3"
+          Button "F4"
+          Button "F5"
+          Button "F6"
+          Button "F7"
+          Button "F8"
+          Button "F9"
+          Button "F10"
+          Button "F11"
+          Button "F12"
+          Button "F13"
+          Button "F14"
+          Button "F15"
+          Button "F16"
+          Button "F17"
+          Button "F18"
+          Button "F19"
+          Button "F20"
+          Button "F21"
+          Button "F22"
+          Button "F23"
+          Button "F24"
+          Button "F25"
+          Button "F26"
+          Button "F27"
+          Button "F28"
+          Button "F29"
