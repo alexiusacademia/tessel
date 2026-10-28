@@ -1,0 +1,13 @@
+Root
+  View
+    VStack
+      Text "int"
+      Text "int "
+      Text "int\u{a0}"
+      HStack
+        Text "int "
+        Text "total"
+      Text "int total"
+      VStack
+        Text "words and words and words and words and words "
+      Text "spaced true, nbsp true, row true, wrapped true"

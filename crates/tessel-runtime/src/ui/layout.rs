@@ -480,7 +480,7 @@ impl Layouter<'_> {
             Kind::Text(s) => {
                 let s = s.clone();
                 let (t, cut) = self.text_block(&s, style, finite(avail.w));
-                let size = Size { w: t.width(), h: t.height() };
+                let size = Size { w: t.width_with_end(finite(avail.w)), h: t.height() };
                 n.layout.text = Some(t);
                 n.layout.cut = cut;
                 size
@@ -1356,8 +1356,9 @@ impl Layouter<'_> {
                 if (r.w - c.layout.size.w).abs() > 0.5 {
                     let style = c.layout.style;
                     let s = s.clone();
-                    let (t, cut) = self.text_block(&s, &style, Some((r.w - c.mods.padding.horizontal()).max(0.0)));
-                    c.layout.natural = Size { w: t.width(), h: t.height() };
+                    let w = (r.w - c.mods.padding.horizontal()).max(0.0);
+                    let (t, cut) = self.text_block(&s, &style, Some(w));
+                    c.layout.natural = Size { w: t.width_with_end(Some(w)), h: t.height() };
                     c.layout.text = Some(t);
                     c.layout.cut = cut;
                 }

@@ -1,0 +1,29 @@
+// A Text's size keeps the spaces at its end (also a no-break space), so
+// `Text("int ")` beside `Text("total")` shows "int total". Spaces where a
+// line wraps don't make the text wider than its room.
+
+app Trailing(width: 300, height: 260) {
+    state plain = 0.0
+    state spaced = 0.0
+    state nbsp = 0.0
+    state row = 0.0
+    state joined = 0.0
+    state wrapped = 0.0
+    VStack(alignment: .leading) {
+        Text("int").onResize { w, h in plain = w }
+        Text("int ").onResize { w, h in spaced = w }
+        Text("int ").onResize { w, h in nbsp = w }
+        HStack(spacing: 0) {
+            Text("int ")
+            Text("total")
+        }
+        .onResize { w, h in row = w }
+        Text("int total").onResize { w, h in joined = w }
+        VStack(alignment: .leading) {
+            Text("words and words and words and words and words ")
+                .onResize { w, h in wrapped = w }
+        }
+        .frame(width: 120)
+        Text("spaced {spaced > plain}, nbsp {nbsp > plain}, row {row - joined < 1.0 && joined - row < 1.0}, wrapped {wrapped <= 120.0}")
+    }
+}
