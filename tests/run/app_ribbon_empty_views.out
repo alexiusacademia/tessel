@@ -1,0 +1,34 @@
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Main"
+            RibbonButton "Paste" large
+          RibbonGroup "Extra"
+            RibbonButton "Big" large
+            RibbonButton "One"
+      Grid 2 columns
+        GridRow
+          Text "First"
+          Toggle "Rows" = false
+      Spacer
+big
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Main"
+            RibbonButton "Paste" large
+          RibbonGroup "Extra"
+            RibbonButton "Big" large
+            RibbonButton "One"
+      Grid 2 columns
+        GridRow
+          Text "Shown"
+          Text "row"
+        GridRow
+          Text "First"
+          Toggle "Rows" = true
+      Spacer

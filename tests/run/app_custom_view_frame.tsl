@@ -1,0 +1,28 @@
+// `.frame(width:alignment:)` on a view of the program's own lines its body
+// up in the frame, as it does the same body written in place.
+
+view Bar() {
+    HStack(spacing: 6) {
+        Spacer().frame(width: 20, height: 10)
+        Spacer().frame(width: 30, height: 10)
+    }
+}
+
+view Two() {
+    Spacer().frame(width: 20, height: 10)
+    Spacer().frame(width: 40, height: 10)
+}
+
+app Frames(width: 400, height: 200) {
+    VStack(spacing: 4, alignment: .leading) {
+        Bar().frame(width: 300, alignment: .leading)
+        Bar().frame(width: 300, alignment: .trailing)
+        Bar().frame(width: 300)
+        HStack(spacing: 6) {
+            Spacer().frame(width: 20, height: 10)
+            Spacer().frame(width: 30, height: 10)
+        }
+        .frame(width: 300, alignment: .leading)
+        Two().frame(width: 300, alignment: .leading)
+    }
+}

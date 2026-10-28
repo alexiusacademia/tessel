@@ -1,0 +1,25 @@
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Edit" disabled
+            RibbonButton "Cut"
+          RibbonGroup "Hidden" hidden
+            RibbonButton "Cut"
+      Grid 2 columns
+        GridRow disabled
+          Text "Plain"
+          Toggle "A" = false
+        GridRow disabled
+          Text "Direct"
+          Toggle "B" = false
+        GridRow
+          Text "On"
+          Toggle "C" = true
+        GridRow disabled
+          Text "Two"
+          Button "Two A"
+        GridRow disabled
+          Text "Rows"
+          Button "Two B"

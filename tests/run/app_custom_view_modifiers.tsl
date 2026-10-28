@@ -1,0 +1,57 @@
+// Modifiers on a view of the program's own apply to its whole body: also
+// when the body is a GridRow (or a RibbonGroup), which its Grid (ribbon
+// tab) takes out of the view.
+
+view Row(_ label: String, content: View) {
+    GridRow {
+        Text(label)
+        content
+    }
+}
+
+view TwoRows() {
+    GridRow {
+        Text("Two")
+        Button("Two A") { print("two a") }
+    }
+    GridRow {
+        Text("Rows")
+        Button("Two B") { print("two b") }
+    }
+}
+
+view EditGroup(_ title: String) {
+    RibbonGroup(title) {
+        RibbonButton("Cut", icon: .cut) { print("cut") }
+    }
+}
+
+app Repro(width: 400, height: 360) {
+    state tab = "Home"
+    state a = false
+    state b = false
+    state c = false
+    VStack(alignment: .leading) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                EditGroup("Edit").disabled(true)
+                EditGroup("Hidden").hidden(true)
+            }
+        }
+        Grid {
+            Row("Plain") {
+                Toggle("A", isOn: a)
+            }
+            .disabled(true)
+            GridRow {
+                Text("Direct")
+                Toggle("B", isOn: b)
+            }
+            .disabled(true)
+            Row("On") {
+                Toggle("C", isOn: c)
+            }
+            TwoRows().disabled(true)
+        }
+    }
+}

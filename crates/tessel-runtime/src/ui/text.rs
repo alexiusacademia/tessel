@@ -196,6 +196,16 @@ impl TextLayout {
         self.width
     }
 
+    /// The width with the spaces at the end of the text, but no wider than
+    /// `max_w`: a `Text`'s size keeps them (so `Text("int ")` beside
+    /// `Text("total")` shows "int total"). Spaces where a line wraps are
+    /// still left out.
+    pub fn width_with_end(&self, max_w: Option<f64>) -> f64 {
+        let end = self.lines.last().map_or(0.0, |l| l.end_x);
+        let w = end.min(max_w.unwrap_or(f64::INFINITY));
+        w.max(self.width)
+    }
+
     pub fn height(&self) -> f64 {
         self.height
     }
@@ -418,5 +428,20 @@ mod tests {
             let x = e.code_layout(t, 13.0).caret(n, 1.0).unwrap().x0;
             assert!((x - n as f64 * space).abs() < 0.5, "{t:?}: caret at {x}, a space is {space}");
         }
+    }
+
+    /// A text's width keeps the spaces at its end, but not those where a
+    /// line wraps.
+    #[test]
+    fn width_keeps_trailing_spaces() {
+        let mut e = TextEngine::new();
+        let black = crate::ui::Rgba([0, 0, 0, 255]);
+        let mut width = |t: &str| e.layout(t, 13.0, 400.0, black, None).width_with_end(None);
+        let (plain, spaced, total, joined) = (width("int"), width("int "), width("total"), width("int total"));
+        assert!(spaced > plain + 2.0, "{spaced} vs {plain}");
+        assert!((spaced + total - joined).abs() < 1.0, "{spaced} + {total} vs {joined}");
+        let wrapped = e.layout("words and words and words ", 13.0, 400.0, black, Some(60.0));
+        assert!(wrapped.lines.len() > 1);
+        assert!(wrapped.width_with_end(Some(60.0)) <= 60.0);
     }
 }

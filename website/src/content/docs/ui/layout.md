@@ -301,7 +301,9 @@ app Signup(width: 420, height: 260) {
 - Columns with a flexible view in them, such as a text field, share the
   room the others leave, so a grid in a wide window has wide fields.
 - A row can come from a view of your own: `view Field(…) { GridRow { … } }`
-  makes one row of the grid it's in. Rows from `for` and `if` work too.
+  makes one row of the grid it's in. Rows from `for` and `if` work too. A
+  modifier on the view, like `.disabled(true)`, applies to its rows, and a
+  view that comes out empty takes no room.
 - Outside a `Grid`, a `GridRow` is laid out like an `HStack`.
 
 ## Turning and scaling

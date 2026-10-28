@@ -1,0 +1,60 @@
+// Views of the program's own that come out empty (an `if` that's false)
+// take no room in a ribbon tab or a grid: the groups and rows after them
+// line up with the others.
+
+view Extra(tab: String) {
+    if tab == "Home" {
+        RibbonGroup("Extra") {
+            RibbonButton("Big", icon: .chart, size: .large) { print("big") }
+            RibbonButton("One", icon: .table) { print("1") }
+        }
+    }
+}
+
+view Other(tab: String) {
+    if tab.count < -1 {
+        RibbonGroup("Q") {
+            RibbonButton("Q", icon: .star) { print("q") }
+        }
+    }
+}
+
+view All(tab: String) {
+    Other(tab: tab)
+    Extra(tab: tab)
+    Other(tab: tab)
+}
+
+view MaybeRow(show: Bool) {
+    if show {
+        GridRow {
+            Text("Shown")
+            Text("row")
+        }
+    }
+}
+
+app R(width: 700, height: 300) {
+    state tab = "Home"
+    state rows = false
+    VStack {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Main") {
+                    RibbonButton("Paste", icon: .paste, size: .large) { print("paste") }
+                }
+                All(tab: "Home")
+                Other(tab: "Home")
+            }
+        }
+        Grid {
+            MaybeRow(show: rows)
+            GridRow {
+                Text("First")
+                Toggle("Rows", isOn: rows)
+            }
+            MaybeRow(show: false)
+        }
+        Spacer()
+    }
+}

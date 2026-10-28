@@ -211,7 +211,8 @@ Text("Right").frame(maxWidth: .infinity, alignment: .trailing)
 - **Alignment.** `Text`, `Icon`, `Svg` and SVG `Image` content is centered in a
   larger frame unless `alignment:` says otherwise. A stack with a frame
   spreads its children over the whole frame; with `alignment:`, it keeps its
-  own size and sits at that position in the frame. Other views, like buttons
+  own size and sits at that position in the frame. So does the body of a
+  view of your own, like a stack. Other views, like buttons
   and text fields, fill their frame.
 - Text wraps to fit the frame's width.
 - Giving a `width` to an SVG or `Image` scales the drawing to fit.
