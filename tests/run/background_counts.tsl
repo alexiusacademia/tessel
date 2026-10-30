@@ -1,0 +1,68 @@
+// Alexius Academia, 2026-10-31
+// Several `background` jobs reading a list they share in a tight loop (its
+// `count`, its items, passing it, or a struct holding it, to a function)
+// run side by side, about as fast as one (#62). Reading a shared list used
+// to count a reference to it each time, atomically, every thread changing
+// the same count: 8 jobs took 50 to 600 times as long as one.
+
+struct Table {
+    rows: [Float]
+    scale: Float
+}
+
+fn at(_ d: [Float], _ i: Int) -> Float { d[i % d.count] }
+
+fn atTable(_ t: Table, _ i: Int) -> Float { t.rows[i % t.rows.count] * t.scale }
+
+fn work(_ data: [Float], _ t: Table, _ n: Int) -> Float {
+    var s = 0.0
+    var i = 0
+    while i < n {
+        s += data[i % data.count]
+        s += at(data, i)
+        s += atTable(t, i)
+        i += 1
+    }
+    s
+}
+
+let N = 2000000
+
+// How long `jobs` jobs at once take, in seconds; each checks its result.
+async fn timed(_ data: [Float], _ t: Table, _ jobs: Int, _ expect: Float) -> Float {
+    let t0 = now()
+    var left = jobs
+    for _ in 0..jobs {
+        let d = data
+        let tt = t
+        background(work: { work(d, tt, N) }) { r in
+            if r != expect { print("wrong result {r}, not {expect}") }
+            left -= 1
+        }
+    }
+    while left > 0 { await after(seconds: 0.001) }
+    now() - t0
+}
+
+async fn main() {
+    var data: [Float] = []
+    for i in 0..1000 { data.append(Float(i % 10)) }
+    let t = Table(rows: data, scale: 2.0)
+    let expect = work(data, t, N)
+    print(expect)
+    // (The best of a few tries, so a busy computer doesn't decide.)
+    var one = 1000.0
+    var eight = 1000.0
+    for _ in 0..3 {
+        one = min(one, await timed(data, t, 1, expect))
+        eight = min(eight, await timed(data, t, 8, expect))
+    }
+    // Generous: even on one core, 8 jobs take about 8 times one job.
+    if eight < one * 12.0 + 0.25 {
+        print("8 jobs about as fast as they can be")
+    } else {
+        print("8 jobs: {Int(eight * 1000.0)} ms, one job: {Int(one * 1000.0)} ms")
+    }
+    // What the jobs shared is as it was.
+    print(data.count, t.rows.count, data[999])
+}

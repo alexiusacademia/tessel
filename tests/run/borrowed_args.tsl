@@ -1,0 +1,170 @@
+// Alexius Academia, 2026-10-31
+// Functions and methods borrow their arguments when the caller's value
+// stays as it is during the call (#62): no reference is counted for them,
+// which matters for a list shared by `background` jobs, whose count every
+// thread would change. What's passed still behaves as a copy, and nothing
+// leaks (the leak check verifies this).
+
+struct Bag {
+    items: [Int] = []
+    name: String = "bag"
+
+    // A changing method given its own field: it gets the value from before.
+    fn addAll(_ more: [Int]) {
+        for x in more { items.append(x) }
+    }
+
+    fn doubled() {
+        addAll(items)
+    }
+
+    fn sum(_ xs: [Int]) -> Int {
+        var s = 0
+        for x in xs { s += x }
+        s
+    }
+
+    fn total() -> Int { sum(items) }
+}
+
+struct Big {
+    a: String = "a"
+    b: [Int] = [1, 2]
+    c: Float = 0
+    d: Float = 0
+    e: Float = 0
+    f: Float = 0
+    g: Float = 0
+    h: Float = 0
+    i: Float = 0
+    j: Float = 0
+    k: Float = 0
+    l: Float = 0
+    m: Float = 0
+    n: Float = 0
+    o: Float = 0
+    p: Float = 0
+    q: Float = 0
+}
+
+interface Counter {
+    fn countOf(_ xs: [Int]) -> Int
+}
+
+struct Plain: Counter {
+    fn countOf(_ xs: [Int]) -> Int { xs.count }
+}
+
+fn count(_ xs: [Int]) -> Int { xs.count }
+
+fn firstOr(_ xs: [Int], _ d: Int) -> Int { xs.first ?? d }
+
+// Keeps what it's given: in a list, a struct, a closure.
+fn keep(_ xs: [Int], _ s: String) -> ([Int], String) { (xs, s) }
+
+fn later(_ xs: [Int]) -> fn() -> Int {
+    { xs.count }
+}
+
+fn grow(_ xs: bind [Int]) {
+    xs.append(99)
+}
+
+fn both(_ before: [Int], _ n: Int) -> String { "{before.count} then {n}" }
+
+fn changed(_ xs: [Int], _ n: Int) -> String { "{xs} {n}" }
+
+fn bigName(_ b: Big, _ extra: [Int]) -> String { "{b.a} {b.b} {extra}" }
+
+fn deep(_ xs: [Int], _ n: Int) -> Int {
+    if n == 0 { return xs.count }
+    deep(xs, n - 1) + 1
+}
+
+fn withDefault(_ xs: [Int], tail: [Int] = [7, 8]) -> Int { xs.count + tail.count }
+
+fn many(_ xs: [Int]...) -> Int { xs.count }
+
+fn ignore(_ unused: [Int], _ n: Int) -> Int { n }
+
+fn shadow(_ xs: [Int]) -> Int {
+    var xs = xs
+    let add = { xs.append(1) }
+    add()
+    xs.count
+}
+
+fn pick(_ xs: [Int], _ n: Int) -> Int { xs.count + n }
+
+// Changes the dictionary while the key it's looked up with is worked out.
+fn rekey(_ d: bind [String: [Int]]) -> String {
+    d["k"] = [0]
+    "k"
+}
+
+fn lookup(_ d: [String: [Int]], _ k: String) -> Int { d[k]?.count ?? -1 }
+
+fn early(_ xs: [Int], _ c: Bool) -> Int {
+    pick(xs, if c { return -1 } else { 2 })
+}
+
+fn main() {
+    var xs = [1, 2, 3]
+    print(count(xs))
+    print(firstOr(xs, 0), firstOr([], 5))
+
+    // What the callee keeps is its own.
+    let (kept, s) = keep(xs, "text")
+    xs.append(4)
+    print(kept, s, xs)
+    let f = later(xs)
+    xs = []
+    print(f(), xs)
+
+    // Another argument changing the variable: the call gets the value from before.
+    var ys = [1, 2]
+    print(both(ys, if ys.count > 0 {
+        ys = [9]
+        1
+    } else { 0 }))
+    print(ys)
+    var zs = [5]
+    let three = { 3 }
+    print(changed(zs, three()))
+    grow(zs)
+    print(zs)
+
+    // Methods: a changing one given its own field, and not changing ones.
+    var bag = Bag(items: [1, 2])
+    bag.doubled()
+    print(bag.items, bag.total())
+    bag.addAll(bag.items)
+    print(bag.items)
+    print(bag.sum(bag.items))
+
+    // Big structs, passed by their place.
+    var big = Big()
+    big.b.append(3)
+    print(bigName(big, big.b))
+    print(bigName(Big(a: "temp"), [0]))
+
+    // Through function values and interfaces (which take values owned).
+    let fv = count
+    print(fv(xs), fv([1]))
+    let c: Counter = Plain()
+    print(c.countOf([1, 2, 3]))
+
+    print(deep([1, 2], 5))
+    print(withDefault([1]), withDefault([1], tail: []))
+    print(many([1], [2], [3]))
+    print(ignore([1], 4))
+    print(shadow([1, 2]))
+    print(early([1], true), early([1], false))
+
+    // Properties and methods of lists read in place.
+    let names = ["a", "b"]
+    print(names.count, names.isEmpty, names.contains("b"), names.last ?? "")
+    var d = ["k": [1, 2]]
+    print(d.count, d["k"]?.count ?? 0, lookup(d, "k"), lookup(d, "z"))
+    print(d[rekey(d)] ?? [], d)
+}
