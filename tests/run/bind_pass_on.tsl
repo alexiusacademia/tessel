@@ -1,0 +1,132 @@
+// A `bind` parameter passed on to another call (or to the same function,
+// recursively) is the same place, not a new one reaching it through the
+// old (#66): using it costs the same at any depth. Changes made at any
+// depth reach the caller's value; fields and items of it passed on work
+// the same, as do closures and methods in between; copies stay apart.
+
+struct Item {
+    v: Int = 0
+    log: [Int] = []
+}
+
+struct P {
+    pos: Int = 0
+    xs: [Int] = [1, 2, 3]
+    items: [Item] = [Item(), Item()]
+    inner: Item = Item()
+
+    fn mdeep(_ n: Int) -> Int {
+        if n == 0 { return pos }
+        // A method handing its receiver to a function, which comes back.
+        return viaFn(self, n - 1)
+    }
+}
+
+// Reads at the bottom of a deep recursion.
+fn fdeep(_ p: bind P, _ n: Int, _ reads: Int) -> Int {
+    if n == 0 {
+        var s = 0
+        for _ in 0..reads {
+            s += p.xs[p.pos] + p.pos
+        }
+        return s
+    }
+    return fdeep(p, n - 1, reads)
+}
+
+// Changes at every level and at the bottom.
+fn bumpDeep(_ p: bind P, _ n: Int) {
+    p.pos += 1
+    if n == 0 {
+        p.xs.append(p.pos)
+        return
+    }
+    bumpDeep(p, n - 1)
+    p.xs[0] += 1
+}
+
+fn itemDeep(_ it: bind Item, _ n: Int) {
+    it.log.append(n)
+    if n > 0 { itemDeep(it, n - 1) }
+    it.v += 1
+}
+
+// Passing a field and an item of a passed-on `bind`.
+fn partsDeep(_ p: bind P, _ n: Int) {
+    if n == 0 {
+        itemDeep(p.inner, 2)
+        itemDeep(p.items[1], 3)
+        return
+    }
+    partsDeep(p, n - 1)
+}
+
+fn viaFn(_ p: bind P, _ n: Int) -> Int {
+    p.pos += 1
+    if n == 0 { return p.pos }
+    return p.mdeep(n - 1)
+}
+
+// A closure using the `bind` passes it on.
+fn viaClosure(_ p: bind P, _ n: Int) {
+    let go = { bumpDeep(p, n) }
+    go()
+    go()
+}
+
+// The list grows while an item of it is passed on: found again each time.
+fn growDeep(_ list: bind [Item], _ it: bind Item, _ n: Int) {
+    if n == 0 {
+        for i in 0..100 { list.append(Item(v: i)) }
+        it.v = 42
+        return
+    }
+    growDeep(list, it, n - 1)
+    it.v += 1
+}
+
+// A copy taken deep down keeps its value.
+fn copyDeep(_ p: bind P, _ n: Int) -> P {
+    if n == 0 {
+        let c = p
+        p.xs[1] = 99
+        return c
+    }
+    return copyDeep(p, n - 1)
+}
+
+fn main() {
+    var p = P()
+    let before = p
+    bumpDeep(p, 5)
+    print(p.pos, p.xs, before.pos, before.xs)
+
+    partsDeep(p, 10)
+    print(p.inner.v, p.inner.log, p.items[0].v, p.items[1].v, p.items[1].log)
+
+    var q = P()
+    print(viaFn(q, 6), q.pos, q.mdeep(4), q.pos)
+
+    var r = P()
+    viaClosure(r, 3)
+    print(r.pos, r.xs)
+
+    var list = [Item(), Item()]
+    growDeep(list, list[1], 20)
+    print(list.count, list[1].v, list[0].v, list[101].v)
+
+    var c0 = P()
+    let c = copyDeep(c0, 30)
+    print(c.xs, c0.xs)
+
+    // Quick: four million reads at depth 200 took seconds when each level
+    // wrapped the one before.
+    var t = P()
+    var s = 0
+    let start = now()
+    for _ in 0..20 {
+        s += fdeep(t, 200, 200000)
+    }
+    print(s)
+    print(now() - start < 0.5)
+}
