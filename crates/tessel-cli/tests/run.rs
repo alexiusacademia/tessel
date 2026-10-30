@@ -814,6 +814,63 @@ fn libraries() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `tessel publish --dry-run` refuses what `tessel publish` would, from a
+/// git repository: uncommitted changes and a tag on another commit (#57).
+/// (Only dry runs: the repository's `origin` is on GitHub.)
+#[test]
+fn publish_dry_run_checks_the_repository() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-dry-run-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let lib = dir.join("units");
+    std::fs::create_dir_all(&lib).unwrap();
+    std::fs::create_dir_all(dir.join("index/packages")).unwrap();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(["-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
+            .args(args)
+            .current_dir(&lib)
+            .output();
+        matches!(out, Ok(o) if o.status.success())
+    };
+    if !git(&["init", "-q"]) {
+        return; // (No git here.)
+    }
+    let tessel = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+            .args(args)
+            .current_dir(&lib)
+            .env("TESSEL_HOME", dir.join("home"))
+            .env("TESSEL_INDEX", dir.join("index"))
+            .env_remove("TESSEL_VERSION")
+            .output()
+            .unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        (out.status.success(), text)
+    };
+    std::fs::write(lib.join("tessel.toml"), "[library]\nname = \"units\"\nversion = \"0.1.1\"\ndescription = \"Units\"\nlicense = \"MIT\"\n").unwrap();
+    std::fs::write(lib.join("units.tsl"), "public fn metres(_ ft: Float) -> Float {\n    return ft * 0.3048\n}\n").unwrap();
+    assert!(git(&["remote", "add", "origin", "https://github.com/someone/units.git"]));
+    assert!(git(&["add", "."]) && git(&["commit", "-q", "-m", "units"]));
+
+    let (ok, out) = tessel(&["publish", "--dry-run"]);
+    assert!(ok && out.contains("units 0.1.1 is ready to publish from https://github.com/someone/units (tag v0.1.1)"), "{out}");
+
+    // Something not committed, even a folder git doesn't track yet.
+    std::fs::create_dir_all(lib.join("website")).unwrap();
+    std::fs::write(lib.join("website/index.html"), "<p>units</p>\n").unwrap();
+    let (ok, out) = tessel(&["publish", "--dry-run"]);
+    assert!(!ok && out.contains("the repository has changes that aren't committed"), "{out}");
+    assert!(git(&["add", "."]) && git(&["commit", "-q", "-m", "website"]));
+    assert!(tessel(&["publish", "--dry-run"]).0);
+
+    // The version's tag on another commit.
+    assert!(git(&["tag", "v0.1.1", "HEAD~1"]));
+    let (ok, out) = tessel(&["publish", "--dry-run"]);
+    assert!(!ok && out.contains("tag v0.1.1 is on another commit"), "{out}");
+    assert!(std::fs::read_dir(dir.join("index/packages")).unwrap().next().is_none(), "something was published");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `tessel test`: tests that pass, fail in each way, crash and hang, and
 /// what it says about them (`tests/test_blocks/main.out`, without times).
 #[test]

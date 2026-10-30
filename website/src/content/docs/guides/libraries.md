@@ -162,13 +162,19 @@ tessel publish
 
 1. checks the `[library]` table, and that the code compiles (with the
    libraries it uses) and has something `public`;
-2. makes sure the name is free (or already yours) and the version is new;
+2. makes sure the name is free (or already yours), the version is new,
+   everything in the repository is committed and the tag `v1.2.0`, if
+   it's there already, is on the commit being published;
 3. tags the commit `v1.2.0` and pushes the tag to `origin`;
 4. downloads that tag back from the repository, as programs will, and
    works out its checksum;
 5. opens GitHub's page for proposing the version's entry to the index,
    `packages/textkit/1.2.0.toml`. Press **Propose new file**, then **Create
    pull request**.
+
+With `--dry-run` it makes every check of steps 1 and 2 and stops there:
+when it says the library is ready to publish, `tessel publish` goes
+through.
 
 The index checks the pull request: the entry is well formed, its tag is
 the commit it names, the code has the checksum and compiles, the

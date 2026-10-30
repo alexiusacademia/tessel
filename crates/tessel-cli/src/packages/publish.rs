@@ -97,10 +97,6 @@ fn run(dry: bool) -> Result<(), String> {
         };
     }
 
-    if dry {
-        eprintln!("Checking {} {version}", lib.name);
-        check_code(&dir)?;
-    }
     let repository = match &lib.repository {
         Some(r) if fetch::local(r).is_some() => dir.join(r).canonicalize().map_err(|e| format!("{r}: {e}"))?.display().to_string(),
         Some(r) => web_url(r),
@@ -124,33 +120,40 @@ fn run(dry: bool) -> Result<(), String> {
 
     let tag = format!("v{version}");
     let local = fetch::local(&repository).is_some();
-    // (Before checking the code, which may write the library's tessel.lock.)
-    if !local && !dry && !git(&dir, &["status", "--porcelain"])?.is_empty() {
-        return Err("the repository has changes that aren't committed; commit them first, so what's published is in git".into());
-    }
-    if !dry {
-        eprintln!("Checking {} {version}", lib.name);
-        check_code(&dir)?;
-    }
+    // Every check runs the same with --dry-run, before anything is tagged
+    // or pushed, so a dry run that's ready means the publish goes through.
+    // (The repository's first: checking the code may write the library's
+    // tessel.lock.)
+    let head = if local {
+        None
+    } else {
+        if !git(&dir, &["status", "--porcelain"])?.is_empty() {
+            return Err("the repository has changes that aren't committed; commit them first, so what's published is in git".into());
+        }
+        let head = git(&dir, &["rev-parse", "HEAD"])?;
+        let tagged = git(&dir, &["rev-parse", &format!("refs/tags/{tag}^{{commit}}")]).ok();
+        if let Some(c) = tagged.as_ref().filter(|c| **c != head) {
+            return Err(format!("tag {tag} is on another commit ({c}); a version's tag can't move"));
+        }
+        Some((head, tagged.is_some()))
+    };
+    eprintln!("Checking {} {version}", lib.name);
+    check_code(&dir)?;
     if dry {
         println!("{} {version} is ready to publish from {repository} (tag {tag})", lib.name);
         return Ok(());
     }
-    let commit = if local {
-        "local".to_string()
-    } else {
-        let head = git(&dir, &["rev-parse", "HEAD"])?;
-        match git(&dir, &["rev-parse", &format!("refs/tags/{tag}^{{commit}}")]) {
-            Ok(c) if c != head => return Err(format!("tag {tag} is on another commit ({c}); a version's tag can't move")),
-            Ok(_) => {}
-            Err(_) => {
+    let commit = match head {
+        None => "local".to_string(),
+        Some((head, tagged)) => {
+            if !tagged {
                 git(&dir, &["tag", &tag])?;
                 eprintln!("Tagged {tag}");
             }
+            eprintln!("Pushing {tag} to origin");
+            git(&dir, &["push", "origin", &format!("refs/tags/{tag}")])?;
+            head
         }
-        eprintln!("Pushing {tag} to origin");
-        git(&dir, &["push", "origin", &format!("refs/tags/{tag}")])?;
-        head
     };
 
     // What programs will download, and its checksum.
