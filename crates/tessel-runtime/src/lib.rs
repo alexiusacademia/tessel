@@ -1110,6 +1110,18 @@ pub unsafe extern "C" fn tsl_list_push(slot: *mut *mut List, value: *const u8) {
     }
 }
 
+/// Place `i` of the new list in `slot` that's being filled (a list literal's,
+/// with room for all its items), for the caller to store item `i` in right
+/// away: the list's length is `i + 1` now.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_list_fill(slot: *const *mut List, i: i64) -> *mut u8 {
+    unsafe {
+        let l = *slot;
+        (*l).len = i + 1;
+        elem_at(l, i)
+    }
+}
+
 /// Inserts the value at `value` (moved in) before index `i`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_list_insert(slot: *mut *mut List, value: *const u8, i: i64, loc: *const Loc) {
