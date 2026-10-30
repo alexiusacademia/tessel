@@ -36,4 +36,12 @@ fn headers(values: [Int]) {
     }
 }
 
+fn lineStartsWithOperator(a: Float, b: Float, ok: Bool) -> Float {
+    let sum = a
+        + b // error: to continue the expression above, end that line with `+`
+    let both = ok
+        && a > b // error: a line can't start with `&&`
+    sum
+}
+
 var top = 1 // error: only constants (`let`) can be declared at the top level

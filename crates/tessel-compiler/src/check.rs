@@ -1903,9 +1903,49 @@ impl Checker<'_> {
         self.outer_loops = outer_loops;
     }
 
+    /// A line that only works out `-b`, `a + b`, `x == 1`, … and throws the
+    /// value away does nothing. Usually it was meant to continue the line
+    /// above (`let y = a` then `- b` on the next line), which a line end
+    /// doesn't do.
+    fn unused_operator(&mut self, e: &Expr) {
+        if self.types.get(&e.id).is_none_or(|t| t.has_error()) {
+            return;
+        }
+        // `ok || retry()`, `x ?? fallback()`: the right side may run for its effect.
+        if let ExprKind::Binary(BinOp::And | BinOp::Or | BinOp::Coalesce, _, rhs) = &e.kind
+            && !no_effect(rhs)
+        {
+            return;
+        }
+        // The leftmost operand: `- b * c` starts with `-b`.
+        let mut first = e;
+        while let ExprKind::Binary(_, lhs, _) = &first.kind {
+            first = lhs;
+        }
+        let d = self.error(e.span, "this line's value isn't used");
+        d.label("this works out a value, and then throws it away");
+        match (&first.kind, &e.kind) {
+            (ExprKind::Unary(UnaryOp::Neg, _), _) => {
+                d.help(
+                    "a line ends its statement, so this line is a new one; to subtract it from the expression above, end that line with `-`",
+                );
+            }
+            (_, ExprKind::Binary(BinOp::Eq, ..)) => {
+                d.help("to change a value, use `=`; to test one, use `if`");
+            }
+            _ => {
+                d.help("store it in a variable, or pass it on");
+            }
+        }
+    }
+
     /// A built-in method or property whose result is thrown away does
     /// nothing: text and lists don't change themselves.
     fn unused_result(&mut self, e: &Expr) {
+        if matches!(e.kind, ExprKind::Unary(..) | ExprKind::Binary(..)) {
+            self.unused_operator(e);
+            return;
+        }
         let (recv, name, call) = match &e.kind {
             ExprKind::Call { .. } => match self.calls.get(&e.id).map(|c| &c.callee) {
                 Some(Callee::Builtin { recv, name }) => (recv.clone(), name.clone(), true),
@@ -5873,5 +5913,22 @@ fn root_name(e: &Expr) -> Option<&str> {
         ExprKind::Name(n) => Some(n),
         ExprKind::Member { object, .. } | ExprKind::Index(object, _) => root_name(object),
         _ => None,
+    }
+}
+
+/// Does working out `e` do nothing but make a value (no calls, no blocks)?
+fn no_effect(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Nil
+        | ExprKind::Str(_)
+        | ExprKind::Name(_)
+        | ExprKind::DotName(_) => true,
+        ExprKind::Member { object, .. } => no_effect(object),
+        ExprKind::Index(a, b) | ExprKind::Binary(_, a, b) => no_effect(a) && no_effect(b),
+        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } => no_effect(x),
+        _ => false,
     }
 }

@@ -157,6 +157,14 @@ places (shown as `NL*` in the rules below):
   brackets), such as `.done -> …`, or that starts one whose patterns go on
   over several lines (it ends with a `,`).
 
+No other token continues the line above. A line that starts with a binary
+operator that can't start an expression (`+`, `*`, `&&`, `??`, `==`, …) is a
+parse error. A line starting with `-` or `!` parses as a new statement, but
+the checker rejects an expression statement that is only a unary or binary
+operation whose value is thrown away (`-b`, `a + b`, `x == 1`; for `&&`,
+`||` and `??`, only when the right side has no calls). A block's last line
+isn't affected when its value is the block's value.
+
 ## Declarations
 
 A program is a folder of `.tsl` files. Each file is a list of imports and

@@ -1656,6 +1656,35 @@ impl<'a> Parser<'a> {
             Tok::LBrace => return self.closure(),
             Tok::If => return self.if_expr(),
             Tok::Match => return self.match_expr(),
+            // A line can't start with `+`, `&&`, `??`, …: the line before
+            // already ended its statement.
+            op @ (Tok::Plus
+            | Tok::Star
+            | Tok::Slash
+            | Tok::Percent
+            | Tok::Amp
+            | Tok::Pipe
+            | Tok::Caret
+            | Tok::Shl
+            | Tok::EqEq
+            | Tok::NotEq
+            | Tok::Lt
+            | Tok::Le
+            | Tok::Gt
+            | Tok::Ge
+            | Tok::AndAnd
+            | Tok::OrOr
+            | Tok::QuestionQuestion)
+                if self.pos > 0 && self.toks[self.pos - 1].tok == Tok::Newline =>
+            {
+                let op = describe(&op);
+                let err = self.unexpected("a value");
+                let d = self.diags.list.last_mut().unwrap();
+                d.help(format!(
+                    "a line ends its statement, so a line can't start with {op}; to continue the expression above, end that line with {op}"
+                ));
+                return Err(err);
+            }
             _ => return Err(self.unexpected("a value")),
         };
         Ok(self.new_expr(kind, span))

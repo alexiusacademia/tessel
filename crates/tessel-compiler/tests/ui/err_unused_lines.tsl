@@ -1,0 +1,79 @@
+// A line whose value is worked out and thrown away: usually an expression
+// meant to go on from the line above (issue #59).
+
+fn split(x: Float) -> Float {
+    let a = x * 2.0
+        - 1.0 // error: to subtract it from the expression above, end that line with `-`
+    let b = x
+        - 2.0 * x // error: this line's value isn't used
+    a + b
+}
+
+fn thrownAway(a: Int, b: Int, ok: Bool) {
+    var n = a
+    a + b // error: this line's value isn't used
+    n == 5 // error: to change a value, use `=`
+    !ok // error: store it in a variable, or pass it on
+    -a // error: end that line with `-`
+    a < b && ok // error: this line's value isn't used
+    n = n + 1
+}
+
+fn effects(ok: Bool, fallback: Int?) {
+    ok || note() // (the right side runs for its effect)
+    let x = fallback ?? count()
+    print(x)
+}
+
+fn note() -> Bool {
+    print("logged")
+    true
+}
+
+fn count() -> Int {
+    1
+}
+
+// The last line of a block that gives a value is that value.
+fn negate(x: Float) -> Float {
+    -x
+}
+
+fn sign(x: Int) -> Int {
+    if x < 0 {
+        -1
+    } else {
+        1
+    }
+}
+
+fn flip(on: Bool) -> Bool {
+    !on
+}
+
+fn pick(n: Int) -> Int {
+    let v = match n {
+        0 -> -1
+        _ -> {
+            let m = n * 2
+            -m
+        }
+    }
+    v
+}
+
+fn closures(xs: [Int]) -> [Int] {
+    let a = xs.map { x in -x }
+    let b = xs.map { x in
+        let y = x + 1
+        -y
+    }
+    a + b
+}
+
+fn continued(a: Float, b: Float) -> Float {
+    let c = a -
+        b
+    let d = -a
+    d + c
+}
