@@ -55,6 +55,11 @@ const BOX_DATA: u64 = 32;
 /// faster, and costs little while they're small.
 const BIG_VALUE: u64 = 128;
 
+/// A list literal of at most this many items stores them by code of its own;
+/// a longer one calls the runtime for each item that isn't a constant (see
+/// `Gen::list_of`).
+const INLINE_LIST_ITEMS: usize = 32;
+
 /// Compiles a checked program with a `fn main()` to a native object file.
 /// The triple for this computer. On macOS, for the oldest supported version
 /// rather than this machine's.
@@ -1605,6 +1610,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_list_len" | "tsl_dict_len" => (vec![p], Some(i)),
             "tsl_list_get" | "tsl_list_elem_mut" => (vec![p, i, p], Some(p)),
             "tsl_list_push" => (vec![p, p], None),
+            "tsl_list_fill" => (vec![p, i], Some(p)),
             "tsl_list_insert" => (vec![p, p, i, p], None),
             "tsl_list_remove" => (vec![p, i, p, p], None),
             "tsl_list_concat" | "tsl_list_joined" => (vec![p, p], Some(p)),
@@ -5046,12 +5052,94 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let list = self.call_rt("tsl_list_new", &[info.into(), n.into()]).unwrap();
         let slot = self.spill(t, list);
         self.hold_slot(slot, t);
-        for item in items {
+        // The new list is the literal's own and has room for every item, so
+        // there's nothing to check before storing one. (Nothing else sees
+        // the list while it's being filled, so its buffer stays where it is.)
+        let l = list.into_pointer_value();
+        let data = self.list_field(l, 40, self.ptr_ty().into()).into_pointer_value();
+        let lt = self.llty(elem).unwrap();
+        // Constant items (numbers, literal strings, which are never freed)
+        // are copied in all at once, from a constant array, before the others.
+        let may_be_const = !self.needs_rc(elem) || matches!(**elem, Ty::Str);
+        // The others of a short literal are stored at their places in the
+        // buffer. A long literal's are stored where a call for each gives
+        // (`tsl_list_fill`): many stores in one stretch of code, at offsets
+        // from one address, take LLVM's code generator time growing with the
+        // square of their number.
+        let inline = items.len() <= INLINE_LIST_ITEMS;
+        let mut consts: Vec<Option<Val<'ctx>>> = Vec::with_capacity(items.len());
+        let mut last = None;
+        for (i, item) in items.iter().enumerate() {
             let v = self.expr_as(item, elem).unwrap();
-            self.push_item(slot, v, elem);
+            if may_be_const && self.origin_of(v).is_none() && is_const_val(v) {
+                consts.push(Some(v));
+                continue;
+            }
+            consts.push(None);
+            let at = self.i64().const_int(i as u64, false);
+            if inline {
+                let dst = unsafe { self.b.build_gep(lt, data, &[at], "").unwrap() };
+                self.store(elem, dst, v);
+                // (Its length counts what's stored, for an early exit's release.)
+                self.set_list_len(l, i as u64 + 1);
+            } else {
+                let dst = self.call_rt("tsl_list_fill", &[slot.into(), at.into()]).unwrap().into_pointer_value();
+                self.store(elem, dst, v);
+            }
+            last = Some(i);
+        }
+        if consts.iter().any(Option::is_some) {
+            self.copy_const_items(data, &consts, lt);
+            if last != Some(items.len() - 1) {
+                self.set_list_len(l, items.len() as u64);
+            }
         }
         self.unhold(1);
         self.load(t, slot)
+    }
+
+    fn set_list_len(&mut self, l: PointerValue<'ctx>, len: u64) {
+        let len_p = unsafe { self.b.build_gep(self.i8(), l, &[self.i64().const_int(16, false)], "").unwrap() };
+        self.b.build_store(len_p, self.i64().const_int(len, false)).unwrap();
+    }
+
+    /// Copies the constant items of a list literal into its buffer `data`,
+    /// right where `data` is read, before any other item is stored: `consts`
+    /// has the constants, and `None` where an item is stored by its own code.
+    fn copy_const_items(&mut self, data: PointerValue<'ctx>, consts: &[Option<Val<'ctx>>], lt: BasicTypeEnum<'ctx>) {
+        let zero = lt.const_zero();
+        let vals: Vec<Val<'ctx>> = consts.iter().map(|c| c.unwrap_or(zero)).collect();
+        let arr = match lt {
+            BasicTypeEnum::IntType(t) => t.const_array(&vals.iter().map(|v| v.into_int_value()).collect::<Vec<_>>()),
+            BasicTypeEnum::FloatType(t) => t.const_array(&vals.iter().map(|v| v.into_float_value()).collect::<Vec<_>>()),
+            BasicTypeEnum::PointerType(t) => {
+                t.const_array(&vals.iter().map(|v| v.into_pointer_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::StructType(t) => {
+                t.const_array(&vals.iter().map(|v| v.into_struct_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::ArrayType(t) => {
+                t.const_array(&vals.iter().map(|v| v.into_array_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::VectorType(t) => {
+                t.const_array(&vals.iter().map(|v| v.into_vector_value()).collect::<Vec<_>>())
+            }
+            _ => unreachable!("no other kind of value is a list item"),
+        };
+        let g = self.module.add_global(arr.get_type(), None, "items");
+        g.set_linkage(Linkage::Private);
+        g.set_constant(true);
+        g.set_unnamed_addr(true);
+        g.set_initializer(&arr);
+        let at = self.ctx.create_builder();
+        let read = data.as_instruction().unwrap();
+        match read.get_next_instruction() {
+            Some(next) => at.position_before(&next),
+            None => at.position_at_end(read.get_parent().unwrap()),
+        }
+        let size = self.i64().const_int(self.td.get_abi_size(&lt) * vals.len() as u64, false);
+        let align = self.td.get_abi_alignment(&lt);
+        at.build_memcpy(data, align, g.as_pointer_value(), align, size).unwrap();
     }
 
     /// An argument's value, as type `t`: values given one by one to a
@@ -7479,5 +7567,16 @@ fn for_each_child<'a>(e: &'a Expr, f: &mut dyn FnMut(&'a Expr)) {
         }
         ExprKind::Member { object, .. } => f(object),
         _ => {}
+    }
+}
+
+/// Whether `v` is a constant, with no code behind it.
+fn is_const_val(v: BasicValueEnum) -> bool {
+    match v {
+        BasicValueEnum::IntValue(x) => x.is_const(),
+        BasicValueEnum::FloatValue(x) => x.is_const(),
+        BasicValueEnum::PointerValue(x) => x.is_const(),
+        BasicValueEnum::StructValue(x) => x.is_const(),
+        _ => false,
     }
 }
