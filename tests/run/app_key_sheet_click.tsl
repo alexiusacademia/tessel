@@ -1,0 +1,39 @@
+// A click in a sheet doesn't give the keyboard to the view with
+// `.onKeyEvent` behind it (#65): after the sheet closes, keys go to the
+// view that had them before. A view in the sheet itself still takes it.
+view Marker() { Text("").frame(width: 0, height: 0) }
+
+app KeyRepro(width: 400, height: 300) {
+    state keys = ""
+    state paneKeys = ""
+    state underKeys = ""
+    state sheetKeys = ""
+    state asking = false
+    VStack(spacing: 0) {
+        Text("window keys: {keys}")
+        Text("pane keys: {paneKeys}")
+        Text("under keys: {underKeys}")
+        Text("sheet keys: {sheetKeys}")
+        HStack(spacing: 0) {
+            Canvas { g in g.rect(x: 0, y: 0, width: 10, height: 10) }
+                .frame(width: 100)
+                .onPointer { e in if e.kind == .down { asking = true } }
+                .onKeyEvent { e in paneKeys = paneKeys + e.key }
+            Canvas { g in g.rect(x: 0, y: 0, width: 10, height: 10) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onKeyEvent { e in underKeys = underKeys + e.key }
+        }
+        Marker().sheet(isPresented: asking) {
+            VStack {
+                Text("Sure?")
+                Canvas { g in g.rect(x: 0, y: 0, width: 10, height: 10) }
+                    .frame(width: 40, height: 20)
+                    .onKeyEvent { e in sheetKeys = sheetKeys + e.key }
+                    .accessibilityLabel("Pad")
+                Button("Cancel") { asking = false }
+            }
+        }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onKeyEvent { e in keys = keys + e.key }
+}

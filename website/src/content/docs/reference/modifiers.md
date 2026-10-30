@@ -390,6 +390,9 @@ VStack {
   field or code editor) gives it the keyboard: keys go to it rather than to
   the first view with `onKey`, until a text field or code editor is clicked.
   Pressing a view with [`onPointer`](#onpointer) also ends text editing.
+  Only what's clicked counts: a click in a sheet, a popover or anything else
+  open over the window never gives the keyboard to a view behind it; one
+  that lands on no view with `onKey` leaves the keyboard where it was.
 - While a view has the keyboard, keys pressed with Cmd (Ctrl on Windows)
   that no [`shortcut`](#shortcut) takes come to it too, as `"cmd+c"` or
   `"cmd+shift+k"`. Cmd+Z and Cmd+Shift+Z stay undo and redo.
@@ -460,7 +463,7 @@ Canvas { g in drawMap(g) }
   [`onKey`](#onkey): keys go to it rather than to the first view with
   `onKeyEvent`, until a text field or code editor is clicked. So two canvases
   side by side, each with its own `onKeyEvent`, each get the keys after a
-  click in them.
+  click in them. A click in a sheet or popover doesn't reach views behind it.
 
 ## cursor
 
