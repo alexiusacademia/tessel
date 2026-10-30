@@ -1,0 +1,73 @@
+content 320.0 x 150.0
+content 320.0 x 176.0
+MenuBar (native) "Counter" "File" "Edit" "Window"
+Root
+  View
+    VStack
+      Button "Add"
+      Spacer
+  StatusBar
+    Text "0 items"
+    Text "Saved"
+    Spacer
+    Button "Details"
+    Button "Reset"
+MenuBar (native) "Counter" "File" "Edit" "Window"
+Root
+  View
+    VStack
+      Button "Add"
+      Spacer
+  StatusBar
+    Text "2 items"
+    Text "Edited"
+    Spacer
+    Button "Details"
+    Button "Reset"
+MenuBar (native) "Counter" "File" "Edit" "Window"
+Root
+  View
+    VStack
+      Button "Add"
+      Spacer
+  StatusBar
+    Text "2 items"
+    Text "Saved"
+    Spacer
+    Button "Details"
+    Button "Reset"
+  Popover
+    Text "2 items, saved"
+MenuBar (native) "Counter" "File" "Edit" "Window"
+Root
+  View
+    VStack
+      Button "Add"
+      Spacer
+  StatusBar
+    Text "0 items"
+    Text "Saved"
+    Spacer
+    Button "Details"
+    Button "Reset"
+content 400.0 x 276.0
+Window
+  Button "Add"
+  StatusBar
+    Text = "0 items"
+    Text = "Saved"
+    Button "Details"
+    Button "Reset"
+content 400.0 x 250.0
+MenuBar (drawn) "File" "Edit"
+Root
+  View
+    VStack
+      Button "Add"
+      Spacer
+  StatusBar
+    Text "0 items"
+    Text "Saved"
+    Spacer
+    Button "Details"
+    Button "Reset"
