@@ -25,7 +25,7 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 import { Image } from 'astro:assets';
 import counter from '../../assets/screens/counter.png';
 import todos from '../../assets/screens/todos.png';
@@ -93,6 +93,28 @@ a code editor; over 100 built-in icons; files, processes and the network, with
 callbacks that update your UI safely. See the [todo list tutorial](/start/first-app/).
 
 </div>
+
+## Libraries
+
+Charts, CSV files, regular expressions, engineering units, linear algebra
+and more, published for any program to use. Add one with `tessel add csv`
+and `import csv`; publish your own with `tessel publish`. Browse them all,
+with their READMEs and versions, at
+[tessel-packages.syncster.dev](https://tessel-packages.syncster.dev), and
+see the [Libraries guide](/guides/libraries/).
+
+<CardGrid>
+	<LinkCard title="chart" description="Line, scatter, area and bar charts for Canvas, PNG and PDF" href="https://tessel-packages.syncster.dev/chart/" />
+	<LinkCard title="csv" description="Read and write CSV files" href="https://tessel-packages.syncster.dev/csv/" />
+	<LinkCard title="inspector" description="Property panels: numbers with units and math, choices, colors" href="https://tessel-packages.syncster.dev/inspector/" />
+	<LinkCard title="interpolate" description="Splines, PCHIP, Akima, steps and 2D grids" href="https://tessel-packages.syncster.dev/interpolate/" />
+	<LinkCard title="linalg" description="Matrices, LU, QR, least squares, eigenvalues and the SVD" href="https://tessel-packages.syncster.dev/linalg/" />
+	<LinkCard title="numeric" description="Root finding, integration and differential equations" href="https://tessel-packages.syncster.dev/numeric/" />
+	<LinkCard title="pytessel" description="Run Python code from a Tessel program" href="https://tessel-packages.syncster.dev/pytessel/" />
+	<LinkCard title="regex" description="Regular expressions that always run in linear time" href="https://tessel-packages.syncster.dev/regex/" />
+	<LinkCard title="units" description="Engineering units: conversions, checked quantities, parsing" href="https://tessel-packages.syncster.dev/units/" />
+	<LinkCard title="viewport" description="Pan, zoom and rotate for Canvas views, with rulers and grids" href="https://tessel-packages.syncster.dev/viewport/" />
+</CardGrid>
 
 ## Built with Tessel
 

@@ -45,6 +45,9 @@ is an honest list of where things stand.
 - **The tools:** the `tessel` command, the Tessel IDE, a REPL, hot reload,
   a debugger, a language server, a VS Code extension, and a headless mode
   for testing apps.
+- **Libraries:** published libraries for charts, CSV files, regular
+  expressions, units, linear algebra and more, added with `tessel add`
+  (see [Libraries](#libraries)).
 
 A program doesn't need a window:
 
@@ -56,6 +59,38 @@ fn main() {
     }
 }
 ```
+
+## Libraries
+
+Libraries are published in the
+[library index](https://github.com/alexiusacademia/tessel-packages), and
+listed with their READMEs at
+**<https://tessel-packages.syncster.dev>**. Add one to a project and import
+it:
+
+```sh
+tessel add csv
+```
+
+```tessel
+import csv
+```
+
+| Library | What it does |
+|---|---|
+| [chart](https://tessel-packages.syncster.dev/chart/) | Line, scatter, area and bar charts for Canvas, PNG and PDF |
+| [csv](https://tessel-packages.syncster.dev/csv/) | Read and write CSV files |
+| [inspector](https://tessel-packages.syncster.dev/inspector/) | Property panels: numbers with units and math, choices, colors |
+| [interpolate](https://tessel-packages.syncster.dev/interpolate/) | Linear, spline, PCHIP, Akima and step interpolation, and 2D grids |
+| [linalg](https://tessel-packages.syncster.dev/linalg/) | Matrices, LU, Cholesky, QR, least squares, eigenvalues and the SVD |
+| [numeric](https://tessel-packages.syncster.dev/numeric/) | Root finding, integration and differential equations |
+| [pytessel](https://tessel-packages.syncster.dev/pytessel/) | A Python interpreter, to run Python code from a program |
+| [regex](https://tessel-packages.syncster.dev/regex/) | Regular expressions that always run in linear time |
+| [units](https://tessel-packages.syncster.dev/units/) | Engineering units: conversions, checked quantities, parsing and formatting |
+| [viewport](https://tessel-packages.syncster.dev/viewport/) | Pan, zoom and rotate for Canvas views, with grids, rulers and scale bars |
+
+`tessel publish` publishes your own; see
+[Libraries](https://tessel-lang.syncster.dev/guides/libraries/).
 
 ## Installing
 
