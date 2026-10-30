@@ -2984,13 +2984,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Errs on the side of no: a call of a closure, of a function declared
     /// in a function or view, or of any method on that storage (one that
     /// looks like it changes nothing may still change an item through a
-    /// loop of its own) counts as a change.
-    fn keeps(&self, iter: &Expr, body: &Block) -> bool {
+    /// loop of its own) counts as a change. `own`: the loop's variable,
+    /// whose changes (to an item in place) don't count.
+    fn keeps(&self, iter: &Expr, body: &Block, own: Option<&str>) -> bool {
         // (Variables declared in the body are its own; a loop's variable
         // stands for its list.)
         let mut inner: HashMap<&str, &str> = HashMap::new();
         let mut locals: HashSet<&str> = HashSet::new();
         let mut unknown = false;
+        locals.extend(own);
         walk_block(body, &mut |node| match node {
             Node::S(Stmt::For { var, iter, .. }) => match root_name(iter) {
                 // (`for n in n.kids`: the variable is its own list's.)
@@ -3079,6 +3081,20 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         kept
     }
 
+    /// Whether the place `e` is inside an item of a list: reached through
+    /// an index, or through a loop variable standing for a list's item.
+    /// Such a place moves when that list grows.
+    fn through_elem(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Index(..) => true,
+            ExprKind::Member { object, .. } => self.through_elem(object),
+            ExprKind::Name(n) => {
+                self.lookup(n).is_some_and(|v| matches!(v.store, Store::ListElem { .. } | Store::ListElemVia { .. }))
+            }
+            _ => false,
+        }
+    }
+
     /// Is `e` rooted in a view's `state` (so its storage outlives this function)?
     fn in_state(&self, e: &Expr) -> bool {
         match &e.kind {
@@ -3163,10 +3179,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let read_only = place && !captured && !self.checked.loop_writes.contains(&var.span) && !self.in_state(iter);
         // When the body can't change what the list is in either, the list
         // stays where it is: the loop reads it there.
-        let in_place = read_only && body_ast.is_some_and(|b| self.keeps(iter, b));
-        // A list reached through an index (`outer[i].items`) moves when the
-        // outer list grows, so the loop finds it again each round.
-        let movable = place && !in_place && through_index(iter);
+        let in_place = read_only && body_ast.is_some_and(|b| self.keeps(iter, b, None));
+        // A list reached through an index (`outer[i].items`), or through
+        // the variable of a loop over another list (`n.kids` in `for n in
+        // outer`), moves when that list grows, so the loop finds it again
+        // each round (issue #64).
+        // (Not when the body changes only the loop's own variable: an item
+        // changed in place doesn't move the list it's in.)
+        let movable = place
+            && !in_place
+            && (through_index(iter)
+                || (self.through_elem(iter) && !body_ast.is_some_and(|b| self.keeps(iter, b, Some(&var.name)))));
         // A closure capturing the loop variable must find the element again
         // later; if the list's storage may move, keep a locator for it.
         let relocate = if place && ((captured && !self.in_state(iter)) || movable) {

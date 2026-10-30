@@ -1,0 +1,135 @@
+// Changing a list inside loops nested in a loop over it (#64): the inner
+// loops find their list again each round instead of keeping a pointer into
+// the outer list, which moves when it grows. As with a single loop, every
+// loop goes over its list as it is now: the outer loop sees items added to
+// it, and writes to loop variables reach the list.
+
+struct Item {
+    kids: [Int] = []
+}
+
+struct Box {
+    items: [Item] = []
+
+    fn grow() {
+        for n in items {
+            for k in n.kids {
+                items.append(Item())
+                k += 100
+            }
+        }
+    }
+}
+
+fn main() {
+    // The issue's program, stopped after a while (the outer loop sees what's added).
+    var outer = [Item(kids: [1, 2]), Item(kids: [3])]
+    for n in outer {
+        for k in n.kids {
+            if outer.count < 20 { outer.append(Item(kids: [k])) }
+        }
+    }
+    print("{outer.count}")
+
+    // Added items with no kids: the loop ends.
+    var a = [Item(kids: [1, 2]), Item(kids: [3])]
+    var seen: [Int] = []
+    for n in a {
+        for k in n.kids {
+            a.append(Item())
+            seen.append(k)
+        }
+    }
+    print("{a.count} {seen}")
+
+    // Writes to the loop variables land in the list while it grows.
+    var b = [Item(kids: [1, 2]), Item(kids: [3])]
+    for n in b {
+        for k in n.kids {
+            b.append(Item())
+            k *= 10
+        }
+        n.kids.append(0)
+    }
+    print("{b.count} {b[0].kids} {b[1].kids} {b[2].kids}")
+
+    // Removing from the outer list inside the inner loop: the loops go on
+    // over what's there now.
+    var c = [Item(kids: [1, 2]), Item(kids: [3, 4]), Item(kids: [5])]
+    var got: [Int] = []
+    for n in c {
+        for k in n.kids {
+            got.append(k)
+            if k == 1 { c.remove(at: 0) }
+        }
+    }
+    print("{c.count} {got}")
+
+    // The inner list itself grows, and the outer one too.
+    var d = [Item(kids: [1, 2])]
+    for k in d[0].kids {
+        if d[0].kids.count < 5 { d[0].kids.append(k * 10) }
+        d.append(Item())
+    }
+    print("{d.count} {d[0].kids}")
+
+    // A method, through its fields.
+    var bx = Box(items: [Item(kids: [1, 2]), Item(kids: [3])])
+    bx.grow()
+    print("{bx.items.count} {bx.items[0].kids} {bx.items[1].kids}")
+
+    // A dictionary of lists.
+    var m = ["x": [Item(kids: [1, 2]), Item(kids: [3])]]
+    for (key, items) in m {
+        for n in items {
+            for k in n.kids {
+                m[key]?.append(Item(kids: [k]))
+            }
+        }
+    }
+    for n in m["x"] ?? [] {
+        for k in n.kids {
+            m["x"]?.append(Item())
+        }
+    }
+    print("{m["x"]?.count ?? 0}")
+
+    // Three levels.
+    var g = [[Item(kids: [1, 2])], [Item(kids: [3])]]
+    var total = 0
+    for row in g {
+        for n in row {
+            for k in n.kids {
+                g.append([])
+                g[0].append(Item())
+                k += 1
+                total += k
+            }
+        }
+    }
+    print("{g.count} {g[0].count} {g[0][0].kids} {total}")
+
+    // A closure in the inner loop keeps its item's value.
+    var e = [Item(kids: [1, 2]), Item(kids: [3])]
+    var fs: [fn() -> Int] = []
+    for n in e {
+        for k in n.kids {
+            fs.append({ k * 2 })
+            e.append(Item())
+            k += 1
+        }
+    }
+    print("{e.count} {e[0].kids} {fs.map { f in f() }}")
+
+    // A local function that changes the list.
+    var h = [Item(kids: [1, 2]), Item(kids: [3])]
+    fn add(_ k: Int) {
+        h.append(Item(kids: [k]))
+    }
+    for n in h {
+        for k in n.kids {
+            if h.count < 6 { add(k) }
+        }
+    }
+    print("{h.count}")
+}

@@ -1,0 +1,2 @@
+error: index 0 is out of range for a list of 0 items
+ --> tests/run/loop_nested_removed.tsl:13:18

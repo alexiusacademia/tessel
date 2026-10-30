@@ -1,0 +1,19 @@
+// Emptying a list inside a loop nested in a loop over it (#64): the inner
+// loop's list was in an item that's gone, so the next round stops with an
+// error, as using a single loop's variable after its item is gone does,
+// instead of reading freed memory.
+
+struct Item {
+    kids: [Int] = []
+}
+
+fn main() {
+    var outer = [Item(kids: [1, 2]), Item(kids: [3])]
+    for n in outer {
+        for k in n.kids {
+            print(k)
+            outer = []
+        }
+    }
+    print(outer.count)
+}
