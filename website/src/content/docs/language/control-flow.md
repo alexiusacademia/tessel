@@ -224,6 +224,37 @@ print(prices[0])
 When the list can't change (a `let`, a parameter, or the result of a call
 like `filter`), the loop variable is a constant.
 
+### Adding and removing while looping
+
+A loop over a list in a `var` goes over the list as it is at each round,
+not as it was when the loop began: it stops when it has come to the
+list's current end. So items added in the loop are looped over too, and
+removing an item before the one the loop is at makes it skip one:
+
+```tessel
+var xs = [1, 2, 3]
+for x in xs {
+    if x < 3 {
+        xs.append(x + 10)
+    }
+}
+print(xs)
+```
+
+```text
+[1, 2, 3, 11, 12]
+```
+
+The same goes for loops inside loops. A loop that always adds goes on
+forever. To go over the list as it was, loop over a copy:
+
+```tessel
+let before = xs
+for x in before {
+    xs.append(x * 2)     // before doesn't change
+}
+```
+
 ## while loops
 
 `while` repeats its body as long as a condition is true. It checks the
