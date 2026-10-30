@@ -5351,6 +5351,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
     }
 
+    /// A locator for a `bind` argument (owned). A `bind` parameter given on
+    /// as it is passes its own locator on, not a new one calling it: one
+    /// wrapping the other at each level of a recursion would make every
+    /// use walk the whole chain (#66).
+    fn bind_locator(&mut self, e: &Expr) -> Val<'ctx> {
+        if let ExprKind::Name(n) = &e.kind {
+            if let Some(Var { store: Store::Binding { slot, .. }, .. }) = self.lookup(n) {
+                let lt = self.llty(&Ty::View).unwrap();
+                let loc = self.b.build_load(lt, slot, "").unwrap();
+                self.retain(loc, &Ty::View);
+                return loc;
+            }
+        }
+        self.make_closure(Body::Locator(e), &Ty::View)
+    }
+
     /// Evaluates arguments in parameter order, filling in defaults.
     fn call_args<'e>(
         &mut self,
@@ -5378,7 +5394,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     continue;
                 }
                 Some(r) if p.bind => {
-                    let loc = self.make_closure(Body::Locator(arg(r)), &Ty::View);
+                    let loc = self.bind_locator(arg(r));
                     self.hold(loc, &Ty::View);
                     held += 1;
                     vals.push(loc);
