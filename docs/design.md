@@ -576,6 +576,17 @@ Every expression produces an owned value; storing it moves it, and each
 variable is released when its scope ends (including on early `return`).
 `cargo test` runs every program in `tests/run/` under the macOS `leaks` tool.
 
+Reading a value where it's stored (`list.count`, `list[i]`, a field) counts
+no reference to it. A call of a function or method whose callee is known
+borrows its arguments: a variable (or field) that nothing in the call can
+change is passed as it is, and neither side counts a reference; other
+arguments are evaluated owned and released after the call. The function
+under its usual name, used as a function value or through an interface,
+takes its arguments owned and calls the borrowing version. This matters most
+for values shared with `background` work, whose counts change atomically: a
+loop in each of several jobs counting references to the same list would
+make every thread wait on that one count.
+
 An early `return`, `break` or `continue` in the middle of an expression
 (`f(a(), if c { return 1 } else { 2 })`) releases the values already computed
 for it: while the rest of an expression is evaluated, codegen keeps them on a

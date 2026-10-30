@@ -12,8 +12,10 @@
 //! - optionals: `{ i1 present, T }`
 //! - functions: `{ ptr fn, ptr env-box }`; every function takes `env` first
 //!
-//! Functions receive owned parameters and release them on exit. Methods also
-//! take a pointer to their receiver (`self`) after `env`.
+//! Functions receive owned parameters and release them on exit; calls whose
+//! callee is known use a version that borrows them instead (see
+//! `borrows_params`). Methods also take a pointer to their receiver (`self`)
+//! after `env`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -375,7 +377,9 @@ enum Store<'ctx> {
     /// `{ fn, env }`) points at: a loop variable captured by a closure when
     /// the list's storage may move. Found again on every use.
     ListElemVia { locator: PointerValue<'ctx>, idx: PointerValue<'ctx> },
-    /// A captured value inside a closure's environment (not owned).
+    /// A value someone else holds, which stays as it is meanwhile (not
+    /// owned): a captured value inside a closure's environment, or a
+    /// parameter of a function's borrowing version (see `borrows_params`).
     EnvValue(PointerValue<'ctx>),
     /// The caller's storage, given to a function's direct version for a
     /// `bind` parameter (see `binds_direct`): changed in place, not owned.
@@ -471,6 +475,13 @@ struct Gen<'ctx, 'a> {
     direct_now: bool,
     /// Set while the arguments of a call to a direct version are worked out.
     direct_args: bool,
+    /// Functions and methods compiled to borrow their parameters (see
+    /// `borrows_params`): the version a direct call uses. The function under
+    /// the usual name takes them owned, calls this one, and releases them.
+    borrow_fns: HashMap<String, FunctionValue<'ctx>>,
+    borrow_methods: HashMap<(String, String), FunctionValue<'ctx>>,
+    /// Set while a function's borrowing version is compiled.
+    borrow_now: bool,
     method_decls: HashMap<(String, String), (&'a FnDecl, Ty)>,
     methods: HashMap<(String, String), FunctionValue<'ctx>>,
     struct_decls: HashMap<usize, &'a StructDecl>,
@@ -568,6 +579,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             direct_fns: HashMap::new(),
             direct_now: false,
             direct_args: false,
+            borrow_fns: HashMap::new(),
+            borrow_methods: HashMap::new(),
+            borrow_now: false,
             method_decls: HashMap::new(),
             methods: HashMap::new(),
             struct_decls: HashMap::new(),
@@ -673,6 +687,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let d = self.module.add_function(&format!("tsl_fd_{name}"), ty, Some(Linkage::Internal));
                 self.direct_fns.insert(name.clone(), d);
             }
+            if self.borrows_params(decl, &sig) {
+                let b = self.module.add_function(&format!("tsl_fb_{name}"), ty, Some(Linkage::Internal));
+                self.borrow_fns.insert(name.clone(), b);
+            }
             self.fns.insert(name, f);
         }
         let method_keys: Vec<(String, String)> = self.method_decls.keys().cloned().collect();
@@ -681,6 +699,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             let sig = self.method_sig(&owner, &key.1);
             let ty = self.fn_type(&param_lltys(&sig.params), &sig.ret, true);
             let f = self.module.add_function(&format!("tsl_m_{}_{}", key.0, key.1), ty, Some(Linkage::Internal));
+            let (decl, _) = self.method_decls[&key];
+            if self.borrows_params(decl, &sig) {
+                let b = self.module.add_function(&format!("tsl_mb_{}_{}", key.0, key.1), ty, Some(Linkage::Internal));
+                self.borrow_methods.insert(key.clone(), b);
+            }
             self.methods.insert(key, f);
         }
 
@@ -695,7 +718,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             let params: Vec<(Ident, Ty, bool)> =
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
-            self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
+            if let Some(&b) = self.borrow_fns.get(&name) {
+                self.borrow_now = true;
+                self.function_body(b, &params, &decl.body, &sig.ret, None, 1, false, Some((&name, decl.name.span)));
+                self.owning_wrapper(f, b, &sig.params, &sig.ret, false);
+            } else {
+                self.function_body(f, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
+            }
             if let Some(&d) = self.direct_fns.get(&name) {
                 self.direct_now = true;
                 self.function_body(d, &params, &decl.body, &sig.ret, None, 1, decl.is_async, Some((&name, decl.name.span)));
@@ -709,6 +738,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 decl.params.iter().zip(&sig.params).map(|(p, s)| (p.name.clone(), s.ty.clone(), s.bind)).collect();
             let self_ptr = f.get_nth_param(1).unwrap().into_pointer_value();
             let shown = format!("{}.{}", key.0, key.1);
+            if let Some(&b) = self.borrow_methods.get(&key) {
+                let self_ptr = b.get_nth_param(1).unwrap().into_pointer_value();
+                self.borrow_now = true;
+                self.function_body(b, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2, false, Some((&shown, decl.name.span)));
+                self.owning_wrapper(f, b, &sig.params, &sig.ret, true);
+                continue;
+            }
             self.function_body(f, &params, &decl.body, &sig.ret, Some((self_ptr, owner)), 2, decl.is_async, Some((&shown, decl.name.span)));
         }
 
@@ -965,6 +1001,73 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         ok
     }
 
+    /// Whether a function (or method) is compiled to borrow its parameters:
+    /// its callers keep them alive meanwhile, so neither side counts a
+    /// reference to them (`fn work(data: [Float])` called in a loop). The
+    /// function under its usual name, which function values and method
+    /// tables use, still takes them owned (see `owning_wrapper`). Not for
+    /// `async` functions (which outlive their caller's expression), nor
+    /// ones with `bind` parameters (which have versions of their own).
+    fn borrows_params(&self, decl: &FnDecl, sig: &FnSig) -> bool {
+        !decl.is_async
+            && !decl.constant
+            && sig.params.iter().all(|p| !p.bind)
+            && sig.params.iter().any(|p| self.needs_rc(&p.ty))
+    }
+
+    /// The body of `owned`, a function that takes its parameters owned:
+    /// calls `borrowing`, its version that borrows them, and lets them go.
+    fn owning_wrapper(&mut self, owned: FunctionValue<'ctx>, borrowing: FunctionValue<'ctx>, params: &[crate::types::ParamSig], ret: &Ty, method: bool) {
+        let ret = ret.clone();
+        let params = params.to_vec();
+        self.in_helper(owned, |g| {
+            let all: Vec<BasicMetadataValueEnum> = owned.get_param_iter().map(|p| p.into()).collect();
+            let r = g.b.build_call(borrowing, &all, "").unwrap().try_as_basic_value().basic();
+            let first = 1 + method as u32;
+            for (i, p) in params.iter().enumerate() {
+                if !g.needs_rc(&p.ty) {
+                    continue;
+                }
+                let raw = owned.get_nth_param(first + i as u32).unwrap();
+                if g.big(&p.ty) {
+                    g.release_at(&p.ty, raw.into_pointer_value());
+                } else {
+                    g.release(raw, &p.ty);
+                }
+            }
+            match r {
+                Some(v) if !g.big(&ret) => g.b.build_return(Some(&v)).unwrap(),
+                _ => g.b.build_return(None).unwrap(),
+            };
+        });
+    }
+
+    /// A parameter of a function's borrowing version (see `borrows_params`):
+    /// the caller's value, read where it is and not let go here.
+    fn declare_borrowed_param(&mut self, name: &str, ty: &Ty, raw: Val<'ctx>) {
+        if !self.needs_rc(ty) {
+            return self.declare_param(name, ty, raw);
+        }
+        if name == "_" {
+            return;
+        }
+        if self.stack.last().unwrap().boxed.contains(name) {
+            // (In a box, it's the box's own.)
+            let v = self.abi_param(raw, ty);
+            self.retain(v, ty);
+            return self.declare_value(name, ty, Some(v));
+        }
+        let at = if self.big(ty) {
+            raw.into_pointer_value()
+        } else {
+            let lt = self.llty(ty).unwrap();
+            let slot = self.alloca(lt, name);
+            self.b.build_store(slot, raw).unwrap();
+            slot
+        };
+        self.push_var(Var { name: name.to_string(), ty: ty.clone(), store: Store::EnvValue(at) });
+    }
+
     /// Whether the storage `e` names can't move while a call runs: a
     /// variable (or a receiver's field), or a field of one, all the way
     /// down; not what a `bind` or a view's `state` reaches. With `items`, an
@@ -1008,6 +1111,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         is_async: bool,
         named: Option<(&str, Span)>,
     ) {
+        let borrowed = std::mem::replace(&mut self.borrow_now, false);
         let entry = self.ctx.append_basic_block(func, "entry");
         self.b.position_at_end(entry);
         let mut scope = Vec::new();
@@ -1042,6 +1146,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let slot = self.alloca(lt, &name.name);
                 self.b.build_store(slot, value).unwrap();
                 self.push_var(Var { name: name.name.clone(), ty: ty.clone(), store: Store::Binding { slot, owned: true } });
+            } else if borrowed {
+                self.declare_borrowed_param(&name.name, ty, value);
             } else {
                 self.declare_param(&name.name, ty, value);
             }
@@ -4008,6 +4114,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             return Some(v);
         }
         let ot = self.ty(object);
+        // A property of a value in storage (`list.count`): read from the
+        // value where it is, without counting a reference to it. (A count
+        // that every thread changes, for a list they share, is slow.)
+        if self.readable_place(object) {
+            if let Some(p) = self.read_ptr(object) {
+                let v = self.load(&ot, p);
+                return Some(self.property(v, &ot, &name.name, e.span));
+            }
+        }
         let v = self.expr(object).unwrap();
         let r = self.property(v, &ot, &name.name, e.span);
         self.release(v, &ot);
@@ -4209,15 +4324,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let t = self.ty(e);
         match self.ty(object) {
             Ty::Data => {
-                let d = self.expr(object).unwrap();
+                let lent = self.lendable(object, &self.changed_roots(&[index]));
+                let d = self.expr_lent(object, lent);
                 let i = self.expr(index).unwrap();
                 let l = self.loc(e.span);
                 let r = self.call_rt_generic_loc("tsl_data_get", d, i, l);
-                self.release(d, &Ty::Data);
+                if !lent {
+                    self.release(d, &Ty::Data);
+                }
                 Some(r)
             }
             Ty::Dict(kt, vt) => {
-                let d = self.expr(object).unwrap();
+                let lent = self.lendable(object, &self.changed_roots(&[index]));
+                let d = self.expr_lent(object, lent);
                 let k = self.expr_as(index, &kt).unwrap();
                 let kp = self.spill(&kt, k);
                 let vlt = self.llty(&vt).unwrap();
@@ -4230,7 +4349,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let s = self.b.build_insert_value(st.get_undef(), found, 0, "").unwrap();
                 let s = self.b.build_insert_value(s, v, 1, "").unwrap().into_struct_value();
                 self.release(k, &kt);
-                self.release(d, &Ty::Dict(kt, vt));
+                if !lent {
+                    self.release(d, &Ty::Dict(kt, vt));
+                }
                 Some(s.into())
             }
             lt @ Ty::List(_) => {
@@ -4916,12 +5037,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         !p.bind || info.args.get(i).copied().flatten().is_some_and(|r| self.stays_put(arg(r), items))
                     });
                 self.direct_args = direct;
-                let vals = self.call_args(&info, &sig, &decl.params, &arg);
-                let f = if direct { self.direct_fns[name] } else { self.fns[name] };
+                let lend = self.borrow_fns.get(name).copied();
+                let (vals, owned) = match lend {
+                    Some(_) => self.borrowed_args(&info, &sig, &decl.params, &arg, None),
+                    None => (self.call_args(&info, &sig, &decl.params, &arg), Vec::new()),
+                };
+                let f = match lend {
+                    Some(b) => b,
+                    None if direct => self.direct_fns[name],
+                    None => self.fns[name],
+                };
                 let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into()];
                 all.extend(self.abi_args(&vals, &param_lltys(&sig.params)));
                 let place = self.result_place(&sig.ret, &mut all);
                 let r = self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic();
+                self.release_args(&vals, &owned, &sig);
                 self.call_result(&sig.ret, place, r)
             }
             Callee::Method { owner, name } | Callee::SelfMethod { owner, name } => {
@@ -4938,7 +5068,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     // `box?.add()`: a changing method changes the value inside the optional.
                     if self.method_mutating(&owner, &name) && self.writable(object) {
                         let info2 = info.clone();
-                        return self.chain_mutate(object, &ot, &t, |g, recv| g.method_call(&owner, &name, recv, &info2, &arg));
+                        let root = Some(root_name(object).map_or("*".to_string(), |n| self.place_key(n)));
+                        return self.chain_mutate(object, &ot, &t, |g, recv| g.method_call(&owner, &name, recv, root, &info2, &arg));
                     }
                     let ov = self.expr(object).unwrap();
                     if t == Ty::Void {
@@ -4948,7 +5079,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         self.b.position_at_end(some_bb);
                         let iv = self.b.build_extract_value(ov.into_struct_value(), 1, "").unwrap();
                         let recv = self.spill(&owner, iv);
-                        self.method_call(&owner, &name, recv, &info, &arg);
+                        self.method_call(&owner, &name, recv, None, &info, &arg);
                         let cur = self.load(&owner, recv);
                         self.release(cur, &owner);
                         self.br(done);
@@ -4958,7 +5089,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     let info2 = info.clone();
                     let r = self.optional_chain(ov, &ot, &t, |g, v| {
                         let recv = g.spill(&owner, v);
-                        let r = g.method_call(&owner, &name, recv, &info2, &arg).unwrap();
+                        let r = g.method_call(&owner, &name, recv, None, &info2, &arg).unwrap();
                         // The receiver copy is released by `optional_chain`.
                         r
                     });
@@ -4980,7 +5111,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                     _ => unreachable!(),
                 };
-                let r = self.method_call(&owner, &name, recv, &info, &arg);
+                // (The variable a changing method changes, for its arguments.)
+                let root = match (&info.callee, &callee.kind) {
+                    (Callee::SelfMethod { .. }, _) => Some("self".to_string()),
+                    _ if temp.is_some() => None,
+                    (_, ExprKind::Member { object, .. }) => Some(root_name(object).map_or("*".to_string(), |n| self.place_key(n))),
+                    _ => None,
+                };
+                let r = self.method_call(&owner, &name, recv, root, &info, &arg);
                 if temp.is_some() {
                     // A method may have changed the temporary; release what it holds now.
                     let cur = self.load(&owner, recv);
@@ -5336,8 +5474,154 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         decl_params: &[Param],
         arg: &dyn Fn(ArgRef) -> &'e Expr,
     ) -> Vec<Val<'ctx>> {
+        self.call_args_with(info, sig, decl_params, arg, None).0
+    }
+
+    /// The arguments of a call of a function's borrowing version (see
+    /// `borrows_params`): a value in storage that stays as it is while the
+    /// call runs is passed as it is; others are worked out as usual, and
+    /// let go after the call (`release_args`). `recv` is the variable a
+    /// changing method's receiver starts at (as `place_key` names it).
+    fn borrowed_args<'e>(
+        &mut self,
+        info: &CallInfo,
+        sig: &FnSig,
+        decl_params: &[Param],
+        arg: &dyn Fn(ArgRef) -> &'e Expr,
+        recv: Option<String>,
+    ) -> (Vec<Val<'ctx>>, Vec<bool>) {
+        let mut exprs = Vec::new();
+        for r in info.args.iter().flatten() {
+            match *r {
+                ArgRef::Many(from, count) => exprs.extend((from..from + count).map(|i| arg(ArgRef::Arg(i)))),
+                r => exprs.push(arg(r)),
+            }
+        }
+        let mut changed = self.changed_roots(&exprs);
+        changed.extend(recv);
+        self.call_args_with(info, sig, decl_params, arg, Some(&changed))
+    }
+
+    /// Lets go of the arguments a call of a borrowing version was given
+    /// owned (see `borrowed_args`).
+    fn release_args(&mut self, vals: &[Val<'ctx>], owned: &[bool], sig: &FnSig) {
+        for ((v, own), p) in vals.iter().zip(owned).zip(&sig.params) {
+            if *own && !p.bind {
+                self.release(*v, &p.ty);
+            }
+        }
+    }
+
+    /// What a place's storage is known by while a call runs: the variable
+    /// it starts at, or `self` for the receiver of the method being
+    /// compiled (and its fields).
+    fn place_key(&self, name: &str) -> String {
+        match self.lookup(name).map(|v| v.store) {
+            Some(Store::Field(_) | Store::SelfRef) => "self".into(),
+            _ => name.into(),
+        }
+    }
+
+    /// The storage (as `place_key` names it) that working out `exprs` may
+    /// change: what they assign to, change with a method, or pass to a
+    /// `bind`. Errs on the side of more: `*` stands for anything.
+    fn changed_roots(&self, exprs: &[&Expr]) -> HashSet<String> {
+        let mut changed = HashSet::new();
+        let key = |g: &Self, e: &Expr| root_name(e).map_or("*".to_string(), |n| g.place_key(n));
+        for e in exprs {
+            walk_expr(e, &mut |node| match node {
+                Node::S(Stmt::Assign { target, .. }) => {
+                    changed.insert(key(self, target));
+                }
+                // (A closure, or a function declared here, may change the
+                // receiver of a changing method it's in.)
+                Node::S(Stmt::Fn(_)) | Node::E(Expr { kind: ExprKind::Closure { .. }, .. }) => {
+                    changed.insert("self".into());
+                }
+                Node::E(Expr { kind: ExprKind::Await(_), .. }) => {
+                    changed.insert("*".into());
+                }
+                Node::E(e) => {
+                    if self.checked.bind_args.contains(&e.id) {
+                        changed.insert(key(self, e));
+                    }
+                    if let ExprKind::Call { callee, .. } = &e.kind {
+                        let callee_kind = self.checked.calls.get(&e.id).map(|c| &c.callee);
+                        let changes = match callee_kind {
+                            Some(Callee::Fn(_) | Callee::BuiltinFn(_) | Callee::StructInit(_) | Callee::EnumCase(..)) => false,
+                            Some(Callee::Method { owner, name }) => self.method_mutating(owner, name),
+                            Some(Callee::Builtin { name, .. }) => MUTATING_BUILTINS.contains(&name.as_str()),
+                            Some(Callee::IfaceMethod { iface, index }) => self.checked.ifaces[*iface].mutating[*index],
+                            _ => true,
+                        };
+                        if changes {
+                            match &callee.kind {
+                                ExprKind::Member { object, .. } => {
+                                    changed.insert(key(self, object));
+                                }
+                                _ => {
+                                    changed.insert("self".into());
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            });
+        }
+        changed
+    }
+
+    /// Whether `e` is a value in storage that stays as it is while a call
+    /// runs, so it can be lent to the callee rather than copied: a variable
+    /// of this function's (not one in a box, which closures share), a value
+    /// captured or borrowed, the method's receiver, or a field of one of
+    /// those, all the way down; when nothing in `changed` (see
+    /// `changed_roots`) is where it starts.
+    fn lendable(&self, e: &Expr, changed: &HashSet<String>) -> bool {
+        if changed.contains("*") {
+            return false;
+        }
+        match &e.kind {
+            ExprKind::Name(n) => match self.lookup(n).map(|v| v.store) {
+                Some(Store::Slot(_) | Store::EnvValue(_) | Store::Field(_) | Store::SelfRef) => {
+                    !changed.contains(&self.place_key(n))
+                }
+                _ => false,
+            },
+            ExprKind::Member { .. } if self.checked.calls.contains_key(&e.id) || self.page_size(e) => false,
+            ExprKind::Member { object, optional: false, .. } => {
+                matches!(self.ty(object), Ty::Struct(_)) && !object.in_optional_chain() && self.lendable(object, changed)
+            }
+            _ => false,
+        }
+    }
+
+    /// The value of `e`: with `lent` (see `lendable`), where it's stored,
+    /// not counted again; otherwise owned.
+    fn expr_lent(&mut self, e: &Expr, lent: bool) -> Val<'ctx> {
+        if lent {
+            let t = self.ty(e);
+            let at = self.read_ptr(e).expect("a lendable value is in storage");
+            return self.load(&t, at);
+        }
+        self.expr(e).unwrap()
+    }
+
+    /// Evaluates arguments in parameter order, filling in defaults. With
+    /// `lend`, for a borrowing version (see `borrowed_args`): also which of
+    /// them are owned.
+    fn call_args_with<'e>(
+        &mut self,
+        info: &CallInfo,
+        sig: &FnSig,
+        decl_params: &[Param],
+        arg: &dyn Fn(ArgRef) -> &'e Expr,
+        lend: Option<&HashSet<String>>,
+    ) -> (Vec<Val<'ctx>>, Vec<bool>) {
         // (Taken now: the arguments may be calls with arguments of their own.)
         let direct = std::mem::replace(&mut self.direct_args, false);
+        let mut owned = Vec::new();
         let mut vals = Vec::new();
         // (A direct `bind` argument is the caller's own storage: nothing to hold.)
         let mut held = 0;
@@ -5352,6 +5636,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     let pair = self.b.build_insert_value(lt.get_undef(), none, 0, "").unwrap().into_struct_value();
                     let pair = self.b.build_insert_value(pair, at, 1, "").unwrap().into_struct_value();
                     vals.push(pair.into());
+                    owned.push(false);
                     continue;
                 }
                 Some(r) if p.bind => {
@@ -5359,6 +5644,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.hold(loc, &Ty::View);
                     held += 1;
                     vals.push(loc);
+                    owned.push(true);
+                    continue;
+                }
+                // Lent: the value where it is, not counted again.
+                Some(r @ (ArgRef::Arg(_) | ArgRef::Trailing))
+                    if lend.is_some_and(|c| self.needs_rc(&p.ty) && self.ty(arg(r)) == p.ty && self.lendable(arg(r), c)) =>
+                {
+                    vals.push(self.expr_lent(arg(r), true));
+                    owned.push(false);
                     continue;
                 }
                 Some(r) => Some(self.arg_val(r, &p.ty, arg)),
@@ -5371,9 +5665,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.hold(v, &p.ty);
             held += 1;
             vals.push(v);
+            owned.push(true);
         }
         self.unhold(held);
-        vals
+        (vals, owned)
     }
 
     fn method_call<'e>(
@@ -5381,6 +5676,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         owner: &Ty,
         name: &str,
         recv: PointerValue<'ctx>,
+        recv_root: Option<String>,
         info: &CallInfo,
         arg: &dyn Fn(ArgRef) -> &'e Expr,
     ) -> Option<Val<'ctx>> {
@@ -5392,12 +5688,21 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let key = (owner_name, name.to_string());
         let sig = self.method_sig(owner, name);
         let (decl, _) = self.method_decls[&key].clone();
-        let vals = self.call_args(info, &sig, &decl.params, arg);
-        let f = self.methods[&key];
+        let lend = self.borrow_methods.get(&key).copied();
+        let (vals, owned) = match lend {
+            Some(_) => {
+                // (What a changing method changes can't be lent to it.)
+                let root = if self.method_mutating(owner, name) { recv_root } else { None };
+                self.borrowed_args(info, &sig, &decl.params, arg, root)
+            }
+            None => (self.call_args(info, &sig, &decl.params, arg), Vec::new()),
+        };
+        let f = lend.unwrap_or(self.methods[&key]);
         let mut all: Vec<BasicMetadataValueEnum> = vec![self.ptr_ty().const_null().into(), recv.into()];
         all.extend(self.abi_args(&vals, &param_lltys(&sig.params)));
         let place = self.result_place(&sig.ret, &mut all);
         let r = self.b.build_call(f, &all, "").unwrap().try_as_basic_value().basic();
+        self.release_args(&vals, &owned, &sig);
         self.call_result(&sig.ret, place, r)
     }
 
@@ -5516,6 +5821,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(r)
             }
             _ => {
+                // A receiver in storage that the arguments leave as it is:
+                // used where it is (see `lendable`).
+                let exprs: Vec<&Expr> = args.iter().map(|a| &a.value).chain(trailing).collect();
+                if *recv == self.ty(object) && self.lendable(object, &self.changed_roots(&exprs)) {
+                    let v = self.expr_lent(object, true);
+                    return self.builtin_on_value(recv, name, v, info, arg, span);
+                }
                 let v = self.expr(object).unwrap();
                 self.hold(v, recv);
                 let r = self.builtin_on_value(recv, name, v, info, arg, span);
