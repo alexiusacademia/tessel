@@ -455,7 +455,8 @@ view has `.onKeyEvent`, keys go to it rather than to `.onKey`.
 
 With several views that hear keys (two canvases side by side, say), keys go
 to the first one in the window until one is clicked: a click in a view with
-`.onKey` or `.onKeyEvent` gives it the keyboard.
+`.onKey` or `.onKeyEvent` gives it the keyboard. A click in a sheet or a
+popover over a canvas doesn't: the canvas that had the keyboard keeps it.
 
 ## Saving a drawing as a picture
 

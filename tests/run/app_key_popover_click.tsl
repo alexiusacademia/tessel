@@ -1,0 +1,34 @@
+// A click in a popover doesn't give the keyboard to the view with `.onKey`
+// behind it (#65): the view that had the keyboard keeps it.
+app KeyPopover(width: 400, height: 300) {
+    state keys = ""
+    state paneKeys = ""
+    state underKeys = ""
+    state open = false
+    state clicks = 0
+    VStack(spacing: 0) {
+        Text("window keys: {keys}")
+        Text("pane keys: {paneKeys}")
+        Text("under keys: {underKeys}")
+        Text("clicks: {clicks}")
+            .popover(isPresented: open) {
+                VStack {
+                    Button("Again") { clicks += 1 }
+                    Button("Close") { open = false }
+                }
+            }
+        HStack(spacing: 0) {
+            Canvas { g in g.rect(x: 0, y: 0, width: 10, height: 10) }
+                .frame(width: 60)
+                .onPointer { e in if e.kind == .down { open = true } }
+                .onKey { k in paneKeys = paneKeys + k }
+                .accessibilityLabel("Pane")
+            Canvas { g in g.rect(x: 0, y: 0, width: 10, height: 10) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onKey { k in underKeys = underKeys + k }
+                .accessibilityLabel("Under")
+        }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onKey { k in keys = keys + k }
+}

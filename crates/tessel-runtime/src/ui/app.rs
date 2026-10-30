@@ -3083,8 +3083,11 @@ impl App {
         }
     }
 
-    /// The innermost shown view with `.onKey` or `.onKeyEvent` that a point
-    /// is in: a click there gives it the keyboard.
+    /// Who has the keyboard after a click at a point: the innermost shown
+    /// view with `.onKey` or `.onKeyEvent` the point is in. Only what's
+    /// clicked counts: in a sheet, a popover, an open palette, menu list or
+    /// ribbon panel, the views behind it don't, and a click there that finds
+    /// none leaves the keyboard where it was.
     fn on_key_at(&self, x: f64, y: f64) -> Option<u64> {
         fn find(n: &Node, x: f64, y: f64, found: &mut Option<u64>) {
             if n.mods.hidden || n.layout.style.disabled {
@@ -3100,10 +3103,21 @@ impl App {
             n.visible_children().iter().for_each(|c| find(c, x, y, found));
         }
         let mut found = None;
-        if let Some(t) = &self.tree {
-            find(t, x, y, &mut found);
-        }
-        found
+        // Where to look, as `hit` does: an overlay over everything else
+        // (an open ribbon panel, menu picker list or color palette), else
+        // the popover or sheet on top, else the window.
+        let group = super::controls::OPEN_GROUP.get().and_then(|k| self.node(k)).filter(|n| n.layout.collapsed && n.layout.panel.contains(x, y));
+        let in_menu = super::controls::OPEN_MENU.get().and_then(|k| self.node(k)).is_some_and(|n| n.layout.segments.iter().any(|s| s.contains(x, y)));
+        let palette = self.palette().filter(|p| p.layout.rect.contains(x, y));
+        let (roots, over): (&[Node], bool) = match (group, in_menu, palette, self.point_root(x, y)) {
+            (Some(n), ..) => (n.visible_children(), true),
+            (None, true, ..) => (&[], true),
+            (None, false, Some(p), _) => (std::slice::from_ref(p), true),
+            (None, false, None, Some(root)) => (std::slice::from_ref(root), !self.tree.as_ref().is_some_and(|t| std::ptr::eq(t, root))),
+            (None, false, None, None) => (&[], false),
+        };
+        roots.iter().for_each(|n| find(n, x, y, &mut found));
+        if over { found.or(self.ui.keys_to) } else { found }
     }
 
     /// The view with `.onPointer` at a point.
@@ -4047,6 +4061,9 @@ impl App {
             return;
         }
         let hit = self.hit(x, y);
+        // A click in a view with `.onKey` or `.onKeyEvent` gives it the
+        // keyboard (found before what's open over the window closes).
+        let keys_to = if matches!(hit, Some(Hit::Field(_))) { None } else { self.on_key_at(x, y) };
         if !matches!(hit, Some(Hit::Field(_))) {
             self.ui.editing = None;
         }
@@ -4077,8 +4094,7 @@ impl App {
             _ => None,
         };
         self.ui.focus_ring = false;
-        // A click in a view with `.onKey` or `.onKeyEvent` gives it the keyboard.
-        self.ui.keys_to = if matches!(hit, Some(Hit::Field(_))) { None } else { self.on_key_at(x, y) };
+        self.ui.keys_to = keys_to;
         let Some(hit) = hit else { return };
         let Some(node) = self.node(hit.key()) else { return };
         match (&hit, &node.kind) {

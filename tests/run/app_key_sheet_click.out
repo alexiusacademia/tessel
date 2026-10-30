@@ -1,0 +1,12 @@
+Root
+  View
+    VStack
+      Text "window keys: d"
+      Text "pane keys: ab"
+      Text "under keys: "
+      Text "sheet keys: c"
+      HStack
+        Canvas (empty)
+        Canvas (empty)
+      View
+        Text ""

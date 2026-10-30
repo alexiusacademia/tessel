@@ -1,0 +1,11 @@
+click 20 150
+type a
+click 20 150
+click "Cancel"
+type b
+click 20 150
+click "Pad"
+type c
+click "Cancel"
+type d
+tree

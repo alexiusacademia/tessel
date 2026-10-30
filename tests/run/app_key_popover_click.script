@@ -1,0 +1,9 @@
+click "Pane"
+type a
+click "Again"
+type b
+click "Close"
+type c
+click "Under"
+type d
+tree
