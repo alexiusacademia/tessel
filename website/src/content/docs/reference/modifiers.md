@@ -842,6 +842,42 @@ Put it on any view of the main window; the first one that has it counts. The
 items' shortcuts work wherever the keyboard focus is. See
 [The menu bar](/ui/menus-windows/#the-menu-bar).
 
+## statusBar
+
+```text
+.statusBar(_ items: View)
+```
+
+A bar along the bottom of the window, across its whole width, under the rest
+of the window's content, which gets the room above it. Its items are any
+views, in a row like an [`HStack`](/reference/views/#hstack)'s, from the
+leading end.
+
+```tessel
+VStack { … }
+    .statusBar {
+        Text("{features.count} features")
+        Spacer()
+        Text("Zoom {zoom}%")
+    }
+```
+
+- A [`Spacer`](/reference/views/#spacer) pushes the items after it to the
+  trailing end.
+- The bar is as tall as its tallest item, and at least 24 points; its items
+  are 12 points apart, 8 points from its ends, and centered up and down.
+- Its text is 11 points, in the secondary color, on a light gray background
+  (dark gray in the dark appearance) with a thin line over it. An item's own
+  `.font` or `.color` changes that for it.
+- Put it on any view of a window; a [`Window`](/reference/views/#window) has
+  its own. When several views in one window have it, the first one counts
+  (a view comes before the views inside it). One on a hidden view doesn't
+  count.
+- In a [test script](/ui/testing/), `tree` and `dump` show the bar as
+  `StatusBar`, after the window's other views.
+
+See [The status bar](/ui/menus-windows/#the-status-bar).
+
 ## popover
 
 ```text

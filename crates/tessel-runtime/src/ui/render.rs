@@ -932,6 +932,8 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
+            // (Its background is its own `.background`; see `tsl_ui_begin_status_bar`.)
+            Kind::StatusBar => self.fill(Rect { h: 1.0, ..r }, 0.0, theme().colors[theme::SEPARATOR]),
             Kind::Ribbon { .. } => {
                 use super::layout::{RIBBON_BODY, RIBBON_TABS};
                 let strip = Rect { x: content.x, y: content.y, w: content.w, h: RIBBON_TABS };

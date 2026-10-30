@@ -1,0 +1,15 @@
+menubar native
+tree
+click "Add"
+click "Add"
+tree
+menu "File" "Save"
+click "Details"
+tree
+key escape
+click "Reset"
+tree
+size 400 300
+accessibility
+menubar drawn
+tree

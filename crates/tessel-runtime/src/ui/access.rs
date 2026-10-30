@@ -43,6 +43,8 @@ pub enum Role {
     Row,
     Tree,
     TreeItem,
+    /// A window's status bar (`.statusBar`): what's in it.
+    StatusBar,
 }
 
 /// A view, as a screen reader is told of it.
@@ -205,6 +207,7 @@ fn visit(n: &Node, parent: usize, items: &mut Vec<Item>) {
         Kind::Picker { .. } => Some(item(Role::Options, called(""))),
         Kind::TabView { .. } => Some(item(Role::Tabs, called(""))),
         Kind::Scroll(_) => Some(item(Role::Scroll, called(""))),
+        Kind::StatusBar => Some(item(Role::StatusBar, called(""))),
         Kind::Table(spec) => Some(item(if spec.tree.is_some() { Role::Tree } else { Role::Table }, called(""))),
         Kind::TableRow(row) => {
             let role = if row.path.is_some() { Role::TreeItem } else { Role::Row };
@@ -405,6 +408,7 @@ pub mod system {
                     Role::Scroll => accesskit::Role::ScrollView,
                     Role::Document => accesskit::Role::Document,
                     Role::Canvas => accesskit::Role::Canvas,
+                    Role::StatusBar => accesskit::Role::Status,
                 });
                 let r = item.rect;
                 node.set_bounds(accesskit::Rect { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });

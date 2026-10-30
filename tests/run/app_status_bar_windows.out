@@ -1,0 +1,54 @@
+main content 360.0 x 276.0
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Edit"
+            RibbonButton "Sum" large
+      Toggle "Inspector" = false
+      Spacer
+  StatusBar
+    Text "0 sums"
+    Spacer
+    Icon check
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Edit"
+            RibbonButton "Sum" large
+      Toggle "Inspector" = true
+      Spacer
+  StatusBar
+    Text "2 sums"
+    Spacer
+    Icon check
+Window "Inspector" 240x160
+Window "Inspector" [0,0 240x160]
+  VStack [0,0 240x136]
+    Spacer [120,0 0x136]
+  StatusBar [0,136 240x24]
+    Icon info [8,142 13x13]
+    Icon warning [33,142 13x13]
+Window "Inspector" [0,0 300x200]
+  VStack [0,0 300x176]
+    Spacer [150,0 0x176]
+  StatusBar [0,176 300x24]
+    Icon info [8,182 13x13]
+    Icon warning [33,182 13x13]
+Root
+  View
+    VStack
+      Ribbon ["Home"] selected "Home"
+        RibbonTab "Home"
+          RibbonGroup "Edit"
+            RibbonButton "Sum" large
+      Toggle "Inspector" = true
+      Spacer
+  StatusBar
+    Text "3 sums"
+    Spacer
+    Icon check
+Window "Inspector" 300x200

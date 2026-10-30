@@ -1,0 +1,42 @@
+// Status bars with a ribbon and in other windows: each window shows the bar
+// of the first view in it that has `.statusBar` (other ones are ignored),
+// across its bottom edge, under its content. (An outer view comes before
+// the views in it, so the Spacer's bar here is ignored.)
+
+app Sheet(width: 360, height: 300) {
+    state tab = "Home"
+    state log: [String] = []
+    state showInspector = false
+
+    VStack(spacing: 0) {
+        Ribbon(selection: tab) {
+            RibbonTab("Home") {
+                RibbonGroup("Edit") {
+                    RibbonButton("Sum", icon: .sum, size: .large) { log.append("sum") }
+                }
+            }
+        }
+        Toggle("Inspector", isOn: showInspector)
+        Spacer()
+            .statusBar { Text("ignored: not the first") }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onResize { w, h in print("main content {w} x {h}") }
+    .statusBar {
+        Text("{log.count} sums")
+        Spacer()
+        Icon(.check)
+    }
+
+    Window("Inspector", isOpen: showInspector, width: 240, height: 160) {
+        VStack {
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .statusBar {
+            Icon(.info)
+            Icon(.warning)
+                .onTap { log.append("warning") }
+        }
+    }
+}

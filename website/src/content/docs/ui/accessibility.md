@@ -29,6 +29,7 @@ app does this without any code of yours.
 | `Image`, `Canvas`, `Scene3D` | A picture or a drawing, called what you say (see below). |
 | `Markdown` | A document with its text. |
 | A view with `.onTap` | A button, called by the text in it (or its icon's name). |
+| [`.statusBar`](/ui/menus-windows/#the-status-bar) | A status bar, with its items in it. |
 
 Stacks and other views that only arrange things aren't mentioned: what's in
 them is.

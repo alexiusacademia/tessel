@@ -1,0 +1,12 @@
+tree
+click "Sum"
+click "Sum"
+click "Inspector"
+tree
+window "Inspector"
+dump
+click "warning"
+size 300 200
+dump
+window main
+tree

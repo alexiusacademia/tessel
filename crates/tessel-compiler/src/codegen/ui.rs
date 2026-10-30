@@ -1389,6 +1389,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.content_inline(a(0).unwrap());
                 self.call_rt("tsl_ui_end_attached", &[which.into()]);
             }
+            "statusBar" => {
+                self.call_rt("tsl_ui_begin_status_bar", &[]);
+                self.content_inline(a(0).unwrap());
+                self.call_rt("tsl_ui_end_status_bar", &[]);
+            }
             "popover" => {
                 let loc = self.locator(a(0).unwrap()).into_struct_value();
                 let f = self.b.build_extract_value(loc, 0, "").unwrap();

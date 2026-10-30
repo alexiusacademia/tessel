@@ -121,6 +121,9 @@ VStack(spacing: 0) {
 }
 ```
 
+For a bar along the bottom of the window, with a line over it, you don't
+need a `Divider` and a stack: see [The status bar](/ui/menus-windows/#the-status-bar).
+
 ## Scroll
 
 `Scroll { … }` shows content that may be taller than the space available, and

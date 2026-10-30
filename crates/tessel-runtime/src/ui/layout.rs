@@ -270,6 +270,19 @@ pub fn window_size() -> Size {
 /// Between a popover and its view.
 const POPOVER_GAP: f64 = 6.0;
 
+/// A status bar (`.statusBar`): the text size it gives its items, its least
+/// height, the room at its ends and between its items.
+pub const STATUS_FONT: f64 = 11.0;
+pub const STATUS_MIN_H: f64 = 24.0;
+pub const STATUS_PAD: f64 = 8.0;
+const STATUS_SPACING: f64 = 12.0;
+
+/// Where a window root's status bar is among its children (see
+/// `lift_status_bar`).
+fn status_bar(root: &Node) -> Option<usize> {
+    root.children.iter().rposition(|c| matches!(c.kind, Kind::StatusBar))
+}
+
 pub struct Layouter<'a> {
     pub text: &'a mut TextEngine,
     pub scroll: &'a HashMap<u64, f64>,
@@ -829,6 +842,7 @@ impl Layouter<'_> {
             Kind::VStack(spacing, _) => self.measure_stack(n, *spacing, Axis::Y, avail, style),
             Kind::Group => self.measure_stack(n, GROUP_SPACING, Axis::Y, avail, style),
             Kind::HStack(spacing, _) => self.measure_stack(n, *spacing, Axis::X, avail, style),
+            Kind::StatusBar => self.measure_stack(n, STATUS_SPACING, Axis::X, avail, style),
             Kind::Popover { .. } => {
                 let inner = Size { w: (avail.w - 2.0 * POPOVER_PAD).max(0.0), h: (avail.h - 2.0 * POPOVER_PAD).max(0.0) };
                 let mut size = Size::default();
@@ -841,16 +855,23 @@ impl Layouter<'_> {
             }
             Kind::MenuItem { .. } | Kind::MenuDivider | Kind::Menu { .. } | Kind::MenuList => Size::default(),
             Kind::ZStack(_) | Kind::Root | Kind::Window { .. } => {
+                // A window's status bar first: the rest has the room above it.
+                let mut avail = avail;
+                let mut bar = Size::default();
+                if let Some(i) = status_bar(n) {
+                    bar = self.measure(&mut n.children[i], avail, style);
+                    avail.h = (avail.h - bar.h).max(0.0);
+                }
                 let mut size = Size::default();
                 for c in &mut n.children {
-                    if matches!(c.kind, Kind::Popover { .. }) {
+                    if matches!(c.kind, Kind::Popover { .. } | Kind::StatusBar) {
                         continue;
                     }
                     let s = self.measure(c, avail, style);
                     size.w = size.w.max(s.w);
                     size.h = size.h.max(s.h);
                 }
-                size
+                Size { w: size.w.max(bar.w), h: size.h + bar.h }
             }
             Kind::Table(spec) => {
                 // As large as it's let be; its header's titles, and its rows
@@ -1019,6 +1040,12 @@ impl Layouter<'_> {
             Kind::VStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::Y, content),
             Kind::Group => self.place_stack(n, GROUP_SPACING, 1, Axis::Y, content),
             Kind::HStack(spacing, align) => self.place_stack(n, *spacing, *align, Axis::X, content),
+            Kind::StatusBar => {
+                // Its items from the leading end (all across, with a `Spacer`).
+                let spread = n.children.iter().any(|c| !c.mods.hidden && flex(c, Axis::X, Some(Axis::X)));
+                let w = if spread { content.w } else { n.layout.natural.w.min(content.w) };
+                self.place_stack(n, STATUS_SPACING, 1, Axis::X, Rect { w, ..content });
+            }
             Kind::Popover { .. } => {
                 let inner = content.inset(POPOVER_PAD);
                 for c in &mut n.children {
@@ -1029,8 +1056,15 @@ impl Layouter<'_> {
             }
             Kind::ZStack(_) | Kind::Root | Kind::Window { .. } => {
                 let align = if let Kind::ZStack(a) = n.kind { a } else { 1 };
+                // A window's status bar: along its bottom, across all of it.
+                let mut content = content;
+                if let Some(i) = status_bar(n) {
+                    let h = n.children[i].layout.size.h.min(content.h);
+                    content.h -= h;
+                    self.place(&mut n.children[i], Rect { y: content.y + content.h, h, ..content });
+                }
                 for c in &mut n.children {
-                    if matches!(c.kind, Kind::Popover { .. }) {
+                    if matches!(c.kind, Kind::Popover { .. } | Kind::StatusBar) {
                         continue;
                     }
                     let w = if flex(c, Axis::X, None) { content.w } else { c.layout.size.w.min(content.w) };

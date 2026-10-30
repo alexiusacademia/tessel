@@ -367,6 +367,11 @@ pub enum Kind {
     /// label, large (the icon over the label) or small (side by side). A
     /// menu's items are its children.
     RibbonItem { label: String, icon: &'static str, large: bool, role: RibbonRole },
+    /// `.statusBar { items }`: a row of views along the bottom of its
+    /// window. Built into the view's `Mods`, then made the last child (before
+    /// the popovers) of its window's root (see `lift_status_bar`), which
+    /// lays it out under everything else.
+    StatusBar,
 }
 
 /// What a ribbon's item does when it's clicked.
@@ -474,6 +479,8 @@ pub struct Mods {
     pub context_menu: Option<Box<Node>>,
     /// `.menuBar { … }`: the app's menus (a `MenuList` of `Menu`s).
     pub menu_bar: Option<Box<Node>>,
+    /// `.statusBar { … }`: its window's status bar (a `StatusBar`).
+    pub status_bar: Option<Box<Node>>,
     /// `.trayIcon(icon, title:keepRunning:) { … }`: the app's icon in the
     /// menu bar (macOS) or the taskbar's notification area (Windows).
     pub tray: Option<Box<Tray>>,
@@ -559,6 +566,7 @@ impl Mods {
             on_resize,
             context_menu,
             menu_bar,
+            status_bar,
             tray,
             on_open_file,
             on_close_request,
@@ -628,6 +636,7 @@ impl Mods {
         or(&mut m.on_resize, on_resize);
         or(&mut m.context_menu, context_menu);
         or(&mut m.menu_bar, menu_bar);
+        or(&mut m.status_bar, status_bar);
         or(&mut m.tray, tray);
         or(&mut m.on_open_file, on_open_file);
         or(&mut m.on_close_request, on_close_request);
@@ -673,6 +682,7 @@ impl Mods {
             || self.on_key_event.is_some()
             || self.on_drop.is_some()
             || self.menu_bar.is_some()
+            || self.status_bar.is_some()
             || self.tray.is_some()
             || self.on_open_file.is_some()
             || self.on_close_request.is_some()
@@ -798,18 +808,18 @@ impl Node {
 
     /// Children that are showing: a tab view shows only its selected page.
     pub fn visible_children(&self) -> &[Node] {
+        &self.children[self.visible_range()]
+    }
+
+    /// Where the children that are showing are among them.
+    fn visible_range(&self) -> std::ops::Range<usize> {
+        let one = |i: usize| if i < self.children.len() { i..i + 1 } else { 0..0 };
         match self.kind {
-            Kind::TabView { .. } => {
-                let i = self.selected_tab();
-                self.children.get(i..=i).unwrap_or(&[])
-            }
-            Kind::Ribbon { .. } => {
-                let i = self.selected_ribbon_tab();
-                self.children.get(i..=i).unwrap_or(&[])
-            }
+            Kind::TabView { .. } => one(self.selected_tab()),
+            Kind::Ribbon { .. } => one(self.selected_ribbon_tab()),
             // (A menu's items show only when it's opened.)
-            Kind::RibbonItem { .. } => &[],
-            _ => &self.children,
+            Kind::RibbonItem { .. } => 0..0,
+            _ => 0..self.children.len(),
         }
     }
 
@@ -877,6 +887,7 @@ fn kind_salt(kind: &Kind) -> u64 {
         Kind::RichEditor { .. } => 42,
         Kind::Video { .. } => 43,
         Kind::WebView { .. } => 44,
+        Kind::StatusBar => 45,
     }
 }
 
@@ -1089,8 +1100,28 @@ pub fn build_all(root: &Callback) -> Built {
         unsafe { tsl_release(record) };
     }
     let mut root = builder.stack.pop().unwrap();
+    lift_status_bar(&mut root);
     root.children.extend(popovers);
     Built { root, windows: builder.windows }
+}
+
+/// Makes the status bar of the first view in a window's tree that has one
+/// (and shows) the window root's last child, so that it's laid out, drawn,
+/// clicked and read like any other view. Other `.statusBar`s are ignored.
+fn lift_status_bar(root: &mut Node) {
+    fn take(n: &mut Node) -> Option<Box<Node>> {
+        if n.mods.hidden {
+            return None;
+        }
+        if let Some(bar) = n.mods.status_bar.take() {
+            return Some(bar);
+        }
+        let shown = n.visible_range();
+        n.children[shown].iter_mut().find_map(take)
+    }
+    if let Some(bar) = take(root) {
+        root.children.push(*bar);
+    }
 }
 
 /// Releases the pictures, drawings and fonts kept for reuse. At exit this
@@ -1387,6 +1418,35 @@ pub extern "C" fn tsl_ui_end_attached(which: i32) {
     });
 }
 
+/// Opens the items of a `.statusBar` of the last view;
+/// `tsl_ui_end_status_bar` gives them to it. The bar's own look is set
+/// here, as modifiers its items inherit (and can override): small,
+/// secondary text on the sidebar's color.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_begin_status_bar() {
+    with_builder(|b| {
+        let anchor = b.last().map_or(0, |n| n.key);
+        b.begin_keyed(Kind::StatusBar, hash_key((anchor, "statusBar")));
+        let colors = &theme::theme().colors;
+        let m = &mut b.parent().mods;
+        m.padding = layout::Insets { top: 2.0, leading: layout::STATUS_PAD, bottom: 2.0, trailing: layout::STATUS_PAD };
+        m.min_height = Some(layout::STATUS_MIN_H);
+        m.font_size = Some(layout::STATUS_FONT);
+        m.color = Some(colors[theme::SECONDARY]);
+        m.background = Some((colors[theme::SIDEBAR], 0.0));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_end_status_bar() {
+    with_builder(|b| {
+        let bar = b.stack.pop().expect("unbalanced end");
+        if let Some(n) = b.last() {
+            n.mods.status_bar = Some(Box::new(bar));
+        }
+    });
+}
+
 /// Opens the items of a `.trayIcon`; `tsl_ui_end_tray` gives them to the last view.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_ui_begin_tray() {
@@ -1469,6 +1529,7 @@ pub unsafe extern "C" fn tsl_ui_begin_window(title: *const Str, f: *const c_void
 pub extern "C" fn tsl_ui_end_window() {
     with_builder(|b| {
         let mut node = b.stack.pop().expect("unbalanced end");
+        lift_status_bar(&mut node);
         node.children.extend(b.overlays.pop().unwrap_or_default());
         b.windows.push(node);
     });

@@ -1660,7 +1660,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_grid_column_alignment" => (vec![i32t], None),
             "tsl_ui_selectable" => (vec![i8t], None),
             "tsl_ui_rotation" => (vec![f64t], None),
-            "tsl_ui_begin_tray" => (vec![], None),
+            "tsl_ui_begin_tray" | "tsl_ui_begin_status_bar" | "tsl_ui_end_status_bar" => (vec![], None),
             "tsl_ui_end_tray" => (vec![i32t, p, i8t], None),
             "tsl_ui_scale" => (vec![f64t, f64t, f64t], None),
             "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),

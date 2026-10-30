@@ -5389,6 +5389,7 @@ impl App {
                 Kind::MenuList => "MenuList".to_string(),
                 Kind::Popover { edge, .. } => if *edge == super::SHEET { "Sheet" } else { "Popover" }.to_string(),
                 Kind::Window { title, .. } => format!("Window {title:?}"),
+                Kind::StatusBar => "StatusBar".to_string(),
                 Kind::Ribbon { .. } => {
                     let titles: Vec<&str> = n.children.iter().filter_map(|c| match &c.kind {
                         Kind::RibbonTab { title } => Some(title.as_str()),
@@ -5523,6 +5524,7 @@ impl App {
                 Kind::MenuList => "MenuList",
                 Kind::Popover { .. } => "Popover",
                 Kind::Window { .. } => "Window",
+                Kind::StatusBar => "StatusBar",
                 Kind::Ribbon { .. } => "Ribbon",
                 Kind::RibbonTab { .. } => "RibbonTab",
                 Kind::RibbonGroup { .. } => "RibbonGroup",

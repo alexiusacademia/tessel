@@ -508,7 +508,7 @@ impl Builtins {
             ],
             "tooltip" | "accessibilityLabel" => vec![P::unlabeled("text", Ty::Str)],
             "onResize" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
-            "contextMenu" | "menuBar" => vec![P::unlabeled("items", Ty::View)],
+            "contextMenu" | "menuBar" | "statusBar" => vec![P::unlabeled("items", Ty::View)],
             "trayIcon" => vec![
                 P::unlabeled("icon", self.icon.clone()),
                 P::new("title", Ty::Str).default(),
@@ -1303,7 +1303,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
             "tooltip", "accessibilityLabel", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
             "onCloseRequest", "gridCellColumns", "gridColumnAlignment", "selectable", "lineLimit",
-            "rotation", "scale", "trayIcon", "dragFile",
+            "rotation", "scale", "trayIcon", "dragFile", "statusBar",
         ],
         _ => &[],
     }

@@ -1,6 +1,6 @@
 ---
 title: 21. Forms, tables and rich text
-description: Lay out forms with Grid, choose with radio buttons and menus, search, link, cut text short or let it be copied, edit tables in place, write with styles in a RichTextEditor, turn and scale views, and put commands in a ribbon.
+description: Lay out forms with Grid, choose with radio buttons and menus, search, link, cut text short or let it be copied, edit tables in place, write with styles in a RichTextEditor, turn and scale views, put commands in a ribbon, and show what's going on in a status bar.
 ---
 
 Lesson 19 built windows from stacks, buttons and text fields, and lesson 20
@@ -20,6 +20,7 @@ In this lesson you'll learn:
 - how to turn and scale a view
 - split windows, long rows, and scrolling from code
 - how a `Ribbon` holds an app's commands, and what it does in a narrow window
+- how `.statusBar` shows what's going on along the bottom of the window
 
 You'll finish with a small notes app that uses most of them.
 
@@ -388,6 +389,56 @@ app Sheet(width: 640, height: 300) {
 
 See [Ribbons](/ui/ribbons/).
 
+## A status bar
+
+Many desktop apps keep a thin bar along the bottom of the window that says
+what's going on: how many items there are, what's selected, whether the work
+is saved. `.statusBar { … }` adds one. Its items are ordinary views, in a
+row:
+
+```tessel
+struct Task {
+    name: String
+    done: Bool
+}
+
+app Tasks(width: 420, height: 280) {
+    state tasks = [Task(name: "Buy milk", done: false), Task(name: "Call Ana", done: false),
+                   Task(name: "Water the plants", done: false)]
+
+    let done = tasks.filter { t in t.done }.count
+
+    VStack(alignment: .leading) {
+        for i in 0..tasks.count {
+            Toggle(tasks[i].name, isOn: tasks[i].done)
+        }
+        Spacer()
+    }
+    .padding()
+    .statusBar {
+        Text("{tasks.count} tasks")
+        Text("{done} done")
+        Spacer()
+        Button("Clear done") {
+            tasks = tasks.filter { t in !t.done }
+        }
+        .disabled(done == 0)
+    }
+}
+```
+
+- The bar goes across the bottom of the window, under everything else. The
+  rest of the window gets the room above it.
+- Its items show the app's state like any view: tick a task and "1 done"
+  changes at once. The button works like any other button.
+- `Spacer()` pushes "Clear done" to the right end; without it, all the
+  items would sit at the left.
+- Text in the bar is small and gray. Give an item its own `.font` or
+  `.color` to make it stand out, such as `.color(.red)` for an error count.
+
+Put `.statusBar` on the window's content. Another `Window` can have its
+own. See [The status bar](/ui/menus-windows/#the-status-bar).
+
 ## Worked example: a notes app
 
 Put the pieces together: a table of notes whose titles are edited in
@@ -642,5 +693,7 @@ Markdown is `**Hello**, world`: Markdown has no colors.
 - A **`Ribbon`** holds **`RibbonTab`**s of **`RibbonGroup`**s of buttons,
   toggles and menus; in a narrow window its groups shrink, then fold into
   buttons that open them.
+- **`.statusBar { … }`** puts a row of views along the bottom of the window,
+  under the rest; a `Spacer` pushes items to its right end.
 
 **Next:** [22. Sound, video, the web and the desktop](/learn/22-media-desktop/)

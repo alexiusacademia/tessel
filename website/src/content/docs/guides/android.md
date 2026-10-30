@@ -116,6 +116,8 @@ ignored. Beyond that:
   trackpad.
 - **The system's bars.** The app is laid out between the status bar at the
   top and the navigation bar at the bottom, and clear of a camera cutout.
+  An app's own [`.statusBar`](/ui/menus-windows/#the-status-bar) sits just
+  above the navigation bar (and above the keyboard while it's up).
 - **The keyboard.** Tapping a text field brings up the on-screen keyboard,
   with its suggestions, corrections, swipe typing and emoji. It can
   correct any word in the field, not only the one being typed. The layout

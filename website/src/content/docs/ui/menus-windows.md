@@ -1,11 +1,11 @@
 ---
 title: Menus, windows and documents
-description: Context menus, popovers, the menu bar, more than one window, opening the files the system hands the app, and asking before the app closes.
+description: Context menus, popovers, the menu bar, a status bar, more than one window, opening the files the system hands the app, and asking before the app closes.
 ---
 
 A desktop app is more than its window's content: it has a menu bar, menus
-that open with a right click, small panels that pop up next to a button,
-other windows, files it's asked to open, and a question to ask before it
+that open with a right click, small panels that pop up next to a button, a
+status bar along the bottom, other windows, files it's asked to open, and a question to ask before it
 closes with unsaved changes. This page shows each of them.
 
 ## Context menus
@@ -216,6 +216,56 @@ menus show, followed by the key: `"⌘S"`, `"⇧⌘S"`, `"⌥⌘left"`.
 
 `tessel check` reports a shortcut it can't read.
 
+## The status bar
+
+`.statusBar { … }` puts a bar along the bottom of the window, across its
+whole width, under everything else in it. Its items are any views: text,
+icons, buttons, toggles, pickers. They're laid out in a row, like an
+`HStack`, from the leading end; a `Spacer()` pushes the ones after it to the
+trailing end:
+
+```tessel
+app Notepad(width: 480, height: 260) {
+    state text = "A status bar shows what's true right now."
+    state saved = true
+
+    TextField("Write here", text: text, lines: 6, onChange: { saved = false })
+        .frame(maxHeight: .infinity)
+        .padding()
+        .statusBar {
+            Icon(if saved { .circleCheck } else { .pencil })
+            Text(if saved { "Saved" } else { "Edited" })
+            Spacer()
+            Text("{text.words().count} words, {text.count} characters")
+            Button("Save") { saved = true }
+                .disabled(saved)
+        }
+}
+```
+
+![A window with a text field filling it; along its bottom, under a thin line, a gray bar with a pencil icon and "Edited" at the left, and "14 words, 70 characters" and a Save button at the right](../../../assets/screens/ui-status-bar.png)
+
+- The window's content gets the room above the bar: the bar never covers
+  it. Popovers, sheets and menus still show over everything, the bar too.
+- The bar is as tall as its tallest item, and at least 24 points. Its items
+  are 12 points apart, with 8 points at each end, and centered up and down.
+- Its text is small (11 points) and in the secondary color, on a light gray
+  background (dark gray in the dark appearance) under a thin line. An item's
+  own [`.font`](/reference/modifiers/#font) or
+  [`.color`](/reference/modifiers/#color) changes that for it.
+- The items are views like any others: they show the app's state as it
+  changes, can be clicked, tabbed to, have tooltips and context menus, and
+  open popovers (use `edge: .top`, there's no room under them).
+- Put `.statusBar` on any view of the window, usually its content. Each
+  window has one bar at most: when several views have `.statusBar`, the
+  first one in the window counts (a view comes before the views inside it).
+  A `.statusBar` on a hidden view (or in a tab that isn't showing) doesn't
+  count.
+- A [`Window`](#more-windows) has its own: a `.statusBar` on a view inside
+  it. A ribbon or a drawn menu bar stays at the top, the bar at the bottom.
+- On a phone, the bar sits at the bottom of the screen, just above the
+  system's navigation bar (and above the keyboard while it's up).
+
 ## More windows
 
 `Window(title, isOpen: bind Bool, width:, height:) { … }` in the `app`'s body
@@ -251,8 +301,8 @@ app Survey(width: 400, height: 260) {
   close the window yourself (or call [`closeWindow()`](#asking-before-closing)
   from inside it).
 - Its views lay out as the main window's do. It can have its own popovers,
-  context menus and `.onCloseRequest`, but the menu bar is the main
-  window's.
+  context menus, [status bar](#the-status-bar) and `.onCloseRequest`, but the
+  menu bar is the main window's.
 - A `Window` can only be declared in the `app` (directly, or in an `if` or
   `for` there). Closing the main window ends the app, with its other windows.
 
@@ -364,7 +414,7 @@ quitting asks the main window's.
 | Command | Does |
 |---|---|
 | `rightclick "Roads"` | Right-clicks a view: its context menu opens. `click "Remove"` then chooses an item of the open menu, `hover "Move"` opens a submenu, and `key down`, `key right`, `key enter`, `key escape` work as in a window. |
-| `tree` | Shows the open menu after the views (with the selected item marked), popovers as `Popover` at the end of the tree, `MenuBar` with the menus' titles first, and the other open windows last. |
+| `tree` | Shows the open menu after the views (with the selected item marked), the status bar as `StatusBar` (with its items) after the window's views, popovers as `Popover` at the end of the tree, `MenuBar` with the menus' titles first, and the other open windows last. |
 | `menu "File" "Open Recent" "roads.gpkg"` | Chooses a menu bar item, by the titles of its menus and its own. |
 | `menus` | Lists the menu bar, every menu and item. |
 | `menubar drawn` | Draws the menu bar in the window (as on Windows), or `menubar native` (as on macOS, where it's not in the window). Scripts start the way the platform does, so tests that depend on it should say which. |

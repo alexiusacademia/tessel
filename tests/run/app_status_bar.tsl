@@ -1,0 +1,42 @@
+// `.statusBar { … }`: a row of views along the bottom of the window, under
+// everything else. The window's content gets the room above it (here 24
+// points less than the window: the bar's least height; and less again
+// with a menu bar drawn at the top). `tree` shows the bar as the window
+// root's last child, before the popovers; `click` reaches its items, which
+// show the app's state like any view.
+
+app Counter(width: 320, height: 200) {
+    state count = 0
+    state saved = true
+    state showDetails = false
+
+    VStack {
+        Button("Add") {
+            count += 1
+            saved = false
+        }
+        Spacer()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onResize { w, h in print("content {w} x {h}") }
+    .statusBar {
+        Text("{count} items")
+        Text(if saved { "Saved" } else { "Edited" })
+        Spacer()
+        Button("Details") { showDetails = true }
+            .frame(height: 18)
+            .popover(isPresented: showDetails, edge: .top) {
+                Text("{count} items, {if saved { "saved" } else { "not saved" }}")
+            }
+        Button("Reset") {
+            count = 0
+            saved = true
+        }
+        .frame(height: 18)
+    }
+    .menuBar {
+        Menu("File") {
+            MenuItem("Save") { saved = true }
+        }
+    }
+}

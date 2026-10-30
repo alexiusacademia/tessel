@@ -1351,6 +1351,7 @@ app Survey {
 ```
 
 - It shares the app's state; its content lays out like the main window's.
+  It can have its own [`.statusBar`](/reference/modifiers/#statusbar).
 - When the user closes it, `isOpen` becomes `false`; setting it to `false`
   closes the window, as `closeWindow()` from a view inside it does.
 - See [More windows](/ui/menus-windows/#more-windows).
