@@ -1,0 +1,47 @@
+// A line ends its statement; an operator at the end of a line continues the
+// expression, and a block's last line (even `-x`) is its value (issue #59).
+
+fn negate(_ x: Float) -> Float {
+    -x
+}
+
+fn sign(_ x: Int) -> Int {
+    if x < 0 {
+        -1
+    } else {
+        1
+    }
+}
+
+fn pick(_ n: Int) -> Int {
+    match n {
+        0 -> -1
+        _ -> {
+            let m = n * 2
+            -m
+        }
+    }
+}
+
+fn f(_ x: Float) -> Float {
+    let a = x * 2.0 -
+        1.0
+    a
+}
+
+fn main() {
+    print(negate(2.5))
+    print("{sign(-4)} {sign(4)}")
+    print("{pick(0)} {pick(3)}")
+    print(f(3.0))
+    let xs = [1, 2, 3].map { x in -x }
+    print(xs)
+    let ys = [1, 2].map { x in
+        let y = x + 1
+        -y
+    }
+    print(ys)
+    let ok = true &&
+        !false
+    print(ok)
+}

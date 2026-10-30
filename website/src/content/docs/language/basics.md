@@ -448,3 +448,21 @@ print(shout)
 
 A trailing comma after the last item in a list, like `"Grace",` above, is
 allowed.
+
+To split a long expression, end the line with the operator, as above. A line
+that *starts* with an operator doesn't continue the line before it, because
+that line already ended its statement. A line starting with `+`, `*`, `&&`,
+`??` or another operator that needs a value on its left is an error. A line
+starting with `-` is a new statement that works out a negative value and
+throws it away, so Tessel reports that too:
+
+```tessel
+let a = x * 2.0
+    - 1.0      // error: this line's value isn't used
+let b = x * 2.0 -
+    1.0        // fine: the `-` at the end of the line continues it
+```
+
+Any line that only works out a value with operators, like `a + b`, `-a`,
+`!done` or `n == 5`, and does nothing with it is an error. The last line of a
+block that gives a value is that value, so `-x` there is fine.
