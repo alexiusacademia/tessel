@@ -11,6 +11,27 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.19.5
+
+*October 31, 2026*
+
+Fixed:
+
+- A line that starts with `-` after an expression was silently a new
+  statement, throwing its value away. Now any line that only works out a
+  value with operators and throws it away is an error, which says to end
+  the line above with the operator to continue it. See
+  [Lines and semicolons](/language/basics/#lines-and-semicolons).
+- A method looping over `list[i].field`, or over a field of another loop's
+  item, no longer copies the whole list when it's called on a parameter or
+  a constant (it could be 1000 times slower).
+- A long list literal compiles quickly: 16,000 numbers took 13 seconds,
+  and now take a fraction of one.
+- A program inside a library's folder (like its examples, using it with
+  `path = ".."`) imports its own dependencies.
+- `tessel publish --dry-run` runs every check `tessel publish` does, so it
+  no longer says "ready" when there are changes that aren't committed.
+
 ## 0.19.0
 
 *October 30, 2026*
