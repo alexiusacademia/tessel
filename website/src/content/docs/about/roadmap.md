@@ -3,7 +3,7 @@ title: Status and roadmap
 description: What works in Tessel today, its known limitations, and what is planned next.
 ---
 
-Tessel is at version 0.18. It's young: the core of the language and its UI
+Tessel is at version 0.19. It's young: the core of the language and its UI
 toolkit work, and they're enough to write real apps (the
 [Tessel IDE](/start/ide/) is one), but plenty is missing, and details of the
 language may still change. This page is an honest list of where things stand.

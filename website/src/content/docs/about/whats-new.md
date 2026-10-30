@@ -11,6 +11,36 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.19.0
+
+*October 30, 2026*
+
+- **A status bar.** `.statusBar { … }` on any view of a window shows a row
+  of views along its bottom edge: text, buttons, progress, anything, kept
+  up to date like the rest. Each window has its own. See
+  [The status bar](/ui/menus-windows/#the-status-bar).
+- **`onChange` on more controls.** Toggle, Picker, TextField, SearchField,
+  RibbonToggle and CodeEditor take `onChange:`, as Slider does: it runs
+  after each change the user makes, not when the program sets the value.
+  See [Toggle](/ui/controls/#toggle).
+- **Reading part of a file.** `readData(path, from: 1000, count: 4096)`
+  reads only those bytes, so files bigger than memory can be read a piece
+  at a time. A `file://` request takes a `Range` header too. See
+  [Reading part of a big file](/ui/async/#reading-part-of-a-big-file).
+- **Streaming HTTP.** `request(…, onHeaders:, onData:)` gives the body in
+  pieces as it arrives, for streams that never end like internet radio.
+  `download` takes `headers:` and `onHeaders:`, and a response's
+  `finalUrl` is the URL after redirects. See
+  [Reading a body as it arrives](/ui/async/#reading-a-body-as-it-arrives).
+- **Headless tests keep things moving.** `wait` lets work a timer starts
+  (a fetch, and the fetches it starts) finish at that timer's time, and
+  `waitfor` moves the clock on to the next timer when nothing else is
+  going on. See [Time and background work](/ui/testing/#time-and-background-work).
+
+Fixed:
+
+- Cancelling a download removes its `.part` file at once.
+
 ## 0.18.0
 
 *October 28, 2026*
