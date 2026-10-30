@@ -322,6 +322,12 @@ enum Body<'b> {
     ContentExpr(&'b Expr),
     /// A place (for `bind`); calling it returns a pointer to the storage.
     Locator(&'b Expr),
+    /// The place a loop's list is in, found again each round (see
+    /// `for_each_in`); with `false`, for a loop that only reads it, the
+    /// storage as it is, not made the loop's own first. It lives only while
+    /// the loop runs, so a loop variable it starts at is reached where it
+    /// is rather than copied.
+    LoopLocator(&'b Expr, bool),
     /// A function declared in a view or app, used as a value (`action: save`):
     /// calling it calls the function.
     ViewFnRef(String),
@@ -489,6 +495,9 @@ struct Gen<'ctx, 'a> {
     /// The indexes of a place being reached (`a.b[i].c[j]`), worked out
     /// before the place is (see `place_indexes`): by the index's expression.
     pre_index: HashMap<crate::ast::ExprId, Val<'ctx>>,
+    /// The loops over a list in place being emitted, innermost last: the
+    /// loop variable, and the variable its list starts at (see `keeps`).
+    loop_roots: Vec<(String, String)>,
     stack: Vec<FnCtx<'ctx>>,
     /// The awaited calls being evaluated, innermost last (see `coro`).
     awaits: Vec<coro::Awaited<'ctx>>,
@@ -569,6 +578,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             loops: Vec::new(),
             held: Vec::new(),
             pre_index: HashMap::new(),
+            loop_roots: Vec::new(),
             stack: Vec::new(),
             awaits: Vec::new(),
             has_coros: false,
@@ -2923,9 +2933,144 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn for_loop(&mut self, var: &Ident, iter: &Expr, body: &Block) {
         let captured = self.loop_var_shared(body, &var.name);
-        self.for_each_in(var, iter, captured, &mut |g| {
+        self.for_each_in(var, iter, captured, Some(body), &mut |g| {
             g.block(body, Some(&Ty::Void));
         });
+    }
+
+    /// The storage a place starts at, as `keeps` compares it: a local
+    /// variable by name, `self` for the receiver and its fields, `bind`
+    /// for a caller's variable. A loop variable stands for the storage of
+    /// its list (`inner`: loops declared in the body being looked at, by
+    /// variable, with the variable their list starts at). `None` when it
+    /// can't be told.
+    fn storage(&self, name: &str, inner: &HashMap<&str, &str>, locals: &HashSet<&str>) -> Option<String> {
+        let mut name = name.to_string();
+        for _ in 0..64 {
+            let own = inner.contains_key(name.as_str()) || locals.contains(name.as_str());
+            // (Declared in the body and outside it: which one is meant isn't told.)
+            if own && self.lookup(&name).is_some() {
+                return None;
+            }
+            if let Some(root) = inner.get(name.as_str()) {
+                name = root.to_string();
+                continue;
+            }
+            if locals.contains(name.as_str()) {
+                return Some(name);
+            }
+            let v = self.lookup(&name)?;
+            match v.store {
+                Store::Slot(_) | Store::Boxed(_) | Store::EnvBox(_) | Store::EnvValue(_) => return Some(name),
+                Store::Field(_) | Store::SelfRef => return Some("self".into()),
+                Store::Place(_) | Store::Binding { .. } => return Some("bind".into()),
+                Store::ListElem { .. } | Store::ListElemVia { .. } => {
+                    name = self.loop_roots.iter().rev().find(|(n, _)| *n == name)?.1.clone();
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    /// Whether running `body` leaves the storage of the list `iter` (a
+    /// place) as it is: nothing in it can change what `iter` starts at.
+    /// Errs on the side of no: a call of a closure, of a function declared
+    /// in a function or view, or of any method on that storage (one that
+    /// looks like it changes nothing may still change an item through a
+    /// loop of its own) counts as a change.
+    fn keeps(&self, iter: &Expr, body: &Block) -> bool {
+        // (Variables declared in the body are its own; a loop's variable
+        // stands for its list.)
+        let mut inner: HashMap<&str, &str> = HashMap::new();
+        let mut locals: HashSet<&str> = HashSet::new();
+        let mut unknown = false;
+        walk_block(body, &mut |node| match node {
+            Node::S(Stmt::For { var, iter, .. }) => match root_name(iter) {
+                // (`for n in n.kids`: the variable is its own list's.)
+                Some(r) if r == var.name => unknown = true,
+                Some(r) => {
+                    inner.insert(&var.name, r);
+                }
+                None => {
+                    locals.insert(&var.name);
+                }
+            },
+            Node::S(Stmt::Let(d) | Stmt::Var(d)) => {
+                locals.insert(&d.name.name);
+            }
+            _ => {}
+        });
+        let Some(target) = root_name(iter).and_then(|r| self.storage(r, &HashMap::new(), &HashSet::new())) else {
+            return false;
+        };
+        if unknown {
+            return false;
+        }
+        let touches = |name: Option<&str>| -> bool {
+            let Some(name) = name else { return true };
+            match self.storage(name, &inner, &locals) {
+                Some(s) => s == target || (matches!(s.as_str(), "self" | "bind") && matches!(target.as_str(), "self" | "bind")),
+                None => true,
+            }
+        };
+        let mut kept = true;
+        walk_block(body, &mut |node| {
+            if !kept {
+                return;
+            }
+            match node {
+                Node::S(Stmt::Assign { target, .. }) => kept = !touches(root_name(target)),
+                Node::E(e) => {
+                    if self.checked.bind_args.contains(&e.id) && touches(root_name(e)) {
+                        kept = false;
+                        return;
+                    }
+                    // A function value may be a closure that changes what it captured.
+                    if let ExprKind::Name(n) = &e.kind
+                        && self.lookup(n).is_some_and(|v| matches!(v.ty, Ty::Fn(..)))
+                    {
+                        kept = false;
+                        return;
+                    }
+                    if let ExprKind::Member { .. } = &e.kind
+                        && matches!(self.ty(e), Ty::Fn(..))
+                    {
+                        kept = false;
+                        return;
+                    }
+                    let Some(info) = self.checked.calls.get(&e.id) else { return };
+                    let receiver = match &e.kind {
+                        ExprKind::Call { callee, .. } => match &callee.kind {
+                            ExprKind::Member { object, .. } => Some(&**object),
+                            _ => None,
+                        },
+                        ExprKind::Member { object, .. } => Some(&**object),
+                        _ => None,
+                    };
+                    let recv_root = || receiver.and_then(root_name);
+                    match &info.callee {
+                        Callee::Builtin { recv, name } => {
+                            let mutating = MUTATING_BUILTINS.contains(&name.as_str())
+                                || builtins::method_of(recv, name).is_some_and(|m| m.mutating);
+                            if mutating && receiver.is_some() && touches(recv_root()) {
+                                kept = false;
+                            }
+                        }
+                        Callee::Method { .. } | Callee::IfaceMethod { .. } => {
+                            if receiver.is_some() && touches(recv_root()) {
+                                kept = false;
+                            }
+                        }
+                        Callee::SelfMethod { .. } => kept = !matches!(target.as_str(), "self" | "bind"),
+                        Callee::LocalFn { .. } | Callee::ViewFn(_) | Callee::Value => kept = false,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        });
+        kept
     }
 
     /// Is `e` rooted in a view's `state` (so its storage outlives this function)?
@@ -2939,7 +3084,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     /// A `for` loop whose body is emitted by `body`.
     /// `captured`: a closure in the body captures the loop variable.
-    fn for_each_in(&mut self, var: &Ident, iter: &Expr, captured: bool, body: &mut dyn FnMut(&mut Self)) {
+    /// `body_ast`: the body's statements, when it's a block of them.
+    fn for_each_in(&mut self, var: &Ident, iter: &Expr, captured: bool, body_ast: Option<&Block>, body: &mut dyn FnMut(&mut Self)) {
         if self.ty(iter) == Ty::Range {
             let (lo, hi) = match &iter.kind {
                 ExprKind::Binary(BinOp::Range, lo, hi) => {
@@ -3004,13 +3150,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         // Either iterate the live list in place, or a snapshot of it. The
         // snapshot is a hidden variable, so an early `return` releases it.
         self.push_scope();
+        // A loop that only reads its variable reads the list where it is.
+        // Making it the loop's own (as for changing it) would copy it, and
+        // what it's in, when that's shared: with a method's `self` when it's
+        // called on a parameter, every call (issue #58).
+        let read_only = place && !captured && !self.checked.loop_writes.contains(&var.span) && !self.in_state(iter);
+        // When the body can't change what the list is in either, the list
+        // stays where it is: the loop reads it there.
+        let in_place = read_only && body_ast.is_some_and(|b| self.keeps(iter, b));
         // A list reached through an index (`outer[i].items`) moves when the
         // outer list grows, so the loop finds it again each round.
-        let movable = place && through_index(iter);
+        let movable = place && !in_place && through_index(iter);
         // A closure capturing the loop variable must find the element again
         // later; if the list's storage may move, keep a locator for it.
         let relocate = if place && ((captured && !self.in_state(iter)) || movable) {
-            let loc = self.make_closure(Body::Locator(iter), &Ty::View);
+            // (One a closure keeps may outlive the loop.)
+            let body = if captured { Body::Locator(iter) } else { Body::LoopLocator(iter, !read_only) };
+            let loc = self.make_closure(body, &Ty::View);
             let lt = self.llty(&Ty::View).unwrap();
             let slot = self.alloca(lt, "list_locator");
             self.b.build_store(slot, loc).unwrap();
@@ -3022,6 +3178,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let slot = if movable {
             // Not used: the locator finds the list each time.
             self.ptr_ty().const_null()
+        } else if in_place {
+            self.read_ptr(iter).expect("a place")
         } else if place {
             self.write_ptr(iter)
         } else {
@@ -3064,7 +3222,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             self.retain(v, &elem);
             self.declare_value(&var.name, &elem, Some(v));
         }
+        let rooted = place && root_name(iter).is_some();
+        if rooted {
+            self.loop_roots.push((var.name.clone(), root_name(iter).unwrap().to_string()));
+        }
         body(self);
+        if rooted {
+            self.loop_roots.pop();
+        }
         self.pop_scope();
         self.loops.pop();
         self.br(next_bb);
@@ -4305,7 +4470,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             (Body::Fn(..) | Body::ViewFnRef(_) | Body::LocalFn(_), Ty::Fn(ptys, ret)) => {
                 (self.fn_type(ptys, ret, false), ptys.clone(), (**ret).clone())
             }
-            (Body::Locator(_), _) => (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void),
+            (Body::Locator(_) | Body::LoopLocator(..), _) => {
+                (self.ptr_ty().fn_type(&[self.ptr_ty().into()], false), vec![], Ty::Void)
+            }
             (Body::Rows(..), _) => {
                 (self.ctx.void_type().fn_type(&[self.ptr_ty().into(), self.i64().into()], false), vec![Ty::Int], Ty::Void)
             }
@@ -4327,7 +4494,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Body::Content(b) => free_block(b, &mut Vec::new(), &mut free),
             Body::Rows(p, b) | Body::PathRows(p, b) => free_block(b, &mut vec![p.name.clone()], &mut free),
-            Body::ContentExpr(e) | Body::Locator(e) => free_expr(e, &mut Vec::new(), &mut free),
+            Body::ContentExpr(e) | Body::Locator(e) | Body::LoopLocator(e, _) => free_expr(e, &mut Vec::new(), &mut free),
             Body::ViewFnRef(name) => {
                 free.insert(name.clone());
             }
@@ -4361,6 +4528,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Store::Boxed(_) | Store::EnvBox(_) => Capture::Box,
                 Store::Binding { .. } => Capture::Binding,
                 Store::ListElem { stable: true, .. } => Capture::Elem,
+                // (A loop's locator lives only while its loop runs, inside
+                // the loop over this variable's list.)
+                Store::ListElem { relocate: None, .. } if matches!(body, Body::LoopLocator(..)) => Capture::Elem,
                 Store::ListElem { relocate: Some(_), .. } | Store::ListElemVia { .. } => Capture::ElemVia,
                 _ => Capture::Value,
             };
@@ -4585,6 +4755,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Body::Locator(e) => {
                 let p = self.write_ptr(e);
+                self.b.build_return(Some(&p)).unwrap();
+            }
+            Body::LoopLocator(e, write) => {
+                let p = if write { self.write_ptr(e) } else { self.read_ptr(e).expect("a place") };
                 self.b.build_return(Some(&p)).unwrap();
             }
             Body::ViewFnRef(name) => {

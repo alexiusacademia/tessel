@@ -1,0 +1,127 @@
+// A loop that only reads its variable reads the list where it is (#58): a
+// method looping over `nodes[i].kids`, or over `n.kids` for each `n` in
+// `nodes`, doesn't copy `self` when it's called on a parameter or a `let`.
+// Loops that change their variable, or what their list is in, work as
+// before: the changes reach the list, and copies stay apart.
+
+struct Node {
+    name: String
+    kids: [Int] = []
+}
+
+struct Big {
+    nodes: [Node] = []
+    groups: [String: [Int]] = [:]
+
+    fn firstKid(_ i: Int) -> Int {
+        for k in nodes[i].kids { return k }
+        -1
+    }
+    fn sumNested() -> Int {
+        var s = 0
+        for n in nodes { for k in n.kids { s += k } }
+        s
+    }
+    fn sumGroup(_ name: String) -> Int {
+        var s = 0
+        for k in groups[name] ?? [] { s += k }
+        s
+    }
+    fn bumpAll() {
+        for n in nodes { for k in n.kids { k += 1 } }
+    }
+    fn bumpFirst(_ i: Int) {
+        for k in nodes[i].kids { k += 100 }
+    }
+}
+
+fn firstOf(_ b: Big, _ i: Int) -> Int { b.firstKid(i) }
+fn nestedOf(_ b: Big) -> Int { b.sumNested() }
+fn groupOf(_ b: Big) -> Int { b.sumGroup("a") }
+fn freeLoop(_ b: Big, _ i: Int) -> Int {
+    for k in b.nodes[i].kids { return k }
+    -1
+}
+fn bumped(_ b: Big) -> Big {
+    var c = b
+    c.bumpAll()
+    c.bumpFirst(0)
+    c
+}
+
+struct Leaf {
+    kids: [Int] = []
+}
+
+struct Branch {
+    leaves: [Leaf] = []
+}
+
+fn main() {
+    var b = Big()
+    for i in 0..20000 {
+        b.nodes.append(Node(name: "n{i}", kids: [i, i + 1]))
+    }
+    b.groups["a"] = [1, 2, 3]
+
+    // The same results on a parameter, a `let`, a `var` and in a function.
+    let l = b
+    print(firstOf(b, 5), l.firstKid(5), b.firstKid(5), freeLoop(b, 5))
+    print(nestedOf(b), l.sumNested(), b.sumNested())
+    print(groupOf(b), l.sumGroup("a"), b.sumGroup("b"))
+
+    // Quick: 3,000 calls on 20,000 nodes took seconds when each copied them.
+    var s = 0
+    let start = now()
+    for i in 0..3000 {
+        s += firstOf(b, i)
+        s += l.firstKid(i)
+        s += freeLoop(b, i)
+    }
+    for _ in 0..30 {
+        s += nestedOf(b)
+        s += l.sumNested()
+    }
+    print(s)
+    print(now() - start < 2.0)
+
+    // A method that changes its value works on the copy.
+    let c = bumped(b)
+    print(b.nodes[0].kids, b.nodes[1].kids, c.nodes[0].kids, c.nodes[1].kids)
+    print(firstOf(c, 0), firstOf(b, 0))
+
+    // Changing the loop variable of a loop over a list in another loop's
+    // item reaches the list.
+    var branches = [Branch(leaves: [Leaf(kids: [1, 2])]), Branch(leaves: [Leaf(kids: [3])])]
+    let before = branches
+    for br in branches {
+        for k in br.leaves[0].kids { k += 10 }
+    }
+    print(branches[0].leaves[0].kids, branches[1].leaves[0].kids, before[0].leaves[0].kids)
+
+    // A loop that only reads sees changes the body makes to the list, and
+    // a copy taken before keeps its values.
+    var xs = [Node(name: "x", kids: [1, 2, 3])]
+    let snap = xs
+    var seen: [Int] = []
+    for k in xs[0].kids {
+        xs[0].kids[2] = 99
+        seen.append(k)
+    }
+    for n in xs {
+        for k in n.kids {
+            xs[0].kids[1] = 50
+            seen.append(k)
+        }
+    }
+    print(seen, snap[0].kids, xs[0].kids)
+
+    // Reading a loop while another list grows, in place and through an index.
+    var grow = [Node(name: "g", kids: [1, 2])]
+    var total = 0
+    for k in grow[0].kids {
+        grow.append(Node(name: "more", kids: [k]))
+        total += k
+    }
+    print(total, grow.count, grow[2].kids)
+}
