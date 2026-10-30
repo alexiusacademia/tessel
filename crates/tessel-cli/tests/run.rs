@@ -814,6 +814,51 @@ fn libraries() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A program inside a library's folder (the library's examples) that uses
+/// the library by path imports its own dependencies, while the library's
+/// files still import only the library's (#60).
+#[test]
+fn program_inside_a_library_it_uses() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-inside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write = |path: &str, text: &str| {
+        let p = dir.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    };
+    let tessel = |folder: &str, args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tessel"))
+            .args(args)
+            .current_dir(dir.join(folder))
+            .env("TESSEL_HOME", dir.join("home"))
+            .env_remove("TESSEL_VERSION")
+            .output()
+            .unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        (out.status.success(), text.replace('\\', "/"))
+    };
+    let library = |name: &str| format!("[library]\nname = \"{name}\"\nversion = \"0.1.0\"\ndescription = \"x\"\nlicense = \"MIT\"\n");
+    write("interp/tessel.toml", &library("interp"));
+    write("interp/interp.tsl", "public fn lerp(_ a: Float, _ b: Float, _ t: Float) -> Float {\n    return a + (b - a) * t\n}\n");
+    write("chart/tessel.toml", &library("chart"));
+    write("chart/chart.tsl", "public fn bar(_ x: Float) -> String {\n    return \"bar {x}\"\n}\n");
+    write("interp/examples/tessel.toml", "[dependencies]\ninterp = { path = \"..\" }\nchart = { path = \"../../chart\" }\n");
+    write(
+        "interp/examples/main.tsl",
+        "import interp\nimport chart\n\nfn main() {\n    print(chart.bar(interp.lerp(0.0, 10.0, 0.5)))\n}\n",
+    );
+    let (ok, out) = tessel("interp", &["run", "examples"]);
+    assert!(ok && out == "bar 5.0\n", "{out}");
+    let (ok, out) = tessel("interp/examples", &["run", "."]);
+    assert!(ok && out == "bar 5.0\n", "{out}");
+
+    // The library's own files don't get the program's dependencies.
+    write("interp/more.tsl", "import chart\n\npublic fn label() -> String {\n    return chart.bar(1.0)\n}\n");
+    let (ok, out) = tessel("interp", &["run", "examples"]);
+    assert!(!ok && out.contains("library `interp` imports `chart` without listing it in the [dependencies] of its tessel.toml"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `tessel publish --dry-run` refuses what `tessel publish` would, from a
 /// git repository: uncommitted changes and a tag on another commit (#57).
 /// (Only dry runs: the repository's `origin` is on GitHub.)

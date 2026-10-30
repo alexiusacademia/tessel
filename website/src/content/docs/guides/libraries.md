@@ -88,7 +88,10 @@ recorded when the version was published, so code changed after
 publishing is refused.
 
 A program can only import the libraries in its own `[dependencies]`. To
-use one that a library uses, add it as well.
+use one that a library uses, add it as well. That holds for a program in a
+library's own folder too, like its examples with their own `tessel.toml`
+using it by `path = ".."`: the program's files import what that
+`tessel.toml` lists, and the library's files what the library's lists.
 
 `tessel remove textkit` takes a library out.
 

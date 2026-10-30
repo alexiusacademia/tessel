@@ -550,7 +550,17 @@ pub fn find(program: &Path, from: &Path, name: &str) -> Result<Option<PathBuf>, 
     };
     let Some((dir, _)) = r.packages.get(name) else { return Ok(None) };
     let from = from.canonicalize().unwrap_or(from.to_path_buf());
-    let owner = r.packages.iter().find(|(_, (d, _))| from.starts_with(d));
+    // The file's owner is the innermost folder holding it: of a library, or
+    // of the program itself (whose folder can be inside a library's, like
+    // a library's examples that use it by path, #60).
+    let root = toml.parent().unwrap_or(Path::new("."));
+    let root = root.canonicalize().unwrap_or(root.to_path_buf());
+    let owner = r
+        .packages
+        .iter()
+        .filter(|(_, (d, _))| from.starts_with(d))
+        .max_by_key(|(_, (d, _))| d.components().count())
+        .filter(|(_, (d, _))| !(from.starts_with(&root) && root.starts_with(d) && root != *d));
     let allowed = owner.map(|(_, (_, deps))| deps).unwrap_or(&r.root);
     if !allowed.contains(name) {
         return Err(match owner {
