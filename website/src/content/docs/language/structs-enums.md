@@ -111,7 +111,11 @@ A method can change the struct's fields. There is no special keyword for
 this: Tessel sees that the method assigns to a field, or calls a changing
 method (like `append` on a field, another changing method of the struct such
 as `increment()`, or a changing method of a field such as
-`counter.increment()`), and treats it as a changing method.
+`counter.increment()`), or passes a field to a `bind` parameter, and treats
+it as a changing method. Changing the variable of a loop over a field's list
+counts too, since it changes the item in the list:
+`for n in nodes { n.name = "x" }` changes `nodes`. A loop that only reads
+its variable (`for n in nodes { total += n.size }`) changes nothing.
 
 ```tessel
 struct Counter {

@@ -30,7 +30,7 @@ app Main {
         Row(todo: todo, label: "x")
     }
     for todo in fixed {
-        Row(todo: todo, label: "x") // error: which is a loop variable
+        Row(todo: todo, label: "x") // error: `todo`, an item of `fixed`, which is a constant
     }
     draft = "x" // error: can't change values while they're being built
     print("hi") // error: only views can appear here

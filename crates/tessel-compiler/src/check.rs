@@ -298,6 +298,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         loop_places: HashSet::new(),
         loop_writes: HashSet::new(),
         loop_parent: HashMap::new(),
+        loop_consts: HashMap::new(),
         view_lists: HashSet::new(),
         bind_args: HashSet::new(),
         sql_value: None,
@@ -528,6 +529,9 @@ struct Checker<'a> {
     /// A loop variable over a list in another loop variable (`k` in
     /// `for k in n.kids`): changing it changes that one (`n`) too.
     loop_parent: HashMap<Span, Span>,
+    /// Loop variables (by name span) over a list in a constant or a
+    /// parameter, with why the list can't change: so changing one says so.
+    loop_consts: HashMap<Span, (String, Span, &'static str)>,
     view_lists: HashSet<Span>,
     bind_args: HashSet<ExprId>,
     sql_value: Option<usize>,
@@ -707,6 +711,17 @@ impl Checker<'_> {
                 .help("use a different name");
         }
         self.scopes.last_mut().unwrap().push(Local { name: name.name.clone(), ty, kind, span: name.span });
+    }
+
+    /// A loop over a list in a constant or parameter: see `loop_consts`.
+    fn note_loop_const(&mut self, var: &Ident, iter: &Expr) {
+        if let Err(PlaceErr::Const { what, decl, help }) = self.place(iter) {
+            let what = match iter.kind {
+                ExprKind::Name(_) => format!("an item of {what}"),
+                _ => format!("an item of a list in {what}"),
+            };
+            self.loop_consts.insert(var.span, (what, decl, help));
+        }
     }
 
     /// A loop over a list in another loop variable: see `loop_parent`.
@@ -1289,6 +1304,9 @@ impl Checker<'_> {
                     continue;
                 }
                 let mutates = made.iter().any(|c| match c {
+                    MethodCall::Bind(call, pos) => {
+                        self.call_sig(*is_struct, *id, call).is_some_and(|sig| binds(sig, pos))
+                    }
                     MethodCall::Own(name) => methods.iter().any(|m| m.name == *name && m.mutating),
                     MethodCall::Field(field, name) => {
                         let ty = self.structs[*id].fields.iter().find(|f| f.name == *field).map(|f| &f.ty);
@@ -1296,23 +1314,16 @@ impl Checker<'_> {
                     }
                     // A method of something inside a field: follow the path's
                     // types to the receiver and look the method up there.
-                    MethodCall::Deep(root, steps, name) => {
-                        let start = if root == "self" {
-                            Some(if *is_struct { Ty::Struct(*id) } else { Ty::Enum(*id) })
-                        } else {
-                            self.structs[*id].fields.iter().find(|f| f.name == *root).map(|f| f.ty.clone())
-                        };
-                        match start.and_then(|t| self.path_ty(t, steps)) {
-                            Some(t) => self.ty_method_mutates(&t, name),
-                            // Unknown receiver: any changing method of that name.
-                            None => self
-                                .structs
-                                .iter()
-                                .flat_map(|s| &s.methods)
-                                .chain(self.enums.iter().flat_map(|e| &e.methods))
-                                .any(|m| m.name == *name && m.mutating),
-                        }
-                    }
+                    MethodCall::Deep(root, steps, name) => match self.deep_receiver(*is_struct, *id, root, steps) {
+                        Some(t) => self.ty_method_mutates(&t, name),
+                        // Unknown receiver: any changing method of that name.
+                        None => self
+                            .structs
+                            .iter()
+                            .flat_map(|s| &s.methods)
+                            .chain(self.enums.iter().flat_map(|e| &e.methods))
+                            .any(|m| m.name == *name && m.mutating),
+                    },
                 });
                 if mutates {
                     let methods = if *is_struct { &mut self.structs[*id].methods } else { &mut self.enums[*id].methods };
@@ -1327,6 +1338,52 @@ impl Checker<'_> {
         for i in 0..self.ifaces.len() {
             let names: Vec<String> = self.ifaces[i].methods.iter().map(|(n, _)| n.clone()).collect();
             self.ifaces[i].mutating = names.iter().map(|n| self.iface_method_mutates(i, n)).collect();
+        }
+    }
+
+    /// The type of `root` (`self` or a field) followed by `steps`, in a
+    /// method of struct or enum `id`.
+    fn deep_receiver(&self, is_struct: bool, id: usize, root: &str, steps: &[Step]) -> Option<Ty> {
+        let start = if root == "self" {
+            Some(if is_struct { Ty::Struct(id) } else { Ty::Enum(id) })
+        } else if is_struct {
+            self.structs[id].fields.iter().find(|f| f.name == root).map(|f| f.ty.clone())
+        } else {
+            None
+        };
+        self.path_ty(start?, steps)
+    }
+
+    /// The signature of what a call in a method of struct or enum `id`
+    /// calls, when it can be told before bodies are checked.
+    fn call_sig(&self, is_struct: bool, id: usize, call: &MethodCall) -> Option<&FnSig> {
+        let methods = if is_struct { &self.structs[id].methods } else { &self.enums[id].methods };
+        match call {
+            MethodCall::Own(name) => methods.iter().find(|m| m.name == *name && !m.prop).map(|m| &m.sig).or_else(|| {
+                match self.globals.get(name) {
+                    Some(Global::Fn(f)) => self.fns.get(*f),
+                    _ => None,
+                }
+            }),
+            MethodCall::Field(field, name) => {
+                let t = self.structs[id].fields.iter().find(|f| f.name == *field)?.ty.clone();
+                self.ty_method_sig(&t, name)
+            }
+            MethodCall::Deep(root, steps, name) => {
+                let t = self.deep_receiver(is_struct, id, root, steps)?;
+                self.ty_method_sig(&t, name)
+            }
+            MethodCall::Bind(..) => None,
+        }
+    }
+
+    /// The signature of method `name` of a value of type `t`.
+    fn ty_method_sig(&self, t: &Ty, name: &str) -> Option<&FnSig> {
+        match t {
+            Ty::Struct(s) => self.structs[*s].methods.iter().find(|m| m.name == name && !m.prop).map(|m| &m.sig),
+            Ty::Enum(e) => self.enums[*e].methods.iter().find(|m| m.name == name && !m.prop).map(|m| &m.sig),
+            Ty::Opt(inner) => self.ty_method_sig(inner, name),
+            _ => None,
         }
     }
 
@@ -1889,6 +1946,8 @@ impl Checker<'_> {
                 let (elem, place) = self.iter_type(iter);
                 if place {
                     self.note_loop_parent(var, iter);
+                } else if matches!(self.types.get(&iter.id), Some(Ty::List(_))) {
+                    self.note_loop_const(var, iter);
                 }
                 self.with_scope(|c| {
                     c.declare(var, elem, if place { Kind::LoopPlace } else { Kind::LoopLet });
@@ -2130,6 +2189,11 @@ impl Checker<'_> {
                         decl: l.span,
                         help: "the loop sets it for each round; to change the number, copy it into a `var` first: `var x = i`",
                     }),
+                    Kind::LoopLet if let Some((what, decl, help)) = self.loop_consts.get(&l.span) => Err(PlaceErr::Const {
+                        what: format!("`{n}`, {what}"),
+                        decl: *decl,
+                        help,
+                    }),
                     Kind::LoopLet => Err(PlaceErr::Const {
                         what: format!("`{n}`, which is a loop variable"),
                         decl: l.span,
@@ -2216,6 +2280,9 @@ impl Checker<'_> {
                     Stmt::Expr(e) => c.content_expr(e),
                     Stmt::For { var, iter, body, .. } => {
                         let (elem, place) = c.iter_type(iter);
+                        if !place && matches!(c.types.get(&iter.id), Some(Ty::List(_))) {
+                            c.note_loop_const(var, iter);
+                        }
                         // (A view's loops always work on the list itself.)
                         c.loop_writes.insert(var.span);
                         c.with_scope(|c| {
@@ -5841,17 +5908,31 @@ fn join_and(items: &[String]) -> String {
 }
 
 /// A call inside a method body that may change the method's value.
+#[derive(Clone)]
 enum MethodCall {
-    /// `name(…)` or `self.name(…)`: one of the type's own methods.
+    /// `name(…)` or `self.name(…)`: one of the type's own methods (or, for
+    /// `name(…)`, a top-level function, which only matters for `Bind`).
     Own(String),
     /// `field.name(…)`: a method of one of the struct's fields.
     Field(String, String),
     /// `field.a[i].name(…)`: a method of something inside a field or `self`:
     /// the root name, the steps from it to the receiver, and the method.
     Deep(String, Vec<Step>, String),
+    /// Something the method's value owns is given to this call's argument:
+    /// it's changed if that argument's parameter is `bind`.
+    Bind(Box<MethodCall>, ArgPos),
+}
+
+/// Which parameter an argument is given to.
+#[derive(Clone)]
+enum ArgPos {
+    Label(String),
+    /// The nth argument without a label.
+    Nth(usize),
 }
 
 /// One step of a path like `a.b[i]` below its root name.
+#[derive(Clone)]
 enum Step {
     Member(String),
     Index,
@@ -5872,89 +5953,228 @@ fn path_steps(e: &Expr, out: &mut Vec<Step>) {
     }
 }
 
+/// What a method body can change: `self` and its struct's fields (the
+/// roots), and the loop variables that are items of lists in them (`n` in
+/// `for n in nodes`: changing `n` changes `nodes`), each with its root and
+/// the steps from the root to it.
+#[derive(Clone)]
+struct Owned {
+    roots: HashSet<String>,
+    loops: HashMap<String, (String, Vec<Step>)>,
+}
+
+impl Owned {
+    fn new(roots: &HashSet<String>) -> Owned {
+        let mut roots = roots.clone();
+        roots.insert("self".into());
+        Owned { roots, loops: HashMap::new() }
+    }
+
+    /// Is `e` (a path) inside something the method's value owns?
+    fn owns(&self, e: &Expr) -> bool {
+        root_name(e).is_some_and(|n| self.roots.contains(n) || self.loops.contains_key(n))
+    }
+
+    /// The root and the steps from it to `e` (a path), if the method's value owns it.
+    fn path(&self, e: &Expr) -> Option<(String, Vec<Step>)> {
+        let n = root_name(e)?;
+        let (root, mut steps) = match self.loops.get(n) {
+            Some((root, steps)) => (root.clone(), steps.clone()),
+            None if self.roots.contains(n) => (n.to_string(), Vec::new()),
+            None => return None,
+        };
+        path_steps(e, &mut steps);
+        Some((root, steps))
+    }
+
+    /// `name` is declared here, so it no longer names what it did.
+    fn shadow(&mut self, name: &str) {
+        self.roots.remove(name);
+        self.loops.remove(name);
+    }
+
+    /// Inside `for var in iter`: if `iter` is a list the value owns, `var`
+    /// is its item, written back into it.
+    fn enter_loop(&self, var: &str, iter: &Expr) -> Owned {
+        let mut inner = self.clone();
+        let path = self.path(iter);
+        inner.shadow(var);
+        if let Some((root, mut steps)) = path {
+            steps.push(Step::Index);
+            inner.loops.insert(var.to_string(), (root, steps));
+        }
+        inner
+    }
+}
+
+/// What `walk_owned` finds.
+enum Visit<'a> {
+    Expr(&'a Expr),
+    /// The target of an assignment.
+    Write(&'a Expr),
+}
+
+/// Calls `f` on every expression and assignment target in a method body,
+/// with what the method's value owns there.
+fn walk_owned<'a>(b: &'a Block, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &Owned)) {
+    let mut own = own.clone();
+    for s in &b.stmts {
+        match s {
+            Stmt::Let(d) | Stmt::Var(d) | Stmt::State(d) => {
+                walk_owned_expr(&d.value, &own, f);
+                own.shadow(&d.name.name);
+            }
+            Stmt::Fn(d) => walk_owned(&d.body, &own, f),
+            Stmt::Assign { target, value, .. } => {
+                f(Visit::Write(target), &own);
+                walk_owned_expr(target, &own, f);
+                walk_owned_expr(value, &own, f);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(v) = value {
+                    walk_owned_expr(v, &own, f);
+                }
+            }
+            Stmt::For { var, iter, body, .. } => {
+                walk_owned_expr(iter, &own, f);
+                walk_owned(body, &own.enter_loop(&var.name, iter), f);
+            }
+            Stmt::While { cond, body, .. } => {
+                match cond {
+                    Cond::Expr(c) | Cond::Let(_, _, c) => walk_owned_expr(c, &own, f),
+                }
+                walk_owned(body, &own, f);
+            }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Expr(e) => walk_owned_expr(e, &own, f),
+        }
+    }
+}
+
+fn walk_owned_expr<'a>(e: &'a Expr, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &Owned)) {
+    f(Visit::Expr(e), own);
+    let mut w = |x: &'a Expr| walk_owned_expr(x, own, f);
+    match &e.kind {
+        ExprKind::Str(parts) => {
+            for p in parts {
+                if let StrPart::Expr(x) = p {
+                    w(x);
+                }
+            }
+        }
+        ExprKind::List(items) => items.iter().for_each(w),
+        ExprKind::Dict(pairs) => {
+            for (k, v) in pairs {
+                w(k);
+                w(v);
+            }
+        }
+        ExprKind::Unary(_, x)
+        | ExprKind::Cast { value: x, .. }
+        | ExprKind::Try(x)
+        | ExprKind::Await(x)
+        | ExprKind::Spread(x) => w(x),
+        ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
+            w(l);
+            w(r);
+        }
+        ExprKind::Call { callee, args, trailing } => {
+            w(callee);
+            for a in args {
+                w(&a.value);
+            }
+            if let Some(t) = trailing {
+                w(t);
+            }
+        }
+        ExprKind::Member { object, .. } => w(object),
+        ExprKind::Closure { body, .. } | ExprKind::Block(body) => walk_owned(body, own, f),
+        ExprKind::If { cond, then, otherwise } => {
+            match cond {
+                Cond::Expr(c) | Cond::Let(_, _, c) => walk_owned_expr(c, own, f),
+            }
+            walk_owned(then, own, f);
+            match otherwise {
+                Some(Else::Block(b)) => walk_owned(b, own, f),
+                Some(Else::If(x)) => walk_owned_expr(x, own, f),
+                None => {}
+            }
+        }
+        ExprKind::Match { subject, arms } => {
+            walk_owned_expr(subject, own, f);
+            for a in arms {
+                walk_owned_expr(&a.body, own, f);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The calls in a method body that could change its value, for
 /// propagate_mutation. `roots` are the struct's field names.
 fn method_calls(b: &Block, roots: &HashSet<String>) -> Vec<MethodCall> {
     let mut out = Vec::new();
-    crate::ast::block_exprs(b, &mut |e| {
-        let ExprKind::Call { callee, .. } = &e.kind else { return };
-        match &callee.kind {
-            ExprKind::Name(name) => out.push(MethodCall::Own(name.clone())),
+    walk_owned(b, &Owned::new(roots), &mut |v, own| {
+        let Visit::Expr(e) = v else { return };
+        let ExprKind::Call { callee, args, .. } = &e.kind else { return };
+        let call = match &callee.kind {
+            ExprKind::Name(name) => MethodCall::Own(name.clone()),
             ExprKind::Member { object, name, .. } => match &object.kind {
-                ExprKind::Name(n) if n == "self" => out.push(MethodCall::Own(name.name.clone())),
-                ExprKind::Name(n) if roots.contains(n) => out.push(MethodCall::Field(n.clone(), name.name.clone())),
-                _ if root_name(object).is_some_and(|n| roots.contains(n) || n == "self") => {
-                    let root = root_name(object).unwrap_or_default().to_string();
-                    let mut steps = Vec::new();
-                    path_steps(object, &mut steps);
-                    out.push(MethodCall::Deep(root, steps, name.name.clone()))
-                }
-                _ => {}
+                ExprKind::Name(n) if n == "self" => MethodCall::Own(name.name.clone()),
+                ExprKind::Name(n) if own.roots.contains(n) => MethodCall::Field(n.clone(), name.name.clone()),
+                _ => match own.path(object) {
+                    Some((root, steps)) => MethodCall::Deep(root, steps, name.name.clone()),
+                    None => return,
+                },
             },
-            _ => {}
+            _ => return,
+        };
+        let mut nth = 0;
+        for a in args {
+            let pos = match &a.label {
+                Some(l) => ArgPos::Label(l.name.clone()),
+                None => {
+                    nth += 1;
+                    ArgPos::Nth(nth - 1)
+                }
+            };
+            if own.owns(&a.value) {
+                out.push(MethodCall::Bind(Box::new(call.clone()), pos));
+            }
         }
+        out.push(call);
     });
     out
 }
 
-/// Does a method body change any of `roots` (its struct's fields or `self`)?
+/// Is the parameter an argument at `pos` is given to `bind`?
+fn binds(sig: &FnSig, pos: &ArgPos) -> bool {
+    let p = match pos {
+        ArgPos::Label(l) => sig.params.iter().find(|p| !p.unlabeled && p.label == *l),
+        ArgPos::Nth(n) => sig.params.iter().filter(|p| p.unlabeled).nth(*n),
+    };
+    p.is_some_and(|p| p.bind)
+}
+
+/// Does a method body change any of `roots` (its struct's fields or `self`),
+/// directly or through a loop variable over a list in them? (`bind`
+/// arguments and calls of the type's own changing methods are found by
+/// propagate_mutation.)
 fn block_mutates(b: &Block, roots: &HashSet<String>) -> bool {
-    b.stmts.iter().any(|s| stmt_mutates(s, roots))
-}
-
-fn stmt_mutates(s: &Stmt, roots: &HashSet<String>) -> bool {
-    match s {
-        Stmt::Assign { target, value, .. } => {
-            root_name(target).is_some_and(|n| roots.contains(n)) || expr_mutates(value, roots)
+    let mut found = false;
+    walk_owned(b, &Owned::new(roots), &mut |v, own| match v {
+        Visit::Write(target) => found |= own.owns(target),
+        Visit::Expr(e) => {
+            if let ExprKind::Call { callee, .. } = &e.kind
+                && let ExprKind::Member { object, name, .. } = &callee.kind
+                && MUTATING.contains(&name.name.as_str())
+                && own.owns(object)
+            {
+                found = true;
+            }
         }
-        Stmt::Let(d) | Stmt::Var(d) | Stmt::State(d) => expr_mutates(&d.value, roots),
-        Stmt::Return { value, .. } => value.as_ref().is_some_and(|v| expr_mutates(v, roots)),
-        Stmt::For { iter, body, .. } => expr_mutates(iter, roots) || block_mutates(body, roots),
-        Stmt::While { cond, body, .. } => {
-            let c = match cond {
-                Cond::Expr(c) | Cond::Let(_, _, c) => c,
-            };
-            expr_mutates(c, roots) || block_mutates(body, roots)
-        }
-        Stmt::Break(_) | Stmt::Continue(_) => false,
-        Stmt::Expr(e) => expr_mutates(e, roots),
-        Stmt::Fn(f) => block_mutates(&f.body, roots),
-    }
-}
-
-fn expr_mutates(e: &Expr, roots: &HashSet<String>) -> bool {
-    let m = |x: &Expr| expr_mutates(x, roots);
-    match &e.kind {
-        ExprKind::Call { callee, args, trailing } => {
-            let mutating_call = match &callee.kind {
-                ExprKind::Member { object, name, .. } => {
-                    MUTATING.contains(&name.name.as_str()) && root_name(object).is_some_and(|n| roots.contains(n))
-                }
-                _ => false,
-            };
-            mutating_call || m(callee) || args.iter().any(|a| m(&a.value)) || trailing.as_deref().is_some_and(m)
-        }
-        ExprKind::Str(parts) => parts.iter().any(|p| matches!(p, StrPart::Expr(x) if m(x))),
-        ExprKind::List(items) => items.iter().any(m),
-        ExprKind::Dict(pairs) => pairs.iter().any(|(k, v)| m(k) || m(v)),
-        ExprKind::Unary(_, x) | ExprKind::Cast { value: x, .. } | ExprKind::Try(x) | ExprKind::Spread(x) => m(x),
-        ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => m(l) || m(r),
-        ExprKind::Member { object, .. } => m(object),
-        ExprKind::Closure { body, .. } | ExprKind::Block(body) => block_mutates(body, roots),
-        ExprKind::If { cond, then, otherwise } => {
-            let c = match cond {
-                Cond::Expr(x) | Cond::Let(_, _, x) => m(x),
-            };
-            let o = match otherwise {
-                Some(Else::Block(b)) => block_mutates(b, roots),
-                Some(Else::If(x)) => m(x),
-                None => false,
-            };
-            c || block_mutates(then, roots) || o
-        }
-        ExprKind::Match { subject, arms } => m(subject) || arms.iter().any(|a| m(&a.body)),
-        _ => false,
-    }
+    });
+    found
 }
 
 /// The variable at the root of `a.b[c].d`.
