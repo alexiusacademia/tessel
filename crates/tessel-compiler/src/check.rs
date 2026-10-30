@@ -24,6 +24,11 @@ pub struct Checked {
     /// `for` loop variables (by name span) that are places in the list,
     /// so changing them changes the list.
     pub loop_places: HashSet<Span>,
+    /// Those of `loop_places` that may be changed: by the loop's body, or
+    /// through a loop over a list in them (`for k in n.kids { k += 1 }`
+    /// changes `n` too). The others are only read, so their loops read the
+    /// list where it is rather than make it the loop's own (issue #58).
+    pub loop_writes: HashSet<Span>,
     /// The bodies (by span) of functions returning `View` that list several
     /// views: built like a view's body, all of them shown.
     pub view_lists: HashSet<Span>,
@@ -291,6 +296,8 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         frames: Vec::new(),
         locals: HashMap::new(),
         loop_places: HashSet::new(),
+        loop_writes: HashSet::new(),
+        loop_parent: HashMap::new(),
         view_lists: HashSet::new(),
         bind_args: HashSet::new(),
         sql_value: None,
@@ -349,6 +356,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         fns,
         locals: c.locals,
         loop_places: c.loop_places,
+        loop_writes: c.loop_writes,
         view_lists: c.view_lists,
         bind_args: c.bind_args,
         sql_value: c.sql_value,
@@ -516,6 +524,10 @@ struct Checker<'a> {
     frames: Vec<CallFrame>,
     locals: HashMap<Span, Ty>,
     loop_places: HashSet<Span>,
+    loop_writes: HashSet<Span>,
+    /// A loop variable over a list in another loop variable (`k` in
+    /// `for k in n.kids`): changing it changes that one (`n`) too.
+    loop_parent: HashMap<Span, Span>,
     view_lists: HashSet<Span>,
     bind_args: HashSet<ExprId>,
     sql_value: Option<usize>,
@@ -695,6 +707,29 @@ impl Checker<'_> {
                 .help("use a different name");
         }
         self.scopes.last_mut().unwrap().push(Local { name: name.name.clone(), ty, kind, span: name.span });
+    }
+
+    /// A loop over a list in another loop variable: see `loop_parent`.
+    fn note_loop_parent(&mut self, var: &Ident, iter: &Expr) {
+        if let Some(l) = root_name(iter).and_then(|n| self.lookup(n))
+            && matches!(l.kind, Kind::LoopPlace)
+        {
+            self.loop_parent.insert(var.span, l.span);
+        }
+    }
+
+    /// `e` (a place) is changed: if it's in a loop variable, so is the
+    /// loop variable (and those it is in).
+    fn note_write(&mut self, e: &Expr) {
+        let Some(l) = root_name(e).and_then(|n| self.lookup(n)) else { return };
+        if !matches!(l.kind, Kind::LoopPlace) {
+            return;
+        }
+        let mut at = Some(l.span);
+        while let Some(span) = at {
+            self.loop_writes.insert(span);
+            at = self.loop_parent.get(&span).copied();
+        }
     }
 
     fn with_scope<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
@@ -1852,6 +1887,9 @@ impl Checker<'_> {
             }
             Stmt::For { var, iter, body, .. } => {
                 let (elem, place) = self.iter_type(iter);
+                if place {
+                    self.note_loop_parent(var, iter);
+                }
                 self.with_scope(|c| {
                     c.declare(var, elem, if place { Kind::LoopPlace } else { Kind::LoopLet });
                     c.loops += 1;
@@ -2021,6 +2059,7 @@ impl Checker<'_> {
             ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::Data)) => self.place(object),
             _ => self.place(target),
         };
+        self.note_write(target);
         if !tt.has_error()
             && let Err(err) = place {
                 self.report_place(err, target.span, "change");
@@ -2177,6 +2216,8 @@ impl Checker<'_> {
                     Stmt::Expr(e) => c.content_expr(e),
                     Stmt::For { var, iter, body, .. } => {
                         let (elem, place) = c.iter_type(iter);
+                        // (A view's loops always work on the list itself.)
+                        c.loop_writes.insert(var.span);
                         c.with_scope(|c| {
                             c.declare(var, elem, if place { Kind::LoopPlace } else { Kind::LoopLet });
                             c.content_block(body, false);
@@ -4254,6 +4295,11 @@ impl Checker<'_> {
                         self.set_callee(Callee::Method { owner: recv.clone(), name: n.to_string() });
                         if m.mutating && !optional {
                             self.mutating_receiver(object, n);
+                        } else {
+                            // (`x?.change()` changes the value in `x`; and a
+                            // method may change its value's items in a loop
+                            // without counting as changing.)
+                            self.note_write(object);
                         }
                         self.args(&what, &m.sig.params, args, trailing, span);
                         m.sig.ret.clone()
@@ -4302,6 +4348,8 @@ impl Checker<'_> {
                         self.set_callee(Callee::IfaceMethod { iface: *id, index });
                         if mutating && !optional {
                             self.mutating_receiver(object, n);
+                        } else {
+                            self.note_write(object);
                         }
                         self.args(&what, &sig.params, args, trailing, span);
                         sig.ret
@@ -4381,6 +4429,7 @@ impl Checker<'_> {
 
     /// Methods like `append` change their receiver, so it must be a place.
     fn mutating_receiver(&mut self, object: &Expr, method: &str) {
+        self.note_write(object);
         match self.place(object) {
             Ok(()) => {}
             Err(PlaceErr::Byte) => {
@@ -4846,6 +4895,7 @@ impl Checker<'_> {
         if p.bind && !t.has_error() {
             match self.place(v) {
                 Ok(()) => {
+                    self.note_write(v);
                     self.bind_args.insert(v.id);
                 }
                 Err(PlaceErr::Byte) => {
