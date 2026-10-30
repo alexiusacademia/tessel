@@ -1,0 +1,122 @@
+// A method that changes `self` only through a loop variable (#63) is a
+// changing method: called on a `var`, a field or a `bind` parameter, the
+// changes reach it, and copies made before stay as they were. Methods whose
+// loops only read stay non-changing, so they work on a `let`.
+
+struct Node {
+    name: String = ""
+    size: Int = 0
+    kids: [Int] = []
+
+    fn grow() {
+        size += 1
+    }
+}
+
+fn bump(n: bind Int) {
+    n += 10
+}
+
+struct Tree {
+    nodes: [Node] = []
+    count: Int = 0
+
+    fn rename(to: String) {
+        for n in nodes {
+            n.name = to
+        }
+    }
+
+    fn growAll() {
+        for n in self.nodes {
+            n.grow()
+        }
+    }
+
+    fn bumpAll() {
+        for n in nodes {
+            bump(n: n.size)
+        }
+    }
+
+    fn bumpKids() {
+        for n in nodes {
+            for k in n.kids {
+                k += 1
+            }
+        }
+    }
+
+    fn bumpCount() {
+        bump(n: count)
+    }
+
+    fn total() -> Int {
+        var t = 0
+        for n in nodes {
+            t += n.size
+            for k in n.kids {
+                t += k
+            }
+        }
+        return t
+    }
+
+    fn names() -> String {
+        var s = ""
+        for n in nodes {
+            s += n.name
+        }
+        return s
+    }
+
+    // A loop over a copy changes the copy only.
+    fn doubledSizes() -> [Int] {
+        var out: [Int] = []
+        var sizes = nodes.map({ n in n.size })
+        for s in sizes {
+            s *= 2
+        }
+        for s in sizes {
+            out.append(s)
+        }
+        return out
+    }
+}
+
+struct Forest {
+    trees: [Tree] = []
+
+    fn renameAll() {
+        for t in trees {
+            t.rename(to: "f")
+        }
+    }
+}
+
+fn renameIn(tree: bind Tree) {
+    tree.rename(to: "b")
+}
+
+fn main() {
+    var t = Tree(nodes: [Node(name: "a", kids: [1]), Node(name: "b")])
+    let before = t
+    t.rename(to: "x")
+    t.growAll()
+    t.bumpAll()
+    t.bumpKids()
+    t.bumpCount()
+    print("{t.names()} {t.total()} {t.count}")
+    print("{before.names()} {before.total()} {before.count}")
+
+    // Read-only methods still work on a `let`.
+    let fixed = Tree(nodes: [Node(name: "c", size: 2)])
+    print("{fixed.names()} {fixed.total()} {fixed.doubledSizes()}")
+
+    var f = Forest(trees: [t, fixed])
+    f.renameAll()
+    print("{f.trees[0].names()} {f.trees[1].names()} {t.names()}")
+
+    renameIn(tree: t)
+    print(t.names())
+}

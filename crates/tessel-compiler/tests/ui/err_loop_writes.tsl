@@ -1,0 +1,109 @@
+// A method that changes a loop variable over a list in `self` changes
+// `self` (#63), so it can't be called on a constant or a parameter.
+
+struct Node {
+    name: String = ""
+    size: Int = 0
+    kids: [Int] = []
+
+    fn grow() {
+        size += 1
+    }
+}
+
+fn bump(n: bind Int) {
+    n += 1
+}
+
+struct Tree {
+    nodes: [Node] = []
+    count: Int = 0
+
+    fn rename() {
+        for n in nodes {
+            n.name = "x"
+        }
+    }
+
+    fn growAll() {
+        for n in self.nodes {
+            n.grow()
+        }
+    }
+
+    fn bumpAll() {
+        for n in nodes {
+            bump(n: n.size)
+        }
+    }
+
+    fn bumpKids() {
+        for n in nodes {
+            for k in n.kids {
+                k += 1
+            }
+        }
+    }
+
+    fn addKids() {
+        for n in nodes {
+            n.kids.append(0)
+        }
+    }
+
+    fn bumpCount() {
+        bump(n: count)
+    }
+
+    fn total() -> Int {
+        var t = 0
+        for n in nodes {
+            t += n.size
+        }
+        return t
+    }
+
+    fn sortedNames() -> [String] {
+        var names: [String] = []
+        for n in nodes {
+            names.append(n.name)
+        }
+        return names
+    }
+}
+
+fn useTree(p: Tree) {
+    p.rename() // error: can't call `rename` on `p`, which is a parameter, because `rename` changes it
+    print(p.total())
+}
+
+fn main() {
+    let t = Tree(nodes: [Node(name: "a")])
+    t.rename() // error: can't call `rename` on `t`, which is a constant, because `rename` changes it
+    t.growAll() // error: can't call `growAll` on `t`, which is a constant, because `growAll` changes it
+    t.bumpAll() // error: can't call `bumpAll` on `t`, which is a constant, because `bumpAll` changes it
+    t.bumpKids() // error: can't call `bumpKids` on `t`, which is a constant, because `bumpKids` changes it
+    t.addKids() // error: can't call `addKids` on `t`, which is a constant, because `addKids` changes it
+    t.bumpCount() // error: can't call `bumpCount` on `t`, which is a constant, because `bumpCount` changes it
+    print(t.total())
+    print(t.sortedNames())
+    useTree(p: t)
+
+    let list = [Node()]
+    for n in list {
+        n.size = 2 // error: can't change `n`, an item of `list`, which is a constant
+    }
+    for n in t.nodes {
+        n.grow() // error: can't call `grow` on `n`, an item of a list in `t`, which is a constant
+    }
+    var copy = t
+    for n in copy.nodes.filter({ n in n.size > 0 }) {
+        n.size = 3 // error: can't change `n`, which is a loop variable
+    }
+}
+
+fn fill(nodes: [Node]) {
+    for n in nodes {
+        n.name = "y" // error: can't change `n`, an item of `nodes`, which is a parameter
+    }
+}
