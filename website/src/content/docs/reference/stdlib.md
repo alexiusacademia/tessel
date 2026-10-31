@@ -3300,6 +3300,12 @@ print(byLength.joined(separator: ","))              // ada,Linus,Grace
 - Other lists (like a list of structs) need `by:`: a block that returns
   `true` when its first value should come before its second.
 - The sort is stable: items that are equal keep their order.
+- `by:` should be a strict order: never `true` both ways, and consistent
+  (if `a` comes before `b`, and `b` before `c`, then `a` before `c`). A
+  block that isn't (one that compares within a tolerance, or `Float`s with
+  NaN among them) doesn't stop the program: every item still comes out,
+  but in an order that's only partly sorted. To sort numbers with a
+  tolerance, round them first and sort by that.
 
 ### joined
 

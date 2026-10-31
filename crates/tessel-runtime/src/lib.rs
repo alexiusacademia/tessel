@@ -1291,6 +1291,42 @@ pub unsafe extern "C" fn tsl_list_shuffled(l: *const List) -> *mut List {
     }
 }
 
+/// Sorts `order` stably by `less`, with a merge sort. Unlike the standard
+/// library's sorts, it never panics when `less` isn't a strict order (a
+/// comparison with a tolerance, or NaNs): the items still all come out,
+/// in some order (#67).
+fn merge_sort(order: &mut Vec<usize>, less: &mut impl FnMut(usize, usize) -> bool) {
+    let n = order.len();
+    let mut from = std::mem::take(order);
+    let mut to = vec![0usize; n];
+    let mut width = 1;
+    while width < n {
+        let mut start = 0;
+        while start < n {
+            let (mid, end) = ((start + width).min(n), (start + 2 * width).min(n));
+            let (mut i, mut j, mut k) = (start, mid, start);
+            while i < mid && j < end {
+                // The right one goes first only when it's less: equal items keep their order.
+                if less(from[j], from[i]) {
+                    to[k] = from[j];
+                    j += 1;
+                } else {
+                    to[k] = from[i];
+                    i += 1;
+                }
+                k += 1;
+            }
+            to[k..k + mid - i].copy_from_slice(&from[i..mid]);
+            k += mid - i;
+            to[k..k + end - j].copy_from_slice(&from[j..end]);
+            start = end;
+        }
+        std::mem::swap(&mut from, &mut to);
+        width *= 2;
+    }
+    *order = from;
+}
+
 /// A sorted copy. With `less` (a closure adapter: `less(ctx, a, b)`), uses
 /// it; otherwise uses the element type's natural order. The sort is stable.
 #[unsafe(no_mangle)]
@@ -1304,19 +1340,11 @@ pub unsafe extern "C" fn tsl_list_sorted(
         let (n, size) = ((*out).len as usize, elem_size(out));
         let mut order: Vec<usize> = (0..n).collect();
         let cmp = (*(*l).elem).cmp;
-        order.sort_by(|&x, &y| {
+        merge_sort(&mut order, &mut |x, y| {
             let (a, b) = (elem_at(l, x as i64), elem_at(l, y as i64));
             match less {
-                Some(less) => {
-                    if less(ctx, a, b) {
-                        std::cmp::Ordering::Less
-                    } else if less(ctx, b, a) {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        std::cmp::Ordering::Equal
-                    }
-                }
-                None => cmp.map_or(0, |c| c(a, b)).cmp(&0),
+                Some(less) => less(ctx, a, b),
+                None => cmp.map_or(0, |c| c(a, b)) < 0,
             }
         });
         let mut data = Vec::with_capacity(n * size);
@@ -1802,6 +1830,32 @@ pub extern "C" fn tsl_start(program: extern "C" fn()) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_sort_is_stable_and_never_panics() {
+        // A strict order: sorted, and equal keys keep their order.
+        let keys = [3, 1, 2, 1, 3, 0, 2];
+        let mut order: Vec<usize> = (0..keys.len()).collect();
+        merge_sort(&mut order, &mut |x, y| keys[x] < keys[y]);
+        assert_eq!(order, vec![5, 1, 3, 2, 6, 0, 4]);
+        // Orders that aren't strict: every item still comes out once.
+        for n in [0, 1, 2, 31, 200, 1000] {
+            let mut order: Vec<usize> = (0..n).collect();
+            merge_sort(&mut order, &mut |_, _| true);
+            let mut seen = order.clone();
+            seen.sort();
+            assert_eq!(seen, (0..n).collect::<Vec<_>>());
+            let mut order: Vec<usize> = (0..n).collect();
+            let mut flip = false;
+            merge_sort(&mut order, &mut |x, y| {
+                flip = !flip;
+                flip || (x * 7919) % 13 < (y * 31) % 7
+            });
+            let mut seen = order.clone();
+            seen.sort();
+            assert_eq!(seen, (0..n).collect::<Vec<_>>());
+        }
+    }
 
     unsafe fn text(s: *const Str) -> String {
         unsafe { str_text(s) }.to_string()

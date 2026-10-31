@@ -1,0 +1,27 @@
+// sorted(by:) with a comparison that isn't a strict order (a tolerance,
+// NaN) never stops the program: every item still comes out (#67).
+
+fn main() {
+    var xs: [Float] = []
+    for i in 0..200 {
+        xs.append(Float((i * 7919) % 101) * 0.3)
+    }
+    let s = xs.sorted(by: { a, b in if abs(a - b) > 0.5 { a < b } else { false } || (a != a) })
+    print(s.count)
+    print(s.sorted() == xs.sorted())
+
+    // NaN among the numbers, with and without by:.
+    let nan = 0.0 / 0.0
+    let ys = [3.0, nan, 1.0, 2.0, nan, 0.5]
+    print(ys.sorted().count)
+    print(ys.sorted(by: { a, b in a < b }).count)
+
+    // Always true: still all there.
+    let zs = [5, 4, 3, 2, 1]
+    print(zs.sorted(by: { a, b in true }).sorted())
+
+    // A strict order still sorts, and keeps equal items in order.
+    let words = ["bb", "a", "cc", "d", "ee"]
+    print(words.sorted(by: { a, b in a.count < b.count }))
+    print(xs.sorted() == xs.sorted(by: { a, b in a < b }))
+}
