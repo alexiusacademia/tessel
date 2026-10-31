@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.19.7
+
+*October 31, 2026*
+
+Fixed:
+
+- `sorted(by:)` with a comparison that isn't a strict order (one with a
+  tolerance, or `Float`s with NaN among them) stopped the program with no
+  Tessel error. Now every item still comes out, in a partly sorted order.
+  See [sorted](/reference/stdlib/#sorted).
+
 ## 0.19.6
 
 *October 31, 2026*
