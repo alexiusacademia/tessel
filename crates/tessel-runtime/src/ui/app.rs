@@ -2020,7 +2020,7 @@ impl App {
     /// its key, and whether it's a context menu.
     fn context_target(&self, x: f64, y: f64) -> Option<(u64, bool)> {
         fn visit(n: &Node, x: f64, y: f64) -> Option<(u64, bool)> {
-            if n.mods.hidden || n.layout.style.disabled || ((n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y)) {
+            if n.mods.hidden || n.layout.style.disabled || ((n.clips() || n.children.is_empty()) && !n.layout.rect.contains(x, y)) {
                 return None;
             }
             if let Some(found) = n.visible_children().iter().rev().find_map(|c| visit(c, x, y)) {
@@ -2498,7 +2498,7 @@ impl App {
             }
             let r = n.layout.rect;
             let mut clip = clip;
-            if matches!(n.kind, Kind::Scroll(_)) || n.mods.clipped {
+            if n.clips() {
                 let c = r.inset_by(n.mods.padding);
                 let (x0, y0) = (clip.x.max(c.x), clip.y.max(c.y));
                 let (x1, y1) = ((clip.x + clip.w).min(c.x + c.w), (clip.y + clip.h).min(c.y + c.h));
@@ -2870,8 +2870,8 @@ impl App {
                 }
                 None => (x, y),
             };
-            // Nothing of a clipped view shows outside it.
-            if n.mods.clipped && !n.layout.rect.contains(x, y) {
+            // Nothing of a clipped view (or a Scroll) shows outside it.
+            if n.clips() && !n.layout.rect.contains(x, y) {
                 return None;
             }
             if n.mods.hidden || n.layout.style.disabled || !n.layout.rect.contains(x, y) {
@@ -3186,7 +3186,7 @@ impl App {
     fn cursor_at(&self, x: f64, y: f64) -> Option<winit::window::CursorIcon> {
         use winit::window::CursorIcon;
         fn visit(n: &Node, x: f64, y: f64) -> Option<u8> {
-            if n.mods.hidden || !n.layout.rect.contains(x, y) && n.children.is_empty() {
+            if n.mods.hidden || !n.layout.rect.contains(x, y) && (n.clips() || n.children.is_empty()) {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
@@ -3217,7 +3217,7 @@ impl App {
     /// The innermost view with a `.tooltip` at a point: its key and text.
     fn tooltip_at(&self, x: f64, y: f64) -> Option<(u64, String)> {
         fn visit(n: &Node, x: f64, y: f64) -> Option<(u64, String)> {
-            if n.mods.hidden || (n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
+            if n.mods.hidden || (n.clips() || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y));
@@ -3320,7 +3320,7 @@ impl App {
     /// `.dropTarget`, with `target`) at a point.
     fn drag_view_at(&self, x: f64, y: f64, target: bool) -> Option<u64> {
         fn visit(n: &Node, x: f64, y: f64, target: bool) -> Option<u64> {
-            if n.mods.hidden || n.layout.style.disabled || (n.mods.clipped || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
+            if n.mods.hidden || n.layout.style.disabled || (n.clips() || n.children.is_empty()) && !n.layout.rect.contains(x, y) {
                 return None;
             }
             let inner = n.visible_children().iter().rev().find_map(|c| visit(c, x, y, target));
@@ -5559,7 +5559,7 @@ impl App {
             ));
             // (Layout already puts a scroll view's content where it's scrolled to.)
             let mut clip = clip;
-            if matches!(n.kind, Kind::Scroll(_)) || n.mods.clipped {
+            if n.clips() {
                 clip = Rect { x: x0, y: y0, w: (x1 - x0).max(0.0), h: (y1 - y0).max(0.0) };
             }
             // A tab view shows only its selected page, a ribbon its selected tab.

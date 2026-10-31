@@ -1,0 +1,20 @@
+// A Scroll's content scrolled out of its frame takes no clicks: a click on
+// a view above or below a scrolled list goes to that view, not to a row
+// scrolled under it (#68). Rows shown in the frame still take clicks.
+
+app ScrollClicks(width: 300, height: 400) {
+    state log = ""
+    VStack(spacing: 0) {
+        Text("Top").onTap { print("top") }
+        Text(log)
+        Scroll {
+            LazyVStack(count: 50, rowHeight: 40) { i in
+                Text("Row {i}").frame(maxWidth: .infinity).onTap { print("row {i}") }
+            }
+        }
+        .id("list")
+        .frame(height: 200)
+        Button("Jump") { scrollTo(20, in: "list", align: .top) }
+        Text("Bottom").onTap { print("bottom") }
+    }
+}

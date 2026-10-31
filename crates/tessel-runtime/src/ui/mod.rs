@@ -788,6 +788,13 @@ pub fn scroll_axes(axes: u8) -> (bool, bool) {
 }
 
 impl Node {
+    /// Whether nothing of this view's content shows (or takes the mouse)
+    /// outside its frame: a `.clipped()` view, and a `Scroll`, whose
+    /// content goes on past its frame as it scrolls (#68).
+    pub fn clips(&self) -> bool {
+        self.mods.clipped || matches!(self.kind, Kind::Scroll(_))
+    }
+
     /// For a TabView: the index of the page whose tag equals the selection.
     pub fn selected_tab(&self) -> usize {
         let Kind::TabView { selection, .. } = &self.kind else { return 0 };
