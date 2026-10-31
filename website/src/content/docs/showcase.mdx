@@ -1,6 +1,6 @@
 ---
 title: Built with Tessel
-description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a media player, a math notebook and engineering apps among them.
+description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a media player, a PDF editor, a math notebook and engineering apps among them.
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
@@ -14,6 +14,7 @@ import girder from '../../assets/showcase/girder.jpg';
 import keystone from '../../assets/showcase/keystone.jpg';
 import mathpad from '../../assets/showcase/mathpad.jpg';
 import reel from '../../assets/showcase/reel.jpg';
+import leaf from '../../assets/showcase/leaf.jpg';
 import ide from '../../assets/screens/ide.png';
 
 Tessel is made for real desktop apps, and the best proof is apps people use.
@@ -102,6 +103,29 @@ source.
 
 <LinkButton href="https://reel.syncster.dev/" icon="external">reel.syncster.dev</LinkButton>
 <LinkButton href="https://github.com/alexiusacademia/reel" variant="secondary" icon="github">Source</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={leaf} loading="eager" alt="Leaf showing an annual report with page thumbnails and the Home ribbon" />
+
+## Leaf
+
+A PDF reader and editor with its own PDF engine: read, comment and highlight,
+change text and pictures in place (text reflows inside its block in the
+document's own fonts), fill, design and sign forms, organize, merge and split
+pages, add headers, watermarks and Bates numbers, protect with passwords, and
+redact so the content is really gone. Scanned pages become searchable with
+OCR, two versions can be compared side by side, and batch tools work on whole
+folders.
+
+About 80,000 lines of Tessel and no outside libraries: the parser and the
+encryption, the Flate, CCITT, JBIG2, JPEG and JPEG 2000 decoders, the fonts,
+the page renderer, the writer and the OCR are all Tessel code, tested against
+nearly a thousand real-world PDFs.
+
+<LinkButton href="https://leaf.syncster.dev/" icon="external">leaf.syncster.dev</LinkButton>
 
 </section>
 
