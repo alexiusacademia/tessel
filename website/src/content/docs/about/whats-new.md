@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.19.8
+
+*October 31, 2026*
+
+Fixed:
+
+- After a `Scroll` was scrolled, a click on a view above it could go to a
+  row scrolled out of sight under that point. Content outside a
+  `Scroll`'s frame now takes no clicks, tooltips or hover, as with
+  `.clipped()`.
+
 ## 0.19.7
 
 *October 31, 2026*
