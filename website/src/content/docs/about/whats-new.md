@@ -11,6 +11,29 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.19.6
+
+*October 31, 2026*
+
+Fixed:
+
+- Background jobs running at once no longer slow each other down when
+  they read a list they share (its `count`, or passing it to a function):
+  eight jobs took up to 19 seconds, and now take about as long as one.
+  Ordinary code got a little faster too.
+- A method that changes `self` through a loop variable
+  (`for n in nodes { n.name = "x" }`) counts as changing it, so calling
+  it on a `let` is an error, as for any method that changes its value. So
+  does passing a field to a `bind` parameter. See
+  [Methods that change the value](/language/structs-enums/#methods-that-change-the-value).
+- Changing a list inside loops nested in a loop over it no longer
+  crashes. Every loop goes over its list as it is at each round; see
+  [Adding and removing while looping](/language/control-flow/#adding-and-removing-while-looping).
+- A click on a button in a sheet or a popover no longer gives the
+  keyboard to the view behind it.
+- Reading a `bind` parameter passed down through recursive functions is
+  as fast at any depth (it got slower with each level).
+
 ## 0.19.5
 
 *October 31, 2026*
