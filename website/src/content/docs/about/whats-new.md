@@ -13,7 +13,7 @@ are listed together under its last version. See
 
 ## 0.20.0
 
-*Unreleased*
+*November 6, 2026*
 
 Added:
 
