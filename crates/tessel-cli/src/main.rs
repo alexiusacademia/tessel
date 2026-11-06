@@ -963,6 +963,8 @@ const WINDOWS_LIBS: &[&str] = &[
     "kernel32", "advapi32", "bcrypt", "ntdll", "userenv", "ws2_32", "synchronization", "user32", "gdi32", "ole32",
     "oleaut32", "shell32", "uuid", "dwmapi", "uxtheme", "imm32", "comctl32", "winmm", "dxgi", "d3d12", "d3dcompiler",
     "opengl32", "propsys", "runtimeobject", "secur32", "crypt32", "ncrypt", "dbghelp", "pathcch",
+    // Network interfaces (localAddresses, through if-addrs).
+    "iphlpapi",
     // The Windows renderer: Direct2D, DirectWrite, WIC.
     "d2d1", "dwrite", "windowscodecs",
 ];

@@ -11,9 +11,11 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.20.0
+## 0.20.1
 
 *November 6, 2026*
+
+(0.20.0 was tagged but never published: its Windows build didn't link.)
 
 Added:
 
