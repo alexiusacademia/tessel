@@ -1,0 +1,15 @@
+resize new: true 1000
+negative size: false
+write at 10: true size 1000
+read back: abc [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+write past end: true size 2003
+gap: 1000 bytes, all zero: true
+end: xyz
+64 pieces: true size 1048576 filled true
+shrink: true 5 ppppp
+replace: true new
+rename: true false new
+write old name: true [0, 81]
+background: true nBG
+delete: true true false
+into a folder that isn't there: false

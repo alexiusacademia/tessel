@@ -531,6 +531,7 @@ in pieces without freezing the window.
 
 ```text
 writeData(path: String, data: Data) -> Bool
+writeData(path: String, data: Data, at: Int) -> Bool
 ```
 
 Writes bytes to a file, replacing the file if it exists. Returns whether it
@@ -539,6 +540,44 @@ worked.
 ```tessel
 let bytes = Data(bytes: [137, 80, 78, 71])
 print(writeData(path: "header.bin", data: bytes))   // true
+```
+
+With `at`, the bytes go into the file at that offset (the first byte is 0)
+and the rest of the file stays as it was: for writing a big file in pieces,
+in any order, as a download in parts does. A file that isn't there is
+created; one that ends before `at` grows to reach it, and the gap reads as
+zeros (and takes no disk space on macOS, Windows and Linux, whose file
+systems keep such files sparse).
+
+```tessel
+let path = joinPath(tempFolder(), "parts.bin")
+resizeFile(path, size: 1048576)                       // room for 64 pieces of 16 KB
+writeData(path: path, data: piece, at: 3 * 16384)     // the fourth piece
+writeData(path: path, data: piece, at: 0)             // the first
+print(readData(path, from: 3 * 16384, count: 16384)?.count ?? 0)  // 16384
+```
+
+Files written this way are kept open by the program (the last 32 of them),
+so thousands of small writes a second cost little; they're closed when the
+file is replaced, renamed or deleted through Tessel's own functions, and
+when the program ends. `writeData(at:)` works in [`background`](#background)
+work too.
+
+### resizeFile
+
+```text
+resizeFile(_ path: String, size: Int) -> Bool
+```
+
+Makes a file exactly `size` bytes long, creating it if it isn't there:
+cut at the end if it was longer, grown with zeros if shorter (sparse where
+the file system allows, so a 4 GB file costs no disk until it's written).
+Returns whether it worked. Use it to set aside a file's full size before
+filling it with [`writeData(at:)`](#writedata).
+
+```tessel
+print(resizeFile("movie.part", size: 734003200))   // true
+print(fileSize("movie.part") ?? 0)                  // 734003200
 ```
 
 ### appendData
@@ -2314,7 +2353,7 @@ background work. They take a block (a *callback*) that Tessel runs when the
 work is done. Callbacks run on the UI thread in an app, so they can change
 `state` directly. They work in a program with only `fn main()` too: after
 `main` returns, the program keeps running until no timers, requests,
-WebSockets or background work are left, then exits. See
+WebSockets, sockets or background work are left, then exits. See
 [Files, commands and timers](/ui/async/#callbacks-in-a-program-without-an-app).
 
 ## Networking
@@ -2619,6 +2658,349 @@ closeWebSocket(_ id: Int)
 
 Closes a WebSocket. Its `onClose` block still runs, with `"closed"`. Closing
 one that is already closed does nothing.
+
+## Sockets
+
+Below HTTP and WebSockets are sockets: TCP connections and listeners, UDP
+packets, and an HTTP server of your own. They're for talking to things
+that aren't web servers (other copies of your program, devices on the
+local network, peer-to-peer protocols), and for being talked to. Ids are
+`Int`s; starting something returns -1 when it can't (a port in use, an
+address this computer doesn't have). Blocks run on the UI thread, like
+every other callback's, and a program with only `fn main` keeps running
+while a socket is open. See [Sockets and servers](/guides/networking/) for
+a guide, and [23. Talking over the network](/learn/23-networking/) in the
+course.
+
+One thread serves every socket (with kqueue, IOCP or epoll), so thousands
+of connections at once are fine: the limit is the system's, not Tessel's.
+
+### connectTCP
+
+```text
+connectTCP(host: String, port: Int, timeout: Float = 10, onConnect: fn(),
+           onData: fn(Data), onClose: fn(String)) -> Int
+```
+
+Opens a TCP connection to `host` (a name or an IP address, IPv4 or IPv6)
+and returns its id at once; the connection is made in the background. A
+name is looked up in the background too, and each of its addresses tried
+in turn.
+
+- `onConnect` runs once the connection is made. Bytes given to
+  [`sendTCP`](#sendtcp) before then are sent then.
+- `onData` runs with each piece of what arrives, as [`Data`](#data). TCP
+  is a stream of bytes, not of messages: a message may arrive in several
+  pieces, and several messages in one. Keep what you haven't finished
+  reading until the rest comes.
+- `onClose` runs exactly once, when the connection ends: with `"closed"`
+  if you or the other end closed it, or why it failed: `"connection
+  refused"`, `"timed out"` (no answer within `timeout` seconds),
+  `"connection reset"`, `"can't resolve host"`, `"host unreachable"`…
+- -1 if `port` isn't a port number (0 to 65535).
+
+```tessel
+fn main() {
+    var socket = -1
+    socket = connectTCP(host: "time.example.com", port: 13, onConnect: {
+        print("connected to {tcpPeer(socket)}")
+    }, onData: { data in
+        print(data.text ?? "")
+        closeTCP(socket)
+    }) { reason in
+        print("ended: {reason}")
+    }
+}
+```
+
+### listenTCP
+
+```text
+listenTCP(port: Int, host: String = "0.0.0.0", onConnection: fn(Int, String),
+          onData: fn(Int, Data), onClose: fn(Int, String)) -> Int
+```
+
+Listens for TCP connections on `port` and returns the listener's id, or
+-1 if it can't listen (the port is in use, or below 1024 without
+privileges). `port: 0` takes a free port: [`tcpPort`](#tcpport) says which.
+`host` is which of this computer's addresses to listen on: `"0.0.0.0"`
+(the default) for all of them, `"127.0.0.1"` for connections from this
+computer only, `"::"` for all with IPv6.
+
+- `onConnection` runs for each connection accepted, with its id and the
+  other end's `"ip:port"`. The connection's id is used as a client's: send
+  with [`sendTCP`](#sendtcp), close with [`closeTCP`](#closetcp).
+- `onData` runs with the connection's id and each piece that arrives.
+- `onClose` runs once for each connection when it ends, with the reason
+  (`"closed"`, or an error).
+
+Closing the listener with `closeTCP` closes its connections too (each
+gets `onClose` with `"closed"`, then the listener is gone).
+
+```tessel
+fn main() {
+    var server = -1
+    server = listenTCP(port: 9000, onConnection: { id, peer in
+        print("{peer} connected")
+        sendTCP(id, data: Data(text: "Welcome!\n"))
+    }, onData: { id, data in
+        sendTCP(id, data: data)        // an echo server
+    }) { id, reason in
+        print("{id} left: {reason}")
+    }
+    print(if server == -1 { "can't listen" } else { "listening on {tcpPort(server)}" })
+}
+```
+
+:::note
+Listening on `"0.0.0.0"` makes macOS ask whether to allow incoming
+connections for an app that isn't signed, and Windows show its firewall
+dialog the first time. Listening on `"127.0.0.1"` asks nothing.
+:::
+
+### sendTCP
+
+```text
+sendTCP(_ id: Int, data: Data) -> Bool
+```
+
+Queues bytes to send on a connection (yours, or one a listener accepted)
+and returns at once: `false` if the connection isn't open (closed, or not
+one). What's queued is sent as fast as the other end takes it; see
+[`tcpQueued`](#tcpqueued) for how much is still waiting.
+
+### tcpQueued
+
+```text
+tcpQueued(_ id: Int) -> Int
+```
+
+How many bytes given to `sendTCP` haven't been sent yet. A sender that's
+faster than the receiver would queue without limit, so when sending a
+lot, look at it and wait before queuing more:
+
+```tessel
+fn pump() {
+    while sent < total && tcpQueued(socket) < 4 * 1048576 {
+        sendTCP(socket, data: nextPiece())
+        sent += piece.count
+    }
+    if sent < total {
+        after(seconds: 0.01) { pump() }
+    }
+}
+```
+
+### pauseTCP
+
+```text
+pauseTCP(_ id: Int, paused: Bool)
+```
+
+Stops reading from a connection (`onData` stops running, and the other end
+stops being able to send once the system's buffers are full), or starts
+again. For rate limits, and for not reading faster than you can handle.
+
+### closeTCP
+
+```text
+closeTCP(_ id: Int)
+```
+
+Closes a connection or a listener. A connection first sends what's queued
+(for up to five seconds), then ends, and its `onClose` runs with
+`"closed"`; nothing more arrives from it. A listener's connections are
+closed too. Closing something closed already does nothing.
+
+### tcpPort
+
+```text
+tcpPort(_ id: Int) -> Int
+```
+
+The port a listener (or a UDP socket) is bound to: what `listenTCP(port:
+0)` got. For a connection, its own port. -1 for an id that isn't a
+socket's.
+
+### tcpPeer
+
+```text
+tcpPeer(_ id: Int) -> String
+```
+
+The other end of a connection, `"ip:port"` (`"[::1]:9000"` for IPv6);
+`""` until it's connected.
+
+### openUDP
+
+```text
+openUDP(port: Int = 0, host: String = "0.0.0.0", onPacket: fn(Data, String, Int)) -> Int
+```
+
+Opens a UDP socket on `port` (0 for a free one; [`udpPort`](#udpport) says
+which) and returns its id, or -1 if it can't. `onPacket` runs for each
+packet that arrives, with its bytes, the sender's address and port. Packets
+are up to 64 KB, and UDP promises nothing: a packet may be lost, or arrive
+twice or out of order.
+
+The socket can send to broadcast addresses (`"255.255.255.255"`), and
+shares its port with other programs that share theirs, as programs that
+listen to the same multicast group do.
+
+```tessel
+fn main() {
+    var socket = -1
+    socket = openUDP(port: 5000) { data, host, port in
+        print("{host}:{port} says {data.text ?? "?"}")
+        sendUDP(socket, data: Data(text: "got it"), host: host, port: port)
+    }
+}
+```
+
+### sendUDP
+
+```text
+sendUDP(_ id: Int, data: Data, host: String, port: Int) -> Bool
+```
+
+Sends a packet to `host:port`. Returns `false` if the socket isn't open,
+`port` isn't a port number, or the system wouldn't take the packet (its
+buffer is full, or the address is of the wrong kind: an IPv4 socket can't
+send to an IPv6 address). A host name is looked up in the background and
+the packet sent then (and `true` means only that it will be tried).
+
+### joinMulticast
+
+```text
+joinMulticast(_ id: Int, group: String) -> Bool
+```
+
+Makes the socket receive packets sent to a multicast group (an address from
+`224.0.0.0` to `239.255.255.255`, or `ff00::/8` for IPv6): local peer
+discovery's `239.192.152.143`, SSDP's `239.255.255.250`, or one of your
+own. Returns whether it worked (it doesn't without a network). To be heard
+by the group, [`sendUDP`](#sendudp) to its address and port.
+
+### udpPort
+
+```text
+udpPort(_ id: Int) -> Int
+```
+
+The port a UDP socket is bound to (the same as [`tcpPort`](#tcpport)).
+
+### closeUDP
+
+```text
+closeUDP(_ id: Int)
+```
+
+Closes a UDP socket. Closing one closed already does nothing.
+
+### serveHTTP
+
+```text
+serveHTTP(port: Int, host: String = "127.0.0.1", onRequest: fn(ServerRequest)) -> Int
+```
+
+Starts an HTTP server on `port` and returns its id, or -1 if it can't
+listen. `onRequest` runs for each request, with a
+[`ServerRequest`](#serverrequest); answer it with
+[`respondHTTP`](#respondhttp), right away or later. The server speaks
+HTTP/1.1 (keep-alive connections, bodies with a length or in chunks,
+`Expect: 100-continue`), not HTTPS. By default only this computer can reach
+it; `host: "0.0.0.0"` opens it to the network.
+
+```tessel
+fn main() {
+    var hits = 0
+    let server = serveHTTP(port: 8080) { r in
+        hits += 1
+        if r.path == "/" {
+            respondHTTP(r.id, headers: ["Content-Type": "text/html"], body: Data(text: "<h1>Hit {hits}</h1>"))
+        } else {
+            respondHTTP(r.id, status: 404, body: Data(text: "Nothing at {r.path}"))
+        }
+    }
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+- Requests whose line and headers take more than 64 KB, or whose body is
+  over 64 MB, are refused (431 or 413) and their connection closed.
+- Stop it with [`stopHTTP`](#stophttp); [`tcpPort`](#tcpport) gives the
+  port it got.
+
+### ServerRequest
+
+```text
+struct ServerRequest {
+    id: Int                     // for respondHTTP
+    method: String              // "GET", "POST", …
+    path: String                // "/items/3"
+    query: String               // what followed `?`, as sent: "a=1&b=two"
+    headers: [String: String]   // names in lowercase
+    body: Data
+    remote: String              // the client's "ip:port"
+}
+```
+
+What [`serveHTTP`](#servehttp)'s block gets. `query` is raw: split it on
+`&` and `=`, and [`urlDecoded`](#urlencoded-and-urldecoded) its parts.
+
+### respondHTTP
+
+```text
+respondHTTP(_ request: Int, status: Int = 200, headers: [String: String] = [:],
+            body: Data = Data()) -> Bool
+```
+
+Answers a request by its `id`. `Content-Length` is added unless `headers`
+has one; a `HEAD` request's answer carries no body. Returns `false` if the
+request was answered already, or its connection is gone. The answer may
+come from a later block (after a request of your own, a timer, or
+`background` work): the client waits.
+
+```tessel
+respondHTTP(r.id, status: 201, headers: ["Content-Type": "application/json"], body: Data(text: toJson(item)))
+respondHTTP(r.id, status: 204)
+```
+
+### stopHTTP
+
+```text
+stopHTTP(_ id: Int)
+```
+
+Stops a server: its connections are closed, and requests not yet answered
+are dropped (`respondHTTP` returns `false` for them).
+
+### resolveHost
+
+```text
+resolveHost(_ name: String, done: fn([String]))
+```
+
+Looks a host name up in the background and calls `done` with its
+addresses (IPv4 and IPv6, in the system's order), or none if the name
+isn't known. `connectTCP` and `sendUDP` look names up themselves; this is
+for showing or choosing an address.
+
+```tessel
+resolveHost("example.com") { addresses in
+    print(addresses)      // ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
+}
+```
+
+### localAddresses
+
+```text
+localAddresses() -> [String]
+```
+
+This computer's IP addresses on its networks, IPv4 first, without the
+loopback (`127.0.0.1`, `::1`) and link-local ones: what to tell others to
+connect to. Empty without a network.
 
 ## Timers
 

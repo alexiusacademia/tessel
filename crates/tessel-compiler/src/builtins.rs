@@ -183,6 +183,25 @@ pub fn structs() -> Vec<StructDef> {
             fields: vec![field("id", Ty::Int)],
             methods: Vec::new(),
         },
+        // A request an HTTP server got (`serveHTTP`), to answer with
+        // `respondHTTP` (the runtime's `RequestC`).
+        StructDef {
+            name: "ServerRequest".into(),
+            span: Span::default(),
+            fields: vec![
+                field("id", Ty::Int),
+                field("method", Ty::Str),
+                field("path", Ty::Str),
+                // What follows `?` in the URL, as sent ("a=1&b=2").
+                field("query", Ty::Str),
+                // Names in lowercase.
+                field("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))),
+                field("body", Ty::Data),
+                // The client's "ip:port".
+                field("remote", Ty::Str),
+            ],
+            methods: Vec::new(),
+        },
     ]
 }
 
@@ -202,6 +221,8 @@ pub const JOB: Ty = Ty::Struct(5);
 pub const SCENE: Ty = Ty::Struct(6);
 /// The `Sound` struct (see `structs`).
 pub const SOUND: Ty = Ty::Struct(7);
+/// The `ServerRequest` struct (see `structs`).
+pub const SERVER_REQUEST: Ty = Ty::Struct(8);
 
 /// The built-in enums, by their place in `enums`.
 pub const COLOR: Ty = Ty::Enum(0);
@@ -736,6 +757,70 @@ impl Builtins {
                 params: vec![P::unlabeled("path", Ty::Str), P::new("from", Ty::Int).default(), P::new("count", Ty::Int).default()],
                 ret: Ty::opt(Ty::Data),
             },
+            "resizeFile" => FnSig { params: vec![P::unlabeled("path", Ty::Str), P::new("size", Ty::Int)], ret: Ty::Bool },
+            // Sockets (see the runtime's ui/app/sockets.rs). The blocks come
+            // last, so the last one can follow the call.
+            "connectTCP" => FnSig {
+                params: vec![
+                    P::new("host", Ty::Str),
+                    P::new("port", Ty::Int),
+                    P::new("timeout", Ty::Float).default(),
+                    P::new("onConnect", Ty::func(vec![], Ty::Void)),
+                    P::new("onData", Ty::func(vec![Ty::Data], Ty::Void)),
+                    P::new("onClose", Ty::func(vec![Ty::Str], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "listenTCP" => FnSig {
+                params: vec![
+                    P::new("port", Ty::Int),
+                    P::new("host", Ty::Str).default(),
+                    P::new("onConnection", Ty::func(vec![Ty::Int, Ty::Str], Ty::Void)),
+                    P::new("onData", Ty::func(vec![Ty::Int, Ty::Data], Ty::Void)),
+                    P::new("onClose", Ty::func(vec![Ty::Int, Ty::Str], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "sendTCP" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("data", Ty::Data)], ret: Ty::Bool },
+            "tcpQueued" | "tcpPort" | "udpPort" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Int },
+            "tcpPeer" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Str },
+            "pauseTCP" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("paused", Ty::Bool)], ret: Ty::Void },
+            "closeTCP" | "closeUDP" | "stopHTTP" => FnSig { params: vec![P::unlabeled("id", Ty::Int)], ret: Ty::Void },
+            "openUDP" => FnSig {
+                params: vec![
+                    P::new("port", Ty::Int).default(),
+                    P::new("host", Ty::Str).default(),
+                    P::new("onPacket", Ty::func(vec![Ty::Data, Ty::Str, Ty::Int], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "sendUDP" => FnSig {
+                params: vec![P::unlabeled("id", Ty::Int), P::new("data", Ty::Data), P::new("host", Ty::Str), P::new("port", Ty::Int)],
+                ret: Ty::Bool,
+            },
+            "joinMulticast" => FnSig { params: vec![P::unlabeled("id", Ty::Int), P::new("group", Ty::Str)], ret: Ty::Bool },
+            "serveHTTP" => FnSig {
+                params: vec![
+                    P::new("port", Ty::Int),
+                    P::new("host", Ty::Str).default(),
+                    P::new("onRequest", Ty::func(vec![SERVER_REQUEST], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "respondHTTP" => FnSig {
+                params: vec![
+                    P::unlabeled("request", Ty::Int),
+                    P::new("status", Ty::Int).default(),
+                    P::new("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))).default(),
+                    P::new("body", Ty::Data).default(),
+                ],
+                ret: Ty::Bool,
+            },
+            "resolveHost" => FnSig {
+                params: vec![P::unlabeled("name", Ty::Str), P::new("done", Ty::func(vec![Ty::list(Ty::Str)], Ty::Void))],
+                ret: Ty::Void,
+            },
+            "localAddresses" => FnSig { params: vec![], ret: Ty::list(Ty::Str) },
             "writeImage" => FnSig {
                 params: vec![
                     P::new("path", Ty::Str),
@@ -833,7 +918,10 @@ impl Builtins {
             "undoTextEdit" | "redoTextEdit" => FnSig { params: vec![], ret: Ty::Void },
             "quit" | "closeWindow" | "dismiss" => FnSig { params: vec![], ret: Ty::Void },
             "showNotice" => FnSig { params: vec![P::unlabeled("text", Ty::Str), P::new("seconds", Ty::Float).default()], ret: Ty::Void },
-            "writeData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
+            "writeData" => FnSig {
+                params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data), P::new("at", Ty::Int).default()],
+                ret: Ty::Bool,
+            },
             "appendData" => FnSig { params: vec![P::new("path", Ty::Str), P::new("data", Ty::Data)], ret: Ty::Bool },
             "openFile" => FnSig {
                 params: vec![P::new("title", Ty::Str).default(), P::new("types", Ty::list(Ty::Str)).default()],
@@ -867,6 +955,9 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "__dbNoColumn", "setWindowTitle", "setFullScreen", "isFullScreen", "showWindow", "showNotification", "__playSound", "renderImage", "writePDF",
     "undoTextEdit", "redoTextEdit",
     "quit", "closeWindow", "dismiss", "showNotice",
+    "resizeFile", "connectTCP", "listenTCP", "sendTCP", "tcpQueued", "pauseTCP", "closeTCP", "tcpPort", "tcpPeer",
+    "openUDP", "sendUDP", "joinMulticast", "udpPort", "closeUDP", "serveHTTP", "respondHTTP", "stopHTTP",
+    "resolveHost", "localAddresses",
     "textOutline", "__textGlyphs", "__fontMetrics", "__fontStyleNames", "__fontStyleKinds",
     "__permission", "startLocation", "stopLocation", "__location", "__satellites", "startCompass", "stopCompass", "__heading",
 ];
@@ -1321,6 +1412,8 @@ pub enum Dflt {
     Bool(bool),
     Str(&'static str),
     EmptyList,
+    /// An empty `[String: String]`.
+    EmptyDict,
     /// A case (without values) of the parameter's enum, by its place.
     Case(i32),
 }
@@ -1459,8 +1552,20 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "closeWindow" => rt("tsl_close_window"),
         "dismiss" => rt("tsl_ui_dismiss"),
         "showNotice" => rt_d("tsl_ui_notice", &[Dflt::Req, Dflt::Float(2.5)]),
-        "writeData" => rt("tsl_write_data"),
+        "writeData" => rt_d("tsl_write_data", &[Dflt::Req, Dflt::Req, Dflt::Int(-1)]),
         "appendData" => rt("tsl_append_data"),
+        "resizeFile" => rt("tsl_resize_file"),
+        "sendTCP" => rt("tsl_send_tcp"),
+        "tcpQueued" => rt("tsl_tcp_queued"),
+        "pauseTCP" => rt("tsl_pause_tcp"),
+        "closeTCP" | "closeUDP" | "stopHTTP" => rt("tsl_close_tcp"),
+        "tcpPort" | "udpPort" => rt("tsl_tcp_port"),
+        "tcpPeer" => rt("tsl_tcp_peer"),
+        "sendUDP" => rt("tsl_send_udp"),
+        "joinMulticast" => rt("tsl_join_multicast"),
+        // (An empty body is an empty string: `Data` and `String` share a layout.)
+        "respondHTTP" => rt_d("tsl_respond_http", &[Dflt::Req, Dflt::Int(200), Dflt::EmptyDict, Dflt::Str("")]),
+        "localAddresses" => rt("tsl_local_addresses"),
         _ => return None,
     })
 }

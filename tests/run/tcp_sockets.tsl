@@ -1,0 +1,201 @@
+// TCP over this computer: an echo server and its clients, closing from
+// either side, a refused connection and one that can't be made, IPv6, many
+// connections at once, a big transfer with backpressure, and pausing.
+// (Every step runs after the one before, so the output is in one order.)
+
+fn main() {
+    print("bad port: {connectTCP(host: "127.0.0.1", port: 70000, onConnect: {}, onData: { d in }) { r in }}")
+    print("bad host: {listenTCP(port: 0, host: "nowhere", onConnection: { id, peer in }, onData: { id, d in }) { id, r in }}")
+    echo()
+}
+
+// A client sends a line; the server echoes it; the client hangs up.
+fn echo() {
+    var server = -1
+    server = listenTCP(port: 0, host: "127.0.0.1", onConnection: { id, peer in
+        print("server: connection from {peer.hasPrefix("127.0.0.1:")}, port {tcpPort(id) == tcpPort(server)}")
+    }, onData: { id, data in
+        print("server got: {data.text ?? "?"}")
+        sendTCP(id, data: data)
+    }) { id, reason in
+        print("server: client left: {reason}")
+        closeTCP(server)
+        serverCloses()
+    }
+    let port = tcpPort(server)
+    print("listening: {server > 0} {port > 0} {tcpPeer(server) == ""}")
+    var client = -1
+    var connected = ""
+    client = connectTCP(host: "localhost", port: port, onConnect: {
+        // (Said later: the server's block and this one run in either order.)
+        connected = "to {tcpPeer(client) == "127.0.0.1:{port}"}, own port {tcpPort(client) > 0}"
+        connected += ", sent: {sendTCP(client, data: Data(text: "hello"))}"
+    }, onData: { data in
+        print("client: connected {connected}")
+        print("client got: {data.text ?? "?"}")
+        closeTCP(client)
+        print("send after close: {sendTCP(client, data: Data(text: "x"))}")
+    }) { reason in
+        print("client closed: {reason}")
+    }
+    print("peer before connecting: \"{tcpPeer(client)}\"")
+}
+
+// The server closes the connection; then the port is free, and a
+// connection to it is refused.
+fn serverCloses() {
+    var server = -1
+    var port = 0
+    server = listenTCP(port: 0, host: "127.0.0.1", onConnection: { id, peer in
+        closeTCP(id)
+    }, onData: { id, data in
+    }) { id, reason in
+        print("server: closed {reason}")
+        closeTCP(server)
+    }
+    port = tcpPort(server)
+    connectTCP(host: "127.0.0.1", port: port, onConnect: {
+    }, onData: { data in }) { reason in
+        print("client: server hung up: {reason}")
+        after(seconds: 0.1) {
+            connectTCP(host: "127.0.0.1", port: port, onConnect: {
+                print("no")
+            }, onData: { data in }) { reason in
+                print("refused: {reason}")
+                unreachable()
+            }
+        }
+    }
+}
+
+// An address nothing answers from: the connection fails within the timeout
+// (how depends on the network: "timed out" with a network, unreachable without).
+fn unreachable() {
+    let started = now()
+    connectTCP(host: "10.255.255.1", port: 9, timeout: 0.5, onConnect: {
+        print("no")
+    }, onData: { data in }) { reason in
+        print("unreachable: {reason != "closed"} {now() - started < 5.0}")
+        ipv6()
+    }
+}
+
+fn ipv6() {
+    var server = -1
+    server = listenTCP(port: 0, host: "::1", onConnection: { id, peer in
+        print("ipv6 peer: {peer.hasPrefix("[::1]:")}")
+    }, onData: { id, data in
+        sendTCP(id, data: Data(text: "{data.text ?? ""} back"))
+    }) { id, reason in
+        closeTCP(server)
+        many()
+    }
+    var client = -1
+    client = connectTCP(host: "::1", port: tcpPort(server), onConnect: {
+        sendTCP(client, data: Data(text: "v6"))
+    }, onData: { data in
+        print("ipv6 got: {data.text ?? "?"}")
+        closeTCP(client)
+    }) { reason in }
+}
+
+// 200 clients at once, each echoed its own number.
+fn many() {
+    let n = 200
+    var server = -1
+    var opened = 0
+    var closed = 0
+    server = listenTCP(port: 0, host: "127.0.0.1", onConnection: { id, peer in
+        opened += 1
+    }, onData: { id, data in
+        sendTCP(id, data: data)
+    }) { id, reason in
+        closed += 1
+        if closed == n {
+            print("many: {opened} connected, {closed} closed")
+            closeTCP(server)
+            big()
+        }
+    }
+    var echoed = 0
+    var right = true
+    for i in 0..n {
+        var client = -1
+        client = connectTCP(host: "127.0.0.1", port: tcpPort(server), onConnect: {
+            sendTCP(client, data: Data(text: "{i}"))
+        }, onData: { data in
+            if data.text != "{i}" {
+                right = false
+            }
+            echoed += 1
+            if echoed == n {
+                print("many: {echoed} echoed, all right: {right}")
+            }
+            closeTCP(client)
+        }) { reason in
+            if reason != "closed" {
+                print("client {i}: {reason}")
+            }
+        }
+    }
+}
+
+// 8 MB from a client, queued all at once: `tcpQueued` shows what's left,
+// and the server gets every byte.
+fn big() {
+    let piece = Data(text: "x".repeated(65536))
+    let pieces = 128
+    var server = -1
+    var got = 0
+    var reads = 0
+    server = listenTCP(port: 0, host: "127.0.0.1", onConnection: { id, peer in
+    }, onData: { id, data in
+        got += data.count
+        reads += 1
+        if got == pieces * piece.count {
+            print("big: got {got} bytes in {reads > 1} reads, one Data each: {data.count <= 65536}")
+            closeTCP(id)
+        }
+    }) { id, reason in
+        closeTCP(server)
+        paused()
+    }
+    var client = -1
+    client = connectTCP(host: "127.0.0.1", port: tcpPort(server), onConnect: {
+        for i in 0..pieces {
+            sendTCP(client, data: piece)
+        }
+        let queued = tcpQueued(client)
+        print("big: queued after sending: {queued > 0 && queued <= pieces * piece.count}")
+    }, onData: { data in }) { reason in
+        print("big: client closed: {reason}, queued {tcpQueued(client)}")
+    }
+}
+
+// The server pauses a connection: nothing arrives until it resumes.
+fn paused() {
+    var server = -1
+    var got = 0
+    var resumed = false
+    server = listenTCP(port: 0, host: "127.0.0.1", onConnection: { id, peer in
+        pauseTCP(id, paused: true)
+        after(seconds: 0.4) {
+            print("paused: got {got} bytes while paused")
+            resumed = true
+            pauseTCP(id, paused: false)
+        }
+    }, onData: { id, data in
+        got += data.count
+        if got == 100000 {
+            print("paused: got all {got} after resuming: {resumed}")
+            closeTCP(id)
+        }
+    }) { id, reason in
+        closeTCP(server)
+        print("done")
+    }
+    var client = -1
+    client = connectTCP(host: "127.0.0.1", port: tcpPort(server), onConnect: {
+        sendTCP(client, data: Data(text: "y".repeated(100000)))
+    }, onData: { data in }) { reason in }
+}

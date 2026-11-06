@@ -241,7 +241,7 @@ pub unsafe extern "C" fn tsl_request(
     id as i64
 }
 
-unsafe fn pairs(dict: *const crate::Dict) -> Vec<(String, String)> {
+pub(super) unsafe fn pairs(dict: *const crate::Dict) -> Vec<(String, String)> {
     unsafe {
         let (keys, values) = (crate::tsl_dict_keys(dict), crate::tsl_dict_values(dict));
         let get = |list: *const crate::List, i: i64| {

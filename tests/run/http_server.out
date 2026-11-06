@@ -1,0 +1,17 @@
+serving: true true
+server: GET /hello query "a=1&b=two" from true, host header true
+hello: 200 true "hi a=1&b=two" text/plain 12
+server: POST /echo yes application/json 8 bytes
+echo: 201 true {"n": 1} x-len 8
+server: answering /later now: true
+server: answering again: false
+later: 200 late
+server: GET /missing not found
+missing: 404 false no /missing
+empty: 204 0
+server: HEAD /hello query "" from true, host header true
+head: 200 0 3
+server: GET /hello query "x" from true, host header true
+fetch: hi x
+after stopping: false
+port in use: true

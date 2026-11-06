@@ -120,6 +120,12 @@ impl Callback {
         f(self.env, a, b);
     }
 
+    /// Runs a closure taking two pointers and an `Int`: `void fn(env, ptr, ptr, i64)`.
+    pub fn call_with_ptrs_int(&self, a: *mut u8, b: *mut u8, c: i64) {
+        let f: extern "C" fn(*mut Header, *mut u8, *mut u8, i64) = unsafe { std::mem::transmute(self.f) };
+        f(self.env, a, b, c);
+    }
+
     /// Runs a closure taking a pointer and giving an `Int`: `i64 fn(env, ptr)`.
     pub fn call_ptr_to_int(&self, arg: *mut u8) -> i64 {
         let f: extern "C" fn(*mut Header, *mut u8) -> i64 = unsafe { std::mem::transmute(self.f) };

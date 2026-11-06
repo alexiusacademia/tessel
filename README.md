@@ -40,8 +40,9 @@ is an honest list of where things stand.
   light and dark appearance, and animation. Tessel draws every control
   itself, so an app looks the same everywhere.
 - **The standard library:** files, JSON and binary encoding of your own
-  types, SQLite, HTTP and WebSockets, dates and time zones, running other
-  programs, and work on a background thread.
+  types, SQLite, HTTP and WebSockets, TCP and UDP sockets and an HTTP
+  server, dates and time zones, running other programs, and work on a
+  background thread.
 - **The tools:** the `tessel` command, the Tessel IDE, a REPL, hot reload,
   a debugger, a language server, a VS Code extension, and a headless mode
   for testing apps.

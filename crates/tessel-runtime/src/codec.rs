@@ -398,11 +398,121 @@ fn data_new_zeroed(len: usize) -> *mut Str {
     }
 }
 
-/// `writeData(path:data:)`: whether it worked.
+/// `writeData(path:data:at:)`: whether it worked. Without `at` (-1), the
+/// file is replaced. With it, the bytes go into the file at that offset,
+/// and the rest of the file stays: a file that ends before `at` grows to
+/// reach it (the gap reads as zeros, and takes no space where the system
+/// keeps sparse files).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_write_data(path: *const Str, data: *const Str) -> bool {
+pub unsafe extern "C" fn tsl_write_data(path: *const Str, data: *const Str, at: i64) -> bool {
     let path = unsafe { str_text(path) };
-    crate::wrote(path, std::fs::write(path, unsafe { data_bytes(data) }).map_err(|e| crate::file_error("write", path, &e)).is_ok())
+    let bytes = unsafe { data_bytes(data) };
+    if at < 0 {
+        forget_file(path);
+        return crate::wrote(path, std::fs::write(path, bytes).map_err(|e| crate::file_error("write", path, &e)).is_ok());
+    }
+    let written = with_file(path, |f| write_at(f, bytes, at as u64));
+    crate::wrote(path, written.map_err(|e| crate::file_error("write", path, &e)).is_ok())
+}
+
+/// `resizeFile(path, size:)`: makes the file exactly `size` bytes, creating
+/// it if needed: cut at the end, or grown with zeros (sparse where the
+/// system allows, so a big file costs no disk until it's written).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_resize_file(path: *const Str, size: i64) -> bool {
+    let path = unsafe { str_text(path) };
+    if size < 0 {
+        crate::set_error(format!("can't resize {path}: the size can't be negative"));
+        return false;
+    }
+    let resized = with_file(path, |f| f.set_len(size as u64));
+    crate::wrote(path, resized.map_err(|e| crate::file_error("resize", path, &e)).is_ok())
+}
+
+/// Writes all of `bytes` at `offset`, wherever the file's own position is.
+fn write_at(file: &std::fs::File, bytes: &[u8], offset: u64) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        file.write_all_at(bytes, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let (mut done, mut at) = (0, offset);
+        while done < bytes.len() {
+            match file.seek_write(&bytes[done..], at) {
+                Ok(0) => return Err(std::io::Error::from(std::io::ErrorKind::WriteZero)),
+                Ok(n) => {
+                    done += n;
+                    at += n as u64;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut f = file;
+        f.seek(SeekFrom::Start(offset))?;
+        f.write_all(bytes)
+    }
+}
+
+// ===== files kept open for writes in place =====
+//
+// A program writing pieces into big files (a download in parts) calls
+// `writeData(at:)` thousands of times a second: opening the file each time
+// would cost more than the write. So the last few files written this way
+// stay open, and are let go when the program is done with them another way
+// (`deleteFile`, `renameFile`, `writeData` of the whole file…).
+
+/// How many files stay open.
+const OPEN_FILES: usize = 32;
+
+/// Files open for writing in place: their paths, handles, and when each was
+/// last used (a counter).
+static FILES: std::sync::Mutex<Vec<(String, std::fs::File, u64)>> = std::sync::Mutex::new(Vec::new());
+static FILE_USES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Runs `f` with the file at `path` open for reading and writing (made if it
+/// isn't there), keeping it open for next time.
+fn with_file<R>(path: &str, f: impl FnOnce(&std::fs::File) -> std::io::Result<R>) -> std::io::Result<R> {
+    let mut files = FILES.lock().unwrap();
+    let use_count = FILE_USES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let Some(entry) = files.iter_mut().find(|(p, _, _)| p == path) {
+        entry.2 = use_count;
+        return f(&entry.1);
+    }
+    let file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
+    let result = f(&file);
+    if files.len() >= OPEN_FILES {
+        // The one used longest ago goes.
+        if let Some(i) = files.iter().enumerate().min_by_key(|(_, (_, _, used))| *used).map(|(i, _)| i) {
+            files.swap_remove(i);
+        }
+    }
+    files.push((path.to_string(), file, use_count));
+    result
+}
+
+/// Closes the file at `path` if it's kept open (before it's replaced,
+/// renamed or deleted).
+pub(crate) fn forget_file(path: &str) {
+    FILES.lock().unwrap().retain(|(p, _, _)| p != path);
+}
+
+/// The size of the file at `path`, as the writes made so far see it (a file
+/// kept open reports through its handle, which is always up to date).
+pub(crate) fn file_size(path: &str) -> Option<u64> {
+    let files = FILES.lock().unwrap();
+    match files.iter().find(|(p, _, _)| p == path) {
+        Some((_, file, _)) => file.metadata().ok().map(|m| m.len()),
+        None => std::fs::metadata(path).ok().map(|m| m.len()),
+    }
 }
 
 /// `appendData(path:data:)`: the bytes added to the end of a file (made if
@@ -411,6 +521,7 @@ pub unsafe extern "C" fn tsl_write_data(path: *const Str, data: *const Str) -> b
 pub unsafe extern "C" fn tsl_append_data(path: *const Str, data: *const Str) -> bool {
     use std::io::Write;
     let path = unsafe { str_text(path) };
+    forget_file(path);
     let file = std::fs::OpenOptions::new().create(true).append(true).open(path);
     crate::wrote(path, file.and_then(|mut f| f.write_all(unsafe { data_bytes(data) })).map_err(|e| crate::file_error("write", path, &e)).is_ok())
 }

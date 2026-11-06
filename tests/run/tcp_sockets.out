@@ -1,0 +1,25 @@
+bad port: -1
+bad host: -1
+listening: true true true
+peer before connecting: ""
+server: connection from true, port true
+server got: hello
+client: connected to true, own port true, sent: true
+client got: hello
+send after close: false
+client closed: closed
+server: client left: closed
+server: closed closed
+client: server hung up: closed
+refused: connection refused
+unreachable: true true
+ipv6 peer: true
+ipv6 got: v6 back
+many: 200 echoed, all right: true
+many: 200 connected, 200 closed
+big: queued after sending: true
+big: got 8388608 bytes in true reads, one Data each: true
+big: client closed: closed, queued 0
+paused: got 0 bytes while paused
+paused: got all 100000 after resuming: true
+done

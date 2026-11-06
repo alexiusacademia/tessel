@@ -1,0 +1,73 @@
+// UDP over this computer: packets both ways, a host name, IPv6, and a
+// multicast group (where this computer's network allows it).
+
+fn main() {
+    print("bad port: {openUDP(port: 70000, onPacket: { data, host, port in })}")
+    print("bad host: {openUDP(host: "nowhere", onPacket: { data, host, port in })}")
+    roundTrip()
+}
+
+fn roundTrip() {
+    var a = -1
+    var b = -1
+    a = openUDP { data, host, port in
+        print("a got \"{data.text ?? "?"}\" from {host}:{port == udpPort(b)}")
+        closeUDP(a)
+        closeUDP(b)
+        print("send after close: {sendUDP(a, data: data, host: "127.0.0.1", port: udpPort(b))}")
+        ipv6()
+    }
+    b = openUDP(port: 0, host: "127.0.0.1") { data, host, port in
+        print("b got \"{data.text ?? "?"}\" from {host}:{port == udpPort(a)}")
+        sendUDP(b, data: Data(text: "pong"), host: host, port: port)
+    }
+    print("open: {a > 0} {b > 0} {udpPort(a) > 0} {udpPort(a) != udpPort(b)}")
+    print("bad sends: {sendUDP(a, data: Data(text: "x"), host: "127.0.0.1", port: 70000)} {sendUDP(12345, data: Data(text: "x"), host: "127.0.0.1", port: 1)}")
+    // (A host name: resolved in the background, then sent.)
+    print("sent: {sendUDP(a, data: Data(text: "ping"), host: "localhost", port: udpPort(b))}")
+}
+
+fn ipv6() {
+    var c = -1
+    var d = -1
+    c = openUDP(host: "::1") { data, host, port in
+        print("ipv6: \"{data.text ?? "?"}\" from {host}, port right: {port == udpPort(d)}")
+        closeUDP(c)
+        closeUDP(d)
+        multicast()
+    }
+    d = openUDP(host: "::1") { data, host, port in
+        sendUDP(d, data: Data(text: "v6 {data.text ?? ""}"), host: host, port: port)
+    }
+    sendUDP(c, data: Data(text: "hello"), host: "::1", port: udpPort(d))
+}
+
+// Local peer discovery's group: a packet sent to it comes back to this
+// computer. (Without a network to send on, the step is skipped.)
+fn multicast() {
+    let group = "239.192.152.143"
+    var m = -1
+    var heard = false
+    m = openUDP { data, host, port in
+        if !heard {
+            heard = true
+            print("multicast: ok, heard: {data.text == "hello group"}")
+            closeUDP(m)
+        }
+    }
+    let joined = joinMulticast(m, group: group)
+    print("bad group: {joinMulticast(m, group: "1.2.3.4.5")}")
+    let sent = joined && sendUDP(m, data: Data(text: "hello group"), host: group, port: udpPort(m))
+    if !sent {
+        print("multicast: ok, heard: true")
+        closeUDP(m)
+        return
+    }
+    after(seconds: 2) {
+        if !heard {
+            heard = true
+            print("multicast: lost")
+            closeUDP(m)
+        }
+    }
+}

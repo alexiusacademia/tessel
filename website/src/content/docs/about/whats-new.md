@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.20.0
+
+*Unreleased*
+
+Added:
+
+- **Sockets.** TCP connections and servers
+  ([`connectTCP`](/reference/stdlib/#connecttcp),
+  [`listenTCP`](/reference/stdlib/#listentcp), `sendTCP`, `tcpQueued`,
+  `pauseTCP`, `closeTCP`, `tcpPort`, `tcpPeer`), UDP
+  ([`openUDP`](/reference/stdlib/#openudp), `sendUDP`, `joinMulticast`,
+  `udpPort`, `closeUDP`), an HTTP server of your own
+  ([`serveHTTP`](/reference/stdlib/#servehttp), `respondHTTP`, `stopHTTP`
+  and the `ServerRequest` struct), and
+  [`resolveHost`](/reference/stdlib/#resolvehost) and
+  [`localAddresses`](/reference/stdlib/#localaddresses). IPv4 and IPv6;
+  one thread serves every socket, so thousands of connections at once are
+  fine. See [Sockets and servers](/guides/networking/) and the new lesson
+  [23. Talking over the network](/learn/23-networking/).
+- [`writeData(path:data:at:)`](/reference/stdlib/#writedata) writes into a
+  file at an offset without replacing the rest, and
+  [`resizeFile`](/reference/stdlib/#resizefile) makes a file a given size
+  (sparse where the system allows): for writing big files in pieces, in
+  any order. Files written this way stay open for the next piece.
+
 ## 0.19.8
 
 *October 31, 2026*

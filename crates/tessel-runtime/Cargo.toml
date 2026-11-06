@@ -39,6 +39,13 @@ serde_json = { version = "1.0.151", features = ["preserve_order", "float_roundtr
 ureq = "3.4.2"
 # WebSockets (openWebSocket), over the same TLS as ureq.
 tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
+# Sockets (connectTCP, listenTCP, openUDP, serveHTTP): one thread waits on
+# all of them at once (kqueue, epoll or IOCP), see ui/app/sockets.rs.
+mio = { version = "1", features = ["net", "os-poll"] }
+# Socket options std doesn't expose (reusing a port for multicast).
+socket2 = { version = "0.6", features = ["all"] }
+# The computer's own addresses (localAddresses).
+if-addrs = "0.14"
 # Without wgpu's default backends: each platform gets only its own (below).
 vello = { version = "0.10", default-features = false, features = ["wgpu"], optional = true }
 # Reading SVG (both renderers), and the geometry drawings are made of.

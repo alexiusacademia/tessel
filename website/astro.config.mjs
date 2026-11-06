@@ -93,7 +93,8 @@ export default defineConfig({
 								{ label: '20. Project: a complete app', slug: 'learn/20-project-app' },
 								{ label: '21. Forms, tables and rich text', slug: 'learn/21-forms-tables' },
 								{ label: '22. Sound, video, the web and the desktop', slug: 'learn/22-media-desktop' },
-								{ label: '23. Where to go next', slug: 'learn/21-next-steps' },
+								{ label: '23. Talking over the network', slug: 'learn/23-networking' },
+								{ label: '24. Where to go next', slug: 'learn/21-next-steps' },
 							],
 						},
 					],
@@ -151,6 +152,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Saving data as JSON', slug: 'guides/json' },
 						{ label: 'Saving data in a database', slug: 'guides/database' },
+						{ label: 'Sockets and servers', slug: 'guides/networking' },
 						{ label: 'Building for Android', slug: 'guides/android' },
 						{ label: 'Debugging', slug: 'guides/debugging' },
 						{ label: 'Testing your code', slug: 'guides/testing' },
