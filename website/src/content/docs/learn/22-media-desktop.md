@@ -506,4 +506,4 @@ app Tally(width: 260, height: 160) {
 - For more, see [Sound and video](/ui/media/), [Web pages](/ui/web/),
   [The desktop](/ui/desktop/) and [The project file](/start/project/#documents).
 
-**Next:** [23. Where to go next](/learn/21-next-steps/)
+**Next:** [23. Talking over the network](/learn/23-networking/)

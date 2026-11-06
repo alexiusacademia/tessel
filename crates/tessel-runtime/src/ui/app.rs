@@ -56,6 +56,7 @@
 //! ```
 
 mod net;
+mod sockets;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -284,6 +285,8 @@ enum Event {
     JobProgress(u64),
     /// A function to call on the UI thread (its address): see `run_on_ui`.
     Call(usize),
+    /// Something a socket did (see `sockets`).
+    Socket(sockets::Note),
 }
 
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -609,6 +612,7 @@ fn deliver_background() -> bool {
                 let f: extern "C" fn() = unsafe { std::mem::transmute(address) };
                 f();
             }
+            Event::Socket(note) => sockets::deliver(note),
             other => net::deliver(other),
         }
     }
@@ -806,7 +810,7 @@ pub fn run_until_idle() {
 
 /// Is background work still going (loads or commands)?
 fn background_busy() -> bool {
-    jobs_busy() || net::busy()
+    jobs_busy() || net::busy() || sockets::busy()
 }
 
 /// Background work that finishes by itself (not open WebSockets).
@@ -6111,9 +6115,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 let deadline = Instant::now() + Duration::from_secs(60);
                 settle(app, deadline);
                 let secs: f64 = rest.parse().unwrap_or(0.0);
-                // Open WebSockets: let their messages arrive for a moment
-                // (at least half a second, or as long as the wait).
-                if net::busy() {
+                // Open WebSockets and sockets: let their messages arrive for
+                // a moment (at least half a second, or as long as the wait).
+                if net::busy() || sockets::busy() {
                     let until = Instant::now() + Duration::from_secs_f64(secs.max(0.5));
                     while Instant::now() < until {
                         if deliver_background() {

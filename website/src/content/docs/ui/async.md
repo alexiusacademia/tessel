@@ -563,6 +563,19 @@ For servers that speak in bytes rather than text, give `openWebSocket` an
 `onData:` block, which gets each binary message as `Data`, and send with
 [`sendWebSocketData`](/reference/stdlib/#sendwebsocketdata).
 
+## Sockets and servers
+
+For talking to things that aren't web servers, and for being talked to,
+there are sockets: [`connectTCP`](/reference/stdlib/#connecttcp) opens a
+TCP connection to any program, [`listenTCP`](/reference/stdlib/#listentcp)
+accepts connections, [`openUDP`](/reference/stdlib/#openudp) sends and
+receives packets (and joins multicast groups, to find other programs on
+the local network), and [`serveHTTP`](/reference/stdlib/#servehttp) makes
+your app a web server: a page opened on a phone can drive it. They work
+like WebSockets: an `Int` id, blocks that run on the UI thread, and an app
+or `fn main` program that keeps running while one is open. See
+[Sockets and servers](/guides/networking/).
+
 ## Running code later with `after`
 
 `after(seconds:action:)` runs a block once, after a delay:
@@ -797,11 +810,12 @@ cancel it later.
 
 ## Callbacks in a program without an app
 
-`fetch`, `request`, `download`, WebSockets, `runCommand`, `after`, `every`
-and `background` also work in a program with `fn main()` and no `app`. When
-`main` returns, the program doesn't end right away: it keeps running until no
-timers, requests, downloads, open WebSockets, commands or background work
-are left, running their callbacks as they come in, and then exits.
+`fetch`, `request`, `download`, WebSockets, sockets, `runCommand`, `after`,
+`every` and `background` also work in a program with `fn main()` and no
+`app`. When `main` returns, the program doesn't end right away: it keeps
+running until no timers, requests, downloads, open WebSockets or sockets,
+commands or background work are left, running their callbacks as they come
+in, and then exits.
 
 ```tessel
 fn main() {
@@ -827,8 +841,8 @@ one second later
 ```
 
 A timer started with `every` keeps the program running until it's stopped
-with `stopTimer`, an open WebSocket until it's closed, and a request with
-`onData` until its body ends or it's cancelled. To end the program
+with `stopTimer`, an open WebSocket, socket or listener until it's closed,
+and a request with `onData` until its body ends or it's cancelled. To end the program
 right away, call [`exit`](/reference/stdlib/#exit).
 
 ## Testing code that waits
@@ -838,6 +852,6 @@ by itself: the `wait` command moves the clock forward and fires the timers
 that are due, including `every` timers. `wait` also first lets running
 `fetch`, `request`, `download`, `runCommand` and `background` calls finish,
 so tests don't depend on how fast the machine is. A request with `onData`
-may never end, so `wait` treats it like an open WebSocket: it lets pieces
-arrive for a moment (half a second, or as long as the wait) and goes on. Use
-`waitfor` to wait for what the pieces bring about.
+may never end, so `wait` treats it like an open WebSocket or socket: it
+lets pieces arrive for a moment (half a second, or as long as the wait) and
+goes on. Use `waitfor` to wait for what the pieces bring about.

@@ -829,6 +829,7 @@ pub(crate) fn wrote(path: &str, ok: bool) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_write_file(path: *const Str, text: *const Str) -> bool {
     let path = unsafe { str_text(path) };
+    codec::forget_file(path);
     wrote(path, std::fs::write(path, unsafe { str_text(text) }).map_err(|e| file_error("write", path, &e)).is_ok())
 }
 
@@ -862,6 +863,8 @@ pub unsafe extern "C" fn tsl_create_folder(path: *const Str) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_rename_file(from: *const Str, to: *const Str) -> bool {
     let (from, to) = unsafe { (str_text(from), str_text(to)) };
+    codec::forget_file(from);
+    codec::forget_file(to);
     wrote(to, std::fs::rename(from, to).map_err(|e| file_error("rename", from, &e)).is_ok())
 }
 
@@ -869,6 +872,7 @@ pub unsafe extern "C" fn tsl_rename_file(from: *const Str, to: *const Str) -> bo
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_delete_file(path: *const Str) -> bool {
     let path = unsafe { str_text(path) };
+    codec::forget_file(path);
     std::fs::remove_file(path).map_err(|e| file_error("delete", path, &e)).is_ok()
 }
 

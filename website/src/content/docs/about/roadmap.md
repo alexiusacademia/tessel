@@ -52,9 +52,11 @@ its first releases came so quickly. The dates on
   movement, copy, cut, paste, undo and redo, Tab between fields, and input
   methods (Chinese, Japanese, Korean, accents with dead keys).
 - **Background work:** timers (`after` and `every`), HTTP requests,
-  downloads and WebSockets, running other programs, and heavy computations on
-  another thread (`background`), all with completion blocks that run on the
-  UI thread. They work in programs with only `fn main` too.
+  downloads and WebSockets, TCP and UDP sockets and an HTTP server
+  ([sockets](/guides/networking/)), running other programs, and heavy
+  computations on another thread (`background`), all with completion
+  blocks that run on the UI thread. They work in programs with only
+  `fn main` too.
 - **Language:** structs, enums with values, interfaces, generics, closures,
   functions that take any number of values, optionals,
   errors with `Result` and `try`, tuples and sets, `for` and `while` loops

@@ -1,0 +1,5 @@
+own addresses: none loopback true, none link-local true
+main done
+localhost: true, unique: true
+an address: ["127.0.0.1"]
+unknown: []

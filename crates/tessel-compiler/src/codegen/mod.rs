@@ -6275,6 +6275,39 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         f.as_global_value().as_pointer_value()
     }
 
+    /// `adapter(box, RequestC*)`: builds a `ServerRequest` and calls the
+    /// `onRequest` block in the box.
+    fn request_adapter(&mut self) -> PointerValue<'ctx> {
+        let name = "tsl_h_http_request";
+        if let Some(f) = self.helpers.get(name) {
+            return f.as_global_value().as_pointer_value();
+        }
+        let p = self.ptr_ty();
+        let f = self.module.add_function(name, self.ctx.void_type().fn_type(&[p.into(), p.into()], false), Some(Linkage::Internal));
+        self.helpers.insert(name.to_string(), f);
+        let ft = Ty::func(vec![builtins::SERVER_REQUEST], Ty::Void);
+        self.in_helper(f, |g| {
+            let bx = f.get_nth_param(0).unwrap().into_pointer_value();
+            let rc = f.get_nth_param(1).unwrap().into_pointer_value();
+            let closure = g.load(&ft, g.box_data(bx));
+            // RequestC: { i64 id, ptr method, ptr path, ptr query, ptr headers, ptr body, ptr remote }
+            let p = g.ptr_ty();
+            let ct = g.ctx.struct_type(&[g.i64().into(), p.into(), p.into(), p.into(), p.into(), p.into(), p.into()], false);
+            let Ty::Struct(sid) = builtins::SERVER_REQUEST else { unreachable!() };
+            let st = g.struct_ty(sid);
+            let mut s = st.get_undef();
+            for i in 0..7u32 {
+                let fp = g.b.build_struct_gep(ct, rc, i, "").unwrap();
+                let t: BasicTypeEnum<'ctx> = if i == 0 { g.i64().into() } else { p.into() };
+                let v = g.b.build_load(t, fp, "").unwrap();
+                s = g.b.build_insert_value(s, v, i, "").unwrap().into_struct_value();
+            }
+            g.call_fn_value(closure, &ft, &[s.into()]);
+            g.b.build_return(None).unwrap();
+        });
+        f.as_global_value().as_pointer_value()
+    }
+
     /// `adapter(box, width, height)`: calls the `Canvas` block in the box
     /// with a `Graphics` of that size.
     pub(super) fn graphics_adapter(&mut self) -> PointerValue<'ctx> {
@@ -7083,6 +7116,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let zero = self.i64().const_zero();
                 self.call_rt("tsl_list_new", &[info.into(), zero.into()]).unwrap()
             }
+            builtins::Dflt::EmptyDict => {
+                let si = self.type_info(&Ty::Str);
+                self.call_rt("tsl_dict_new", &[si.into(), si.into()]).unwrap()
+            }
             builtins::Dflt::Case(case) => {
                 let Ty::Enum(id) = t else { unreachable!("Case default for a non-enum") };
                 let tag = self.ctx.i32_type().const_int(case as u64, false);
@@ -7096,6 +7133,73 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             builtins::Dflt::Req => unreachable!("required argument missing"),
         }
+    }
+
+    /// A socket function that takes blocks: `connectTCP`, `listenTCP`,
+    /// `openUDP`, `serveHTTP` and `resolveHost`. Each argument goes to the
+    /// runtime as the table-driven calls' do, and each block as `(fn, env)`
+    /// (moved to the runtime), or boxed with an adapter when its parameter
+    /// is a built-in struct (`ServerRequest`).
+    fn socket_call<'e>(&mut self, name: &str, info: &CallInfo, arg: &dyn Fn(ArgRef) -> &'e Expr) -> Option<Val<'ctx>> {
+        let sig = builtins::Builtins::standard().function(name).unwrap();
+        let (rt, ret): (&str, Option<BasicTypeEnum<'ctx>>) = match name {
+            "connectTCP" => ("tsl_connect_tcp", Some(self.i64().into())),
+            "listenTCP" => ("tsl_listen_tcp", Some(self.i64().into())),
+            "openUDP" => ("tsl_open_udp", Some(self.i64().into())),
+            "serveHTTP" => ("tsl_serve_http", Some(self.i64().into())),
+            _ => ("tsl_resolve_host", None),
+        };
+        let mut vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+        let mut types: Vec<BasicMetadataTypeEnum<'ctx>> = Vec::new();
+        let mut owned: Vec<(Val<'ctx>, Ty)> = Vec::new();
+        let p = self.ptr_ty();
+        for (i, param) in sig.params.iter().enumerate() {
+            let given = info.args.get(i).copied().flatten();
+            match &param.ty {
+                Ty::Fn(ptys, _) => {
+                    let closure = self.expr_as(arg(given.unwrap()), &param.ty).unwrap();
+                    types.push(p.into());
+                    types.push(p.into());
+                    if ptys.first() == Some(&builtins::SERVER_REQUEST) {
+                        let bx = self.box_closure(&param.ty, closure);
+                        let adapter = self.request_adapter();
+                        vals.push(adapter.into());
+                        vals.push(bx.into());
+                    } else {
+                        let s = closure.into_struct_value();
+                        vals.push(self.b.build_extract_value(s, 0, "").unwrap().into());
+                        vals.push(self.b.build_extract_value(s, 1, "").unwrap().into());
+                    }
+                }
+                t => {
+                    let v = match given {
+                        Some(r) => self.expr_as(arg(r), t).unwrap(),
+                        None => match (name, param.label.as_str()) {
+                            ("connectTCP", "timeout") => self.ctx.f64_type().const_float(10.0).into(),
+                            ("openUDP", "port") => self.i64().const_zero().into(),
+                            ("serveHTTP", "host") => self.str_lit("127.0.0.1").into(),
+                            (_, "host") => self.str_lit("0.0.0.0").into(),
+                            _ => unreachable!("no default for {name}'s {}", param.label),
+                        },
+                    };
+                    types.push(match t {
+                        Ty::Int => self.i64().into(),
+                        Ty::Float => self.ctx.f64_type().into(),
+                        _ => p.into(),
+                    });
+                    vals.push(v.into());
+                    if !matches!(t, Ty::Int | Ty::Float) {
+                        owned.push((v, t.clone()));
+                    }
+                }
+            }
+        }
+        let f = self.declare_rt(rt, &types, ret);
+        let r = self.b.build_call(f, &vals, "").unwrap().try_as_basic_value().basic();
+        for (v, t) in owned {
+            self.release(v, &t);
+        }
+        r
     }
 
     fn builtin_fn<'e>(
@@ -7559,6 +7663,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(url, &Ty::Str);
                 id
             }
+            "connectTCP" | "listenTCP" | "openUDP" | "serveHTTP" | "resolveHost" => self.socket_call(name, info, arg),
             "renderImage" => {
                 let path = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
                 let width = self.expr_as(arg(info.args[1].unwrap()), &Ty::Float).unwrap();

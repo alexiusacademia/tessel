@@ -1,0 +1,59 @@
+// An HTTP server in the program, asked by `request` and `fetch`: paths,
+// queries, methods, headers, bodies, an answer that comes later, a missing
+// page, a HEAD, and answering twice.
+
+fn main() {
+    var server = -1
+    server = serveHTTP(port: 0) { r in
+        let remote = r.remote.hasPrefix("127.0.0.1:")
+        match r.path {
+            "/hello" -> {
+                print("server: {r.method} {r.path} query \"{r.query}\" from {remote}, host header {r.headers["host"] != nil}")
+                respondHTTP(r.id, headers: ["Content-Type": "text/plain"], body: Data(text: "hi {r.query}"))
+            }
+            "/echo" -> {
+                print("server: {r.method} {r.path} {r.headers["x-a"] ?? "-"} {r.headers["content-type"] ?? "-"} {r.body.count} bytes")
+                respondHTTP(r.id, status: 201, headers: ["X-Len": "{r.body.count}"], body: r.body)
+            }
+            "/later" -> {
+                after(seconds: 0.2) {
+                    print("server: answering /later now: {respondHTTP(r.id, body: Data(text: "late"))}")
+                    print("server: answering again: {respondHTTP(r.id, body: Data(text: "again"))}")
+                }
+            }
+            "/empty" -> {
+                respondHTTP(r.id, status: 204)
+            }
+            _ -> {
+                print("server: {r.method} {r.path} not found")
+                respondHTTP(r.id, status: 404, body: Data(text: "no {r.path}"))
+            }
+        }
+    }
+    let base = "http://127.0.0.1:{tcpPort(server)}"
+    print("serving: {server > 0} {tcpPort(server) > 0}")
+    request(url: "{base}/hello?a=1&b=two") { r in
+        print("hello: {r.status} {r.ok} \"{r.text}\" {r.headers["content-type"] ?? "-"} {r.headers["content-length"] ?? "-"}")
+        request(url: "{base}/echo", method: "POST", headers: ["X-A": "yes", "Content-Type": "application/json"], body: "\{\"n\": 1\}") { r in
+            print("echo: {r.status} {r.ok} {r.text} x-len {r.headers["x-len"] ?? "-"}")
+            request(url: "{base}/later") { r in
+                print("later: {r.status} {r.text}")
+                request(url: "{base}/missing") { r in
+                    print("missing: {r.status} {r.ok} {r.text}")
+                    request(url: "{base}/empty", method: "DELETE") { r in
+                        print("empty: {r.status} {r.text.count}")
+                        request(url: "{base}/hello", method: "HEAD") { r in
+                            print("head: {r.status} {r.text.count} {r.headers["content-length"] ?? "-"}")
+                            fetch(url: "{base}/hello?x") { text in
+                                print("fetch: {text ?? "failed"}")
+                                stopHTTP(server)
+                                print("after stopping: {respondHTTP(99999)}")
+                                print("port in use: {serveHTTP(port: 1, host: "127.0.0.1") { r in } == -1 || platform() == "windows"}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

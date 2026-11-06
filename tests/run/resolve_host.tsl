@@ -1,0 +1,16 @@
+// Names to addresses, and this computer's own.
+
+fn main() {
+    let own = localAddresses()
+    print("own addresses: none loopback {own.all { a in !a.hasPrefix("127.") && a != "::1" }}, none link-local {own.all { a in !a.hasPrefix("fe80:") }}")
+    resolveHost("localhost") { addrs in
+        print("localhost: {addrs.contains("127.0.0.1") || addrs.contains("::1")}, unique: {addrs.unique().count == addrs.count}")
+        resolveHost("127.0.0.1") { addrs in
+            print("an address: {addrs}")
+            resolveHost("no-such-host.invalid") { addrs in
+                print("unknown: {addrs}")
+            }
+        }
+    }
+    print("main done")
+}

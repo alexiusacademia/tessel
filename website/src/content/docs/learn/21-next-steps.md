@@ -1,5 +1,5 @@
 ---
-title: 23. Where to go next
+title: 24. Where to go next
 description: A look back at what you've learned, ideas for projects to build next, how to use the reference, and advice for growing as a programmer.
 ---
 

@@ -1,0 +1,11 @@
+bad port: -1
+bad host: -1
+open: true true true true
+bad sends: false false
+sent: true
+b got "ping" from 127.0.0.1:true
+a got "pong" from 127.0.0.1:true
+send after close: false
+ipv6: "v6 hello" from ::1, port right: true
+bad group: false
+multicast: ok, heard: true

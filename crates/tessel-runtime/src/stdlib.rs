@@ -343,6 +343,7 @@ pub extern "C" fn tsl_now() -> f64 {
 pub unsafe extern "C" fn tsl_append_file(path: *const Str, s: *const Str) -> u8 {
     use std::io::Write;
     let path = unsafe { text(path) };
+    crate::codec::forget_file(path);
     let file = std::fs::OpenOptions::new().create(true).append(true).open(path);
     crate::wrote(path, file.and_then(|mut f| f.write_all(unsafe { text(s) }.as_bytes())).map_err(|e| crate::file_error("write", path, &e)).is_ok()) as u8
 }
@@ -350,12 +351,13 @@ pub unsafe extern "C" fn tsl_append_file(path: *const Str, s: *const Str) -> u8 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_copy_file(from: *const Str, to: *const Str) -> u8 {
     let (from, to) = unsafe { (text(from), text(to)) };
+    crate::codec::forget_file(to);
     crate::wrote(to, std::fs::copy(from, to).map_err(|e| crate::file_error("copy", from, &e)).is_ok()) as u8
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_file_size(path: *const Str, out: *mut i64) -> u8 {
-    let v = std::fs::metadata(unsafe { text(path) }).ok().map(|m| m.len() as i64);
+    let v = crate::codec::file_size(unsafe { text(path) }).map(|n| n as i64);
     unsafe { put(out, v) }
 }
 

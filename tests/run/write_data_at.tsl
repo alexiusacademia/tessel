@@ -1,0 +1,36 @@
+// Writing into a file at an offset (without replacing it), and making a
+// file a given size: what a download in pieces does.
+
+fn main() {
+    let path = joinPath(tempFolder(), "tessel-write-at-test.bin")
+    deleteFile(path)
+    print("resize new: {resizeFile(path, size: 1000)} {fileSize(path) ?? -1}")
+    print("negative size: {resizeFile(path, size: -1)}")
+    print("write at 10: {writeData(path: path, data: Data(text: "abc"), at: 10)} size {fileSize(path) ?? -1}")
+    print("read back: {readData(path, from: 10, count: 3)?.text ?? "?"} {readData(path, from: 0, count: 10)?.bytes ?? []}")
+    print("write past end: {writeData(path: path, data: Data(text: "xyz"), at: 2000)} size {fileSize(path) ?? -1}")
+    let gap = readData(path, from: 1000, count: 1000) ?? Data()
+    print("gap: {gap.count} bytes, all zero: {gap.bytes.all { b in b == 0 }}")
+    print("end: {readData(path, from: 2000)?.text ?? "?"}")
+    // Many small writes at random places, as a download in pieces does.
+    let piece = Data(text: "p".repeated(16384))
+    var ok = true
+    for i in 0..64 {
+        ok = ok && writeData(path: path, data: piece, at: ((i * 37) % 64) * 16384)
+    }
+    print("64 pieces: {ok} size {fileSize(path) ?? -1} filled {readData(path)?.bytes.all { b in b == 112 } ?? false}")
+    print("shrink: {resizeFile(path, size: 5)} {fileSize(path) ?? -1} {readData(path)?.text ?? "?"}")
+    // Without `at`, the file is replaced, as before.
+    print("replace: {writeData(path: path, data: Data(text: "new"))} {readData(path)?.text ?? "?"}")
+    // Renaming and deleting a file written this way.
+    let moved = "{path}.moved"
+    deleteFile(moved)
+    print("rename: {renameFile(from: path, to: moved)} {fileExists(path)} {readData(moved)?.text ?? "?"}")
+    print("write old name: {writeData(path: path, data: Data(text: "Q"), at: 1)} {readData(path)?.bytes ?? []}")
+    // In background work too.
+    background(work: { writeData(path: moved, data: Data(text: "BG"), at: 1) }) { done in
+        print("background: {done} {readData(moved)?.text ?? "?"}")
+        print("delete: {deleteFile(path)} {deleteFile(moved)} {fileExists(moved)}")
+        print("into a folder that isn't there: {writeData(path: joinPath(path, "x"), data: Data(text: "a"), at: 0)}")
+    }
+}

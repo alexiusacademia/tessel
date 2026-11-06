@@ -1,0 +1,29 @@
+fn main() {
+    connectTCP(host: 80, port: 1, onConnect: {}, onData: { d in }) { r in } // error: expected `String`, found `Int`
+    connectTCP(host: "a", port: "x", onConnect: {}, onData: { d in }) { r in } // error: expected `Int`, found `String`
+    connectTCP(host: "a", port: 1, onConnect: { x in }, onData: { d in }) { r in } // error: should take 0 parameter(s)
+    connectTCP(host: "a", port: 1, onData: { d in }) { r in } // error: missing `onConnect:`
+    listenTCP(port: 0, onConnection: { id in }, onData: { id, d in }) { id, r in } // error: should take 2 parameter(s)
+    listenTCP(port: 0, onConnection: { id, peer in }, onData: { id, d in }) { id, r in print(r + 1) } // error: can't use `+` on `String` and `Int`
+    sendTCP("1", data: Data()) // error: expected `Int`, found `String`
+    sendTCP(1, data: "text") // error: expected `Data`, found `String`
+    let n: String = tcpQueued(1) // error: expected `String`, found `Int`
+    pauseTCP(1, paused: 1) // error: expected `Bool`, found `Int`
+    closeTCP(id: 1) // error: without a label
+    openUDP(port: 0) { data in } // error: should take 3 parameter(s)
+    openUDP(port: 0) { data, host, port in print(host + port) } // error: can't use `+` on `String` and `Int`
+    sendUDP(1, data: Data(), host: "a") // error: missing `port:`
+    joinMulticast(1, "239.0.0.1") // error: needs its label `group:`
+    serveHTTP(port: 8080) { r in respondHTTP(r, status: 200) } // error: expected `Int`, found `ServerRequest`
+    serveHTTP(port: 8080) { r in respondHTTP(r.id, status: "200") } // error: expected `Int`, found `String`
+    serveHTTP(port: 8080) { r in respondHTTP(r.id, body: "text") } // error: expected `Data`, found `String`
+    serveHTTP(port: 8080) { r in print(r.missing) } // error: `ServerRequest` has no field `missing`
+    serveHTTP(port: 8080) { r in respondHTTP(r.id, headers: ["a": 1]) } // error: expected `String`, found `Int`
+    resolveHost("localhost") { a in print(a + 1) } // error: can't use `+` on `[String]` and `Int`
+    let a: Int = localAddresses() // error: expected `Int`, found `[String]`
+    writeData(path: "f", data: Data(), at: "0") // error: expected `Int`, found `String`
+    resizeFile("f", 10) // error: needs its label `size:`
+    resizeFile("f", size: 1.5) // error: expected `Int`, found `Float`
+    stopHTTP("s") // error: expected `Int`, found `String`
+    print(n, a)
+}

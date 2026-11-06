@@ -75,7 +75,8 @@ the ideas stick.
 - [20. Project: a complete app](/learn/20-project-app/)
 - [21. Forms, tables and rich text](/learn/21-forms-tables/)
 - [22. Sound, video, the web and the desktop](/learn/22-media-desktop/)
-- [23. Where to go next](/learn/21-next-steps/)
+- [23. Talking over the network](/learn/23-networking/)
+- [24. Where to go next](/learn/21-next-steps/)
 
 Ready? Start with [1. Your first program](/learn/01-first-program/).
 
