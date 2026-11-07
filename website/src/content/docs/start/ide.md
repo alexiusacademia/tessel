@@ -56,9 +56,8 @@ selected file. Type the name and press Enter.
 Each open file gets a tab. The editor has:
 
 - **Syntax colors** for Tessel code, and line numbers.
-- **Error markers** on lines with errors. They are updated each time the
-  program is checked: when the IDE opens, when you save, and when you press
-  Check.
+- **Error markers** as you type: a red wavy line under each error, and a
+  red mark beside its line. See [Understanding code](#understanding-code).
 - **Code completion.** As you type, a list suggests what fits there: the
   fields and methods after `doc.`, the modifiers after a view, the cases
   after `.` where an enum is expected, and the names in scope (variables,
@@ -73,6 +72,42 @@ A tab whose file has unsaved changes shows a dot (`•`) before its name.
 Closing a tab with its **×** button saves your changes first.
 
 On Windows, use Ctrl wherever this page says Cmd.
+
+## Understanding code
+
+The editor knows what your code means, as you type it, saved or not:
+
+- **Errors as you type.** A moment after you stop typing, the program is
+  checked again. Errors get a red wavy line under them, their lines a red
+  mark, and the Problems tab lists them. With the cursor on a line with an
+  error, its message shows in the toolbar.
+- **Hover.** Rest the mouse on a name for a moment to see what it is: a
+  function's or a type's declaration, or a variable's type, with the comment
+  written just above its declaration. On an error, its message shows too.
+- **Uses, highlighted.** With the cursor on a name, its other uses in the
+  file get a light gray background.
+- **Go to definition.** Cmd-click a name, or put the cursor on it and press
+  F12, to go to where it's declared. Its file opens if it isn't open yet.
+- **Find all uses.** Shift+F12 lists every place the name is used, in all
+  the project's files, in the **Uses** tab at the bottom. Click one to go
+  there.
+- **Rename.** F2 asks for the name's new name in the toolbar. Type it and
+  press Enter: the name changes everywhere it's used, in open files (which
+  then have unsaved changes) and in the others. Names that can't be renamed,
+  like `print` or `main`, say why in the status.
+
+Right-click a name for **Go to Definition**, **Find All Uses** and
+**Rename…** in a menu.
+
+| Key | What it does |
+|---|---|
+| Cmd-click | Go to where the name is declared. |
+| F12 | The same, for the name at the cursor. |
+| Shift+F12 | List the name's uses in the Uses tab. |
+| F2 | Rename the name at the cursor everywhere. |
+
+The IDE gets all this from [`tessel query`](/start/cli/#tessel-query), the
+same checker as `tessel check` and the [language server](/start/editors/).
 
 ## The toolbar
 
@@ -332,13 +367,14 @@ its variables still there.
 
 [Debugging](/guides/debugging/) has the whole story.
 
-## Problems, console and debug
+## Problems, console, debug and uses
 
-The bottom of the window has three tabs:
+The bottom of the window has four tabs:
 
-- **Problems** lists the errors from the last check, with the file and line
-  of each one. The tab title shows how many there are. Click a problem to
-  jump to it: its file opens and the editor goes to that line.
+- **Problems** lists the errors in the program as it is in the editor, with
+  the file and line of each one. The tab title shows how many there are.
+  Click a problem to jump to it: its file opens and the editor goes to that
+  line.
 - **Console** shows what the program prints while it runs, the output of
   Build and Package, and finally the exit code. Errors in the console show
   their location as ` --> file:line:column`; click such a line to jump to it.
@@ -346,6 +382,9 @@ The bottom of the window has three tabs:
   out of range.
 - **Debug** shows where a program being [debugged](#debugging) is stopped:
   the calls that led there, and their variables.
+- **Uses** lists the places a name is used, after
+  [Find all uses](#understanding-code) (Shift+F12): the file and line of
+  each, and the line's code. Click one to go there.
 
 ## Other editors
 

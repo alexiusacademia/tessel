@@ -1,0 +1,92 @@
+// Understanding code: reading what `tessel query` says about the program
+// (its errors, what a name is, where it's declared and used, and the places
+// a rename changes), and asking it about the text in the editor, saved or not.
+
+// A place a name is used, for the Uses panel (or declared): where the
+// name starts is byte `lo` of the file, on `line`, and `text` is that line.
+struct Use {
+    file: String
+    line: Int
+    column: Int
+    text: String
+    lo: Int = -1
+}
+
+// A change a rename makes: in `file`, bytes `lo` to `hi` become the new name.
+struct NameChange {
+    file: String
+    lo: Int
+    hi: Int
+}
+
+// A line of `tessel query errors`: file, line, column, end line, end
+// column, start and end (byte offsets), message (tab-separated).
+fn parseError(text: String) -> Problem? {
+    let f = text.split("\t")
+    if f.count != 8 {
+        return nil
+    }
+    Problem(file: normalize(path: f[0]), line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, message: f[7], lo: Int(f[5]) ?? -1, hi: Int(f[6]) ?? -1)
+}
+
+// A line of `tessel query uses`: file, line, column, start, end, the line's text.
+fn parseUse(text: String) -> Use? {
+    let f = text.split("\t")
+    if f.count != 6 {
+        return nil
+    }
+    Use(file: normalize(path: f[0]), line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, text: f[5], lo: Int(f[3]) ?? -1)
+}
+
+// A line of `tessel query rename … <new name>`: file, start, end.
+fn parseNameChange(text: String) -> NameChange? {
+    let f = text.split("\t")
+    if f.count != 3 {
+        return nil
+    }
+    NameChange(file: normalize(path: f[0]), lo: Int(f[1]) ?? 0, hi: Int(f[2]) ?? 0)
+}
+
+// `text` with the changes in it that are for `file` made: each one's bytes
+// become `name`.
+fn renamed(text: String, file: String, changes: [NameChange], name: String) -> String {
+    let bytes = Data(text: text)
+    var out = Data()
+    var at = 0
+    for c in changes.filter({ c in c.file == file }).sorted(by: { a, b in a.lo < b.lo }) {
+        if c.lo >= at && c.hi <= bytes.count {
+            out.append(bytes.slice(from: at, to: c.lo))
+            out.append(Data(text: name))
+            at = c.hi
+        }
+    }
+    out.append(bytes.slice(from: at, to: bytes.count))
+    out.text ?? text
+}
+
+// The arguments for `tessel query`, with each unsaved file's text: it's
+// written to a file of its own (named after `tag`), which `queryDone`
+// deletes once the answer is in.
+fn queryArgs(question: [String], docs: [Doc], tag: String) -> [String] {
+    var args = ["query"] + question
+    for (i, d) in docs.enumerated() {
+        if d.text != d.saved {
+            let file = joinPath(tempFolder(), "tessel-query-{tag}-{i}.tsl")
+            if writeFile(path: file, text: d.text) {
+                args.append("--text")
+                args.append(d.path)
+                args.append(file)
+            }
+        }
+    }
+    args
+}
+
+// Deletes the files `queryArgs` wrote.
+fn queryDone(args: [String]) {
+    for (i, a) in args.enumerated() {
+        if a == "--text" && i + 2 < args.count {
+            deleteFile(args[i + 2])
+        }
+    }
+}

@@ -73,9 +73,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl", "• helpers.tsl"] selected 1
-              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -156,9 +156,9 @@ Root
                     Spacer
             Spacer
             TabView ["math.tsl"] selected 0
-              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}"
+              CodeEditor errors [] = "fn twice(n: Int) -> Int {\n    n * 2\n}" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -236,7 +236,7 @@ Root
               Icon fileCode
               Text "Open a file from the explorer"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -311,9 +311,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".up\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -389,9 +389,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(gr\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -467,9 +467,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.cou\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -545,9 +545,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -622,9 +622,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -717,9 +717,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -818,9 +818,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -920,9 +920,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -1027,9 +1027,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl", "• notes.md"] selected 1
-              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)." contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -1114,9 +1114,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl", "• notes.md"] selected 1
-              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)."
+              CodeEditor errors [] = "# Notes\nSome *text* and a [link](main.tsl)." contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack
@@ -1209,9 +1209,9 @@ Root
                     Spacer
             Spacer
             TabView ["• main.tsl", "• notes.md"] selected 0
-              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n"
+              CodeEditor errors [] = "fn main() {\n    print(\"hi\")\n    let greeting = \"hi\".uppercase()\n    print(greeting.count)\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 0
             Scroll
               VStack
                 HStack

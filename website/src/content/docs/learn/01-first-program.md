@@ -219,7 +219,10 @@ folder: for example, a folder `hello` with a file `main.tsl` inside it.
 
 Type your code, then press **Run** (Cmd+R on macOS, Ctrl+R on Windows). The
 output appears in the **Console** at the bottom. Any errors show up under
-**Problems**, and clicking one jumps to the line.
+**Problems** as you type, and clicking one jumps to the line.
+
+The IDE also explains your code. Rest the mouse on a name to see what it
+is, and Cmd-click it (Ctrl-click on Windows) to go to where it's declared.
 
 See [The Tessel IDE](/start/ide/) for a full tour. Everything in this course
 works in the IDE and in the terminal alike; the lessons show terminal

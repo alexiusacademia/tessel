@@ -1,0 +1,73 @@
+// A CodeEditor that understands its code: errors underlined, the uses of
+// the word at the caret highlighted, what the mouse rests on shown next to
+// it, Cmd-click, F12, Shift+F12 and F2 telling where they happen, and the
+// caret, bound both ways.
+// (Offsets are bytes; this text is plain ASCII, so they count characters.)
+
+app Hover(width: 520, height: 260) {
+    state code = "let count = 1\nprint(count + cuont)\n"
+    state uses: [Range] = []
+    state hoverText = ""
+    state hoverAt = -1
+    state said = ""
+    state at = 0
+
+    VStack {
+        CodeEditor(
+            text: code,
+            errorRanges: [28..33],
+            highlights: uses,
+            onHover: { offset in hover(offset: offset) },
+            hoverText: hoverText,
+            hoverAt: hoverAt,
+            onDefinition: { offset in said = "definition at {offset}" },
+            onUses: { offset in said = "uses at {offset}" },
+            onRename: { offset in said = "rename at {offset}" },
+            onCaret: { offset in uses = usesOf(word: wordAt(offset: offset)) },
+            caret: at
+        )
+        Text("{said}, caret at {at}")
+        Button("Go to the second count") { at = 20 }
+    }
+
+    // The word around `offset`.
+    fn wordAt(offset: Int) -> String {
+        let chars = code.characters
+        var lo = offset
+        while lo > 0 && isLetter(chars[lo - 1]) {
+            lo -= 1
+        }
+        var hi = offset
+        while hi < chars.count && isLetter(chars[hi]) {
+            hi += 1
+        }
+        code.substring(from: lo, to: hi)
+    }
+
+    fn isLetter(c: String) -> Bool {
+        "abcdefghijklmnopqrstuvwxyz".contains(c)
+    }
+
+    // Where `word` is in the code, as a whole word.
+    fn usesOf(word: String) -> [Range] {
+        var found: [Range] = []
+        if word == "" {
+            return found
+        }
+        let chars = code.characters
+        for i in 0..chars.count - word.count + 1 {
+            let before = i == 0 || !isLetter(chars[i - 1])
+            let after = i + word.count >= chars.count || !isLetter(chars[i + word.count])
+            if before && after && code.substring(from: i, to: i + word.count) == word {
+                found.append(i..i + word.count)
+            }
+        }
+        found
+    }
+
+    fn hover(offset: Int) {
+        let word = wordAt(offset: offset)
+        hoverAt = offset
+        hoverText = if word == "cuont" { "error: no `cuont` here" } else if word == "" { "" } else { "{word}: Int" }
+    }
+}

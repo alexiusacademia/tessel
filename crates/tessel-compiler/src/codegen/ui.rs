@@ -739,6 +739,55 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(breakpoints, &list_t);
                 self.release(lines, &list_t);
                 self.release(completions, &comp_t);
+                // Understanding code (only when some of it is given).
+                if (10..=19).any(|i| a(i).is_some()) {
+                    let range_t = Ty::list(Ty::Range);
+                    let ranges = |me: &mut Self, x: Option<&Expr>| match x {
+                        Some(x) => me.expr_as(x, &range_t).unwrap(),
+                        None => {
+                            let ti = me.type_info(&Ty::Range);
+                            let zero = me.i64().const_zero();
+                            me.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                        }
+                    };
+                    let errors = ranges(self, a(10));
+                    let highlights = ranges(self, a(11));
+                    let with_int = |me: &mut Self, x: Option<&Expr>| match x {
+                        Some(x) => {
+                            let c = me.expr_as(x, &Ty::func(vec![Ty::Int], Ty::Void)).unwrap().into_struct_value();
+                            (me.b.build_extract_value(c, 0, "").unwrap(), me.b.build_extract_value(c, 1, "").unwrap())
+                        }
+                        None => (me.ptr_ty().const_null().into(), me.ptr_ty().const_null().into()),
+                    };
+                    let (hover_f, hover_env) = with_int(self, a(12));
+                    let hover_text = string(self, a(13));
+                    let hover_at = match a(14) {
+                        Some(x) => self.expr_as(x, &Ty::Int).unwrap(),
+                        None => self.i64().const_int(u64::MAX, true).into(),
+                    };
+                    let (def_f, def_env) = with_int(self, a(15));
+                    let (uses_f, uses_env) = with_int(self, a(16));
+                    let (rename_f, rename_env) = with_int(self, a(17));
+                    let (caret_f, caret_env) = with_int(self, a(18));
+                    // `caret:` locates an Int (the caret's byte offset).
+                    let (at_f, at_env) = match a(19) {
+                        Some(x) => {
+                            let l = self.locator(x).into_struct_value();
+                            (self.b.build_extract_value(l, 0, "").unwrap(), self.b.build_extract_value(l, 1, "").unwrap())
+                        }
+                        None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                    };
+                    self.call_rt(
+                        "tsl_ui_code_editor_info",
+                        &[
+                            errors, highlights, hover_f, hover_env, hover_text, hover_at, def_f, def_env, uses_f, uses_env, rename_f, rename_env,
+                            caret_f, caret_env, at_f, at_env,
+                        ],
+                    );
+                    self.release(errors, &range_t);
+                    self.release(highlights, &range_t);
+                    self.release(hover_text, &Ty::Str);
+                }
             }
             "Picker" => {
                 let loc = self.locator(a(0).unwrap());

@@ -46,6 +46,16 @@ CodeEditor(text: source, errorLines: problems, line: currentLine)
 | `stoppedLine:` | `Int` | A line to highlight in yellow, as where a program is stopped. 0 (the default) for none. |
 | `onBreakpoint:` | `fn(Int)` | Called with the line when the margin is clicked. |
 | `onChange:` | `fn()` | Called after each edit that changes `text` (not when your program sets it). Optional. |
+| `caret:` | `bind Int` | Where the caret is, as a byte offset in `text`. Optional; see [Following and moving the cursor](#following-and-moving-the-cursor). |
+| `errorRanges:` | `[Range]` | Parts of `text` (byte offsets) to underline with a red wavy line. Optional; see [Understanding code](#understanding-code). |
+| `highlights:` | `[Range]` | Parts of `text` to give a light gray background, like the uses of a name. Optional. |
+| `onHover:` | `fn(Int)` | Called when the mouse rests on the text, with the offset of the character under it. |
+| `hoverText:` | `String` | Shown next to the word the mouse rests on, while `hoverAt:` is the offset `onHover` was given. |
+| `hoverAt:` | `Int` | The offset `hoverText` is for. -1 (the default) for none. |
+| `onDefinition:` | `fn(Int)` | Called on a Cmd-click (Ctrl-click on Windows) in the text, with the offset clicked, and on F12, with the caret's. |
+| `onUses:` | `fn(Int)` | Called on Shift+F12, with the caret's offset. |
+| `onRename:` | `fn(Int)` | Called on F2, with the caret's offset. |
+| `onCaret:` | `fn(Int)` | Called when the caret moves, with its offset. |
 
 Line numbers start at 1, as they do in the gutter.
 
@@ -81,9 +91,10 @@ anything, typically from checking the text:
 CodeEditor(text: doc.text, errorLines: problems.filter { p in p.file == doc.path }.map { p in p.line })
 ```
 
-The IDE gets its errors by running `tessel check --format lines` with
-[`runCommand`](/ui/async/#running-other-programs) and parsing each line of
-output.
+The IDE gets its errors by running [`tessel query errors`](/start/cli/#tessel-query)
+with [`runCommand`](/ui/async/#running-other-programs) and parsing each line
+of output. It also underlines each error with `errorRanges:` (see
+[Understanding code](#understanding-code)).
 
 ## Following and moving the cursor
 
@@ -102,6 +113,13 @@ line the cursor is on:
 That's how you jump to an error: store the line in the bound value, for
 example when the user clicks an error in a list. Setting it to the line the
 cursor is already on does nothing, since nothing changed.
+
+`caret:` does the same with the exact place: a byte offset in `text`. The
+editor writes it as the caret moves, and when your code changes it, the
+caret goes there and the editor scrolls it into view, a third of the way
+down. An editor that appears with `caret:` already set to something other
+than 0 starts with its caret there, so a file opened to show a place shows
+it.
 
 ## Code completion
 
@@ -164,6 +182,71 @@ app Editor(width: 500, height: 300) {
 (This counts characters, which equal bytes only for plain ASCII text. The
 [Tessel IDE](/start/ide/) asks `tessel complete` instead, which knows Tessel
 and works in bytes.)
+
+## Understanding code
+
+The editor can show what the code means and ask about it, as the
+[Tessel IDE](/start/ide/#understanding-code) does with errors as you type,
+hover, go to definition, find all uses and rename. You work out the
+answers (the IDE asks [`tessel query`](/start/cli/#tessel-query)); the
+editor shows them and says when they're wanted. Places in the text are
+byte offsets, as `Range`s like `28..33`.
+
+```tessel
+app Explain(width: 480, height: 220) {
+    state code = "let count = 1\nprint(count + cuont)\n"
+    state uses: [Range] = []
+    state hoverText = ""
+    state hoverAt = -1
+    state said = ""
+
+    VStack(spacing: 8) {
+        CodeEditor(
+            text: code,
+            errorRanges: [28..33],
+            highlights: uses,
+            onHover: { offset in
+                hoverAt = offset
+                hoverText = if offset >= 28 && offset < 33 { "cannot find `cuont`" } else { "" }
+            },
+            hoverText: hoverText,
+            hoverAt: hoverAt,
+            onDefinition: { offset in said = "Cmd-click at {offset}" },
+            onCaret: { offset in
+                let onCount = offset >= 4 && offset <= 9 || offset >= 20 && offset <= 25
+                uses = if onCount { [4..9, 20..25] } else { [] }
+            }
+        )
+        Text(said).color(.secondary)
+    }
+    .padding(12)
+}
+```
+
+![A code editor with "let count = 1" and "print(count + cuont)". Both "count"s have a light gray background, "cuont" has a red wavy line under it, and a tooltip under it says "cannot find `cuont`"](../../../assets/screens/ui-code-editor-hover.png)
+
+- **`errorRanges:`** are underlined with a red wavy line. An empty range
+  (at the end of a line, say) underlines the character there.
+- **`highlights:`** get a light gray background, under the selection.
+- **`onHover:`** is called when the mouse has rested on a character of the
+  text for half a second, with its offset. Set `hoverText:` to what to show
+  and `hoverAt:` to that same offset, now or later (after asking another
+  program, say): the text shows in a tooltip under the word, while the
+  mouse stays on it. Moving to another word, typing or clicking puts it
+  away. An empty `hoverText` shows nothing.
+- **`onDefinition:`** is called on a Cmd-click (Ctrl-click on Windows) in
+  the text, with the offset clicked, after the caret goes there. F12 calls
+  it too, with the caret's offset.
+- **`onUses:`** (Shift+F12) and **`onRename:`** (F2) are called with the
+  caret's offset.
+- **`onCaret:`** is called whenever the caret moves, by typing, clicking or
+  the keys, with its offset: the moment to highlight the uses of the name
+  it's on.
+
+A right click in the text puts the caret where it's clicked first (unless
+it's in the selection), so a [`.contextMenu`](/ui/menus-windows/#context-menus)
+on the editor can act on what was clicked, through the offset `onCaret`
+last gave.
 
 ## For a debugger
 

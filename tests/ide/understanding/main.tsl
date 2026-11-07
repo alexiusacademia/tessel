@@ -1,0 +1,5 @@
+fn main() {
+    let box = Square(side: 3.0)
+    print(area(square: box))
+    print(area(square: Square(side: 1.5)))
+}

@@ -1,0 +1,8 @@
+struct Square {
+    side: Float
+}
+
+// The area of a square: its side times itself.
+fn area(square: Square) -> Float {
+    square.side * square.side
+}

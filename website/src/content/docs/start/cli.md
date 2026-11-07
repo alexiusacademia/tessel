@@ -604,6 +604,51 @@ method	rename	(to: String)
 
 The [Tessel IDE](/start/ide/) uses it for code completion.
 
+## `tessel query`
+
+```sh
+tessel query errors todos
+tessel query hover todos/main.tsl 120
+tessel query definition todos/main.tsl 120
+tessel query uses todos/main.tsl 120
+tessel query highlights todos/main.tsl 120
+tessel query rename todos/main.tsl 120
+tessel query rename todos/main.tsl 120 newName
+```
+
+Answers an editor's questions about a program, one per run, with the same
+checker as `tessel check` and the [language server](/start/editors/). The
+[Tessel IDE](/start/ide/#understanding-code) uses it for errors as you
+type, hover, go to definition, find all uses and rename. Each takes
+`--text <file> <from>`, any number of times: it reads a file's current,
+unsaved text from `<from>`.
+
+Each answer is lines of tab-separated fields. Places are given as a line
+and a column (from 1, as in error messages), and as byte offsets into the
+file's text (from 0). Errors give both ends of each.
+
+| Question | What it prints |
+|---|---|
+| `errors <path>` | One line per error, as `tessel check` finds them: file, line, column, end line, end column, start, end, message. |
+| `hover <file> <offset>` | What's at byte `<offset>`: a line with the start and end of the name or expression, then a line of code (a declaration's signature, or a name with its type), then, after an empty line, the comment above its declaration. |
+| `definition <file> <offset>` | Where the name at `<offset>` is declared: file, line, column, start, end. |
+| `uses <file> <offset>` | Every place the name is written, its declaration too: file, line, column, start, end, and that line's code. |
+| `highlights <file> <offset>` | The places in `<file>` only: start, end. |
+| `rename <file> <offset>` | `name` and the name, if it can be renamed. |
+| `rename <file> <offset> <new name>` | The places to change: file, start, end. |
+
+When a name can't be renamed (it isn't one the program declares, a library
+declares it, an interface asks for it, or the new name isn't a name),
+`rename` prints `error` and why instead, and exits with 1. `errors` exits
+with 1 when there are errors.
+
+```text
+$ tessel query rename todos/main.tsl 120 count
+todos/main.tsl	118	123
+todos/main.tsl	240	245
+todos/list.tsl	57	62
+```
+
 ## `tessel preview`
 
 ```sh

@@ -1,0 +1,25 @@
+tree
+click editor "print(co|unt"
+tree
+hover editor "let co|unt"
+wait 0.6
+tree
+hover editor "cu|ont"
+tree
+wait 0.6
+tree
+click cmd editor "print(c|ount"
+tree
+key shift+f12
+tree
+key f2
+tree
+key f12
+tree
+hover editor "le|t"
+wait 0.6
+key right
+tree
+click "Go to the second count"
+type "Z"
+tree

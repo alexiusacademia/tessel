@@ -33,6 +33,8 @@ pub struct Theme {
     pub error_mark: Rgba,
     /// The line a program is stopped on, in a code editor.
     pub stopped_line: Rgba,
+    /// The uses of the name the caret is on, in a code editor (`highlights:`).
+    pub uses: Rgba,
     /// The completion list.
     pub popup: Rgba,
     /// The bar that shows (and moves) how far a view is scrolled.
@@ -103,6 +105,7 @@ pub static LIGHT: Theme = Theme {
     error_line: rgb(255, 235, 235),
     error_mark: rgb(255, 59, 48),
     stopped_line: rgb(255, 244, 179),
+    uses: Rgba([110, 110, 120, 46]),
     popup: rgb(255, 255, 255),
     scroll_thumb: Rgba([0, 0, 0, 76]),
     code: Code {
@@ -152,6 +155,7 @@ pub static DARK: Theme = Theme {
     error_line: rgb(74, 34, 34),
     error_mark: rgb(255, 69, 58),
     stopped_line: rgb(84, 72, 20),
+    uses: Rgba([255, 255, 255, 38]),
     popup: rgb(44, 44, 46),
     scroll_thumb: Rgba([255, 255, 255, 90]),
     code: Code {

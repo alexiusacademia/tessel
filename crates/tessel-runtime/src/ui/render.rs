@@ -37,6 +37,8 @@ pub struct Interaction {
     pub scroll_x: HashMap<u64, f64>,
     /// The caret line each code editor last reported to its `line:` binding.
     pub editor_line: HashMap<u64, i64>,
+    /// The caret offset each code editor last reported to its `caret:` binding.
+    pub editor_caret: HashMap<u64, i64>,
     /// Where the mouse is (for hover effects inside views, like tabs).
     pub pointer: Option<(f64, f64)>,
     /// Undo and redo history of text fields and code editors, by key.
@@ -58,6 +60,10 @@ pub struct Interaction {
     pub anim: super::anim::Animations,
     /// The `.tooltip` that shows, laid out.
     pub tooltip: Option<Tooltip>,
+    /// The mouse resting on a code editor's text (for its `onHover:`).
+    pub code_tip: Option<CodeTip>,
+    /// The code editor and caret offset last told to an `onCaret:`.
+    pub caret_told: Option<(u64, usize)>,
     /// The notice (`showNotice`) that shows, laid out.
     pub notice: Option<Tooltip>,
     /// The control the keyboard is on (a slider, stepper, color picker or
@@ -101,6 +107,25 @@ pub struct Tooltip {
     pub rect: Rect,
     pub text: String,
     pub layout: Rc<TextLayout>,
+}
+
+/// The mouse resting on the text of a code editor with `onHover:`.
+pub struct CodeTip {
+    pub key: u64,
+    /// The word under the pointer (or the character, if it isn't in a
+    /// word): the tip stays while the pointer moves over it.
+    pub word: std::ops::Range<usize>,
+    /// The offset `onHover` is told: the character under the pointer.
+    pub offset: usize,
+    /// When the pointer came to rest there (on the app's clock).
+    pub since: f64,
+    /// `onHover` was told; its answer (`hoverText:`) shows as the tooltip
+    /// once `hoverAt:` is `offset`.
+    pub asked: bool,
+    /// Its answer shows as the tooltip.
+    pub shown: bool,
+    /// Put away by a click, a key or the wheel, until the pointer moves to another word.
+    pub done: bool,
 }
 
 /// Text being composed with an input method (for Chinese, Japanese, accents
@@ -292,6 +317,21 @@ impl Painter<'_> {
             let line = Rect { x: x + r.x0, y: y + r.y1 - 1.0, w: r.x1 - r.x0, h: 1.0 };
             self.fill(line, 0.0, n.layout.style.color);
         }
+    }
+
+    /// A wavy line `w` wide from (x, y), as under an error in a code editor.
+    fn squiggle(&mut self, x: f64, w: f64, y: f64, c: Rgba) {
+        let (step, height) = (2.0, 1.5);
+        let mut path = kurbo::BezPath::new();
+        path.move_to((x, y));
+        let mut i = 0;
+        while (i as f64) * step < w {
+            i += 1;
+            let up = if i % 2 == 1 { -height } else { 0.0 };
+            path.line_to(((x + i as f64 * step).min(x + w), y + up));
+        }
+        let t = self.t();
+        self.scene.stroke(&Stroke::new(1.0), t, c, &path);
     }
 
     /// Draws `svg` centered in `r`, scaled to fit.
@@ -838,7 +878,7 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
-            Kind::CodeEditor { error_lines, breakpoints, stopped_line, .. } => {
+            Kind::CodeEditor { error_lines, breakpoints, stopped_line, code, .. } => {
                 let editing = self.ui.shown_editing(n.key);
                 let editing = editing.as_ref();
                 let t_scene = self.t();
@@ -875,6 +915,13 @@ impl Painter<'_> {
                     }
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
                     self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(code_area, 0.0));
+                    // The uses of a name: a light background.
+                    for range in &code.highlights {
+                        for r in t.selection(range.clone()) {
+                            let band = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
+                            self.fill(band, 2.0, theme().uses);
+                        }
+                    }
                     if let Some(e) = editing {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
@@ -891,6 +938,20 @@ impl Painter<'_> {
                         }
                     }
                     self.text(t, x0 - scroll_x, y0 - scroll_y, None);
+                    // Errors: a red wavy line under them (one character
+                    // wide at least, so an error at the end of a line shows).
+                    for range in &code.errors {
+                        let start = range.start.min(t.len);
+                        let end = if range.end > start { range.end.min(t.len) } else { t.next(start) };
+                        let range = start..end.max(start);
+                        let mut rects = t.selection(range.clone());
+                        if rects.is_empty() {
+                            rects.extend(t.caret(range.start, 7.0));
+                        }
+                        for r in rects {
+                            self.squiggle(x0 - scroll_x + r.x0, (r.x1 - r.x0).max(6.0), y0 - scroll_y + r.y1 - 2.0, theme().error_mark);
+                        }
+                    }
                     self.underline_composing(n, t, x0 - scroll_x, y0 - scroll_y);
                     self.scene.pop();
                 }

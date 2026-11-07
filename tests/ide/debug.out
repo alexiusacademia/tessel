@@ -71,9 +71,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl"] selected 0
-              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 2
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 2
             HStack
               Scroll
                 VStack
@@ -183,9 +183,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl"] selected 0
-              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+              CodeEditor errors [] breakpoints [9] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 2
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 2
             HStack
               Scroll
                 VStack
@@ -323,9 +323,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl"] selected 0
-              CodeEditor errors [] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+              CodeEditor errors [] stopped 9 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 2
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 2
             HStack
               Scroll
                 VStack
@@ -435,9 +435,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl"] selected 0
-              CodeEditor errors [] stopped 17 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+              CodeEditor errors [] stopped 17 = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 2
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 2
             HStack
               Scroll
                 VStack
@@ -532,9 +532,9 @@ Root
                     Spacer
             Spacer
             TabView ["main.tsl"] selected 0
-              CodeEditor errors [] = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n"
+              CodeEditor errors [] = "struct Order {\n    item: String\n    quantity: Int\n}\n\nfn total(orders: [Order]) -> Int {\n    var sum = 0\n    for order in orders {\n        sum += order.quantity\n    }\n    return sum\n}\n\nfn main() {\n    let orders = [Order(item: \"tea\", quantity: 2), Order(item: \"cake\", quantity: 3)]\n    let count = total(orders: orders)\n    print(\"{count} things\")\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)"] selected 1
             Scroll
               VStack
                 Text "5 things"

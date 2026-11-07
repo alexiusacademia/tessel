@@ -316,6 +316,19 @@ impl Builtins {
                 P::new("stoppedLine", Ty::Int).default(),
                 P::new("onBreakpoint", Ty::func(vec![Ty::Int], Ty::Void)).default(),
                 P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
+                // Understanding code: underlined errors, the uses of a name,
+                // what the mouse rests on, and the keys and clicks that ask
+                // about a name (see `tsl_ui_code_editor_info`).
+                P::new("errorRanges", Ty::list(Ty::Range)).default(),
+                P::new("highlights", Ty::list(Ty::Range)).default(),
+                P::new("onHover", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("hoverText", Ty::Str).default(),
+                P::new("hoverAt", Ty::Int).default(),
+                P::new("onDefinition", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("onUses", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("onRename", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("onCaret", Ty::func(vec![Ty::Int], Ty::Void)).default(),
+                P::new("caret", Ty::Int).bind().default(),
             ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();

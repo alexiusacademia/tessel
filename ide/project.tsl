@@ -5,6 +5,9 @@ struct Problem {
     line: Int
     column: Int
     message: String
+    // Where it is in the file's text, in bytes (-1: not known).
+    lo: Int = -1
+    hi: Int = -1
 }
 
 // A row in the explorer.
@@ -21,9 +24,11 @@ struct Doc {
     text: String
     saved: String
     line: Int = 1
+    // The caret, as a byte offset into `text`.
+    caret: Int = 0
 }
 
-enum Panel { problems, console, debug }
+enum Panel { problems, console, debug, uses }
 
 // A line the debugger stops the program at.
 struct Breakpoint {
@@ -117,16 +122,6 @@ fn entries(folder: String, depth: Int, expanded: [String]) -> [Entry] {
         }
     }
     folders + files
-}
-
-// A line of `tessel check --format lines`:
-// file, line, column, end line, end column, message (tab-separated).
-fn parseProblem(text: String) -> Problem? {
-    let f = text.split("\t")
-    if f.count != 6 {
-        return nil
-    }
-    Problem(file: normalize(path: f[0]), line: Int(f[1]) ?? 1, column: Int(f[2]) ?? 1, message: f[5])
 }
 
 // A line of `tessel complete`: kind, label, detail (tab-separated).

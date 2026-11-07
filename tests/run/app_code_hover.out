@@ -1,0 +1,68 @@
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] = "let count = 1\nprint(count + cuont)\n"
+      Text ", caret at 0"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text ", caret at 22"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text ", caret at 22"
+      Button "Go to the second count"
+Tooltip "count: Int"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text ", caret at 22"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text ", caret at 22"
+      Button "Go to the second count"
+Tooltip "error: no `cuont` here"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text "definition at 21, caret at 21"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text "uses at 21, caret at 21"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text "rename at 21, caret at 21"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text "definition at 21, caret at 21"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 "cuont"] highlights [4..9 "count", 20..25 "count"] = "let count = 1\nprint(count + cuont)\n"
+      Text "definition at 21, caret at 22"
+      Button "Go to the second count"
+Root
+  View
+    VStack
+      CodeEditor errors [] underlined [28..33 " cuon"] highlights [4..9 "count", 21..26 "count"] = "let count = 1\nprint(Zcount + cuont)\n"
+      Text "definition at 21, caret at 21"
+      Button "Go to the second count"

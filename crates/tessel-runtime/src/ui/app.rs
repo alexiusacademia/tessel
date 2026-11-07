@@ -1158,6 +1158,8 @@ struct Tip {
 
 /// How long the mouse rests on a view before its tooltip shows.
 const TIP_DELAY: f64 = 0.6;
+/// How long the mouse rests on a word of a code editor before its `onHover:` is told.
+const CODE_TIP_DELAY: f64 = 0.5;
 
 thread_local! {
     /// `setWindowTitle(…)`: the title the window takes at its next update.
@@ -1331,6 +1333,7 @@ impl App {
                 self.each_surface(|a| a.sync_videos());
                 self.each_surface(|a| {
                     a.sync_editor_lines();
+                    a.sync_editor_carets();
                     a.track_editor_texts();
                 });
                 self.take_requests();
@@ -1362,6 +1365,7 @@ impl App {
             a.follow_caret();
             a.scroll_to_offset();
             a.layout_popup();
+            a.code_tip_sync();
             a.layout_menus();
             if let Some(tree) = a.tree.as_ref() {
                 a.ui.anim.step(tree, now(), (a.width, a.height), (&a.ui.scroll, &a.ui.scroll_x));
@@ -2108,6 +2112,7 @@ impl App {
             return true;
         }
         if let (true, Some((key, true))) = (right, self.context_target(x, y)) {
+            self.caret_for_menu(x, y);
             self.open_menu(MenuSource::Context(key), (x, y));
             return true;
         }
@@ -2277,6 +2282,224 @@ impl App {
         self.completing.selected = 0;
         ask.call_with_int(caret as i64);
         self.dirty = true;
+    }
+
+    /// The code editor whose text is at a point, if `wanted` says it asks
+    /// about it: its key, the character there (a byte offset), and the word
+    /// that character is in (or just the character).
+    fn code_at(&self, x: f64, y: f64, wanted: fn(&super::CodeInfo) -> bool) -> Option<(u64, usize, std::ops::Range<usize>)> {
+        let Some(Hit::Field(key)) = self.hit(x, y) else { return None };
+        let node = self.node(key)?;
+        let Kind::CodeEditor { text, code, .. } = &node.kind else { return None };
+        // (Not in the margin.)
+        if !wanted(code) || x < node.layout.rect.inset_by(node.mods.padding).x + node.layout.gutter {
+            return None;
+        }
+        let layout = node.layout.text.as_ref()?;
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        let (tx, ty) = (x - x0 + sx, y - y0 + sy);
+        if tx < 0.0 || ty < 0.0 || ty >= layout.height() {
+            return None;
+        }
+        // The character under the pointer: the one after the nearest caret
+        // stop, or the one before it when the pointer is left of the stop.
+        let mut offset = layout.offset_at(tx, ty);
+        if layout.caret(offset, 0.0).is_some_and(|c| tx < c.x0) {
+            offset = layout.previous(offset);
+        }
+        let text = read_string(text);
+        let c = text.get(offset..)?.chars().next().filter(|c| *c != '\n')?;
+        let word = if is_word(c) { super::text::word_at(&text, offset) } else { offset..offset + c.len_utf8() };
+        Some((key, offset, word))
+    }
+
+    /// The mouse moved: over another word of a code editor with `onHover:`,
+    /// a new wait starts (and what showed for the last one goes).
+    fn code_tip_move(&mut self, x: f64, y: f64) {
+        let at = self.code_at(x, y, |c| c.on_hover.is_some());
+        if let (Some(t), Some((key, _, word))) = (&self.ui.code_tip, &at) {
+            if t.key == *key && t.word == *word {
+                return;
+            }
+        }
+        if self.ui.code_tip.take().is_some_and(|t| t.shown) {
+            self.ui.tooltip = None;
+        }
+        self.ui.code_tip =
+            at.map(|(key, offset, word)| render::CodeTip { key, word, offset, since: now(), asked: false, shown: false, done: false });
+    }
+
+    /// When the mouse has rested on a word of a code editor long enough:
+    /// tells its `onHover:`. Returns whether it did.
+    fn code_tip_due(&mut self) -> bool {
+        let Some(t) = self.ui.code_tip.as_mut().filter(|t| !t.asked && !t.done && now() >= t.since + CODE_TIP_DELAY) else { return false };
+        t.asked = true;
+        let (key, offset) = (t.key, t.offset);
+        let Some(Kind::CodeEditor { code, .. }) = self.node(key).map(|n| &n.kind) else { return false };
+        let Some(hover) = code.on_hover.clone() else { return false };
+        hover.call_with_int(offset as i64);
+        self.dirty = true;
+        true
+    }
+
+    /// Shows a code editor's `hoverText:` next to the word the mouse rests
+    /// on, once it's the answer for that word (`hoverAt:`), and hides it
+    /// when it no longer is.
+    fn code_tip_sync(&mut self) {
+        let Some(t) = self.ui.code_tip.as_ref().filter(|t| t.asked && !t.done) else { return };
+        let (key, word, offset, shown) = (t.key, t.word.clone(), t.offset, t.shown);
+        let text = match self.node(key).map(|n| &n.kind) {
+            Some(Kind::CodeEditor { code, .. }) if code.hover_at == offset as i64 => code.hover_text.trim_end().to_string(),
+            _ => String::new(),
+        };
+        if text.is_empty() {
+            if shown {
+                self.ui.tooltip = None;
+                if let Some(t) = self.ui.code_tip.as_mut() {
+                    t.shown = false;
+                }
+            }
+            return;
+        }
+        if shown && self.ui.tooltip.as_ref().map(|tip| &tip.text) == Some(&text) {
+            return;
+        }
+        let Some(node) = self.node(key) else { return };
+        let Some(c) = node.layout.text.as_ref().and_then(|l| l.caret(word.start, 0.0)) else { return };
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        let layout = Rc::new(self.text.layout(&text, 12.0, 400.0, theme().colors[theme::PRIMARY], Some(480.0)));
+        let (w, h) = (layout.width() + 16.0, layout.height() + 10.0);
+        // Under the word, or over it when there's no room below.
+        let (left, top, bottom) = (x0 - sx + c.x0, y0 - sy + c.y0, y0 - sy + c.y1);
+        let x = left.min(self.width - w - 4.0).max(4.0);
+        let y = if bottom + 4.0 + h > self.height - 4.0 { (top - h - 4.0).max(4.0) } else { bottom + 4.0 };
+        self.ui.tooltip = Some(render::Tooltip { rect: Rect { x, y, w, h }, text, layout });
+        if let Some(t) = self.ui.code_tip.as_mut() {
+            t.shown = true;
+        }
+    }
+
+    /// Cmd-click (Ctrl-click on Windows and Linux) in a code editor with
+    /// `onDefinition:`: the caret goes there, and it's told where. Returns
+    /// whether the click was that.
+    fn definition_click(&mut self, key: u64, x: f64, y: f64) -> bool {
+        let Some((at, offset, _)) = self.code_at(x, y, |c| c.on_definition.is_some()).filter(|(k, _, _)| *k == key) else { return false };
+        self.press_field(at, x, y, false, 1);
+        let Some(Kind::CodeEditor { code, .. }) = self.node(at).map(|n| &n.kind) else { return true };
+        if let Some(go) = code.on_definition.clone() {
+            go.call_with_int(offset as i64);
+            self.dirty = true;
+        }
+        true
+    }
+
+    /// F12, Shift+F12 and F2 in a code editor with `onDefinition:`,
+    /// `onUses:` and `onRename:`: it's told the caret's offset. Returns
+    /// whether it took the key.
+    fn code_key(&mut self, name: &str, mods: Mods) -> bool {
+        if mods.primary || mods.alt || !matches!(name, "f12" | "f2") {
+            return false;
+        }
+        let Some((key, caret)) = self.ui.editing.as_ref().map(|e| (e.key, e.focus)) else { return false };
+        let Some(Kind::CodeEditor { code, .. }) = self.node(key).map(|n| &n.kind) else { return false };
+        let told = match (name, mods.shift) {
+            ("f12", false) => code.on_definition.clone(),
+            ("f12", true) => code.on_uses.clone(),
+            ("f2", false) => code.on_rename.clone(),
+            _ => None,
+        };
+        let Some(told) = told else { return false };
+        self.tip_hide();
+        told.call_with_int(caret as i64);
+        self.dirty = true;
+        true
+    }
+
+    /// After an edit or a click: tells the code editor's `onCaret:` where
+    /// the caret is, when that changed.
+    fn report_caret(&mut self) {
+        let Some((key, caret)) = self.ui.editing.as_ref().map(|e| (e.key, e.focus)) else { return };
+        let Some(Kind::CodeEditor { code, .. }) = self.node(key).map(|n| &n.kind) else { return };
+        let (at, told) = (code.caret.clone(), code.on_caret.clone());
+        // (`caret:`, bound.)
+        if let Some(at) = at {
+            let slot = at.locate() as *mut i64;
+            if unsafe { *slot } != caret as i64 {
+                unsafe { *slot = caret as i64 };
+                self.dirty = true;
+            }
+            self.ui.editor_caret.insert(key, caret as i64);
+        }
+        if self.ui.caret_told == Some((key, caret)) {
+            return;
+        }
+        let Some(told) = told else { return };
+        self.ui.caret_told = Some((key, caret));
+        told.call_with_int(caret as i64);
+        self.dirty = true;
+    }
+
+    /// Two-way sync of code editors' `caret:` bindings: when the program
+    /// sets a new offset (or one other than 0 for an editor just made), the
+    /// caret goes there.
+    fn sync_editor_carets(&mut self) {
+        fn editors(n: &Node, out: &mut Vec<(u64, Callback)>) {
+            if let Kind::CodeEditor { code, .. } = &n.kind
+                && let Some(at) = &code.caret
+            {
+                out.push((n.key, at.clone()));
+            }
+            n.children.iter().for_each(|c| editors(c, out));
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            editors(t, &mut found);
+        }
+        for (key, at) in found {
+            let wanted = unsafe { *(at.locate() as *const i64) };
+            match self.ui.editor_caret.insert(key, wanted) {
+                Some(known) if known == wanted => {}
+                None if wanted <= 0 => {}
+                _ => self.go_to_offset(key, wanted.max(0) as usize),
+            }
+        }
+    }
+
+    /// Puts the caret at byte `offset` of a code editor, a third of the way
+    /// down it, and tells its `line:` and `onCaret:`.
+    fn go_to_offset(&mut self, key: u64, offset: usize) {
+        let Some(text) = self.node(key).and_then(editable_text).map(read_string) else { return };
+        let mut offset = offset.min(text.len());
+        while !text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        self.ui.scroll_to = Some((key, offset));
+        // (While a view with `.onKey` has the keyboard, it keeps it.)
+        if self.ui.keys_to.is_some() {
+            return;
+        }
+        let mut e = Editing::new(key, &text);
+        e.anchor = offset;
+        e.focus = offset;
+        self.ui.editing = Some(e);
+        self.report_line();
+        self.report_caret();
+    }
+
+    /// A right click in a code editor, outside the selection, puts the
+    /// caret there first: its context menu is about what's clicked.
+    fn caret_for_menu(&mut self, x: f64, y: f64) {
+        let Some(Hit::Field(key)) = self.hit(x, y) else { return };
+        if !self.node(key).is_some_and(|n| matches!(n.kind, Kind::CodeEditor { .. })) {
+            return;
+        }
+        let inside = match (self.ui.editing.as_ref().filter(|e| e.key == key), self.code_at(x, y, |_| true)) {
+            (Some(e), Some((_, offset, _))) => !e.range().is_empty() && e.range().contains(&offset),
+            _ => false,
+        };
+        if !inside {
+            self.press_field(key, x, y, false, 1);
+        }
     }
 
     /// Replaces the word being completed with suggestion `index` of `m`.
@@ -3238,6 +3461,7 @@ impl App {
             self.tip = over.map(|key| Tip { key, since: now(), done: false });
             self.ui.tooltip = None;
         }
+        self.code_tip_move(x, y);
     }
 
     /// A click, a key or the wheel: the tooltip goes, until the mouse has
@@ -3246,12 +3470,18 @@ impl App {
         if let Some(t) = self.tip.as_mut() {
             t.done = true;
         }
+        if let Some(t) = self.ui.code_tip.as_mut() {
+            (t.done, t.shown) = (true, false);
+        }
         self.ui.tooltip = None;
     }
 
-    /// When the waiting tooltip is to show (on the app's clock), if one waits.
+    /// When the waiting tooltip is to show (on the app's clock), if one
+    /// waits (or a code editor's `onHover:` is to be told).
     fn tip_time(&self) -> Option<f64> {
-        self.tip.as_ref().filter(|t| !t.done).map(|t| t.since + TIP_DELAY)
+        let code = self.ui.code_tip.as_ref().filter(|t| !t.asked && !t.done).map(|t| t.since + CODE_TIP_DELAY);
+        let view = self.tip.as_ref().filter(|t| !t.done).map(|t| t.since + TIP_DELAY);
+        view.into_iter().chain(code).reduce(f64::min)
     }
 
     /// Brings the notice that shows in line with `showNotice`: a new one
@@ -3282,6 +3512,9 @@ impl App {
     /// Shows the tooltip if the mouse has rested long enough. Returns
     /// whether it just came up.
     fn tip_due(&mut self) -> bool {
+        if self.code_tip_due() {
+            return true;
+        }
         let Some(tip) = self.tip.as_ref().filter(|t| !t.done && now() >= t.since + TIP_DELAY) else { return false };
         let Some(text) = self.node(tip.key).and_then(|n| n.mods.tooltip.clone()) else {
             self.tip = None;
@@ -3498,6 +3731,8 @@ impl App {
             return;
         }
         let plain = !(mods.primary || mods.alt || mods.control);
+        // (A key puts the tooltip away, as in a window.)
+        self.tip_hide();
         // Escape puts away what's being dragged, then an open palette.
         if name == "escape" && self.ui.dragging.is_some() {
             self.end_drag(None);
@@ -3543,6 +3778,10 @@ impl App {
             if self.run_on_key_event(name, text, mods, repeated, false) {
                 return;
             }
+        }
+        // F12, Shift+F12 and F2 in a code editor that asks about names.
+        if self.code_key(name, mods) {
+            return;
         }
         if EDIT_KEYS.contains(&name) || mods.primary {
             self.key(name, mods);
@@ -4210,6 +4449,11 @@ impl App {
                     self.dirty = true;
                 }
             }
+            // Cmd-click on a name: to its declaration.
+            (Hit::Field(key), Kind::CodeEditor { code, .. }) if self.ui.click_mods.1 && code.on_definition.is_some() => {
+                let key = *key;
+                self.definition_click(key, x, y);
+            }
             (Hit::Field(key), Kind::TextField { text, .. } | Kind::CodeEditor { text, .. }) => {
                 if self.ui.editing.as_ref().is_none_or(|e| e.key != *key) {
                     self.ui.editing = Some(Editing::new(*key, &read_string(text)));
@@ -4659,6 +4903,7 @@ impl App {
         if let Some(cb) = on_change.filter(|_| changed) {
             cb.call();
         }
+        self.report_caret();
     }
 
     /// Undo (or redo) the last change in the view being edited, or, while
@@ -5201,6 +5446,44 @@ impl App {
         visit(self.tree.as_ref()?, title)
     }
 
+    /// For `hover editor "…"` and `click editor "…"`: the code editor being
+    /// edited (or else the first one shown), and the point on the first
+    /// place its text has `wanted`: on its first character, or on the one
+    /// after a `|` in it. The editor scrolls to show it.
+    fn find_in_code(&mut self, wanted: &str) -> Option<(u64, f64, f64)> {
+        fn visit(node: &Node, out: &mut Vec<u64>) {
+            if node.mods.hidden {
+                return;
+            }
+            if matches!(node.kind, Kind::CodeEditor { .. }) {
+                out.push(node.key);
+            }
+            node.visible_children().iter().for_each(|c| visit(c, out));
+        }
+        let mut shown = Vec::new();
+        visit(self.tree.as_ref()?, &mut shown);
+        let editing = self.ui.editing.as_ref().map(|e| e.key).filter(|k| shown.contains(k));
+        let key = editing.or(shown.first().copied())?;
+        let node = self.node(key)?;
+        let text = editable_text(node).map(read_string)?;
+        let (before, after) = wanted.split_once('|').unwrap_or(("", wanted));
+        let offset = text.find(&format!("{before}{after}"))? + before.len();
+        let layout = node.layout.text.as_ref()?;
+        let c = layout.caret(offset, 0.0)?;
+        let content = node.layout.rect.inset_by(node.mods.padding);
+        let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
+        let sy = self.ui.scroll.get(&key).copied().unwrap_or(0.0);
+        if c.y0 < sy || c.y1 > sy + visible_h {
+            let y = (c.y0 - visible_h / 3.0).min((layout.height() - visible_h).max(0.0)).max(0.0);
+            self.ui.scroll.insert(key, y);
+        }
+        let node = self.node(key)?;
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        // (Just right of its left edge: on it, and a click there puts the caret before it.)
+        let x = c.x0 + 1.0;
+        Some((key, x0 - sx + x, y0 - sy + (c.y0 + c.y1) / 2.0))
+    }
+
     /// Center of the `n`th (from 1) view of a kind, in tree order.
     fn find_nth(&self, kind: &str, n: usize) -> Option<(f64, f64)> {
         fn visit<'n>(node: &'n Node, kind: &str, out: &mut Vec<&'n Node>) {
@@ -5342,9 +5625,18 @@ impl App {
                 }
                 Kind::Svg { icon: Some(name), .. } => format!("Icon {name}"),
                 Kind::Svg { .. } => "Svg".to_string(),
-                Kind::CodeEditor { text, error_lines, breakpoints, stopped_line, .. } => {
+                Kind::CodeEditor { text, error_lines, breakpoints, stopped_line, code, .. } => {
                     // (A debugger's marks, when there are any.)
                     let mut marks = String::new();
+                    // (The errors underlined and the uses highlighted, with what they cover.)
+                    let all = read_string(text);
+                    for (what, ranges) in [("underlined", &code.errors), ("highlights", &code.highlights)] {
+                        if !ranges.is_empty() {
+                            let shown: Vec<String> =
+                                ranges.iter().map(|r| format!("{}..{} {:?}", r.start, r.end, all.get(r.clone()).unwrap_or(""))).collect();
+                            marks += &format!(" {what} [{}]", shown.join(", "));
+                        }
+                    }
                     if !breakpoints.is_empty() {
                         marks += &format!(" breakpoints {breakpoints:?}");
                     }
@@ -5723,6 +6015,21 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                     }
                 }
                 app.ui.click_mods = held;
+                // `click editor "text"`: in the code editor's text, where it
+                // says (`click cmd editor "…"`: to the declaration there).
+                if let Some(wanted) = rest.strip_prefix("editor \"") {
+                    app.update();
+                    let Some((key, x, y)) = app.find_in_code(wanted.trim_end_matches('"')) else {
+                        eprintln!("script: no `{}` in a code editor", wanted.trim_end_matches('"'));
+                        return 2;
+                    };
+                    if !(held.1 && app.definition_click(key, x, y)) {
+                        app.press_field(key, x, y, held.0, 1);
+                    }
+                    app.ui.click_mods = (false, false);
+                    mouse = (x, y);
+                    continue;
+                }
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let point = if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
@@ -5756,6 +6063,11 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             "rightclick" | "doubleclick" => {
                 let n = match rest.starts_with('"') {
                     true => app.find_label(rest.trim_matches('"')).map_or(Vec::new(), |(x, y)| vec![x, y]),
+                    // (`rightclick editor "…"`: in a code editor's text.)
+                    false if rest.starts_with("editor \"") => {
+                        app.update();
+                        app.find_in_code(rest["editor \"".len()..].trim_end_matches('"')).map_or(Vec::new(), |(_, x, y)| vec![x, y])
+                    }
                     false => numbers(rest),
                 };
                 if let [x, y] = n[..] {
@@ -5915,7 +6227,9 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             }
             "hover" => {
                 app.update();
-                let point = if rest.starts_with('"') {
+                let point = if let Some(wanted) = rest.strip_prefix("editor \"") {
+                    app.find_in_code(wanted.trim_end_matches('"')).map(|(_, x, y)| (x, y))
+                } else if rest.starts_with('"') {
                     app.find_label(rest.trim_matches('"'))
                 } else {
                     let n: Vec<f64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
@@ -7527,7 +7841,10 @@ impl ApplicationHandler for WindowApp {
                         if !matches!(hit, Some(Hit::Field(_) | Hit::Slider(_) | Hit::Drag(_))) {
                             self.drag_start = self.app.drag_view_at(x, y, false).map(|key| (key, (x, y)));
                         }
-                        if let Some(Hit::Field(key)) = hit {
+                        // Cmd-click (Ctrl-click) on a name in a code editor: to its declaration.
+                        let definition = matches!(hit, Some(Hit::Field(key)) if self.mods.primary && self.app.definition_click(key, x, y));
+                        if let (Some(Hit::Field(key)), false) = (&hit, definition) {
+                            let key = *key;
                             let now = Instant::now();
                             let clicks = match self.last_click {
                                 Some((t, (px, py), n))
