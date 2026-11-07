@@ -67,6 +67,18 @@ Each open file gets a tab. The editor has:
 - **Undo and redo** with Cmd+Z and Cmd+Shift+Z.
 - The usual text editing keys: select with the mouse or Shift and the arrow
   keys, copy, cut, paste, and select all. Tab inserts four spaces.
+- **Editing keys like VS Code's:** Cmd+/ comments lines out and back in,
+  Alt+Up and Alt+Down move lines, Shift+Alt+Up and Down copy them, Shift+Cmd+K
+  deletes them, Cmd+Enter starts a new line below, Cmd+] and Cmd+[ indent and
+  outdent, and Cmd+L selects the line. Brackets and quotes close themselves,
+  and the bracket that matches the one at the cursor gets a box.
+- **Several cursors:** Alt+click adds one, Cmd+D selects the word and then
+  its next occurrence, and Cmd+Alt+Up or Down adds one above or below. What
+  you type goes in at every cursor. Escape goes back to one.
+- **Folding:** the arrow left of a line that opens a block folds it to
+  `{ … }`; Cmd+Alt+[ and Cmd+Alt+] fold and unfold where the cursor is.
+
+The [code editor](/ui/code-editor/#editing-keys) page lists every key.
 
 A tab whose file has unsaved changes shows a dot (`•`) before its name.
 Closing a tab with its **×** button saves your changes first.

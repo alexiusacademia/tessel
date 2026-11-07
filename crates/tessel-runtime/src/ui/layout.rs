@@ -82,6 +82,8 @@ pub struct Box {
     pub empty: bool,
     /// For code editors: the width of the line-number gutter.
     pub gutter: f64,
+    /// For code editors: its brackets, folds and lines (see `code::Info`).
+    pub code: Option<std::rc::Rc<super::code::Info>>,
     /// For tab views: each tab's title, rectangle and close button.
     pub tabs: Vec<Tab>,
     /// A ribbon group (and its items) shown small, for lack of room.
@@ -575,10 +577,24 @@ impl Layouter<'_> {
             }
             Kind::CodeEditor { text, .. } => {
                 let value = self.shown_text(n.key, read_string(text));
-                let t = self.text.code_layout(&value, 13.0);
+                // Folded blocks show as `{ … }`: the text laid out is
+                // shorter, but its layout has the whole text's offsets.
+                use super::code;
+                let pairs = code::bracket_pairs(&value);
+                let foldable = code::foldable(&value, &pairs);
+                let folded = code::outermost(&code::folds(n.key, &value));
+                let mut t = if folded.is_empty() {
+                    self.text.code_layout(&value, 13.0)
+                } else {
+                    self.text.code_layout(&code::folded_text(&value, &folded), 13.0)
+                };
+                code::unfold_layout(&mut t, &folded, value.len());
                 let count = t.lines.len().max(1);
-                let digits = count.to_string().len().max(2);
-                let numbers: Vec<String> = (1..=count).map(|i| format!("{i:>digits$}")).collect();
+                let lines: Vec<usize> = if folded.is_empty() { (0..count).collect() } else { code::shown_lines(&value, &t) };
+                let last = lines.last().map_or(count, |l| (l + 1).max(count));
+                let digits = last.max(value.matches('\n').count() + 1).to_string().len().max(2);
+                let numbers: Vec<String> = lines.iter().map(|i| format!("{:>digits$}", i + 1)).collect();
+                n.layout.code = Some(std::rc::Rc::new(code::Info { pairs, foldable, folded, lines }));
                 let numbers = self.text.mono_layout(&numbers.join("\n"), 13.0, theme().line_number);
                 n.layout.gutter = numbers.width() + GUTTER_PAD.0 + GUTTER_PAD.1;
                 n.layout.content_h = t.height() + 2.0 * CODE_PAD_Y;

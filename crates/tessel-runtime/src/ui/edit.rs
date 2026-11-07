@@ -11,6 +11,8 @@ pub struct Snapshot {
     pub text: String,
     pub anchor: usize,
     pub focus: usize,
+    /// A code editor's other cursors (see `Editing::others`).
+    pub others: Vec<(usize, usize)>,
 }
 
 /// Undo and redo for one text field or code editor.
@@ -36,6 +38,11 @@ pub struct Editing {
     /// What moving the mouse with its button down selects (set by the click
     /// that began it).
     pub drag: DragBy,
+    /// A code editor's other cursors and selections, as (anchor, focus):
+    /// besides the main one (`anchor`, `focus`), which the caret follows
+    /// and the `line:` binding reports. Empty with a single cursor. They
+    /// never overlap one another or the main one (see `code::normalize`).
+    pub others: Vec<(usize, usize)>,
 }
 
 /// How a drag extends the selection.
@@ -53,7 +60,7 @@ pub enum DragBy {
 
 impl Editing {
     pub fn new(key: u64, text: &str) -> Editing {
-        Editing { key, anchor: text.len(), focus: text.len(), scroll: 0.0, drag: DragBy::Character }
+        Editing { key, anchor: text.len(), focus: text.len(), scroll: 0.0, drag: DragBy::Character, others: Vec::new() }
     }
 
     pub fn range(&self) -> std::ops::Range<usize> {
@@ -71,6 +78,10 @@ impl Editing {
         };
         self.anchor = fix(self.anchor);
         self.focus = fix(self.focus);
+        for (a, f) in &mut self.others {
+            *a = fix(*a);
+            *f = fix(*f);
+        }
     }
 
     /// Moves the caret to `to`; with `extend`, the selection's other end stays.
@@ -110,6 +121,8 @@ pub enum Edit {
     /// A click at a point in the text's coordinates; `clicks` counts double and triple clicks.
     Click { x: f64, y: f64, extend: bool, clicks: u32 },
     Drag { x: f64, y: f64 },
+    /// What only a code editor does (see `code::Cmd`).
+    Code(super::code::Cmd),
 }
 
 pub enum Clipboard {
@@ -137,7 +150,7 @@ impl Clipboard {
         }
     }
 
-    fn get(&mut self) -> String {
+    pub fn get(&mut self) -> String {
         match self {
             #[cfg(not(target_os = "android"))]
             Clipboard::System(c) => c.get_text().unwrap_or_default(),
@@ -178,7 +191,7 @@ impl Clipboard {
         }
     }
 
-    fn set(&mut self, text: &str) {
+    pub fn set(&mut self, text: &str) {
         match self {
             #[cfg(target_os = "android")]
             Clipboard::Phone => {
@@ -240,15 +253,7 @@ pub fn apply(
         Edit::Backspace(unit) | Edit::Delete(unit) => {
             if e.range().is_empty() {
                 let forward = matches!(edit, Edit::Delete(_));
-                let to = match (unit, forward) {
-                    (Unit::Char, false) => layout.previous(focus),
-                    (Unit::Char, true) => layout.next(focus),
-                    (Unit::Word, false) => text::word_before(text, focus),
-                    (Unit::Word, true) => text::word_after(text, focus),
-                    (Unit::Line, false) => layout.line_start(focus),
-                    (Unit::Line, true) => layout.line_end(focus),
-                };
-                e.go(to, true);
+                e.go(target(text, layout, focus, unit, forward), true);
                 if e.range().is_empty() {
                     return None;
                 }
@@ -263,15 +268,7 @@ pub fn apply(
                 e.collapse_to(if right { r.end } else { r.start });
                 return None;
             }
-            let to = match (unit, right) {
-                (Unit::Char, false) => layout.previous(focus),
-                (Unit::Char, true) => layout.next(focus),
-                (Unit::Word, false) => text::word_before(text, focus),
-                (Unit::Word, true) => text::word_after(text, focus),
-                (Unit::Line, false) => layout.line_start(focus),
-                (Unit::Line, true) => layout.line_end(focus),
-            };
-            e.go(to, extend);
+            e.go(target(text, layout, focus, unit, right), extend);
             None
         }
         Edit::Up { extend } => {
@@ -327,6 +324,19 @@ pub fn apply(
             }
             None
         }
+        Edit::Code(_) => None,
+    }
+}
+
+/// Where moving (or deleting) by `unit` from `from` goes: forward (right) or back.
+pub fn target(text: &str, layout: &TextLayout, from: usize, unit: Unit, forward: bool) -> usize {
+    match (unit, forward) {
+        (Unit::Char, false) => layout.previous(from),
+        (Unit::Char, true) => layout.next(from),
+        (Unit::Word, false) => text::word_before(text, from),
+        (Unit::Word, true) => text::word_after(text, from),
+        (Unit::Line, false) => layout.line_start(from),
+        (Unit::Line, true) => layout.line_end(from),
     }
 }
 

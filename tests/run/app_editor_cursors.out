@@ -1,0 +1,200 @@
+Editing CodeEditor, 3 cursors
+  let |a = 1
+  let |b = 2
+  let |c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let x|a = 1
+  let x|b = 2
+  let x|c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xyz|a = 1
+  let xyz|b = 2
+  let xyz|c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xy|a = 1
+  let xy|b = 2
+  let xy|c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xy| = 1
+  let xy| = 2
+  let xy| = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let x«y|» = 1
+  let x«y|» = 2
+  let x«y|» = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let x(«y|») = 1
+  let x(«y|») = 2
+  let x(«y|») = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let x«y|» = 1
+  let x«y|» = 2
+  let x«y|» = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xyz|a = 1
+  let xyz|b = 2
+  let xyz|c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xy|a = 1
+  let xy|b = 2
+  let xy|c = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xya = 1|
+  let xyb = 2|
+  let xyc = 3|
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  |let xya = 1
+  |let xyb = 2
+  |let xyc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  «let xya = 1|»
+  «let xyb = 2|»
+  «let xyc = 3|»
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xya = 1 let xya = 1|
+  let xyb = 2 let xyb = 2|
+  let xyc = 3 let xyc = 3|
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xyz|a = 1
+  let xyz|b = 2
+  let xyz|c = 3
+  print(a + b + c)
+Editing CodeEditor, 4 cursors
+  let xyz|a = 1
+  |let xyz|b = 2
+  let xyz|c = 3
+  print(a + b + c)
+Editing CodeEditor
+  let xyza = 1
+  |let xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing nothing
+Editing CodeEditor
+  «let|» xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 2 cursors
+  «let|» xyza = 1
+  «let|» xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  «let|» xyza = 1
+  «let|» xyzb = 2
+  «let|» xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  var| xyza = 1
+  var| xyzb = 2
+  var| xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  «let|» xyza = 1
+  «let|» xyzb = 2
+  «let|» xyzc = 3
+  print(a + b + c)
+Editing CodeEditor
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  print(«a|» + b + c)
+Editing CodeEditor
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  print(z| + b + c)
+Editing CodeEditor, 2 cursors
+  le|t xyza = 1
+  le|t xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 2 cursors
+  le|t xyza = 1
+  le|t xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 4 cursors
+  le|t xyza = 1
+  le|t xyzb = 2
+  le|t xyzc = 3
+  pr|int(a + b + c)
+Editing CodeEditor, 4 cursors
+  // le|t xyza = 1
+  // le|t xyzb = 2
+  // le|t xyzc = 3
+  // pr|int(a + b + c)
+Editing CodeEditor, 4 cursors
+  le|t xyza = 1
+  le|t xyzb = 2
+  le|t xyzc = 3
+  pr|int(a + b + c)
+Editing CodeEditor, 4 cursors
+  let xyza = 1
+  le|t xyzb = 2
+  le|t xyzc = 3
+  pr|int(a + b + c)|
+Editing CodeEditor
+  |let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor
+  |let xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  le|t xyza = 1
+  le|t xyzb = 2
+  le|t xyzc = 3
+  print(a + b + c)
+Editing CodeEditor, 3 cursors
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  let xyza = 1
+  let xyza = 1|let xyzb = 2
+  let xyzb = 2|let xyzc = 3
+  let xyzc = 3|print(a + b + c)
+Editing CodeEditor, 4 cursors
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  |let xyza = 1
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  |let xyzb = 2
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  |let xyzc = 3
+  let xyza = 1
+  let xyzb = 2
+  let xyzc = 3
+  |print(a + b + c)
+Root
+  View
+    VStack
+      CodeEditor errors [] = "let xyza = 1\nlet xyzb = 2\nlet xyzc = 3\nlet xyza = 1\nlet xyzb = 2\nlet xyzc = 3\nlet xyza = 1\nlet xyza = 1\nlet xyzb = 2\nlet xyzc = 3\nlet xyzb = 2\nlet xyza = 1\nlet xyzb = 2\nlet xyzc = 3\nlet xyzc = 3\nlet xyza = 1\nlet xyzb = 2\nlet xyzc = 3\nprint(a + b + c)"
+      Text "Line 7"

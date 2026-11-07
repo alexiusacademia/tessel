@@ -73,13 +73,64 @@ Line numbers start at 1, as they do in the gutter.
   longer than the editor is wide. The editor also scrolls by itself to bring
   the cursor into view when you type or move it.
 - **All the usual editing keys**, including selection, the clipboard and
-  undo; see [Editing text](/ui/controls/#editing-text).
+  undo; see [Editing text](/ui/controls/#editing-text). On top of those, the
+  keys of a code editor like VS Code's, listed below.
 - **Indentation help:**
   - Enter starts the new line with the same indentation as the current one,
-    plus one more level (4 spaces) after a line ending in `{`.
+    plus one more level (4 spaces) after a line ending in `{`. Spaces left
+    before the cursor are dropped, so a line of only spaces becomes empty.
+  - Enter between `{` and `}` puts the `}` on a line of its own, with the
+    cursor indented on the line between.
   - Tab inserts 4 spaces.
   - Typing `}` on a line that only has spaces so far removes one level of
     indentation.
+- **Closing brackets and quotes.** Typing `(`, `[`, `{` or `"` also types the
+  closing one after the cursor, when what follows is a space, the end of
+  the line or a closing character. A `"` isn't closed right after a letter
+  or inside a string or comment. Typing a closing character next to the same
+  one steps over it, and Backspace between an empty pair (`(|)`) deletes
+  both. With text selected, an opening character goes around it.
+- **Matching brackets.** With the cursor next to a bracket, it and its partner
+  get a box. Brackets in strings and comments don't count.
+- **Folding.** Each line that opens a `{` block whose `}` is on a later line
+  has an arrow left of its code (shown while the pointer is over the
+  margin). Click it to fold the block to one line, shown as `{ … }`, and
+  again to unfold it. The line numbers skip the folded lines. The cursor
+  steps over a folded block; a block unfolds when the cursor or an edit goes
+  into it.
+- **Several cursors.** Alt+click adds a cursor (Alt+click on one takes it
+  away again), Cmd+D selects the word at the cursor and then each next place
+  it's found, and Cmd+Alt+Up or Down adds one on the line above or below.
+  Typing, Backspace and Delete, the arrow keys, Home and End, cut, copy and
+  paste work at every cursor. Pasting as many lines as there are cursors puts
+  one line at each. Escape goes back to a single cursor.
+
+### Editing keys
+
+These are on top of the [usual ones](/ui/controls/#editing-text). On Windows,
+use Ctrl where it says Cmd. Each change is one step for undo.
+
+| Keys | What they do |
+|------|-------------|
+| Cmd+/ | Comments out the line with `// ` (or every line of the selection, at their least indentation), or uncomments it when all of them are comments. |
+| Alt+Up, Alt+Down | Moves the line (or the selected lines) up or down. |
+| Shift+Alt+Up, Shift+Alt+Down | Copies the line (or the selected lines) above or below. |
+| Shift+Cmd+K | Deletes the line (or the selected lines). |
+| Cmd+Enter, Shift+Cmd+Enter | Starts a new line below or above, whatever the cursor's place on the line. |
+| Tab, Shift+Tab | With a selection over several lines: indents or outdents them by 4 spaces. Shift+Tab outdents the cursor's line too. |
+| Cmd+], Cmd+[ | Indents or outdents the line (or the selected lines). |
+| Cmd+L | Selects the line; again, the next one too. |
+| Home | Goes to the line's first character that isn't a space; again, to its very start. Cmd+Left does the same. |
+| Cmd+D | Selects the word at the cursor; again, adds the next place it's found as another cursor. |
+| Alt+click | Adds a cursor (or takes one away). |
+| Cmd+Alt+Up, Cmd+Alt+Down | Adds a cursor on the line above or below. |
+| Escape | Goes back to one cursor (with one, stops editing). |
+| Cmd+Alt+[, Cmd+Alt+] | Folds or unfolds the block the cursor is in. |
+
+A [`.shortcut`](/reference/modifiers/#shortcut) of the app takes its keys
+from the editor only when it asks for exactly those keys: `.shortcut("shift+k")`
+takes Shift+Cmd+K, but `.shortcut("k")` (which otherwise also runs with Shift)
+leaves it to the editor.
 
 ## Marking errors
 

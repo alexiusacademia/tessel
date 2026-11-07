@@ -73,6 +73,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
+use super::code;
 use super::edit::{self, Clipboard, Edit, Editing, Unit};
 use super::layout::{read_string, Layouter, Rect};
 use super::menu::{self, Command, Entry, Std};
@@ -1479,6 +1480,12 @@ impl App {
         if self.ui.editing.is_none() {
             self.ui.composing = None;
         }
+        // A folded block the cursor went into (by undo, say) unfolds.
+        if let Some(e) = self.ui.editing.as_ref().filter(|e| code::has_folds(e.key))
+            && let Some(Kind::CodeEditor { text, .. }) = self.node(e.key).map(|n| &n.kind)
+        {
+            code::reveal(e.key, &read_string(text), e);
+        }
         let composing =
             self.ui.editing.as_ref().zip(self.ui.composing.as_ref()).map(|(e, c)| (e.key, e.range(), c.text.as_str()));
         let top = if self.bar_drawn() { menu::BAR_H } else { 0.0 };
@@ -2384,7 +2391,7 @@ impl App {
     /// whether the click was that.
     fn definition_click(&mut self, key: u64, x: f64, y: f64) -> bool {
         let Some((at, offset, _)) = self.code_at(x, y, |c| c.on_definition.is_some()).filter(|(k, _, _)| *k == key) else { return false };
-        self.press_field(at, x, y, false, 1);
+        self.press_field(at, x, y, false, 1, false);
         let Some(Kind::CodeEditor { code, .. }) = self.node(at).map(|n| &n.kind) else { return true };
         if let Some(go) = code.on_definition.clone() {
             go.call_with_int(offset as i64);
@@ -2396,7 +2403,7 @@ impl App {
     /// F12, Shift+F12 and F2 in a code editor with `onDefinition:`,
     /// `onUses:` and `onRename:`: it's told the caret's offset. Returns
     /// whether it took the key.
-    fn code_key(&mut self, name: &str, mods: Mods) -> bool {
+    fn name_key(&mut self, name: &str, mods: Mods) -> bool {
         if mods.primary || mods.alt || !matches!(name, "f12" | "f2") {
             return false;
         }
@@ -2498,7 +2505,7 @@ impl App {
             _ => false,
         };
         if !inside {
-            self.press_field(key, x, y, false, 1);
+            self.press_field(key, x, y, false, 1, false);
         }
     }
 
@@ -2852,7 +2859,7 @@ impl App {
                 // Undoing puts the caret where the change began.
                 let at = common_prefix(&h.last_text, &text);
                 let before = std::mem::replace(&mut h.last_text, text);
-                h.undo.push(edit::Snapshot { text: before, anchor: at, focus: at });
+                h.undo.push(edit::Snapshot { text: before, anchor: at, focus: at, others: Vec::new() });
                 h.redo.clear();
                 h.typing = false;
                 self.ui.last_edited = Some(key);
@@ -2965,13 +2972,138 @@ impl App {
         key.and_then(|k| self.node(k)).is_some_and(|n| matches!(n.kind, Kind::CodeEditor { .. }))
     }
 
-    /// The edited text, and the text of the caret's line up to the caret.
-    fn line_before_caret(&self) -> Option<String> {
+    /// The command a key is in a code editor being edited (and has no
+    /// `.shortcut` of exactly those keys), with Cmd on macOS and Ctrl on
+    /// Windows as `primary`. Folding is `fold_key`.
+    fn code_key(&self, name: &str, mods: Mods) -> Option<code::Cmd> {
+        use code::Cmd;
         let e = self.ui.editing.as_ref()?;
-        let text = read_string(editable_text(self.node(e.key)?)?);
-        let caret = e.range().start.min(text.len());
-        let line_start = text[..caret].rfind('\n').map_or(0, |i| i + 1);
-        Some(text[line_start..caret].to_string())
+        if !self.editing_code() {
+            return None;
+        }
+        let up = name == "up";
+        Some(match (name, mods.primary, mods.shift, mods.alt) {
+            ("/", true, false, false) => Cmd::ToggleComment,
+            ("up" | "down", false, false, true) => Cmd::MoveLines { up },
+            ("up" | "down", false, true, true) => Cmd::CopyLines { up },
+            ("up" | "down", true, false, true) => Cmd::AddCursor { up },
+            ("k", true, true, false) => Cmd::DeleteLines,
+            ("enter", true, above, false) => Cmd::InsertLine { above },
+            ("]", true, false, false) => Cmd::Indent,
+            ("[", true, false, false) => Cmd::Outdent,
+            ("tab", false, shift, false) => Cmd::Tab { shift },
+            ("l", true, false, false) => Cmd::SelectLine,
+            ("d", true, false, false) => Cmd::SelectNext,
+            ("home", false, extend, false) | ("left", true, extend, false) => Cmd::Home { extend },
+            ("escape", false, false, false) if !e.others.is_empty() => Cmd::SingleCursor,
+            _ => return None,
+        })
+    }
+
+    /// Cmd+Alt+[ folds the block the caret is in (`fold`), Cmd+Alt+] unfolds it.
+    fn fold_key(&mut self, fold: bool) {
+        let Some(mut e) = self.ui.editing.clone() else { return };
+        let Some(text) = self.node(e.key).and_then(editable_text).map(read_string) else { return };
+        if let Some((open, close)) = code::fold_at(e.key, &text, e.focus, fold) {
+            if fold {
+                code::out_of_fold(&mut e, open, close);
+                self.ui.editing = Some(e);
+            }
+            self.dirty = true;
+        }
+    }
+
+    /// Folds or unfolds the block on `line` (from 0) of code editor `key`,
+    /// as its fold arrow does.
+    fn toggle_fold(&mut self, key: u64, line: usize) -> bool {
+        let Some(text) = self.node(key).and_then(editable_text).map(read_string) else { return false };
+        let Some((open, close, folded)) = code::toggle_line(key, &text, line) else { return false };
+        match self.ui.editing.as_mut().filter(|e| e.key == key) {
+            Some(e) if folded => code::out_of_fold(e, open, close),
+            Some(_) => {}
+            // (Not edited yet: it is, with the caret on that line.)
+            None => {
+                let at = code::line_span(&text, line).map_or(0, |s| s.0);
+                self.ui.editing = Some(Editing { key, anchor: at, focus: at, ..Default::default() });
+            }
+        }
+        self.dirty = true;
+        true
+    }
+
+    /// The line (from 0) of a code editor's text at height `y` (in the
+    /// window), whose block a fold arrow there folds.
+    fn code_line_at(&self, node: &Node, y: f64) -> Option<usize> {
+        let t = node.layout.text.as_ref()?;
+        let at = y - render::code_origin(node).1 + self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
+        let shown = t.lines.iter().position(|l| at >= l.top && at < l.bottom)?;
+        let info = node.layout.code.as_ref()?;
+        Some(if info.folded.is_empty() { shown } else { *info.lines.get(shown)? })
+    }
+
+    /// Whether (x, y) is on a fold arrow of code editor `node`: then its line.
+    fn fold_arrow_at(&self, node: &Node, x: f64, y: f64) -> Option<usize> {
+        let (x0, x1) = render::fold_column(node);
+        if !(x >= x0 && x < x1) {
+            return None;
+        }
+        let line = self.code_line_at(node, y)?;
+        node.layout.code.as_ref()?.foldable.iter().any(|f| f.0 == line).then_some(line)
+    }
+
+    /// Where line `line` and column `column` (from 1, in bytes) of a code
+    /// editor's text are drawn: for the `clicktext` script command.
+    fn code_point(&self, node: &Node, line: usize, column: usize) -> Option<(f64, f64)> {
+        let text = editable_text(node).map(read_string)?;
+        let (start, len) = code::line_span(&text, line.checked_sub(1)?)?;
+        let at = start + column.saturating_sub(1).min(len);
+        let c = node.layout.text.as_ref()?.caret(at, 0.0)?;
+        let (x0, y0, sx, sy) = self.text_origin(node);
+        Some((x0 - sx + c.x0, y0 - sy + (c.y0 + c.y1) / 2.0))
+    }
+
+    /// The code editor being edited, or else the first one.
+    fn some_code_editor(&self) -> Option<u64> {
+        fn first(n: &Node) -> Option<u64> {
+            if matches!(n.kind, Kind::CodeEditor { .. }) && !n.mods.hidden {
+                return Some(n.key);
+            }
+            n.visible_children().iter().find_map(|c| first(c))
+        }
+        let edited = self.ui.editing.as_ref().map(|e| e.key).filter(|k| self.node(*k).is_some_and(|n| matches!(n.kind, Kind::CodeEditor { .. })));
+        edited.or_else(|| first(self.tree.as_ref()?))
+    }
+
+    /// The text being edited with its cursors marked (the `editing`
+    /// script command), after a line saying what it is (and, for a code
+    /// editor, its folded lines).
+    fn describe_editing(&self) -> String {
+        let Some(e) = self.ui.editing.as_ref() else { return "Editing nothing\n".into() };
+        let Some(node) = self.node(e.key) else { return "Editing nothing\n".into() };
+        let text = shown_text(node).unwrap_or_default();
+        let mut e = e.clone();
+        e.clamp(&text);
+        let what = match node.kind {
+            Kind::CodeEditor { .. } => "CodeEditor",
+            Kind::TextField { .. } => "TextField",
+            Kind::RichEditor { .. } => "RichTextEditor",
+            _ => "Text",
+        };
+        let mut head = format!("Editing {what}");
+        if !e.others.is_empty() {
+            head += &format!(", {} cursors", e.others.len() + 1);
+        }
+        if matches!(node.kind, Kind::CodeEditor { .. }) {
+            let folded: Vec<usize> = code::folds(e.key, &text).iter().map(|f| code::line_of(&text, f.0) + 1).collect();
+            if !folded.is_empty() {
+                head += &format!(", folded {folded:?}");
+            }
+        }
+        let mut out = head + "\n";
+        for line in code::marked(&text, &e).split('\n') {
+            out += &format!("  {line}\n");
+        }
+        out
     }
 
     /// The text being edited, with its selection.
@@ -3031,23 +3163,12 @@ impl App {
             self.run_on_key(text);
             return;
         }
+        // (A code editor keeps the indentation and closes brackets: see `code`.)
         if self.editing_code() {
-            let before = self.line_before_caret().unwrap_or_default();
-            if text == "\n" {
-                let indent: String = before.chars().take_while(|c| *c == ' ').collect();
-                let extra = if before.trim_end().ends_with('{') { "    " } else { "" };
-                self.edit(Edit::Insert(format!("\n{indent}{extra}")));
-                return;
-            }
-            if text == "}" && before.len() >= 4 && before.chars().all(|c| c == ' ') {
-                if let Some(e) = self.ui.editing.as_mut() {
-                    let caret = e.range().start;
-                    e.anchor = caret - 4;
-                    e.focus = caret;
-                }
-            }
+            self.edit(Edit::Code(code::Cmd::Type(text.to_string())));
+        } else {
+            self.edit(Edit::Insert(text.to_string()));
         }
-        self.edit(Edit::Insert(text.to_string()));
         if self.editing_code() {
             self.after_typing(text);
         }
@@ -3768,7 +3889,7 @@ impl App {
             if name == "escape" && !mods.primary && self.close_top_popover() {
                 return;
             }
-            if mods.primary && self.run_shortcut(name, mods) {
+            if mods.primary && self.run_shortcut(name, mods, false) {
                 return;
             }
             self.ui.key_shift = mods.shift;
@@ -3780,7 +3901,7 @@ impl App {
             }
         }
         // F12, Shift+F12 and F2 in a code editor that asks about names.
-        if self.code_key(name, mods) {
+        if self.name_key(name, mods) {
             return;
         }
         if EDIT_KEYS.contains(&name) || mods.primary {
@@ -4439,12 +4560,12 @@ impl App {
             }
             // A click in a code editor's margin, when that sets breakpoints.
             (Hit::Field(_), Kind::CodeEditor { on_breakpoint: Some(toggle), .. })
-                if x < node.layout.rect.inset_by(node.mods.padding).x + node.layout.gutter =>
+                if x < node.layout.rect.inset_by(node.mods.padding).x + node.layout.gutter && self.fold_arrow_at(node, x, y).is_none() =>
             {
                 let toggle = toggle.clone();
                 let at = y - render::code_origin(node).1 + self.ui.scroll.get(&node.key).copied().unwrap_or(0.0);
-                let lines = node.layout.text.as_ref().map(|t| t.lines.iter().map(|l| (l.top, l.bottom)).collect::<Vec<_>>());
-                if let Some(line) = lines.unwrap_or_default().iter().position(|(top, bottom)| at >= *top && at < *bottom) {
+                let _ = at;
+                if let Some(line) = self.code_line_at(node, y) {
                     toggle.call_with_int(line as i64 + 1);
                     self.dirty = true;
                 }
@@ -4475,7 +4596,7 @@ impl App {
             (Hit::Field(key), Kind::Text(_) | Kind::RichEditor { .. }) => {
                 let key = *key;
                 if self.ui.editing.as_ref().is_none_or(|e| e.key != key) {
-                    self.press_field(key, x, y, false, 1);
+                    self.press_field(key, x, y, false, 1, false);
                 }
             }
             (Hit::Tab(_, i), Kind::TabView { selection, .. }) => {
@@ -4861,8 +4982,9 @@ impl App {
         }
         let Some(text) = editable_text(node) else { return };
         let current = read_string(text);
-        let typing = matches!(&change, Edit::Insert(t) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
-        let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus };
+        let typing = matches!(&change, Edit::Insert(t) | Edit::Code(code::Cmd::Type(t)) if t.chars().all(|c| c.is_alphanumeric() || c == '_'));
+        let code = matches!(node.kind, Kind::CodeEditor { .. });
+        let before = edit::Snapshot { text: current.clone(), anchor: e.anchor, focus: e.focus, others: e.others.clone() };
         let multiline = in_lines(&node.kind);
         // (What's typed in a secure field stays in it.)
         if matches!(node.kind, Kind::TextField { secure: true, .. }) && matches!(change, Edit::Copy | Edit::Cut) {
@@ -4870,7 +4992,12 @@ impl App {
         }
         let on_change = text_on_change(node);
         let mut changed = false;
-        if let Some(new) = edit::apply(&current, layout, &mut e, change, &mut self.clipboard, multiline) {
+        let new = if code {
+            code::apply(&current, layout, &mut e, change, &mut self.clipboard)
+        } else {
+            edit::apply(&current, layout, &mut e, change, &mut self.clipboard, multiline)
+        };
+        if let Some(new) = new {
             changed = new != current;
             let slot = text.locate() as *mut *mut Str;
             unsafe {
@@ -4927,14 +5054,14 @@ impl App {
         }
         let (from, to) = if redo { (&mut h.redo, &mut h.undo) } else { (&mut h.undo, &mut h.redo) };
         let Some(step) = from.pop() else { return };
-        let (anchor, focus) = match &editing {
-            Some(e) => (e.anchor, e.focus),
+        let (anchor, focus, others) = match &editing {
+            Some(e) => (e.anchor, e.focus, e.others.clone()),
             None => {
                 let at = common_prefix(&current, &step.text);
-                (at, at)
+                (at, at, Vec::new())
             }
         };
-        to.push(edit::Snapshot { text: current, anchor, focus });
+        to.push(edit::Snapshot { text: current, anchor, focus, others });
         h.last_text = step.text.clone();
         h.typing = false;
         let slot = text.locate() as *mut *mut Str;
@@ -4953,6 +5080,7 @@ impl App {
         };
         e.anchor = valid(step.anchor);
         e.focus = valid(step.focus);
+        e.others = step.others.iter().map(|&(a, f)| (valid(a), valid(f))).collect();
         self.ui.editing = Some(e);
         self.ui.last_edited = Some(key);
         self.dirty = true;
@@ -4964,8 +5092,10 @@ impl App {
     /// Runs the `.shortcut` for Cmd/Ctrl + `key`, if a visible, enabled view
     /// has one. A shortcut asking for exactly the Shift and Alt keys held
     /// wins; otherwise the first whose keys are all held (so `"s"` also runs
-    /// with Shift+Cmd+S, unless there's a `"shift+s"`).
-    fn run_shortcut(&mut self, key: &str, mods: Mods) -> bool {
+    /// with Shift+Cmd+S, unless there's a `"shift+s"`). With `exact`, only
+    /// one for exactly those keys runs (a code editor's keys come before the
+    /// others).
+    fn run_shortcut(&mut self, key: &str, mods: Mods, exact_only: bool) -> bool {
         fn find(n: &Node, key: &str, mods: Mods, exact: &mut Option<Callback>, loose: &mut Option<Callback>) {
             if n.mods.hidden || n.layout.style.disabled || exact.is_some() {
                 return;
@@ -4987,7 +5117,7 @@ impl App {
         if let Some(t) = &self.tree {
             find(t, key, mods, &mut exact, &mut loose);
         }
-        let Some(cb) = exact.or(loose) else { return false };
+        let Some(cb) = exact.or(loose.filter(|_| !exact_only)) else { return false };
         cb.call();
         self.dirty = true;
         true
@@ -5063,7 +5193,20 @@ impl App {
                 _ => {}
             }
         }
-        if !mods.primary && !mods.shift && self.completion_key(name) {
+        if !mods.primary && !mods.shift && !mods.alt && self.completion_key(name) {
+            return;
+        }
+        // A code editor's own keys, unless a `.shortcut` asks for exactly them.
+        if let Some(cmd) = self.code_key(name, mods) {
+            if !(mods.primary && self.run_shortcut(name, mods, true)) {
+                self.edit(Edit::Code(cmd));
+            }
+            return;
+        }
+        if self.editing_code() && mods.primary && mods.alt && !mods.shift && matches!(name, "[" | "]") {
+            if !self.run_shortcut(name, mods, true) {
+                self.fold_key(name == "[");
+            }
             return;
         }
         // In a rich text editor, Cmd+B, Cmd+I and Cmd+U change the style.
@@ -5082,7 +5225,7 @@ impl App {
         }
         // Text editing keeps Cmd+A/C/X/V/Z while a field is being edited.
         let editing_key = self.ui.editing.is_some() && matches!(name, "a" | "c" | "x" | "v" | "z");
-        if mods.primary && !editing_key && self.run_shortcut(name, mods) {
+        if mods.primary && !editing_key && self.run_shortcut(name, mods, false) {
             return;
         }
         if self.ui.editing.is_none() && !mods.primary && self.run_on_key(name) {
@@ -5120,10 +5263,6 @@ impl App {
             "down" => Edit::Down { extend },
             "enter" if self.editing_code() => {
                 self.type_text("\n");
-                return;
-            }
-            "tab" if self.editing_code() => {
-                self.type_text("    ");
                 return;
             }
             "tab" => {
@@ -5177,7 +5316,7 @@ impl App {
     }
 
     /// A mouse press on a text field or code editor: place the caret or select.
-    fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32) {
+    fn press_field(&mut self, key: u64, x: f64, y: f64, shift: bool, clicks: u32, alt: bool) {
         // Another field than an open palette's own closes the palette.
         if super::controls::OPEN_PICKER.get().is_some() && Some(key) != super::controls::HEX_FIELD.get() {
             self.close_picker();
@@ -5185,12 +5324,24 @@ impl App {
         self.ui.focused = None;
         self.ui.keys_to = None;
         let Some(node) = self.tree.as_ref().and_then(|t| t.find(key)) else { return };
+        // A code editor's fold arrow folds or unfolds its block.
+        if let Some(line) = self.fold_arrow_at(node, x, y) {
+            self.toggle_fold(key, line);
+            return;
+        }
         let Some(current) = shown_text(node) else { return };
-        if self.ui.editing.as_ref().is_none_or(|e| e.key != key) {
+        let editing = self.ui.editing.as_ref().is_some_and(|e| e.key == key);
+        if !editing {
             self.ui.editing = Some(Editing::new(key, &current));
         }
         let (x0, y0, sx, sy) = self.text_origin(node);
-        self.edit(Edit::Click { x: x - x0 + sx, y: y - y0 + sy, extend: shift, clicks });
+        let (x, y) = (x - x0 + sx, y - y0 + sy);
+        // Alt+click in a code editor: another cursor.
+        if alt && editing && matches!(node.kind, Kind::CodeEditor { .. }) {
+            self.edit(Edit::Code(code::Cmd::AltClick { x, y }));
+            return;
+        }
+        self.edit(Edit::Click { x, y, extend: shift, clicks });
     }
 
     fn drag_field(&mut self, x: f64, y: f64) {
@@ -6024,7 +6175,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                         return 2;
                     };
                     if !(held.1 && app.definition_click(key, x, y)) {
-                        app.press_field(key, x, y, held.0, 1);
+                        app.press_field(key, x, y, held.0, 1, false);
                     }
                     app.ui.click_mods = (false, false);
                     mouse = (x, y);
@@ -6086,8 +6237,8 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                 if let (None, [x, y], "doubleclick") = (key, &n[..], word) {
                     match app.hit(*x, *y) {
                         Some(Hit::Field(k)) => {
-                            app.press_field(k, *x, *y, false, 1);
-                            app.press_field(k, *x, *y, false, 2);
+                            app.press_field(k, *x, *y, false, 1, false);
+                            app.press_field(k, *x, *y, false, 2, false);
                             mouse = (*x, *y);
                             continue;
                         }
@@ -6552,6 +6703,52 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
             "accessibility" => {
                 app.update();
                 print!("{}", super::access::listing(&app.accessible("").0));
+            }
+            // The text being edited, with its cursors and selections marked.
+            "editing" => {
+                app.update();
+                print!("{}", app.describe_editing());
+            }
+            // `clicktext 3 5`: a click at line 3, column 5 of the code
+            // editor being edited (or the first one); `clicktext alt 3 5`
+            // adds a cursor there, `shift` extends the selection.
+            "clicktext" | "clickfold" => {
+                let mut held = (mods.shift, mods.alt);
+                let mut rest = rest;
+                loop {
+                    if let Some(r) = rest.strip_prefix("shift ") {
+                        (held.0, rest) = (true, r);
+                    } else if let Some(r) = rest.strip_prefix("alt ") {
+                        (held.1, rest) = (true, r);
+                    } else {
+                        break;
+                    }
+                }
+                let n: Vec<usize> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                let Some(key) = app.some_code_editor() else {
+                    eprintln!("script: no code editor for `{cmd}`");
+                    return 2;
+                };
+                let node = app.node(key);
+                let point = match (word, &n[..]) {
+                    ("clicktext", [line, column]) => node.and_then(|nd| app.code_point(nd, *line, *column)),
+                    // The fold arrow beside a line: as if on line 1, column 1, then across to it.
+                    ("clickfold", [line]) => node.and_then(|nd| {
+                        let text = editable_text(nd).map(read_string)?;
+                        let (start, _) = code::line_span(&text, line.checked_sub(1)?)?;
+                        let c = nd.layout.text.as_ref()?.caret(start, 0.0)?;
+                        let (_, y0, _, sy) = app.text_origin(nd);
+                        let (x0, x1) = render::fold_column(nd);
+                        Some(((x0 + x1) / 2.0, y0 - sy + (c.y0 + c.y1) / 2.0))
+                    }),
+                    _ => None,
+                };
+                let Some((x, y)) = point else {
+                    eprintln!("script: no place for `{cmd}`");
+                    return 2;
+                };
+                app.press_field(key, x, y, held.0, 1, held.1);
+                mouse = (x, y);
             }
             "dump" | "tree" => {
                 app.update();
@@ -7857,7 +8054,7 @@ impl ApplicationHandler for WindowApp {
                                 _ => 1,
                             };
                             self.last_click = Some((now, (x, y), clicks));
-                            self.app.press_field(key, x, y, self.mods.shift, clicks);
+                            self.app.press_field(key, x, y, self.mods.shift, clicks, self.mods.alt);
                             self.selecting = true;
                         } else {
                             self.app.ui.pressed = hit.map(|h| h.key());

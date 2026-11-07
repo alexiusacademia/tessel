@@ -1,0 +1,17 @@
+// Folding in a CodeEditor: the arrow beside a line that opens a block (or
+// Cmd+Alt+[ and Cmd+Alt+]) folds it to `{ … }` on one line; the caret steps
+// over a folded block, and the block unfolds when an edit or the cursor
+// goes into it. The `line:` binding keeps counting the text's lines.
+// Author: Alexius Academia
+// Date: 2026-11-07
+
+app Folding(width: 500, height: 360) {
+    state source = "fn a(x: Int) \{\n    if x > 1 \{\n        print(x)\n    } else \{\n        print(0)\n    }\n}\nlet s = \"\{\"\nprint(s)"
+    state line = 1
+    state stops: [Int] = []
+
+    VStack {
+        CodeEditor(text: source, line: line, breakpoints: stops, onBreakpoint: { l in stops.append(l) })
+        Text("Line {line}, stops {stops}")
+    }
+}

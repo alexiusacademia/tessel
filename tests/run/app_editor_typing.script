@@ -1,0 +1,88 @@
+click editor 1
+type (
+editing
+type [
+editing
+type {
+editing
+type "
+editing
+type x
+type "
+editing
+type }
+editing
+type ]
+type )
+editing
+key cmd+z
+editing
+key cmd+shift+z
+editing
+key left
+key left
+key left
+key backspace
+editing
+key backspace
+editing
+key backspace
+editing
+key backspace
+editing
+key backspace
+editing
+type fn go() {
+type }
+key left
+editing
+key enter
+editing
+type "let a = 1   "
+editing
+key enter
+editing
+key enter
+editing
+key cmd+z
+key cmd+z
+editing
+key home
+editing
+key home
+editing
+key shift+home
+editing
+key end
+key cmd+left
+editing
+key end
+key cmd+backspace
+editing
+click "Sample"
+clicktext 1 1
+key end
+type "
+editing
+key home
+key shift+end
+type (
+editing
+key cmd+z
+type "
+editing
+clicktext 2 32
+type "
+editing
+type (
+editing
+clicktext 2 18
+type (
+editing
+clicktext 3 13
+type "
+editing
+clicktext 3 14
+type (
+editing
+tree

@@ -440,6 +440,23 @@ impl Painter<'_> {
         self.scene.pop();
     }
 
+    /// A small chevron in `r`: pointing right, or down.
+    fn chevron(&mut self, r: Rect, right: bool, c: Rgba) {
+        let (cx, cy, h) = (r.x + r.w / 2.0, r.y + r.h / 2.0, r.w.min(r.h) / 2.0);
+        let mut path = kurbo::BezPath::new();
+        if right {
+            path.move_to((cx - h / 2.0, cy - h));
+            path.line_to((cx + h / 2.0, cy));
+            path.line_to((cx - h / 2.0, cy + h));
+        } else {
+            path.move_to((cx - h, cy - h / 2.0));
+            path.line_to((cx, cy + h / 2.0));
+            path.line_to((cx + h, cy - h / 2.0));
+        }
+        let t = self.t();
+        self.scene.stroke(&Stroke::new(1.5), t, c, &path);
+    }
+
     fn stroke(&mut self, r: Rect, radius: f64, width: f64, c: Rgba) {
         let t = self.t();
         let inner = r.inset(width / 2.0);
@@ -891,21 +908,24 @@ impl Painter<'_> {
                 let scroll_x = self.ui.scroll_x.get(&n.key).copied().unwrap_or(0.0);
                 if let Some(t) = &n.layout.text {
                     let lines: Vec<(f64, f64)> = t.lines.iter().map(|l| (l.top, l.bottom)).collect();
+                    // Where a line of the text (from 1) shows: not at all, in a folded block.
+                    let info = n.layout.code.clone().unwrap_or_default();
+                    let line_at = |line: i64| info.shown_line((line - 1).max(0) as usize).and_then(|i| lines.get(i).copied());
                     for &line in error_lines {
-                        let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
+                        let Some((top, bottom)) = line_at(line) else { continue };
                         let y = y0 - scroll_y + top;
                         let band = Rect { x: content.x + n.layout.gutter, y, w: content.w - n.layout.gutter, h: bottom - top };
                         self.fill(band, 0.0, theme().error_line);
                         self.fill(Rect { x: content.x, y, w: 3.0, h: bottom - top }, 0.0, theme().error_mark);
                     }
                     // Where a program is stopped: the whole line, in yellow.
-                    if let Some(&(top, bottom)) = lines.get((*stopped_line - 1).max(0) as usize).filter(|_| *stopped_line > 0) {
+                    if let Some((top, bottom)) = line_at(*stopped_line).filter(|_| *stopped_line > 0) {
                         let band = Rect { x: content.x, y: y0 - scroll_y + top, w: content.w, h: bottom - top };
                         self.fill(band, 0.0, theme().stopped_line);
                     }
                     // Breakpoints: a red dot at the margin's left.
                     for &line in breakpoints {
-                        let Some(&(top, bottom)) = lines.get((line - 1).max(0) as usize) else { continue };
+                        let Some((top, bottom)) = line_at(line) else { continue };
                         let size = ((bottom - top) * 0.55).min(9.0);
                         let dot = Rect { x: content.x + 3.0, y: y0 - scroll_y + top + (bottom - top - size) / 2.0, w: size, h: size };
                         self.fill(dot, size / 2.0, theme().error_mark);
@@ -915,26 +935,52 @@ impl Painter<'_> {
                     }
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
                     self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(code_area, 0.0));
+                    let at = |b: super::text::Bounds| Rect { x: x0 - scroll_x + b.x0, y: y0 - scroll_y + b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
                     // The uses of a name: a light background.
                     for range in &code.highlights {
                         for r in t.selection(range.clone()) {
-                            let band = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
-                            self.fill(band, 2.0, theme().uses);
+                            self.fill(at(r), 2.0, theme().uses);
+                        }
+                    }
+                    // A folded block's `…`, on a background.
+                    for &(open, close) in &info.folded {
+                        if let (Some(a), Some(b)) = (t.caret(open + 1, 0.0), t.caret(close, 0.0)) {
+                            let mut tint = theme().selection;
+                            tint.0[3] = 120;
+                            self.fill(Rect { x: x0 - scroll_x + a.x0 + 2.0, y: y0 - scroll_y + a.y0 + 2.0, w: b.x0 - a.x0 - 4.0, h: a.y1 - a.y0 - 4.0 }, 3.0, tint);
                         }
                     }
                     if let Some(e) = editing {
-                        let (caret, rects) = super::edit::geometry(t, e);
-                        for r in rects {
-                            let sel = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
-                            self.fill(sel, 1.0, theme().selection);
+                        let line_h = lines.first().map_or(16.0, |(a, b)| b - a);
+                        // Every cursor: the main one, and any others.
+                        let mut all = vec![(e.anchor, e.focus)];
+                        all.extend(e.others.iter().copied());
+                        for &(anchor, focus) in &all {
+                            let one = super::edit::Editing { key: e.key, anchor, focus, ..Default::default() };
+                            let (caret, rects) = super::edit::geometry(t, &one);
+                            for r in rects {
+                                self.fill(at(r), 1.0, theme().selection);
+                            }
+                            if anchor == focus {
+                                let caret = match caret {
+                                    Some(c) => Rect { w: 1.5, ..at(c) },
+                                    None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
+                                };
+                                self.fill(caret, 0.0, theme().accent);
+                            }
                         }
-                        if e.range().is_empty() {
-                            let line_h = lines.first().map_or(16.0, |(a, b)| b - a);
-                            let caret = match caret {
-                                Some(c) => Rect { x: x0 - scroll_x + c.x0, y: y0 - scroll_y + c.y0, w: 1.5, h: c.y1 - c.y0 },
-                                None => Rect { x: x0, y: y0, w: 1.5, h: line_h },
-                            };
-                            self.fill(caret, 0.0, theme().accent);
+                        // The bracket next to the caret and its partner, in boxes.
+                        if e.others.is_empty() && e.anchor == e.focus {
+                            if let Kind::CodeEditor { text, .. } = &n.kind {
+                                let shown = super::layout::read_string(text);
+                                if let Some((a, b)) = super::code::matching(&info.pairs, &shown, e.focus) {
+                                    for i in [a, b] {
+                                        for r in t.selection(i..i + 1) {
+                                            self.stroke(at(r), 2.0, 1.0, theme().line_number);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     self.text(t, x0 - scroll_x, y0 - scroll_y, None);
@@ -954,6 +1000,18 @@ impl Painter<'_> {
                     }
                     self.underline_composing(n, t, x0 - scroll_x, y0 - scroll_y);
                     self.scene.pop();
+                    // Fold arrows, right of the margin beside the lines that open a block: always
+                    // for folded ones, the others while the pointer's over the margin.
+                    let margin = Rect { w: gutter.w + FOLD_W, ..gutter };
+                    let over_gutter = self.ui.pointer.is_some_and(|(x, y)| margin.contains(x, y));
+                    for &(line, open, _) in &info.foldable {
+                        let folded = info.folded.iter().any(|f| f.0 == open);
+                        let Some((top, bottom)) = line_at(line as i64 + 1).filter(|_| folded || over_gutter) else { continue };
+                        let size = 8.0;
+                        let (fx0, _) = fold_column(n);
+                        let r = Rect { x: fx0, y: y0 - scroll_y + top + (bottom - top - size) / 2.0, w: size, h: size };
+                        self.chevron(r, folded, theme().line_number);
+                    }
                 }
                 self.scene.pop();
                 self.paint_scroll_bars(n);
@@ -1336,6 +1394,17 @@ impl Painter<'_> {
 }
 
 /// Where a code editor's text starts (before scrolling).
+/// Where a code editor's fold arrows are, across: (left, right), just
+/// right of its margin.
+pub fn fold_column(n: &Node) -> (f64, f64) {
+    let content = n.layout.rect.inset_by(n.mods.padding);
+    let left = content.x + n.layout.gutter;
+    (left, left + FOLD_W)
+}
+
+/// The width of a code editor's fold arrows (in the room left of its code).
+pub const FOLD_W: f64 = 10.0;
+
 pub fn code_origin(n: &Node) -> (f64, f64) {
     let content = n.layout.rect.inset_by(n.mods.padding);
     (content.x + n.layout.gutter + CODE_PAD_X, content.y + CODE_PAD_Y)

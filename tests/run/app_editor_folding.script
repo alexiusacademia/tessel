@@ -1,0 +1,72 @@
+clickfold 2
+editing
+clicktext 2 5
+key end
+editing
+key right
+editing
+key left
+key left
+editing
+key down
+editing
+tree
+clickfold 2
+editing
+clickfold 4
+editing
+clickfold 1
+editing
+clickfold 8
+editing
+clicktext 9 3
+key up
+editing
+key up
+editing
+type Z
+editing
+key backspace
+key up
+editing
+key cmd+alt+]
+editing
+clicktext 3 9
+key cmd+alt+[
+editing
+key cmd+alt+[
+editing
+key cmd+alt+[
+editing
+key cmd+alt+]
+editing
+key cmd+alt+]
+key cmd+alt+]
+editing
+clickfold 2
+clicktext 1 1
+key cmd+shift+k
+editing
+key cmd+z
+editing
+clicktext 3 9
+type Q
+clickfold 2
+editing
+key cmd+z
+editing
+clickfold 2
+clicktext 7 1
+key cmd+a
+key backspace
+editing
+key cmd+z
+editing
+clicktext 3 5
+clickfold 1
+editing
+clicktext 9 2
+key cmd+d
+key cmd+d
+editing
+tree

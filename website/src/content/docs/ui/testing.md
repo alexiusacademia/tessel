@@ -78,6 +78,8 @@ opens a window as usual.
 | `hover 40 60` | Moves the pointer to a point. |
 | `hover editor "le\|t count"` | Moves the pointer over a character of a code editor's text, found as `click editor` finds it, for its [`onHover`](/ui/code-editor/#understanding-code). |
 | `close "main.tsl"` | Clicks the close button of the tab with this title. |
+| `clicktext 3 5` | Clicks at line 3, column 5 (both from 1) of the [code editor](/ui/code-editor/) being edited, or of the first one. `clicktext alt 3 5` adds a cursor there, `clicktext shift 3 5` selects up to there. |
+| `clickfold 3` | Clicks the fold arrow beside line 3 of the code editor being edited (or the first one), to fold or unfold its block. |
 | `type hello world` | Types text into the text field or code editor being edited. |
 | `type "two words "` | The same, in quotes to keep spaces at the start or end. |
 | `key enter` | Presses a key, optionally with modifiers (see below). `key shift` presses a modifier on its own. |
@@ -114,6 +116,7 @@ opens a window as usual.
 | `layout out.json` | Writes the views on screen to a file as JSON: each one's depth in the tree, kind and place. [`tessel preview`](/start/cli/#tessel-preview) uses it. |
 | `tree` | Prints the view tree, with the open menu after it, the menu bar's titles first, and the app's other open windows last. A window's [status bar](/ui/menus-windows/#the-status-bar) is `StatusBar`, after its other views. |
 | `dump` | Prints the view tree with each view's position and size. |
+| `editing` | Prints the text being edited with its cursors marked (see [Checking the cursors](#checking-the-cursors)). |
 | `accessibility` | Prints what a [screen reader](/ui/accessibility/) is told is in the window: each control and text, with what it's called and what it holds. |
 
 Before each command, the app is brought up to date: state changes from the
@@ -188,6 +191,26 @@ work, but never touch your real clipboard. `copyToClipboard` and
 `clipboardText` use that same private clipboard, so text copied with one can
 be pasted with the other. `openURL` doesn't open anything; it prints
 `(open …)` instead.
+
+### Checking the cursors
+
+`tree` shows a field's or code editor's text, but not where its cursor is.
+`editing` prints the text being edited, with `|` where each cursor is and
+`«` and `»` around each selection (the `|` inside shows which end moves).
+Each line of the text is indented by two spaces. For a code editor, the
+first line also says how many cursors it has and which lines start a folded
+block:
+
+```text
+Editing CodeEditor, 2 cursors, folded [1]
+  fn a() {
+      let x = 1
+  }
+  «print|»(x)
+  «print|»(y)
+```
+
+When nothing is being edited, it prints `Editing nothing`.
 
 ### Time and background work
 

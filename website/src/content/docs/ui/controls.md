@@ -479,8 +479,9 @@ cursor where the change was. [`undoTextEdit()`](/reference/stdlib/#undotextedit-
 and `redoTextEdit()` do the same, for Undo and Redo buttons of your own.
 
 Pasting into a text field turns line breaks into spaces, since it holds a
-single line. The [code editor](/ui/code-editor/) adds a few keys of its own
-for indentation.
+single line. The [code editor](/ui/code-editor/#editing-keys) adds keys of its
+own: for comments, moving and copying lines, indentation, several cursors and
+folding.
 
 ### Moving between fields
 
