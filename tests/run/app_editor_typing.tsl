@@ -1,0 +1,17 @@
+// Typing in a CodeEditor: brackets and quotes close themselves, a closing
+// one typed next to its twin steps over it, Backspace between an empty pair
+// deletes both, a selection gets wrapped; Enter keeps the indentation (and
+// puts a `}` right after the caret on a line of its own) and drops the
+// spaces before the caret; Home goes to the first character, then the
+// line's start.
+// Author: Alexius Academia
+// Date: 2026-11-07
+
+app Typing(width: 500, height: 320) {
+    state source = ""
+
+    VStack {
+        CodeEditor(text: source)
+        Button("Sample") { source = "let name = \"Ada\"\n    let total = sum(a, b) // (note\nlet s = \"it's \{name}\"" }
+    }
+}

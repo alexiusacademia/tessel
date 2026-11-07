@@ -1,0 +1,110 @@
+Editing CodeEditor
+  (|)
+Editing CodeEditor
+  ([|])
+Editing CodeEditor
+  ([{|}])
+Editing CodeEditor
+  ([{"|"}])
+Editing CodeEditor
+  ([{"x"|}])
+Editing CodeEditor
+  ([{"x"}|])
+Editing CodeEditor
+  ([{"x"}])|
+Editing CodeEditor
+  ([{"|"}])
+Editing CodeEditor
+  ([{"x"}])|
+Editing CodeEditor
+  ([{"x|}])
+Editing CodeEditor
+  ([{"|}])
+Editing CodeEditor
+  ([{|}])
+Editing CodeEditor
+  ([|])
+Editing CodeEditor
+  (|)
+Editing CodeEditor
+  (fn go() {|})
+Editing CodeEditor
+  (fn go() {
+      |
+  })
+Editing CodeEditor
+  (fn go() {
+      let a = 1   |
+  })
+Editing CodeEditor
+  (fn go() {
+      let a = 1
+      |
+  })
+Editing CodeEditor
+  (fn go() {
+      let a = 1
+  
+      |
+  })
+Editing CodeEditor
+  (fn go() {
+      let a = 1   |
+  })
+Editing CodeEditor
+  (fn go() {
+      |let a = 1   
+  })
+Editing CodeEditor
+  (fn go() {
+  |    let a = 1   
+  })
+Editing CodeEditor
+  (fn go() {
+  «    |»let a = 1   
+  })
+Editing CodeEditor
+  (fn go() {
+      |let a = 1   
+  })
+Editing CodeEditor
+  (fn go() {
+  |
+  })
+Editing CodeEditor
+  let name = "Ada""|
+      let total = sum(a, b) // (note
+  let s = "it's {name}"
+Editing CodeEditor
+  («let name = "Ada""|»)
+      let total = sum(a, b) // (note
+  let s = "it's {name}"
+Editing CodeEditor
+  "«let name = "Ada""|»"
+      let total = sum(a, b) // (note
+  let s = "it's {name}"
+Editing CodeEditor
+  "let name = "Ada"""
+      let total = sum(a, b) // (n"|ote
+  let s = "it's {name}"
+Editing CodeEditor
+  "let name = "Ada"""
+      let total = sum(a, b) // (n"(|ote
+  let s = "it's {name}"
+Editing CodeEditor
+  "let name = "Ada"""
+      let total = s(|um(a, b) // (n"(ote
+  let s = "it's {name}"
+Editing CodeEditor
+  "let name = "Ada"""
+      let total = s(um(a, b) // (n"(ote
+  let s = "it'"|s {name}"
+Editing CodeEditor
+  "let name = "Ada"""
+      let total = s(um(a, b) // (n"(ote
+  let s = "it'"(|s {name}"
+Root
+  View
+    VStack
+      CodeEditor errors [] = "\"let name = \"Ada\"\"\"\n    let total = s(um(a, b) // (n\"(ote\nlet s = \"it'\"(s {name}\""
+      Button "Sample"

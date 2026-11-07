@@ -1,0 +1,271 @@
+Editing CodeEditor, folded [2]
+  fn a(x: Int) {
+  |    if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {|
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+  |        print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else |{
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)|
+      }
+  }
+  let s = "{"
+  print(s)
+Root
+  View
+    VStack
+      CodeEditor errors [] = "fn a(x: Int) {\n    if x > 1 {\n        print(x)\n    } else {\n        print(0)\n    }\n}\nlet s = \"{\"\nprint(s)"
+      Text "Line 5, stops []"
+Editing CodeEditor
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)|
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [4]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {|
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  |let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  le|t s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  fn| a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  fnZ| a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 4]
+  |fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [4]
+  |fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2, 4]
+  fn a(x: Int) {
+      if x > 1 {|
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 2, 4]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [1, 2, 4]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2, 4]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2, 4]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [3]
+  |    if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [4]
+  |fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [2, 4]
+  fn a(x: Int) {
+      if x > 1 {|
+          Qprint(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, folded [4]
+  fn a(x: Int) {
+      if x > 1 {
+          |print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor
+  |
+Editing CodeEditor
+  «fn a(x: Int) {
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)|»
+Editing CodeEditor, folded [1]
+  fn a(x: Int) {|
+      if x > 1 {
+          print(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  print(s)
+Editing CodeEditor, 2 cursors
+  fn a(x: Int) {
+      if x > 1 {
+          «print|»(x)
+      } else {
+          print(0)
+      }
+  }
+  let s = "{"
+  «print|»(s)
+Root
+  View
+    VStack
+      CodeEditor errors [] = "fn a(x: Int) {\n    if x > 1 {\n        print(x)\n    } else {\n        print(0)\n    }\n}\nlet s = \"{\"\nprint(s)"
+      Text "Line 3, stops []"

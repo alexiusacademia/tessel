@@ -1,0 +1,116 @@
+clicktext 1 5
+clicktext alt 2 5
+clicktext alt 3 5
+editing
+type x
+editing
+type yz
+editing
+key backspace
+editing
+key delete
+editing
+key left
+key shift+right
+editing
+type (
+editing
+key cmd+z
+editing
+key cmd+z
+key cmd+z
+editing
+key cmd+shift+z
+editing
+key end
+editing
+key home
+editing
+key shift+end
+editing
+key cmd+c
+key right
+type " "
+key cmd+v
+editing
+key cmd+z
+key cmd+z
+key cmd+z
+editing
+clicktext alt 2 1
+editing
+key escape
+editing
+key escape
+editing
+clicktext 1 2
+key cmd+d
+editing
+key cmd+d
+editing
+key cmd+d
+key cmd+d
+key cmd+d
+editing
+type var
+editing
+key cmd+z
+editing
+key escape
+clicktext 4 7
+key cmd+d
+key cmd+d
+key cmd+d
+editing
+type z
+editing
+key cmd+z
+clicktext 2 3
+key cmd+alt+up
+editing
+key cmd+alt+up
+editing
+key cmd+alt+down
+key cmd+alt+down
+key cmd+alt+down
+key cmd+alt+down
+editing
+key cmd+/
+editing
+key cmd+z
+key alt+down
+editing
+key down
+editing
+key up
+key up
+key up
+key up
+editing
+key escape
+clicktext 1 1
+clicktext alt 1 1
+key cmd+alt+down
+key cmd+shift+k
+editing
+key cmd+z
+key escape
+clicktext 1 3
+key cmd+alt+down
+key cmd+alt+down
+key shift+alt+down
+editing
+key escape
+clicktext 1 1
+clicktext shift 4 1
+key cmd+c
+clicktext 7 1
+key cmd+alt+up
+key cmd+alt+up
+key cmd+v
+editing
+key cmd+z
+key cmd+alt+up
+key cmd+v
+editing
+tree
