@@ -24,6 +24,7 @@ fn run_programs() {
     assert!(!paths.is_empty());
     for path in paths {
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
+        eprintln!("run_programs: {name}");
         let rel = if path.is_dir() { format!("tests/run/{name}") } else { format!("tests/run/{name}.tsl") };
         let exe = std::env::temp_dir().join(format!("tessel-test-{name}-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
         // (With TESSEL_TEST_DEBUG set, every program is built as `tessel
@@ -115,17 +116,50 @@ fn run_programs() {
 
 /// Runs `cmd` with `input` on its standard input.
 fn run_with_input(cmd: &mut Command, input: &[u8]) -> std::process::Output {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::process::Stdio;
+    use std::time::{Duration, Instant};
     let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let input = input.to_vec();
     let writer = std::thread::spawn(move || {
         let _ = stdin.write_all(&input);
     });
-    let out = child.wait_with_output().unwrap();
+    let mut out_pipe = child.stdout.take().unwrap();
+    let mut err_pipe = child.stderr.take().unwrap();
+    let out_reader = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        let _ = out_pipe.read_to_end(&mut v);
+        v
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        let _ = err_pipe.read_to_end(&mut v);
+        v
+    });
+    // A program that hangs is stopped after a while, and fails with a note
+    // saying so, so that one stuck program doesn't stall the whole run.
+    let limit = Duration::from_secs(180);
+    let started = Instant::now();
+    let mut killed = false;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() > limit {
+            let _ = child.kill();
+            killed = true;
+            break child.wait().unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
     let _ = writer.join();
-    out
+    let stdout = out_reader.join().unwrap();
+    let mut stderr = err_reader.join().unwrap();
+    if killed {
+        stderr.extend_from_slice(format!("\n[stopped: still running after {} s]\n", limit.as_secs()).as_bytes());
+    }
+    std::process::Output { status, stdout, stderr }
 }
 
 /// Feeds `tests/repl/<name>.in` to `tessel repl` and compares what it prints
