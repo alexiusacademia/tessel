@@ -114,7 +114,8 @@ impl Server {
         self.check_folder(conn, &path);
     }
 
-    /// The type of the expression under the cursor.
+    /// The type of the expression under the cursor, or the name's
+    /// signature, with its doc comment (see `hover_info`).
     fn hover(&self, p: &lsp_types::HoverParams) -> Option<lsp_types::Hover> {
         let pos = &p.text_document_position_params;
         let path = uri_to_path(&pos.text_document.uri)?;
@@ -122,21 +123,14 @@ impl Server {
         let analysis = tessel_compiler::analyze(&mut sources, false);
         let file = files.iter().position(|f| *f == path)? as u32;
         let offset = offset_of(&sources, file, pos.position)?;
-        // The innermost expression with a meaningful type (a method name or a
-        // case name has none of its own; its call or member expression does).
-        use tessel_compiler::types::Ty;
-        let (e, t) = analysis.program.exprs_at(file, offset).into_iter().find_map(|e| {
-            let t = analysis.checked.types.get(&e.id)?;
-            (!matches!(t, Ty::Error | Ty::Void)).then_some((e, t))
-        })?;
-        let snippet = sources.snippet(e.span).lines().next().unwrap_or("").to_string();
-        let shown = if snippet.chars().count() > 40 { String::new() } else { format!("{snippet}: ") };
+        let info = hover_info(&analysis, &sources, file, offset)?;
+        let doc = if info.doc.is_empty() { String::new() } else { format!("\n\n{}", info.doc) };
         Some(lsp_types::Hover {
             contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: format!("```tessel\n{shown}{}\n```", analysis.checked.show(t)),
+                value: format!("```tessel\n{}\n```{doc}", info.code),
             }),
-            range: Some(range(&sources, e.span)),
+            range: Some(range(&sources, info.span)),
         })
     }
 
@@ -156,7 +150,7 @@ impl Server {
         let Some(offset) = offset_of(&sources, file as u32, at) else { return none };
         let Some(symbol) = tessel_compiler::navigate::symbol_at(&analysis, &sources, file as u32, offset) else {
             return match method {
-                "textDocument/prepareRename" | "textDocument/rename" => Err("This can't be renamed: it isn't a name the program declares.".into()),
+                "textDocument/prepareRename" | "textDocument/rename" => Err(NOT_A_NAME.into()),
                 _ => none,
             };
         };
@@ -164,10 +158,7 @@ impl Server {
             let uri = path_to_uri(Path::new(&sources.file(span.file).name))?;
             Some(json!({ "uri": uri, "range": range(&sources, span) }))
         };
-        let renamed = || match symbol.fixed {
-            Some(why) => Err(format!("`{}` can't be renamed: {why}.", symbol.name)),
-            None => Ok(()),
-        };
+        let renamed = || rename_check(&symbol, None);
         Ok(match method {
             "textDocument/definition" => place(symbol.declared).unwrap_or(Value::Null),
             "textDocument/references" => {
@@ -186,11 +177,8 @@ impl Server {
                 json!({ "range": range(&sources, *on.unwrap_or(&symbol.declared)), "placeholder": symbol.name })
             }
             _ => {
-                renamed()?;
                 let to = params["newName"].as_str().unwrap_or_default();
-                if !tessel_compiler::navigate::is_name(to) {
-                    return Err(format!("`{to}` can't be a name: names are letters, digits and `_`, don't start with a digit, and aren't keywords."));
-                }
+                rename_check(&symbol, Some(to))?;
                 let mut changes: BTreeMap<String, Vec<Value>> = BTreeMap::new();
                 for span in &symbol.places {
                     let Some(uri) = path_to_uri(Path::new(&sources.file(span.file).name)) else { continue };
@@ -293,6 +281,107 @@ impl Server {
             let _ = conn.sender.send(Message::Notification(n));
         }
     }
+}
+
+/// Why the name at a place can't be renamed, when there's no name there.
+pub(crate) const NOT_A_NAME: &str = "This can't be renamed: it isn't a name the program declares.";
+
+/// Whether `symbol` can be renamed (to `to`, when that's given): why not, if not.
+pub(crate) fn rename_check(symbol: &tessel_compiler::navigate::Symbol, to: Option<&str>) -> Result<(), String> {
+    if let Some(why) = symbol.fixed {
+        return Err(format!("`{}` can't be renamed: {why}.", symbol.name));
+    }
+    match to {
+        Some(to) if !tessel_compiler::navigate::is_name(to) => {
+            Err(format!("`{to}` can't be a name: names are letters, digits and `_`, don't start with a digit, and aren't keywords."))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// What hovering over a place in the code shows.
+pub(crate) struct HoverInfo {
+    /// What it's about: the name or expression under the pointer.
+    pub span: Span,
+    /// A line of code: a declaration's signature (`fn total(items: [Item]) -> Float`),
+    /// or a name or expression with its type (`count: Int`).
+    pub code: String,
+    /// The comment just above the declaration (without its `//`), or empty.
+    pub doc: String,
+}
+
+/// What hovering over byte `offset` of `file` shows (see `HoverInfo`).
+pub(crate) fn hover_info(analysis: &tessel_compiler::Analysis, sources: &SourceMap, file: u32, offset: u32) -> Option<HoverInfo> {
+    use tessel_compiler::types::Ty;
+    let checked = &analysis.checked;
+    // The innermost expression with a meaningful type (a method name or a
+    // case name has none of its own; its call or member expression does).
+    let typed = analysis.program.exprs_at(file, offset).into_iter().find_map(|e| {
+        let t = checked.types.get(&e.id)?;
+        (!matches!(t, Ty::Error | Ty::Void)).then_some((e.span, t))
+    });
+    let typed = typed.map(|(span, t)| {
+        let snippet = sources.snippet(span).lines().next().unwrap_or("").to_string();
+        let shown = if snippet.chars().count() > 40 { String::new() } else { format!("{snippet}: ") };
+        (span, format!("{shown}{}", checked.show(t)))
+    });
+    let symbol = tessel_compiler::navigate::symbol_at(analysis, sources, file, offset);
+    let Some(symbol) = symbol.filter(|s| s.declared.file & FILE_MASK != PRELUDE_FILE) else {
+        return typed.map(|(span, code)| HoverInfo { span, code, doc: String::new() });
+    };
+    let on = symbol.places.iter().find(|s| s.file & FILE_MASK == file && s.lo <= offset && offset <= s.hi).copied();
+    let decl = symbol.declared;
+    let text = &sources.file(decl.file).text;
+    let (lo, hi) = (decl.lo as usize, decl.hi as usize);
+    let line_start = text[..lo].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = text[lo..].find('\n').map_or(text.len(), |i| lo + i);
+    let before = text[line_start..lo].trim();
+    // What a declaration's line has before its name (nothing, for a field or a case).
+    const KEYWORDS: &[&str] = &["fn", "static", "struct", "enum", "interface", "view", "app", "let", "var", "state", "private"];
+    let declaration = before.split_whitespace().all(|w| KEYWORDS.contains(&w));
+    let signature = declaration && matches!(before.split_whitespace().last(), Some("fn" | "struct" | "enum" | "interface" | "view" | "app"));
+    let code = if signature {
+        // The line, up to the body's `{` (one outside brackets and strings).
+        let line = &text[line_start..line_end];
+        let (mut depth, mut quoted, mut end) = (0, false, line.len());
+        for (i, c) in line.char_indices().filter(|(i, _)| line_start + i >= hi) {
+            match c {
+                '"' => quoted = !quoted,
+                '(' | '[' if !quoted => depth += 1,
+                ')' | ']' if !quoted => depth -= 1,
+                '{' if !quoted && depth == 0 => {
+                    end = i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        line[..end].trim().to_string()
+    } else if let Some((_, code)) = &typed {
+        code.clone()
+    } else {
+        // A name where it's declared: a variable, a parameter or a field, with its type.
+        let same = |s: &Span| s.file & FILE_MASK == decl.file & FILE_MASK && s.lo == decl.lo && s.hi == decl.hi;
+        let local = checked.locals.iter().find(|(s, _)| same(s)).map(|(_, t)| t);
+        let field = || checked.structs.iter().flat_map(|s| s.fields.iter()).find(|f| same(&f.span)).map(|f| &f.ty);
+        match local.or_else(field) {
+            Some(t) => format!("{}: {}", symbol.name, checked.show(t)),
+            None => symbol.name.clone(),
+        }
+    };
+    // The comment lines just above a declaration.
+    let mut doc: Vec<&str> = Vec::new();
+    if declaration {
+        for line in text[..line_start].lines().rev() {
+            match line.trim().strip_prefix("//") {
+                Some(comment) => doc.push(comment.strip_prefix(' ').unwrap_or(comment)),
+                None => break,
+            }
+        }
+        doc.reverse();
+    }
+    let span = on.or(typed.map(|(s, _)| s)).unwrap_or(decl);
+    Some(HoverInfo { span, code, doc: doc.join("\n").trim().to_string() })
 }
 
 fn is_tsl(p: &Path) -> bool {
@@ -746,6 +835,31 @@ app Todos(width: 300, height: 300) {
             let params = serde_json::json!({ "textDocument": { "uri": uri }, "position": cursor("total", 0), "newName": bad });
             assert!(server.navigate("textDocument/rename", &params).is_err(), "{bad}");
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hover_shows_signatures_types_and_doc_comments() {
+        let text = "// How many there are.\nlet limit = 3\n\n// Twice `n`.\nfn twice(n: Int) -> Int { n * 2 }\n\nfn main() {\n    let doubled = twice(n: limit)\n    print(doubled)\n}\n";
+        let (server, uri, dir) = with_text("hover", text);
+        let hover = |word: &str| {
+            let params = lsp_types::HoverParams {
+                text_document_position_params: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+                    position: cursor_in(text, word, 0),
+                },
+                work_done_progress_params: Default::default(),
+            };
+            match server.hover(&params).map(|h| h.contents) {
+                Some(lsp_types::HoverContents::Markup(m)) => m.value,
+                other => panic!("{word}: {other:?}"),
+            }
+        };
+        // A call: the function's signature, and the comment above it.
+        assert_eq!(hover("twice(n: limit"), "```tessel\nfn twice(n: Int) -> Int\n```\n\nTwice `n`.");
+        // A constant where it's used, and a variable where it's declared.
+        assert_eq!(hover("limit)"), "```tessel\nlimit: Int\n```\n\nHow many there are.");
+        assert_eq!(hover("doubled ="), "```tessel\ndoubled: Int\n```");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

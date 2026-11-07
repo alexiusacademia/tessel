@@ -1,0 +1,926 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 13"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] highlights [54..58 "area", 83..87 "area"] = "fn main() {\n    let box = Square(side: 3.0)\n    print(area(square: box))\n    print(area(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 13"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] highlights [54..58 "area", 83..87 "area"] = "fn main() {\n    let box = Square(side: 3.0)\n    print(area(square: box))\n    print(area(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+Tooltip "fn area(square: Square) -> Float\n\nThe area of a square: its side times itself."
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Text "Rename area to"
+        TextField "New name" = "area"
+        Button "Rename"
+        Button "Cancel"
+        Spacer
+        Text "Ln 3, Col 13"
+        Text "This can't be renamed: it isn't a name the program declares."
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["main.tsl"] selected 0
+              CodeEditor errors [] highlights [54..58 "area", 83..87 "area"] = "fn main() {\n    let box = Square(side: 3.0)\n    print(area(square: box))\n    print(area(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 13"
+        Text "Renamed area to squareArea in 3 place(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    let box = Square(side: 3.0)\n    print(squareArea(square: box))\n    print(squareArea(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 19"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    let box = Square(side: 3.0)\n    print(squareArea(square: box))\n    print(squareArea(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 16"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "• shapes.tsl"] selected 1
+              CodeEditor errors [] = "struct // here Square {\n    side: Float\n}\n\n// The area of a square: its side times itself.\nfn squareArea(square: Square) -> Float {\n    square.side * square.side\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 2, Col 18"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "shapes.tsl"] selected 0
+              CodeEditor errors [] = "fn main() {\n    let box = Square(side: 3.0)\n    print(squareArea(square: box))\n    print(squareArea(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+ContextMenu
+  MenuItem "Go to Definition"
+  MenuItem "Find All Uses"
+  MenuItem "Rename…"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 17"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "• shapes.tsl"] selected 1
+              CodeEditor errors [] = "struct // there Square {\n    side: Float\n}\n\n// The area of a square: its side times itself.\nfn squareArea(square: Square) -> Float {\n    square.side * square.side\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 21"
+        Text "cannot find `missing`"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "shapes.tsl"] selected 0
+              CodeEditor errors [3] underlined [54..61 "missing"] highlights [64..74 "squareArea", 99..109 "squareArea"] = "fn main() {\n    let box = Square(side: 3.0)\n    print(missing + squareArea(square: box))\n    print(squareArea(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (1)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 3, Col 21"
+        Text "cannot find `missing`"
+        Text "3 use(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "shapes.tsl"
+                    Spacer
+            Spacer
+            TabView ["• main.tsl", "shapes.tsl"] selected 0
+              CodeEditor errors [3] underlined [54..61 "missing"] highlights [64..74 "squareArea", 99..109 "squareArea"] = "fn main() {\n    let box = Square(side: 3.0)\n    print(missing + squareArea(square: box))\n    print(squareArea(square: Square(side: 1.5)))\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (1)", "Console", "Debug", "Uses (3)", "Search"] selected 3
+            Scroll
+              VStack
+                HStack
+                  Text "main.tsl:3"
+                  Text "print(squareArea(square: box))"
+                  Spacer
+                HStack
+                  Text "main.tsl:4"
+                  Text "print(squareArea(square: Square(side: 1.5)))"
+                  Spacer
+                HStack
+                  Text "shapes.tsl:6"
+                  Text "fn squareArea(square: Square) -> Float {"
+                  Spacer
+Tooltip "cannot find `missing`"
+--- files: main.tsl, shapes.tsl
+--- shapes.tsl
+struct Square {
+    side: Float
+}
+
+// The area of a square: its side times itself.
+fn squareArea(square: Square) -> Float {
+    square.side * square.side
+}

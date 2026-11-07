@@ -5,11 +5,13 @@
 enum Overlay { none, files, commands, line }
 
 // One of the IDE's commands, for the palette and the keys: `key` is how
-// `.shortcut` names its key on this computer ("" for none).
+// `.shortcut` names its key on this computer ("" for none). `shown` is a
+// key the code editor itself takes (F12), only shown.
 struct Command {
     id: String
     title: String
     key: String = ""
+    shown: String = ""
 }
 
 // A row of the box's list: a file or a command. `marks` are the
@@ -69,6 +71,9 @@ fn ideCommands() -> [Command] {
         Command(id: "findNext", title: "Find next", key: if mac { "g" } else { "" }),
         Command(id: "findPrevious", title: "Find previous", key: if mac { "shift+g" } else { "" }),
         Command(id: "search", title: "Search in files", key: "shift+f"),
+        Command(id: "definition", title: "Go to definition", shown: "F12"),
+        Command(id: "uses", title: "Find all uses", shown: if mac { "⇧F12" } else { "Shift+F12" }),
+        Command(id: "renameName", title: "Rename the name", shown: "F2"),
         Command(id: "save", title: "Save", key: "s"),
         Command(id: "check", title: "Check", key: "k"),
         Command(id: "run", title: "Run or stop", key: "r"),
@@ -81,12 +86,13 @@ fn ideCommands() -> [Command] {
         Command(id: "package", title: "Package"),
         Command(id: "newFile", title: "New file"),
         Command(id: "newFolder", title: "New folder"),
-        Command(id: "rename", title: "Rename"),
+        Command(id: "rename", title: "Rename file"),
         Command(id: "delete", title: "Delete"),
         Command(id: "closeTab", title: "Close tab", key: "w"),
         Command(id: "problems", title: "Show Problems"),
         Command(id: "console", title: "Show Console"),
         Command(id: "debugPanel", title: "Show Debug"),
+        Command(id: "usesPanel", title: "Show Uses"),
         Command(id: "preview", title: "Show or hide the Markdown preview"),
         Command(id: "design", title: "Show or hide the Design panel"),
         Command(id: "docs", title: "Show or hide the Docs panel"),
@@ -301,7 +307,7 @@ fn commandRows(query: String) -> [PickRow] {
     for (i, c) in ideCommands().enumerated() {
         if let m = fuzzyMatch(query: query.trim(), text: c.title) {
             // (With nothing typed, they keep their order.)
-            found.append((m.score * 100 - i, PickRow(title: c.title, detail: keyLabel(key: c.key), value: c.id, marks: m.marks, key: true)))
+            found.append((m.score * 100 - i, PickRow(title: c.title, detail: if c.shown != "" { c.shown } else { keyLabel(key: c.key) }, value: c.id, marks: m.marks, key: true)))
         }
     }
     found.sorted(by: { a, b in a.0 > b.0 }).map { f in f.1 }
@@ -324,36 +330,49 @@ fn parseLineColumn(text: String) -> Place? {
     Place(path: "", line: line, column: column)
 }
 
-// The character where `line` and `column` (from 1) are in `text`: at most
+// The byte where `line` and `column` (from 1, in characters) are in `text`: at most
 // the end of that line, or of the text.
 fn offsetOf(text: String, line: Int, column: Int) -> Int {
     var at = 0
     for (i, piece) in text.split("\n").enumerated() {
+        let size = bytesOf(text: piece)
         if i == line - 1 {
-            return at + min(max(column - 1, 0), piece.count)
+            return at + bytesOf(text: piece.substring(from: 0, to: min(max(column - 1, 0), piece.count)))
         }
-        at += piece.count + 1
+        at += size + 1
     }
-    text.count
+    bytesOf(text: text)
 }
 
-// The line and column (from 1) of character `offset` of `text`.
+// The line and column (from 1, in characters) of byte `offset` of `text`.
 fn placeOf(text: String, offset: Int) -> Place {
     var at = 0
     for (i, piece) in text.split("\n").enumerated() {
-        if offset <= at + piece.count {
-            return Place(path: "", line: i + 1, column: offset - at + 1)
+        let size = bytesOf(text: piece)
+        if offset <= at + size {
+            return Place(path: "", line: i + 1, column: textBetween(text: piece, from: 0, to: offset - at).count + 1)
         }
-        at += piece.count + 1
+        at += size + 1
     }
     Place(path: "", line: 1, column: 1)
+}
+
+// How many bytes `text` takes (in UTF-8): the code editor's offsets count them.
+fn bytesOf(text: String) -> Int {
+    Data(text: text).count
+}
+
+// The text from byte `from` up to byte `to`.
+fn textBetween(text: String, from: Int, to: Int) -> String {
+    let data = Data(text: text)
+    data.slice(from: max(0, min(from, data.count)), to: max(0, min(to, data.count))).text ?? ""
 }
 
 fn wordCharacter(c: String) -> Bool {
     c.lowercase() != c.uppercase() || "0123456789_".contains(c)
 }
 
-// Where `query` is in `text`, as character ranges: with `matchCase`, only
+// Where `query` is in `text`, as byte ranges: with `matchCase`, only
 // with the same large and small letters; with `wholeWord`, only where
 // it's a word of its own.
 fn findInText(text: String, query: String, matchCase: Bool, wholeWord: Bool) -> [Range] {
@@ -365,33 +384,38 @@ fn findInText(text: String, query: String, matchCase: Bool, wholeWord: Bool) -> 
     if !hay.contains(needle) {
         return []
     }
+    // (Where it is in characters, for whole words, and in bytes.)
     let n = needle.count
+    let size = bytesOf(text: needle)
     let chars = if wholeWord { text.characters } else { [] }
     var out: [Range] = []
     var at = 0
+    var byte = 0
     let pieces = hay.split(needle)
     for (i, piece) in pieces.enumerated() {
         at += piece.count
+        byte += bytesOf(text: piece)
         if i < pieces.count - 1 {
             let whole = !wholeWord || ((at == 0 || !wordCharacter(c: chars[at - 1])) && (at + n >= chars.count || !wordCharacter(c: chars[at + n])))
             if whole {
-                out.append(at..at + n)
+                out.append(byte..byte + size)
             }
             at += n
+            byte += size
         }
     }
     out
 }
 
-// The text with each of `ranges` (in order, not overlapping) replaced.
+// The text with each of `ranges` (bytes, in order, not overlapping) replaced.
 fn replaceRanges(text: String, ranges: [Range], with: String) -> String {
     var out = ""
     var at = 0
     for r in ranges {
-        out += text.substring(from: at, to: r.start) + with
+        out += textBetween(text: text, from: at, to: r.start) + with
         at = r.end
     }
-    out + text.substring(from: at, to: text.count)
+    out + textBetween(text: text, from: at, to: bytesOf(text: text))
 }
 
 // Searches the project's files for `query`: each line that has it, once
@@ -415,7 +439,10 @@ fn searchFiles(root: String, query: String, matchCase: Bool, wholeWord: Bool, op
             }
             for (i, line) in text.split("\n").enumerated() {
                 for r in findInText(text: line, query: query, matchCase: matchCase, wholeWord: wholeWord) {
-                    hits.append(SearchHit(path: rel, line: i + 1, column: r.start + 1, length: r.end - r.start, text: line.replace("\r", with: "")))
+                    // (The column and length in characters.)
+                    let column = textBetween(text: line, from: 0, to: r.start).count + 1
+                    let length = textBetween(text: line, from: r.start, to: r.end).count
+                    hits.append(SearchHit(path: rel, line: i + 1, column: column, length: length, text: line.replace("\r", with: "")))
                     if hits.count >= limit {
                         return hits
                     }

@@ -87,9 +87,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl"] selected 0
-              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -201,9 +201,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -315,9 +315,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -392,6 +392,24 @@ Root
             HStack
               View
                 HStack
+                  Text "Go to definition"
+              Spacer
+              Text "F12"
+            HStack
+              View
+                HStack
+                  Text "Find all uses"
+              Spacer
+              Text "⇧F12"
+            HStack
+              View
+                HStack
+                  Text "Rename the name"
+              Spacer
+              Text "F2"
+            HStack
+              View
+                HStack
                   Text "Save"
               Spacer
               Text "⌘S"
@@ -460,7 +478,7 @@ Root
             HStack
               View
                 HStack
-                  Text "Rename"
+                  Text "Rename file"
               Spacer
             HStack
               View
@@ -487,6 +505,11 @@ Root
               View
                 HStack
                   Text "Show Debug"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show Uses"
               Spacer
             HStack
               View
@@ -597,9 +620,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -718,9 +741,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
   Popover
@@ -819,9 +842,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        @count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        @count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -913,9 +936,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1007,9 +1030,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 0
-              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1101,9 +1124,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1216,9 +1239,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] highlights [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 3..8 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] matches [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 3..8 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1331,9 +1354,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] highlights [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] matches [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1446,9 +1469,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 1
-              CodeEditor errors [] highlights [158..163, 200..205, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] matches [158..163, 200..205, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1567,9 +1590,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] highlights [200..205, 243..248, 274..279] selected 200..205 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] matches [200..205, 243..248, 274..279] selected 200..205 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1688,9 +1711,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        total += wordCount(line)\n    }\n    print(\"{total} words\")\n    print(twice(total))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        total += wordCount(line)\n    }\n    print(\"{total} words\")\n    print(twice(total))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1782,9 +1805,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 1
             Scroll
               VStack
 Root
@@ -1876,9 +1899,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 1
-              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 4
             VStack
               HStack
                 TextField "Search in files" = "count"
@@ -2059,9 +2082,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 0
-              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 4
             VStack
               HStack
                 TextField "Search in files" = "count"
@@ -2242,9 +2265,9 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "• main.tsl"] selected 0
-              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+          TabView ["Problems (0)", "Console", "Debug", "Uses (0)", "Search"] selected 4
             VStack
               HStack
                 TextField "Search in files" = "wordCount"
@@ -2376,9 +2399,219 @@ Root
                     Spacer
             Spacer
             TabView ["helpers.tsl", "main.tsl"] selected 0
-              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn countWords(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn countWords(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
           Spacer
-          TabView ["Problems (3)", "Console", "Debug", "Search"] selected 3
+          TabView ["Problems (3)", "Console", "Debug", "Uses (0)", "Search"] selected 4
+            VStack
+              HStack
+                TextField "Search in files" = "wordCount"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = "countWords"
+                Button "Replace all" disabled
+                Text "No results"
+                Spacer
+              Scroll
+                VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 2, Col 4"
+        Text "3 problem(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 0
+              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn countWords(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (3)", "Console", "Debug", "Uses (0)", "Search"] selected 4
+            VStack
+              HStack
+                TextField "Search in files" = "wordCount"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = "countWords"
+                Button "Replace all" disabled
+                Text "No results"
+                Spacer
+              Scroll
+                VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 11, Col 18"
+        Text "3 problem(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [11, 13, 14] underlined [200..205 "count", 244..249 "count", 275..280 "count"] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += countWords(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n" contextMenu [MenuItem "Go to Definition", MenuItem "Find All Uses", MenuItem "Rename…"]
+          Spacer
+          TabView ["Problems (3)", "Console", "Debug", "Uses (0)", "Search"] selected 4
             VStack
               HStack
                 TextField "Search in files" = "wordCount"

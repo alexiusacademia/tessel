@@ -9,6 +9,7 @@ mod packages;
 mod setup;
 mod pin;
 mod preview;
+mod query;
 mod repl;
 mod telemetry;
 mod test;
@@ -64,6 +65,14 @@ commands:
                  other .tsl files in its folder); --text reads the file's
                  current, unsaved text from <path>. Prints `start <offset>`,
                  then one suggestion per line: kind, label, detail (tab-separated)
+  query errors <path>
+  query hover|definition|uses|highlights <file> <offset>
+  query rename <file> <offset> [<new name>]
+                 for editors: a program's errors, or about the name at byte
+                 <offset> of <file>: what it is, where it's declared, where
+                 it's used (all, or in <file>), and the places a rename
+                 changes. --text <file> <from> (any number of times) reads a
+                 file's current, unsaved text from <from>
   preview <path> --out <prefix> [--dark] [--text <file> <from>]...
                  a picture of an app's window as it first appears, for
                  editors: writes <prefix>.png, and what's where in it and in
@@ -104,6 +113,7 @@ or with the TESSEL_VERSION environment variable set.";
 
 /// The IDE's source, built into `tessel` so it works wherever `tessel` is installed.
 const IDE_SOURCES: &[(&str, &str)] = &[
+    ("code.tsl", include_str!("../../../ide/code.tsl")),
     ("design.tsl", include_str!("../../../ide/design.tsl")),
     ("help.tsl", include_str!("../../../ide/help.tsl")),
     ("inspector.tsl", include_str!("../../../ide/inspector.tsl")),
@@ -142,7 +152,7 @@ fn main() -> ExitCode {
     tessel_compiler::set_package_finder(packages::find);
     // (Once a day, when Tessel is used, the count of installations in use
     // is told: see `telemetry`. Not by what editors run on every key.)
-    if !matches!(args.first().map(String::as_str), Some("telemetry" | "complete" | "preview" | "help" | "--help" | "-h" | "version" | "--version" | "-V")) {
+    if !matches!(args.first().map(String::as_str), Some("telemetry" | "complete" | "query" | "preview" | "help" | "--help" | "-h" | "version" | "--version" | "-V")) {
         telemetry::used();
     }
     match (args.first().map(String::as_str), args.get(1)) {
@@ -242,6 +252,7 @@ fn main() -> ExitCode {
                 }
             }
         }
+        (Some("query"), _) => query::run(&args[1..]),
         (Some("preview"), Some(path)) => {
             let rest = &args[2..];
             let out = rest.iter().position(|a| a == "--out").and_then(|i| rest.get(i + 1));

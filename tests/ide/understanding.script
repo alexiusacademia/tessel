@@ -1,0 +1,48 @@
+wait 0
+click editor "print(ar|ea(square: box"
+wait 0.3
+tree
+hover editor "print(ar|ea(square: box"
+wait 0.6
+wait 0
+tree
+click editor "pri|nt(area(square: box"
+key f2
+wait 0
+click editor "print(ar|ea(square: box"
+key f2
+wait 0
+tree
+key cmd+a
+type squareArea
+key enter
+wait 0
+tree
+click editor "print(squareAr|ea(square: box"
+key shift+f12
+wait 0
+tree
+click "shapes.tsl:6"
+click editor "Squ|are) -> Float"
+key f12
+wait 0
+type "// here "
+tree
+key cmd+z
+click "main.tsl"
+rightclick editor "Squ|are(side: 3"
+tree
+click "Go to Definition"
+wait 0
+type "// there "
+tree
+key cmd+z
+click "main.tsl"
+click editor "print(|squareArea(square: box"
+type "missing + "
+wait 1
+tree
+hover editor "miss|ing"
+wait 0.6
+wait 0
+tree

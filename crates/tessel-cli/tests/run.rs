@@ -602,6 +602,8 @@ fn ide_session() {
             // Quick Open, the commands, Go to line, find and replace,
             // search in files, and going back and forward.
             ("navigate", "navigation", Some("helpers.tsl")),
+            // Understanding code: live errors, hover, go to definition, uses, rename.
+            ("understanding", "understanding", Some("shapes.tsl")),
         ]
     {
         let base = std::env::temp_dir().join(format!("tessel-ide-test-{}-{name}", std::process::id()));
@@ -968,4 +970,79 @@ fn test_blocks() {
     // `tessel run` runs the program itself, not its tests.
     let run = Command::new(env!("CARGO_BIN_EXE_tessel")).args(["run", "."]).current_dir(&dir).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "the program itself");
+}
+
+/// `tessel query`: what the IDE asks about the code as it's edited, with an
+/// unsaved text (`--text`) in place of a saved file.
+#[test]
+fn query_answers_about_unsaved_code() {
+    let dir = std::env::temp_dir().join(format!("tessel-test-query-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let shapes = "struct Square {\n    side: Float\n}\n\n// The area of a square.\n// (Its side times itself.)\nfn area(square: Square) -> Float {\n    square.side * square.side\n}\n";
+    std::fs::write(dir.join("shapes.tsl"), shapes).unwrap();
+    // Saved, `main` has an error; the text in the editor doesn't (yet).
+    std::fs::write(dir.join("main.tsl"), "fn main() {\n    print(aera(square: Square(side: 2.0)))\n}\n").unwrap();
+    let unsaved = "fn main() {\n    let box = Square(side: 3.0)\n    print(area(square: box) + area(square: box))\n}\n";
+    std::fs::write(dir.join("unsaved.txt"), unsaved).unwrap();
+    let main = dir.join("main.tsl").display().to_string();
+    let text = ["--text".to_string(), main.clone(), dir.join("unsaved.txt").display().to_string()];
+    let query = |args: &[&str], with_text: bool| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessel"));
+        cmd.arg("query").args(args);
+        if with_text {
+            cmd.args(&text);
+        }
+        let out = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout).replace(&format!("{}/", dir.display()), "");
+        (out.status.code(), stdout)
+    };
+    let offset = |word: &str| unsaved.find(word).unwrap();
+    let at = |word: &str| offset(word).to_string();
+    let folder = dir.display().to_string();
+
+    // Errors: the saved text's, then none in the unsaved one.
+    let (code, out) = query(&["errors", &folder], false);
+    assert_eq!(code, Some(1));
+    assert_eq!(out, "main.tsl\t2\t11\t2\t15\t22\t26\tcannot find `aera` (help: did you mean `area`?)\n");
+    assert_eq!(query(&["errors", &folder], true), (Some(0), String::new()));
+
+    // Hover: a function's signature and its doc comment; a variable's type.
+    let call = offset("area(square: box) +");
+    let (_, out) = query(&["hover", &main, &call.to_string()], true);
+    assert_eq!(out, format!("{call}\t{}\nfn area(square: Square) -> Float\n\nThe area of a square.\n(Its side times itself.)\n", call + 4));
+    let (_, out) = query(&["hover", &main, &at("box)")], true);
+    assert!(out.ends_with("box: Square\n"), "{out}");
+
+    // Where it's declared, and where it's used (in the unsaved text, too).
+    let declared = shapes.find("fn area").unwrap() + 3;
+    assert_eq!(query(&["definition", &main, &at("area")], true).1, format!("shapes.tsl\t7\t4\t{declared}\t{}\n", declared + 4));
+    let (_, out) = query(&["uses", &main, &at("area")], true);
+    let line = "print(area(square: box) + area(square: box))";
+    let second = offset("area(square: box))");
+    assert_eq!(
+        out,
+        format!(
+            "main.tsl\t3\t11\t{call}\t{}\t{line}\nmain.tsl\t3\t31\t{second}\t{}\t{line}\nshapes.tsl\t7\t4\t{declared}\t{}\tfn area(square: Square) -> Float {{\n",
+            call + 4,
+            second + 4,
+            declared + 4
+        )
+    );
+    let boxes: Vec<usize> = unsaved.match_indices("box").map(|(i, _)| i).collect();
+    let (_, out) = query(&["highlights", &main, &at("box")], true);
+    assert_eq!(out, boxes.iter().map(|i| format!("{i}\t{}\n", i + 3)).collect::<String>());
+
+    // Rename: what it's called, then the places that change; a new name
+    // that can't be a name, and what isn't the program's, are refused.
+    assert_eq!(query(&["rename", &main, &at("area")], true), (Some(0), "name\tarea\n".to_string()));
+    let (code, out) = query(&["rename", &main, &at("area"), "surface"], true);
+    assert_eq!(code, Some(0));
+    assert_eq!(out, format!("main.tsl\t{call}\t{}\nmain.tsl\t{second}\t{}\nshapes.tsl\t{declared}\t{}\n", call + 4, second + 4, declared + 4));
+    let (code, out) = query(&["rename", &main, &at("area"), "two words"], true);
+    assert_eq!(code, Some(1));
+    assert!(out.starts_with("error\t`two words` can't be a name"), "{out}");
+    let (code, out) = query(&["rename", &main, &at("print"), "show"], true);
+    assert_eq!((code, out.as_str()), (Some(1), "error\tThis can't be renamed: it isn't a name the program declares.\n"));
+    let _ = std::fs::remove_dir_all(&dir);
 }

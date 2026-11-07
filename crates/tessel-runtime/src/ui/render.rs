@@ -37,8 +37,8 @@ pub struct Interaction {
     pub scroll_x: HashMap<u64, f64>,
     /// The caret line each code editor last reported to its `line:` binding.
     pub editor_line: HashMap<u64, i64>,
-    /// The `selection:` each code editor last had (in characters), from
-    /// the program or reported to it.
+    /// The `selection:` each code editor last had (in bytes), from the
+    /// program or reported to it.
     pub editor_selection: HashMap<u64, (i64, i64)>,
     /// The selection (bytes) code editors keep while they aren't edited:
     /// it's drawn, and editing them again starts with it.
@@ -47,6 +47,8 @@ pub struct Interaction {
     pub reveal: Option<(u64, usize, usize)>,
     /// What was being edited at the end of the last update.
     pub last_editing: Option<super::edit::Editing>,
+    /// The caret offset each code editor last reported to its `caret:` binding.
+    pub editor_caret: HashMap<u64, i64>,
     /// Where the mouse is (for hover effects inside views, like tabs).
     pub pointer: Option<(f64, f64)>,
     /// Undo and redo history of text fields and code editors, by key.
@@ -68,6 +70,10 @@ pub struct Interaction {
     pub anim: super::anim::Animations,
     /// The `.tooltip` that shows, laid out.
     pub tooltip: Option<Tooltip>,
+    /// The mouse resting on a code editor's text (for its `onHover:`).
+    pub code_tip: Option<CodeTip>,
+    /// The code editor and caret offset last told to an `onCaret:`.
+    pub caret_told: Option<(u64, usize)>,
     /// The notice (`showNotice`) that shows, laid out.
     pub notice: Option<Tooltip>,
     /// The control the keyboard is on (a slider, stepper, color picker or
@@ -111,6 +117,25 @@ pub struct Tooltip {
     pub rect: Rect,
     pub text: String,
     pub layout: Rc<TextLayout>,
+}
+
+/// The mouse resting on the text of a code editor with `onHover:`.
+pub struct CodeTip {
+    pub key: u64,
+    /// The word under the pointer (or the character, if it isn't in a
+    /// word): the tip stays while the pointer moves over it.
+    pub word: std::ops::Range<usize>,
+    /// The offset `onHover` is told: the character under the pointer.
+    pub offset: usize,
+    /// When the pointer came to rest there (on the app's clock).
+    pub since: f64,
+    /// `onHover` was told; its answer (`hoverText:`) shows as the tooltip
+    /// once `hoverAt:` is `offset`.
+    pub asked: bool,
+    /// Its answer shows as the tooltip.
+    pub shown: bool,
+    /// Put away by a click, a key or the wheel, until the pointer moves to another word.
+    pub done: bool,
 }
 
 /// Text being composed with an input method (for Chinese, Japanese, accents
@@ -302,6 +327,21 @@ impl Painter<'_> {
             let line = Rect { x: x + r.x0, y: y + r.y1 - 1.0, w: r.x1 - r.x0, h: 1.0 };
             self.fill(line, 0.0, n.layout.style.color);
         }
+    }
+
+    /// A wavy line `w` wide from (x, y), as under an error in a code editor.
+    fn squiggle(&mut self, x: f64, w: f64, y: f64, c: Rgba) {
+        let (step, height) = (2.0, 1.5);
+        let mut path = kurbo::BezPath::new();
+        path.move_to((x, y));
+        let mut i = 0;
+        while (i as f64) * step < w {
+            i += 1;
+            let up = if i % 2 == 1 { -height } else { 0.0 };
+            path.line_to(((x + i as f64 * step).min(x + w), y + up));
+        }
+        let t = self.t();
+        self.scene.stroke(&Stroke::new(1.0), t, c, &path);
     }
 
     /// Draws `svg` centered in `r`, scaled to fit.
@@ -865,7 +905,7 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
-            Kind::CodeEditor { text: source, error_lines, breakpoints, stopped_line, highlights, .. } => {
+            Kind::CodeEditor { error_lines, breakpoints, stopped_line, code, .. } => {
                 let editing = self.ui.shown_editing(n.key);
                 let editing = editing.as_ref();
                 let t_scene = self.t();
@@ -906,18 +946,26 @@ impl Painter<'_> {
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
                     self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(code_area, 0.0));
                     let at = |b: super::text::Bounds| Rect { x: x0 - scroll_x + b.x0, y: y0 - scroll_y + b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
-                    // Marked text (`highlights:`), and the selection the
-                    // editor keeps while it isn't edited.
-                    let marks = if highlights.is_empty() { Vec::new() } else { chars_to_bytes(&super::layout::read_string(source), highlights) };
-                    for (a, b) in marks {
-                        let one = super::edit::Editing { key: n.key, anchor: a, focus: b, ..Default::default() };
-                        for r in super::edit::geometry(t, &one).1 {
-                            self.fill(at(r), 2.0, theme().highlight);
+                    // The uses of a name: a light background.
+                    for range in &code.highlights {
+                        for r in t.selection(range.clone()) {
+                            self.fill(at(r), 2.0, theme().uses);
                         }
                     }
-                    if let (None, Some(&(a, b))) = (editing, self.ui.kept_selection.get(&n.key)) {
-                        let one = super::edit::Editing { key: n.key, anchor: a.min(t.len), focus: b.min(t.len), ..Default::default() };
-                        for r in super::edit::geometry(t, &one).1 {
+                    // What a search found (`matches:`), the selected one
+                    // stronger; and the selection the editor keeps while it
+                    // isn't edited.
+                    let kept = self.ui.kept_selection.get(&n.key).copied().filter(|_| editing.is_none());
+                    let current = editing.filter(|e| e.others.is_empty()).map(|e| (e.anchor.min(e.focus), e.anchor.max(e.focus))).or(kept.map(|(a, b)| (a.min(b), a.max(b))));
+                    for range in &code.matches {
+                        let tint = if current == Some((range.start, range.end)) { theme().find_current } else { theme().find_match };
+                        for r in t.selection(range.start.min(t.len)..range.end.min(t.len)) {
+                            self.fill(at(r), 2.0, tint);
+                        }
+                    }
+                    // (A match that's selected shows as the match.)
+                    if let Some((a, b)) = kept.filter(|&(a, b)| !code.matches.iter().any(|m| (m.start, m.end) == (a.min(b), a.max(b)))) {
+                        for r in t.selection(a.min(b).min(t.len)..a.max(b).min(t.len)) {
                             self.fill(at(r), 1.0, theme().selection);
                         }
                     }
@@ -963,6 +1011,20 @@ impl Painter<'_> {
                         }
                     }
                     self.text(t, x0 - scroll_x, y0 - scroll_y, None);
+                    // Errors: a red wavy line under them (one character
+                    // wide at least, so an error at the end of a line shows).
+                    for range in &code.errors {
+                        let start = range.start.min(t.len);
+                        let end = if range.end > start { range.end.min(t.len) } else { t.next(start) };
+                        let range = start..end.max(start);
+                        let mut rects = t.selection(range.clone());
+                        if rects.is_empty() {
+                            rects.extend(t.caret(range.start, 7.0));
+                        }
+                        for r in rects {
+                            self.squiggle(x0 - scroll_x + r.x0, (r.x1 - r.x0).max(6.0), y0 - scroll_y + r.y1 - 2.0, theme().error_mark);
+                        }
+                    }
                     self.underline_composing(n, t, x0 - scroll_x, y0 - scroll_y);
                     self.scene.pop();
                     // Fold arrows, right of the margin beside the lines that open a block: always
@@ -1426,24 +1488,4 @@ pub fn ribbon_group_icon(n: &Node, icon: &'static str) -> &'static str {
             _ => None,
         })
         .unwrap_or("chevronDown")
-}
-
-/// Stretches of `text` given in characters (a code editor's `highlights:`),
-/// in bytes, in one pass over the text. Empty and backwards ones are left out.
-pub fn chars_to_bytes(text: &str, stretches: &[(i64, i64)]) -> Vec<(usize, usize)> {
-    let mut wanted: Vec<i64> = stretches.iter().filter(|(a, b)| a < b && *b > 0).flat_map(|&(a, b)| [a.max(0), b]).collect();
-    wanted.sort_unstable();
-    wanted.dedup();
-    let mut bytes = HashMap::with_capacity(wanted.len());
-    let mut next = wanted.iter().peekable();
-    for (i, (b, _)) in text.char_indices().enumerate() {
-        while next.peek().is_some_and(|&&w| w as usize == i) {
-            bytes.insert(*next.next().unwrap(), b);
-        }
-        if next.peek().is_none() {
-            break;
-        }
-    }
-    let at = |c: i64| bytes.get(&c.max(0)).copied().unwrap_or(text.len());
-    stretches.iter().filter(|(a, b)| a < b && *b > 0).map(|&(a, b)| (at(a), at(b))).collect()
 }

@@ -73,8 +73,10 @@ opens a window as usual.
 | `click 40 60` | Clicks at a point, in points from the window's top left corner. |
 | `click shift "Alan"` | Clicks with Shift held (or `cmd`): for selecting a [table](/ui/tables/)'s rows. |
 | `click button 2` | Clicks the 2nd view of a kind: `button`, `toggle`, `field`, `text`, `editor`, `slider`, `stepper` or `colorpicker`. Counting starts at 1. |
+| `click editor "print(\|count"` | Clicks in a [code editor](/ui/code-editor/)'s text, where it first has this text: the caret goes before the character after the `\|` (or the first one, without a `\|`). It's the editor being edited, or else the first one shown. `click cmd editor "…"` is a Cmd-click there, for [`onDefinition`](/ui/code-editor/#understanding-code). |
 | `hover "Save"` | Moves the mouse pointer over the first view with this label, to show [hover backgrounds](/ui/styling/#hover-backgrounds). |
 | `hover 40 60` | Moves the pointer to a point. |
+| `hover editor "le\|t count"` | Moves the pointer over a character of a code editor's text, found as `click editor` finds it, for its [`onHover`](/ui/code-editor/#understanding-code). |
 | `close "main.tsl"` | Clicks the close button of the tab with this title. |
 | `clicktext 3 5` | Clicks at line 3, column 5 (both from 1) of the [code editor](/ui/code-editor/) being edited, or of the first one. `clicktext alt 3 5` adds a cursor there, `clicktext shift 3 5` selects up to there. |
 | `clickfold 3` | Clicks the fold arrow beside line 3 of the code editor being edited (or the first one), to fold or unfold its block. |
@@ -89,7 +91,7 @@ opens a window as usual.
 | `press 40 60` | Presses the mouse on a view with [`.onPointer`](/reference/modifiers/#onpointer) or [`.draggable`](/reference/modifiers/#draggable) (also `press "Label"`). Add `right` or `middle` for another button. |
 | `move 80 60` | Moves the mouse there (or `move "Label"`): a drag while it's pressed. |
 | `release` | Lets the mouse button go (`release 90 60`: somewhere else). |
-| `rightclick 40 60` | A click with the right button, on a view with `.onPointer`, or one with a [context menu](/ui/menus-windows/#context-menus), which opens (`rightclick "Roads"`: on a labelled view). |
+| `rightclick 40 60` | A click with the right button, on a view with `.onPointer`, or one with a [context menu](/ui/menus-windows/#context-menus), which opens (`rightclick "Roads"`: on a labelled view; `rightclick editor "…"`: on a code editor's text, as `click editor` finds it). |
 | `doubleclick 40 60` | Two clicks in a row there. |
 | `pinch 40 60 0.2` | A trackpad pinch that makes things a fifth larger. |
 | `mods shift+alt` | Holds modifier keys for the mouse commands that follow; `mods none` lets them go. |
@@ -310,6 +312,9 @@ HStack dragged
 
 `focused` marks the control the keyboard is on; during a drag, `dragged`
 marks the view being dragged and `drop target` the one under the mouse.
+A code editor's [`errorRanges` and `highlights`](/ui/code-editor/#understanding-code)
+show as `underlined [28..33 "cuont"]` and `highlights [4..9 "count"]`: the
+byte offsets, and the text there.
 
 `dump` adds `[x,y widthxheight]` in points after each view, which is useful for
 checking a [layout](/ui/layout/). Anything your program prints with `print`
@@ -318,7 +323,10 @@ appears in the same output, in order.
 A [`Canvas`](/reference/views/#canvas) shows what its block drew, like
 `Canvas (2 fills, 1 stroke, 3 texts)`, and a [tooltip](/reference/modifiers/#tooltip)
 that's showing is printed after the tree: `Tooltip "Delete the selected rows"`
-(it comes up when a `wait` of 0.6 seconds or more follows a `hover`).
+(it comes up when a `wait` of 0.6 seconds or more follows a `hover`). So is
+a code editor's `hoverText`: after `hover editor "…"`, a `wait 0.5` tells its
+`onHover`, and what that sets shows (a `wait 0` more lets a command it
+starts finish first).
 
 On a view with `.onPointer`, `click`, `drag` and `hover` send it the events a
 real mouse would: a press and a release, a press, a move and a release, or a

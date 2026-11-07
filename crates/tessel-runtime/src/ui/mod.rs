@@ -263,12 +263,8 @@ pub enum Kind {
         on_breakpoint: Option<Callback>,
         /// Called after each edit that changes its text.
         on_change: Option<Callback>,
-        /// Stretches of text to mark, as found by a search: character
-        /// offsets (start, end) into the text (see `tsl_ui_code_editor_find`).
-        highlights: Vec<(i64, i64)>,
-        /// `selection:`, a `Range` of character offsets: the selection,
-        /// both ways (see `App::sync_editor_selections`).
-        selection: Option<Callback>,
+        /// What it shows and asks about the code (see `CodeInfo`).
+        code: Box<CodeInfo>,
     },
     /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
     TabView { selection: Callback, close: Option<Callback> },
@@ -1337,30 +1333,99 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
             stopped_line,
             on_breakpoint,
             on_change,
-            highlights: Vec::new(),
-            selection: None,
+            code: Box::default(),
         })
     });
 }
 
-/// `CodeEditor(highlights:selection:)`, for the editor just made: the
-/// stretches to mark (a borrowed `[Range]`, in characters) and the
-/// `selection:` binding (`sel_f` is null without one).
+/// What a `CodeEditor` shows about the code and asks about it: ranges are
+/// byte offsets into its text, and the callbacks get one too.
+#[derive(Default)]
+pub struct CodeInfo {
+    /// `errorRanges:`, underlined with a red wavy line.
+    pub errors: Vec<std::ops::Range<usize>>,
+    /// `highlights:`, with a light background (the uses of a name).
+    pub highlights: Vec<std::ops::Range<usize>>,
+    /// `onHover:`, called when the mouse rests on the text, with the
+    /// offset under it; `hoverText:` shows next to it while `hoverAt:` is
+    /// that offset.
+    pub on_hover: Option<Callback>,
+    pub hover_text: String,
+    pub hover_at: i64,
+    /// `onDefinition:` (Cmd-click, or Ctrl-click on Windows and Linux, and
+    /// F12), `onUses:` (Shift+F12) and `onRename:` (F2): with the offset
+    /// clicked, or the caret's.
+    pub on_definition: Option<Callback>,
+    pub on_uses: Option<Callback>,
+    pub on_rename: Option<Callback>,
+    /// `onCaret:`, called with the caret's offset when it moves.
+    pub on_caret: Option<Callback>,
+    /// `caret:`, bound: locates an `Int`, the caret's offset. The editor
+    /// writes it as the caret moves, and moves the caret when the program
+    /// changes it.
+    pub caret: Option<Callback>,
+    /// `matches:`, what a search found (see `App::sync_editor_selections`
+    /// for the current one, which is the selection).
+    pub matches: Vec<std::ops::Range<usize>>,
+    /// `selection:`, bound: locates a `Range`, what's selected. Both ways,
+    /// as `caret:`.
+    pub selection: Option<Callback>,
+}
+
+/// The rest of `CodeEditor(…)`'s parameters, for the editor just made:
+/// `errorRanges:highlights:onHover:hoverText:hoverAt:onDefinition:onUses:onRename:onCaret:caret:matches:selection:`.
+/// The lists and the text are borrowed; absent callbacks are null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsl_ui_code_editor_find(highlights: *const crate::List, sel_f: *const c_void, sel_env: *mut Header) {
-    let n = unsafe { crate::tsl_list_len(highlights) };
-    // (A `Range` is two `Int`s.)
-    let marks: Vec<(i64, i64)> = (0..n)
-        .map(|i| unsafe {
-            let r = crate::tsl_list_get(highlights, i, std::ptr::null()) as *const i64;
-            (*r, *r.add(1))
-        })
-        .collect();
-    let selection = (!sel_f.is_null()).then(|| Callback::new(sel_f, sel_env));
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tsl_ui_code_editor_info(
+    errors: *const crate::List,
+    highlights: *const crate::List,
+    hover_f: *const c_void,
+    hover_env: *mut Header,
+    hover_text: *const Str,
+    hover_at: i64,
+    definition_f: *const c_void,
+    definition_env: *mut Header,
+    uses_f: *const c_void,
+    uses_env: *mut Header,
+    rename_f: *const c_void,
+    rename_env: *mut Header,
+    caret_f: *const c_void,
+    caret_env: *mut Header,
+    at_f: *const c_void,
+    at_env: *mut Header,
+    matches: *const crate::List,
+    selection_f: *const c_void,
+    selection_env: *mut Header,
+) {
+    let ranges = |list: *const crate::List| -> Vec<std::ops::Range<usize>> {
+        let n = unsafe { crate::tsl_list_len(list) };
+        (0..n)
+            .map(|i| unsafe {
+                // A `Range` is two Ints.
+                let p = crate::tsl_list_get(list, i, std::ptr::null()) as *const i64;
+                (*p).max(0) as usize..(*p.add(1)).max(0) as usize
+            })
+            .collect()
+    };
+    let callback = |f: *const c_void, env: *mut Header| (!f.is_null()).then(|| Callback::new(f, env));
+    let info = CodeInfo {
+        errors: ranges(errors),
+        highlights: ranges(highlights),
+        on_hover: callback(hover_f, hover_env),
+        hover_text: unsafe { text_of(hover_text) },
+        hover_at,
+        on_definition: callback(definition_f, definition_env),
+        on_uses: callback(uses_f, uses_env),
+        on_rename: callback(rename_f, rename_env),
+        on_caret: callback(caret_f, caret_env),
+        caret: callback(at_f, at_env),
+        matches: ranges(matches),
+        selection: callback(selection_f, selection_env),
+    };
     with_builder(|b| {
-        if let Some(Node { kind: Kind::CodeEditor { highlights, selection: s, .. }, .. }) = b.last() {
-            *highlights = marks;
-            *s = selection;
+        if let Some(Node { kind: Kind::CodeEditor { code, .. }, .. }) = b.last() {
+            **code = info;
         }
     });
 }

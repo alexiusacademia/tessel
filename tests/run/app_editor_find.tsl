@@ -1,4 +1,4 @@
-// CodeEditor: `highlights:` and a `selection:` the program sets and reads;
+// CodeEditor: `matches:` and a `selection:` the program sets and reads;
 // `startEditing`, `.onFieldKey`, and a shortcut without Cmd (`only+`).
 
 app Finder(width: 520, height: 360) {
@@ -19,7 +19,7 @@ app Finder(width: 520, height: 360) {
                 _ -> {}
             }
         }
-    CodeEditor(text: source, highlights: found, selection: selection).id("code")
+    CodeEditor(text: source, matches: found, selection: selection).id("code")
     Text("Selected {selection.start} to {selection.end}")
     Text("Keys: {log.joined(separator: " ")}")
         .shortcut("only+control+g") { selection = 4..5 }

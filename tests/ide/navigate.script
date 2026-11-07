@@ -67,3 +67,12 @@ wait 0
 key cmd+s
 wait 0
 tree
+click "main.tsl"
+key control+g
+type 11:18
+key enter
+key f12
+wait 0
+tree
+key control+-
+tree

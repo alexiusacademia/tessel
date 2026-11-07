@@ -56,9 +56,8 @@ selected file. Type the name and press Enter.
 Each open file gets a tab. The editor has:
 
 - **Syntax colors** for Tessel code, and line numbers.
-- **Error markers** on lines with errors. They are updated each time the
-  program is checked: when the IDE opens, when you save, and when you press
-  Check.
+- **Error markers** as you type: a red wavy line under each error, and a
+  red mark beside its line. See [Understanding code](#understanding-code).
 - **Code completion.** As you type, a list suggests what fits there: the
   fields and methods after `doc.`, the modifiers after a view, the cases
   after `.` where an enum is expected, and the names in scope (variables,
@@ -131,8 +130,8 @@ the editor, ready to save (or undo); the others are written straight away.
 **Go back** (Ctrl+- on a Mac, Alt+Left on Windows) takes you to where you
 were before a jump: before Quick Open, Go to line, a click on a problem or
 a search result, or a move of the cursor to another file or ten lines or
-more away. **Go forward** (Shift+Ctrl+- on a Mac, Alt+Right on Windows)
-goes the other way.
+more away, or Go to definition and the Uses tab. **Go forward**
+(Shift+Ctrl+- on a Mac, Alt+Right on Windows) goes the other way.
 
 The toolbar shows the line and column the cursor is on, like `Ln 12, Col 5`.
 
@@ -148,6 +147,7 @@ The toolbar shows the line and column the cursor is on, like `Ln 12, Col 5`.
 | Enter, Shift+Enter | Next and previous match, in the find bar |
 | Cmd+G, Shift+Cmd+G | Next and previous match (on a Mac) |
 | Shift+Cmd+F | Search in files |
+| F12, Shift+F12, F2 | Go to definition, find all uses, rename (see [Understanding code](#understanding-code)) |
 | Ctrl+- (Alt+Left on Windows) | Go back |
 | Shift+Ctrl+- (Alt+Right on Windows) | Go forward |
 | Cmd+S | Save |
@@ -156,6 +156,42 @@ The toolbar shows the line and column the cursor is on, like `Ln 12, Col 5`.
 | Shift+Cmd+R | Debug, or stop debugging |
 | Cmd+B | Build |
 | Cmd+W | Close the tab |
+
+## Understanding code
+
+The editor knows what your code means, as you type it, saved or not:
+
+- **Errors as you type.** A moment after you stop typing, the program is
+  checked again. Errors get a red wavy line under them, their lines a red
+  mark, and the Problems tab lists them. With the cursor on a line with an
+  error, its message shows in the toolbar.
+- **Hover.** Rest the mouse on a name for a moment to see what it is: a
+  function's or a type's declaration, or a variable's type, with the comment
+  written just above its declaration. On an error, its message shows too.
+- **Uses, highlighted.** With the cursor on a name, its other uses in the
+  file get a light gray background.
+- **Go to definition.** Cmd-click a name, or put the cursor on it and press
+  F12, to go to where it's declared. Its file opens if it isn't open yet.
+- **Find all uses.** Shift+F12 lists every place the name is used, in all
+  the project's files, in the **Uses** tab at the bottom. Click one to go
+  there.
+- **Rename.** F2 asks for the name's new name in the toolbar. Type it and
+  press Enter: the name changes everywhere it's used, in open files (which
+  then have unsaved changes) and in the others. Names that can't be renamed,
+  like `print` or `main`, say why in the status.
+
+Right-click a name for **Go to Definition**, **Find All Uses** and
+**Rename…** in a menu.
+
+| Key | What it does |
+|---|---|
+| Cmd-click | Go to where the name is declared. |
+| F12 | The same, for the name at the cursor. |
+| Shift+F12 | List the name's uses in the Uses tab. |
+| F2 | Rename the name at the cursor everywhere. |
+
+The IDE gets all this from [`tessel query`](/start/cli/#tessel-query), the
+same checker as `tessel check` and the [language server](/start/editors/).
 
 ## The toolbar
 
@@ -415,13 +451,14 @@ its variables still there.
 
 [Debugging](/guides/debugging/) has the whole story.
 
-## Problems, console and debug
+## Problems, console, debug and uses
 
-The bottom of the window has four tabs:
+The bottom of the window has five tabs:
 
-- **Problems** lists the errors from the last check, with the file and line
-  of each one. The tab title shows how many there are. Click a problem to
-  jump to it: its file opens and the editor goes to that line.
+- **Problems** lists the errors in the program as it is in the editor, with
+  the file and line of each one. The tab title shows how many there are.
+  Click a problem to jump to it: its file opens and the editor goes to that
+  line.
 - **Console** shows what the program prints while it runs, the output of
   Build and Package, and finally the exit code. Errors in the console show
   their location as ` --> file:line:column`; click such a line to jump to it.
@@ -429,6 +466,9 @@ The bottom of the window has four tabs:
   out of range.
 - **Debug** shows where a program being [debugged](#debugging) is stopped:
   the calls that led there, and their variables.
+- **Uses** lists the places a name is used, after
+  [Find all uses](#understanding-code) (Shift+F12): the file and line of
+  each, and the line's code. Click one to go there.
 - **Search** finds text in all the project's files; see
   [Finding your way](#finding-your-way).
 
