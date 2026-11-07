@@ -11,6 +11,40 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.21.0
+
+*November 7, 2026*
+
+The IDE works much like VS Code now (Cmd is Ctrl on Windows):
+
+- **Understanding code.** Errors are underlined as you type, without
+  saving. Rest the mouse on a name to see its type or declaration and the
+  comment above it ([documenting a
+  declaration](/language/basics/#documenting-a-declaration)). Cmd-click or
+  F12 goes to the definition, Shift+F12 lists every use, F2 renames a name
+  everywhere, and the uses of the name at the cursor are highlighted. See
+  [Understanding code](/start/ide/#understanding-code).
+- **Finding your way.** Quick Open (Cmd+P), the command palette
+  (Shift+Cmd+P), Go to line (Ctrl+G), find and replace in a file (Cmd+F,
+  Option+Cmd+F), search and replace in the whole project (Shift+Cmd+F), and
+  back and forward (Ctrl+- and Shift+Ctrl+-). See
+  [Finding your way](/start/ide/#finding-your-way).
+- **Editing.** Cmd+/ comments lines out and in; Alt+Up/Down moves lines and
+  Shift+Alt+Up/Down copies them; brackets and quotes close themselves;
+  matching brackets are marked; Alt+click and Cmd+D give several cursors;
+  and blocks fold. See [The editor](/start/ide/#the-editor).
+
+These come from the [`CodeEditor`](/ui/code-editor/) view, so your own apps
+get the editing keys too, and new parameters for the rest: `errorRanges`,
+`highlights`, `matches`, `selection`, `caret`, `onHover` with `hoverText`,
+`onDefinition`, `onUses` and `onRename`. Also new:
+
+- [`tessel query`](/start/cli/#tessel-query) answers questions about a
+  program (errors, hover, definition, uses, rename) for editors and tools.
+- `startEditing(id)` gives the keyboard to a field or an editor;
+  `.onFieldKey` hears Up, Down and Escape in a text field; `.shortcut("only+control+g")`
+  is a shortcut of exactly those keys; `Range` has `start` and `end`.
+
 ## 0.20.2
 
 *November 6, 2026*
