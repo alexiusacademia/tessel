@@ -204,6 +204,10 @@ Comments are handy in two ways:
   good comment says *why*.
 - **To switch a line off** for a moment, without deleting it. This is called
   "commenting out" a line. Remove the `//` to switch it back on.
+- **To describe a function** for whoever uses it. Comment lines written
+  right above a function are its documentation: in the IDE, resting the
+  mouse on the function's name, wherever it's called, shows them. See
+  [Documenting a declaration](/language/basics/#documenting-a-declaration).
 
 ## The Tessel IDE
 

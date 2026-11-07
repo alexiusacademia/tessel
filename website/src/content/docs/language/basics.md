@@ -50,7 +50,32 @@ let width = 20 // and this is a comment after some code
 ```
 
 There are no block comments (`/* … */`). To comment out several lines, put
-`//` in front of each one.
+`//` in front of each one (in the [IDE](/start/ide/), select them and press
+Cmd+/).
+
+### Documenting a declaration
+
+Comment lines written just above a declaration (a function, a method, a
+struct, an enum, a view) are its documentation. Editors show them when you
+hover the name, wherever it's used: the [Tessel IDE](/start/ide/) and
+[VS Code](/start/editors/) both do.
+
+```tessel
+// The price of all the items, with tax added.
+// `tax` is a fraction: 0.12 for 12%.
+fn total(_ prices: [Float], tax: Float) -> Float {
+    var sum = 0.0
+    for p in prices {
+        sum += p
+    }
+    sum * (1.0 + tax)
+}
+```
+
+Hovering `total` shows its first line and those two comment lines. Only
+the comment lines right above the declaration count: a blank line between
+them and the declaration leaves them out. Write them with `//`, as any
+comment; say what the declaration is for and anything a caller should know.
 
 ## Constants and variables
 
