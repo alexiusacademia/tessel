@@ -48,7 +48,14 @@ fn main() {
                                 print("fetch: {text ?? "failed"}")
                                 stopHTTP(server)
                                 print("after stopping: {respondHTTP(99999)}")
-                                print("port in use: {serveHTTP(port: 1, host: "127.0.0.1") { r in } == -1 || platform() == "windows"}")
+                                // (Windows lets any program use port 1, so there
+                                // it opens, and must be stopped to let the
+                                // program end.)
+                                let low = serveHTTP(port: 1, host: "127.0.0.1") { r in }
+                                print("port in use: {low == -1 || platform() == "windows"}")
+                                if low != -1 {
+                                    stopHTTP(low)
+                                }
                             }
                         }
                     }
