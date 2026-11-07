@@ -14,10 +14,41 @@ const KEYWORDS: &[&str] = &[
     "await", "static",
 ];
 
+/// The kinds of tokens that get a color of their own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Token {
+    Comment,
+    String,
+    Number,
+    Keyword,
+    TypeName,
+    Case,
+    Call,
+}
+
 /// Colored ranges (byte offsets) for `text`. Text not covered is plain.
 pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
-    let b = text.as_bytes();
     let colors = &theme().code;
+    tokens(text)
+        .into_iter()
+        .map(|(r, t)| {
+            let color = match t {
+                Token::Comment => colors.comment,
+                Token::String => colors.string,
+                Token::Number => colors.number,
+                Token::Keyword => colors.keyword,
+                Token::TypeName => colors.type_name,
+                Token::Case => colors.case,
+                Token::Call => colors.call,
+            };
+            (r, color)
+        })
+        .collect()
+}
+
+/// The tokens of `text` (byte ranges) that get a color. Text not covered is plain.
+pub fn tokens(text: &str) -> Vec<(Range<usize>, Token)> {
+    let b = text.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
     let ident = |c: u8| c == b'_' || c.is_ascii_alphanumeric();
@@ -28,7 +59,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
             }
-            out.push((start..i, colors.comment));
+            out.push((start..i, Token::Comment));
         } else if c == b'"' {
             i += 1;
             // Strings run to the closing quote or the end of the line; `{…}`
@@ -40,7 +71,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
                     continue;
                 }
                 if b[i] == b'{' {
-                    out.push((seg..i + 1, colors.string));
+                    out.push((seg..i + 1, Token::String));
                     let inner_start = i + 1;
                     let mut depth = 0;
                     i += 1;
@@ -53,7 +84,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
                         }
                         i += 1;
                     }
-                    for (r, color) in highlight(&text[inner_start..i]) {
+                    for (r, color) in tokens(&text[inner_start..i]) {
                         out.push((r.start + inner_start..r.end + inner_start, color));
                     }
                     seg = i;
@@ -67,7 +98,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             if i < b.len() && b[i] == b'"' {
                 i += 1;
             }
-            out.push((seg..i.min(b.len()), colors.string));
+            out.push((seg..i.min(b.len()), Token::String));
         } else if c.is_ascii_digit() {
             // `0xff`, `0b1010`, `0o17`: letters and digits after the prefix.
             if c == b'0' && matches!(b.get(i + 1), Some(b'x' | b'b' | b'o')) {
@@ -89,7 +120,7 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
                     }
                 }
             }
-            out.push((start..i, colors.number));
+            out.push((start..i, Token::Number));
         } else if ident(c) {
             while i < b.len() && ident(b[i]) {
                 i += 1;
@@ -97,13 +128,13 @@ pub fn highlight(text: &str) -> Vec<(Range<usize>, Rgba)> {
             let word = &text[start..i];
             let after_dot = start > 0 && b[start - 1] == b'.' && !(start > 1 && ident(b[start - 2]) || start > 1 && b[start - 2] == b')');
             let color = if KEYWORDS.contains(&word) {
-                Some(colors.keyword)
+                Some(Token::Keyword)
             } else if c.is_ascii_uppercase() {
-                Some(colors.type_name)
+                Some(Token::TypeName)
             } else if after_dot {
-                Some(colors.case)
+                Some(Token::Case)
             } else if b.get(i) == Some(&b'(') || (start > 0 && b[start - 1] == b'.' && b.get(i) == Some(&b'(')) {
-                Some(colors.call)
+                Some(Token::Call)
             } else {
                 None
             };

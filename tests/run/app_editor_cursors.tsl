@@ -1,0 +1,17 @@
+// Several cursors in a CodeEditor: Alt+click adds one (or takes one away),
+// Cmd+D selects the word, then its next occurrence, Cmd+Alt+Up/Down add
+// one above or below, Escape goes back to one. Typing, Backspace, Delete,
+// the arrows, Home and End, copy and paste (a line per cursor) and the line
+// commands work at every cursor; undo brings the cursors back.
+// Author: Alexius Academia
+// Date: 2026-11-07
+
+app Cursors(width: 500, height: 320) {
+    state source = "let a = 1\nlet b = 2\nlet c = 3\nprint(a + b + c)"
+    state line = 1
+
+    VStack {
+        CodeEditor(text: source, line: line)
+        Text("Line {line}")
+    }
+}

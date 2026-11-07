@@ -1,0 +1,276 @@
+Editing CodeEditor
+  fn a() {
+      // le|t x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      le|t x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      le|t x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      // le|t x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      «// let x = 1
+      // l|»et y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      «let x = 1
+      l|»et y = 2
+  }
+  print(1)
+Editing CodeEditor
+      «let x = 1
+      l|»et y = 2
+  fn a() {
+  }
+  print(1)
+Editing CodeEditor
+      «let x = 1
+      l|»et y = 2
+  fn a() {
+  }
+  print(1)
+Editing CodeEditor
+      «let x = 1
+      l|»et y = 2
+  fn a() {
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      «// let x = 1
+      // l|»et y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+  }
+  print(1)
+      «// let x = 1
+      // l|»et y = 2
+Editing CodeEditor
+  fn a() {
+  }
+  print(1)
+      «// let x = 1
+      // l|»et y = 2
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  pr|int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  print(1)
+  pr|int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  print(1)
+  pr|int(1)
+  print(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  pr|int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+      le«t x = 1
+    |»  let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }|
+  print(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+      le«t x = 1
+    |»  let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+      let x = 1
+  }|
+  print(1)
+Editing CodeEditor
+  |}
+  print(1)
+Editing CodeEditor
+  |print(1)
+Editing CodeEditor
+  fn a() {
+      x|
+      let x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      y|
+      x
+      let x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      y
+      x
+      |
+      let x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      |
+      let x = 1
+      let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  «    fn a() {
+          let x = 1
+         |» let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  «fn a() {
+      let x = 1
+     |» let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  «fn a() {
+  let x = 1
+  |»let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  «fn a() {
+      let x = 1
+     |» let y = 2
+  }
+  print(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  pr    |int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  pr    |int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+  pr    |int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+          pr    |int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+      let y = 2
+  }
+      pr    |int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+  «    let y = 2
+  |»}
+      pr    int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+  «    let y = 2
+  }
+  |»    pr    int(1)
+Editing CodeEditor
+  fn a() {
+      let x = 1
+  «    let y = 2
+  }
+      pr    int(1)|»
+Editing CodeEditor
+  fn a() {
+      let x = 1
+  «    let y = 2
+  }
+      pr    int(1)|»
+Editing CodeEditor
+  fn a() {
+      let x = 1
+  |
+Editing CodeEditor
+  // |
+Editing CodeEditor
+  
+  |
+Editing CodeEditor
+  
+  |
+Editing CodeEditor
+  
+  |
+Editing CodeEditor
+  «    one
+  
+      two
+      three|»
+Editing CodeEditor
+  «    // one
+  
+      // two
+      // three|»
+Root
+  View
+    VStack
+      CodeEditor errors [] = "    // one\n\n    // two\n    // three"
+      HStack
+        Button "Sample"
+        Button "Empty"
+        Button "Commented"
+      Text "Line 4"

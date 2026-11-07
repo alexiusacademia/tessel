@@ -1,0 +1,21 @@
+// CodeEditor's commands on whole lines: toggle comment (Cmd+/), move and
+// copy lines (Alt+Up/Down, Shift+Alt+Up/Down), delete line (Shift+Cmd+K),
+// insert a line (Cmd+Enter, Shift+Cmd+Enter), indent and outdent (Tab,
+// Shift+Tab, Cmd+], Cmd+[) and select line (Cmd+L), each one undo step.
+// Author: Alexius Academia
+// Date: 2026-11-07
+
+app Lines(width: 500, height: 320) {
+    state source = "fn a() \{\n    let x = 1\n    let y = 2\n}\nprint(1)"
+    state line = 1
+
+    VStack {
+        CodeEditor(text: source, line: line)
+        HStack {
+            Button("Sample") { source = "fn a() \{\n    let x = 1\n    let y = 2\n}\nprint(1)" }
+            Button("Empty") { source = "" }
+            Button("Commented") { source = "    // one\n\n    //two\n    // three" }
+        }
+        Text("Line {line}")
+    }
+}

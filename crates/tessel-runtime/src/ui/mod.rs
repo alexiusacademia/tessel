@@ -14,6 +14,7 @@ mod scene3d;
 mod table;
 mod controls;
 mod draw;
+mod code;
 mod edit;
 mod highlight;
 mod image;
