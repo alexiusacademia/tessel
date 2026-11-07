@@ -11,9 +11,12 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
-## 0.21.0
+## 0.21.1
 
 *November 7, 2026*
+
+(0.21.0 was tagged but never published: Apple took too long to notarize
+it, and a test of the IDE needed fixing for Windows.)
 
 The IDE works much like VS Code now (Cmd is Ctrl on Windows):
 

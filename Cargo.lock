@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "tessel-cli"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "cc",
  "flate2",
@@ -2990,14 +2990,14 @@ dependencies = [
 
 [[package]]
 name = "tessel-compiler"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "inkwell",
 ]
 
 [[package]]
 name = "tessel-runtime"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "accesskit",
  "accesskit_winit",
