@@ -599,16 +599,16 @@ fn ide_session() {
             ("new", "empty", Some("README.md")),
             // The debugger: a breakpoint, the calls and variables, stepping.
             ("debug", "debugging", None),
+            // Quick Open, the commands, Go to line, find and replace,
+            // search in files, and going back and forward.
+            ("navigate", "navigation", Some("helpers.tsl")),
         ]
     {
         let base = std::env::temp_dir().join(format!("tessel-ide-test-{}-{name}", std::process::id()));
         let project = base.join("project");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&project).unwrap();
-        for entry in std::fs::read_dir(root.join("tests/ide").join(folder)).unwrap() {
-            let entry = entry.unwrap();
-            std::fs::copy(entry.path(), project.join(entry.file_name())).unwrap();
-        }
+        copy_folder(&root.join("tests/ide").join(folder), &project);
         let script = std::fs::read_to_string(root.join(format!("tests/ide/{name}.script"))).unwrap();
         let out = Command::new(&exe)
             .env("TESSEL_SCRIPT", script)
@@ -617,6 +617,8 @@ fn ide_session() {
             .env("TESSEL_DOCS", root.join("tests/ide/docs"))
             .env("TESSEL_EXE", env!("CARGO_BIN_EXE_tessel"))
             .env("TESSEL_NO_UPDATE_CHECK", "1")
+            // (Keys are shown as on a Mac, on every system.)
+            .env("TESSEL_IDE_KEYS", "macos")
             .output()
             .unwrap();
         assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
@@ -638,6 +640,20 @@ fn ide_session() {
     }
     let _ = std::fs::remove_file(&exe);
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// Copies a folder's files, and the folders in it, into `to`.
+fn copy_folder(from: &Path, to: &Path) {
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            std::fs::create_dir_all(to.join(entry.file_name())).unwrap();
+            copy_folder(&path, &to.join(entry.file_name()));
+        } else {
+            std::fs::copy(&path, to.join(entry.file_name())).unwrap();
+        }
+    }
 }
 
 /// `tessel --version` says which version a pinned project uses (issue #13).

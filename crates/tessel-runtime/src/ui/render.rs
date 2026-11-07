@@ -37,6 +37,16 @@ pub struct Interaction {
     pub scroll_x: HashMap<u64, f64>,
     /// The caret line each code editor last reported to its `line:` binding.
     pub editor_line: HashMap<u64, i64>,
+    /// The `selection:` each code editor last had (in characters), from
+    /// the program or reported to it.
+    pub editor_selection: HashMap<u64, (i64, i64)>,
+    /// The selection (bytes) code editors keep while they aren't edited:
+    /// it's drawn, and editing them again starts with it.
+    pub kept_selection: HashMap<u64, (usize, usize)>,
+    /// A code editor to scroll so a stretch of its text (bytes) shows.
+    pub reveal: Option<(u64, usize, usize)>,
+    /// What was being edited at the end of the last update.
+    pub last_editing: Option<super::edit::Editing>,
     /// Where the mouse is (for hover effects inside views, like tabs).
     pub pointer: Option<(f64, f64)>,
     /// Undo and redo history of text fields and code editors, by key.
@@ -838,7 +848,7 @@ impl Painter<'_> {
                     self.paint(c);
                 }
             }
-            Kind::CodeEditor { error_lines, breakpoints, stopped_line, .. } => {
+            Kind::CodeEditor { text: source, error_lines, breakpoints, stopped_line, highlights, .. } => {
                 let editing = self.ui.shown_editing(n.key);
                 let editing = editing.as_ref();
                 let t_scene = self.t();
@@ -875,6 +885,23 @@ impl Painter<'_> {
                     }
                     let code_area = Rect { x: content.x + n.layout.gutter, y: content.y, w: content.w - n.layout.gutter, h: content.h };
                     self.scene.push(FillRule::NonZero, 1.0, t_scene, &rounded(code_area, 0.0));
+                    // Marked text (`highlights:`), and the selection the
+                    // editor keeps while it isn't edited.
+                    let marks = if highlights.is_empty() { Vec::new() } else { chars_to_bytes(&super::layout::read_string(source), highlights) };
+                    for (a, b) in marks {
+                        let at = super::edit::Editing { key: n.key, anchor: a, focus: b, ..Default::default() };
+                        for r in super::edit::geometry(t, &at).1 {
+                            let mark = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
+                            self.fill(mark, 2.0, theme().highlight);
+                        }
+                    }
+                    if let (None, Some(&(a, b))) = (editing, self.ui.kept_selection.get(&n.key)) {
+                        let at = super::edit::Editing { key: n.key, anchor: a.min(t.len), focus: b.min(t.len), ..Default::default() };
+                        for r in super::edit::geometry(t, &at).1 {
+                            let sel = Rect { x: x0 - scroll_x + r.x0, y: y0 - scroll_y + r.y0, w: r.x1 - r.x0, h: r.y1 - r.y0 };
+                            self.fill(sel, 1.0, theme().selection);
+                        }
+                    }
                     if let Some(e) = editing {
                         let (caret, rects) = super::edit::geometry(t, e);
                         for r in rects {
@@ -1331,4 +1358,24 @@ pub fn ribbon_group_icon(n: &Node, icon: &'static str) -> &'static str {
             _ => None,
         })
         .unwrap_or("chevronDown")
+}
+
+/// Stretches of `text` given in characters (a code editor's `highlights:`),
+/// in bytes, in one pass over the text. Empty and backwards ones are left out.
+pub fn chars_to_bytes(text: &str, stretches: &[(i64, i64)]) -> Vec<(usize, usize)> {
+    let mut wanted: Vec<i64> = stretches.iter().filter(|(a, b)| a < b && *b > 0).flat_map(|&(a, b)| [a.max(0), b]).collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    let mut bytes = HashMap::with_capacity(wanted.len());
+    let mut next = wanted.iter().peekable();
+    for (i, (b, _)) in text.char_indices().enumerate() {
+        while next.peek().is_some_and(|&&w| w as usize == i) {
+            bytes.insert(*next.next().unwrap(), b);
+        }
+        if next.peek().is_none() {
+            break;
+        }
+    }
+    let at = |c: i64| bytes.get(&c.max(0)).copied().unwrap_or(text.len());
+    stretches.iter().filter(|(a, b)| a < b && *b > 0).map(|&(a, b)| (at(a), at(b))).collect()
 }

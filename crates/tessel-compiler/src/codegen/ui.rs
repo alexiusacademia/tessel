@@ -739,6 +739,27 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(breakpoints, &list_t);
                 self.release(lines, &list_t);
                 self.release(completions, &comp_t);
+                // What a search found, and the selection, both ways.
+                if a(10).is_some() || a(11).is_some() {
+                    let ranges_t = Ty::list(Ty::Range);
+                    let marks = match a(10) {
+                        Some(x) => self.expr_as(x, &ranges_t).unwrap(),
+                        None => {
+                            let ti = self.type_info(&Ty::Range);
+                            let zero = self.i64().const_zero();
+                            self.call_rt("tsl_list_new", &[ti.into(), zero.into()]).unwrap()
+                        }
+                    };
+                    let (sel_f, sel_env) = match a(11) {
+                        Some(x) => {
+                            let l = self.locator(x).into_struct_value();
+                            (self.b.build_extract_value(l, 0, "").unwrap(), self.b.build_extract_value(l, 1, "").unwrap())
+                        }
+                        None => (self.ptr_ty().const_null().into(), self.ptr_ty().const_null().into()),
+                    };
+                    self.call_rt("tsl_ui_code_editor_find", &[marks, sel_f, sel_env]);
+                    self.release(marks, &ranges_t);
+                }
             }
             "Picker" => {
                 let loc = self.locator(a(0).unwrap());
@@ -1302,9 +1323,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let adapter = self.pointer_adapter();
                 self.call_rt("tsl_ui_on_pointer", &[adapter.into(), bx.into()]);
             }
-            "onKey" => {
+            "onKey" | "onFieldKey" => {
                 let action = self.expr_as(a(0).unwrap(), &Ty::func(vec![Ty::Str], Ty::Void)).unwrap();
-                self.pass_closure("tsl_ui_on_key", &[], action);
+                let f = if name == "onKey" { "tsl_ui_on_key" } else { "tsl_ui_on_field_key" };
+                self.pass_closure(f, &[], action);
             }
             "onKeyEvent" => {
                 // The runtime calls `adapter(box, event)`; the box holds the block.

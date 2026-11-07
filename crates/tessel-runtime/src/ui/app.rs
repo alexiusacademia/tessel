@@ -1074,6 +1074,15 @@ pub extern "C" fn tsl_scroll_to(id: u64, align: i32, within: u64, scoped: u8) {
     SCROLL_TARGET.with(|t| t.set(Some(target)));
 }
 
+/// `startEditing(id)`: the text field or code editor with that `.id` (a
+/// `String`'s hash), or the first one inside the view with it, starts
+/// being edited once the views are next laid out (see
+/// `App::start_editing_target`).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_start_editing(id: u64) {
+    START_EDITING.with(|t| t.set(Some(id)));
+}
+
 /// What `scrollTo` asked for.
 #[derive(Clone, Copy)]
 struct ScrollTarget {
@@ -1085,6 +1094,7 @@ struct ScrollTarget {
 
 thread_local! {
     static SCROLL_TARGET: Cell<Option<ScrollTarget>> = const { Cell::new(None) };
+    static START_EDITING: Cell<Option<u64>> = const { Cell::new(None) };
     static DISMISSING: Cell<bool> = const { Cell::new(false) };
     /// `showNotice`: the text that shows, and until when (on the app's clock).
     static NOTICE: RefCell<Option<(String, f64)>> = const { RefCell::new(None) };
@@ -1331,6 +1341,7 @@ impl App {
                 self.each_surface(|a| a.sync_videos());
                 self.each_surface(|a| {
                     a.sync_editor_lines();
+                    a.sync_editor_selections();
                     a.track_editor_texts();
                 });
                 self.take_requests();
@@ -1359,7 +1370,10 @@ impl App {
                 a.ui.focused = None;
             }
             picker_shown |= super::controls::OPEN_PICKER.get().is_some_and(|k| a.node(k).is_some());
+            a.start_editing_target();
+            a.reveal_selection();
             a.follow_caret();
+            a.keep_left_selection();
             a.scroll_to_offset();
             a.layout_popup();
             a.layout_menus();
@@ -1367,6 +1381,8 @@ impl App {
                 a.ui.anim.step(tree, now(), (a.width, a.height), (&a.ui.scroll, &a.ui.scroll_x));
             }
         });
+        // (Nor started editing later.)
+        START_EDITING.with(|t| t.set(None));
         // A palette whose picker is gone closes, and so does the panel of a
         // ribbon group that's gone or has room again.
         if !picker_shown {
@@ -1603,7 +1619,7 @@ impl App {
             if n.mods.hidden || n.mods.disabled {
                 return;
             }
-            for s in &n.mods.shortcuts {
+            for s in n.mods.shortcuts.iter().filter(|s| !s.only) {
                 out.push(menu::Shortcut { cmd: true, shift: s.shift, alt: s.alt, key: s.key.clone() });
             }
             n.visible_children().iter().for_each(|c| shortcuts(c, out));
@@ -2709,6 +2725,167 @@ impl App {
         }
     }
 
+    /// Two-way sync of code editors' `selection:` bindings: when the
+    /// program sets a new selection, the editor selects it and scrolls to
+    /// it. A new editor starts with the selection it's given.
+    fn sync_editor_selections(&mut self) {
+        fn editors(n: &Node, out: &mut Vec<(u64, Callback)>) {
+            if let Kind::CodeEditor { selection: Some(s), .. } = &n.kind {
+                out.push((n.key, s.clone()));
+            }
+            n.children.iter().for_each(|c| editors(c, out));
+        }
+        let mut found = Vec::new();
+        if let Some(t) = &self.tree {
+            editors(t, &mut found);
+        }
+        for (key, selection) in found {
+            let p = selection.locate() as *const i64;
+            let wanted = unsafe { (*p, *p.add(1)) };
+            let apply = match self.ui.editor_selection.insert(key, wanted) {
+                Some(known) => known != wanted,
+                None => wanted != (0, 0),
+            };
+            if apply {
+                self.select_in_editor(key, wanted);
+            }
+        }
+    }
+
+    /// Selects characters `start..end` of a code editor, for its
+    /// `selection:`. It takes the keyboard unless another field is being
+    /// edited, or a view with `.onKey` has it: then it keeps the
+    /// selection (and shows it) for when it's edited again.
+    fn select_in_editor(&mut self, key: u64, (start, end): (i64, i64)) {
+        let Some(node) = self.node(key) else { return };
+        let Some(text) = editable_text(node).map(read_string) else { return };
+        let line = match &node.kind {
+            Kind::CodeEditor { line, .. } => line.clone(),
+            _ => None,
+        };
+        let (a, b) = (char_to_byte(&text, start), char_to_byte(&text, end.max(start)));
+        // (The `line:` binding follows.)
+        if let Some(line) = line {
+            let current = text[..b].matches('\n').count() as i64 + 1;
+            unsafe { *(line.locate() as *mut i64) = current };
+            self.ui.editor_line.insert(key, current);
+        }
+        let edited = self.ui.editing.as_ref().map(|e| e.key);
+        let free = edited.is_none_or(|k| k == key || self.node(k).is_none()) && self.ui.keys_to.is_none();
+        if free {
+            let mut e = match self.ui.editing.clone().filter(|e| e.key == key) {
+                Some(e) => e,
+                None => Editing::new(key, &text),
+            };
+            (e.anchor, e.focus) = (a, b);
+            self.ui.editing = Some(e);
+            self.ui.focused = None;
+            self.ui.kept_selection.remove(&key);
+        } else {
+            self.ui.kept_selection.insert(key, (a, b));
+        }
+        self.ui.reveal = Some((key, a, b));
+    }
+
+    /// After the selection changed in the code editor being edited: report
+    /// it to its `selection:` binding.
+    fn report_selection(&mut self) {
+        let Some(e) = self.ui.editing.as_ref() else { return };
+        let (key, range) = (e.key, e.range());
+        let Some(Kind::CodeEditor { text, selection: Some(selection), .. }) = self.node(key).map(|n| &n.kind) else { return };
+        let text = read_string(text);
+        let start = text[..range.start.min(text.len())].chars().count() as i64;
+        let end = start + text[range.start.min(text.len())..range.end.min(text.len())].chars().count() as i64;
+        let p = selection.locate() as *mut i64;
+        if unsafe { (*p, *p.add(1)) } != (start, end) {
+            unsafe {
+                *p = start;
+                *p.add(1) = end;
+            }
+            self.ui.editor_selection.insert(key, (start, end));
+            self.dirty = true;
+        }
+    }
+
+    /// A code editor that stops being edited keeps its selection.
+    fn keep_left_selection(&mut self) {
+        let now = self.ui.editing.as_ref().map(|e| e.key);
+        if let Some(last) = self.ui.last_editing.take()
+            && Some(last.key) != now
+            && self.node(last.key).is_some_and(|n| matches!(n.kind, Kind::CodeEditor { .. }))
+        {
+            self.ui.kept_selection.insert(last.key, (last.anchor, last.focus));
+        }
+        self.ui.last_editing = self.ui.editing.clone();
+    }
+
+    /// `startEditing(id)`: the text field or code editor with that `.id`
+    /// (or the first one inside the view with it) starts being edited. A
+    /// code editor gets back the selection it kept.
+    fn start_editing_target(&mut self) {
+        let Some(id) = START_EDITING.with(Cell::get) else { return };
+        fn find(n: &Node, id: u64, inside: bool) -> Option<&Node> {
+            if n.mods.hidden || n.layout.style.disabled {
+                return None;
+            }
+            let inside = inside || n.id == Some(id);
+            if inside && typable(n) {
+                return Some(n);
+            }
+            n.visible_children().iter().find_map(|c| find(c, id, inside))
+        }
+        let Some((key, text, code)) = self
+            .tree
+            .as_ref()
+            .and_then(|t| find(t, id, false))
+            .map(|n| (n.key, shown_text(n).unwrap_or_default(), matches!(n.kind, Kind::CodeEditor { .. })))
+        else {
+            return;
+        };
+        START_EDITING.with(|c| c.set(None));
+        self.ui.keys_to = None;
+        self.ui.focused = None;
+        // (Being edited already, it stays as it is.)
+        if self.ui.editing.as_ref().is_some_and(|e| e.key == key) {
+            return;
+        }
+        let mut e = Editing::new(key, &text);
+        if code {
+            (e.anchor, e.focus) = self.ui.kept_selection.remove(&key).unwrap_or((0, 0));
+            e.clamp(&text);
+        }
+        self.ui.editing = Some(e);
+    }
+
+    /// Scrolls a code editor so the stretch `select_in_editor` selected
+    /// shows: when it doesn't already, it goes a third of the way down.
+    fn reveal_selection(&mut self) {
+        let Some((key, a, b)) = self.ui.reveal.take() else { return };
+        let Some(node) = self.node(key) else { return };
+        let Some(layout) = &node.layout.text else { return };
+        let caret = |i: usize| edit::geometry(layout, &Editing { key, anchor: i, focus: i, ..Default::default() }).0;
+        let (Some(from), Some(to)) = (caret(a), caret(b)) else { return };
+        let content = node.layout.rect.inset_by(node.mods.padding);
+        let visible_h = (content.h - 2.0 * render::CODE_PAD_Y).max(1.0);
+        let visible_w = (content.w - node.layout.gutter - 2.0 * render::CODE_PAD_X).max(1.0);
+        let (total_h, total_w, len) = (layout.height(), layout.width() + 2.0, layout.len);
+        let sy = self.ui.scroll.get(&key).copied().unwrap_or(0.0);
+        if from.y0 < sy || to.y1 > sy + visible_h {
+            let y = (from.y0 - visible_h / 3.0).min((total_h - visible_h).max(0.0)).max(0.0);
+            self.ui.scroll.insert(key, y);
+        }
+        let sx = self.ui.scroll_x.get(&key).copied().unwrap_or(0.0);
+        let (x0, x1) = (from.x0.min(to.x0), from.x1.max(to.x1));
+        if x0 < sx || x1 > sx + visible_w {
+            let x = if x1 <= visible_w { 0.0 } else { (x1 - visible_w * 2.0 / 3.0).min((total_w - visible_w).max(0.0)).max(0.0) };
+            self.ui.scroll_x.insert(key, x);
+        }
+        // (So the caret, if it's there, isn't followed away from this.)
+        if let Some(e) = self.ui.editing.as_ref().filter(|e| e.key == key) {
+            self.followed = Some((key, e.anchor, e.focus, len));
+        }
+    }
+
     /// Where the text of an editable view starts, and its (x, y) scroll.
     fn text_origin(&self, node: &Node) -> (f64, f64, f64, f64) {
         match node.kind {
@@ -3523,6 +3700,10 @@ impl App {
         // An open menu, and the menu bar's shortcuts, come before the views.
         if self.menu.is_some() || self.bar_takes(name, mods) {
             self.key(name, mods);
+            return;
+        }
+        // Shortcuts without Cmd (`"only+control+g"`) work while text is edited too.
+        if self.run_only_shortcut(name, mods) {
             return;
         }
         // Shortcuts first, then the control the keyboard is on, then
@@ -4652,6 +4833,7 @@ impl App {
         }
         self.ui.editing = Some(e);
         self.report_line();
+        self.report_selection();
         // Lay out again so the caret position is current.
         if !self.dirty {
             self.follow_caret();
@@ -4725,7 +4907,7 @@ impl App {
             if n.mods.hidden || n.layout.style.disabled || exact.is_some() {
                 return;
             }
-            for s in n.mods.shortcuts.iter().filter(|s| s.key == key) {
+            for s in n.mods.shortcuts.iter().filter(|s| s.key == key && !s.only) {
                 if s.shift == mods.shift && s.alt == mods.alt {
                     *exact = Some(s.action.clone());
                     return;
@@ -4743,6 +4925,43 @@ impl App {
             find(t, key, mods, &mut exact, &mut loose);
         }
         let Some(cb) = exact.or(loose) else { return false };
+        cb.call();
+        self.dirty = true;
+        true
+    }
+
+    /// A `.shortcut("only+…")` with exactly the keys held, like Ctrl+G on
+    /// macOS (`"only+control+g"`) or Alt+Left (`"only+alt+left"`): runs it.
+    /// Where Ctrl is the shortcut key (Windows, Linux), it counts as Ctrl.
+    fn run_only_shortcut(&mut self, key: &str, mods: Mods) -> bool {
+        let control = if cfg!(target_os = "macos") {
+            if mods.primary {
+                return false;
+            }
+            mods.control
+        } else {
+            mods.control || mods.primary
+        };
+        if !(control || mods.alt) {
+            return false;
+        }
+        fn find(n: &Node, key: &str, held: (bool, bool, bool), out: &mut Option<Callback>) {
+            if n.mods.hidden || n.layout.style.disabled || out.is_some() {
+                return;
+            }
+            if let Some(s) = n.mods.shortcuts.iter().find(|s| s.only && s.key == key && (s.control, s.alt, s.shift) == held) {
+                *out = Some(s.action.clone());
+                return;
+            }
+            for c in n.visible_children() {
+                find(c, key, held, out);
+            }
+        }
+        let mut found = None;
+        if let Some(t) = &self.tree {
+            find(t, key, (control, mods.alt, mods.shift), &mut found);
+        }
+        let Some(cb) = found else { return false };
         cb.call();
         self.dirty = true;
         true
@@ -4819,6 +5038,9 @@ impl App {
             }
         }
         if !mods.primary && !mods.shift && self.completion_key(name) {
+            return;
+        }
+        if !mods.primary && !mods.alt && self.field_key(name, mods.shift) {
             return;
         }
         // In a rich text editor, Cmd+B, Cmd+I and Cmd+U change the style.
@@ -4929,6 +5151,24 @@ impl App {
             _ => return,
         };
         self.edit(change);
+    }
+
+    /// A key for the `.onFieldKey` of the one-line text field being edited:
+    /// Up, Down and Escape, and Enter (`"shift+enter"` with Shift) unless
+    /// the field has `.onSubmit`. The field stays edited.
+    fn field_key(&mut self, name: &str, shift: bool) -> bool {
+        let Some(node) = self.ui.editing.as_ref().and_then(|e| self.node(e.key)) else { return false };
+        let (Kind::TextField { lines: ..=1, .. }, Some(cb)) = (&node.kind, &node.mods.on_field_key) else { return false };
+        let key = match name {
+            "up" | "down" | "escape" if !shift => name,
+            "enter" if shift => "shift+enter",
+            "enter" if node.mods.on_submit.is_none() => "enter",
+            _ => return false,
+        };
+        let cb = cb.clone();
+        cb.call_with(crate::str_new(key) as *mut u8);
+        self.dirty = true;
+        true
     }
 
     /// A mouse press on a text field or code editor: place the caret or select.
@@ -5342,7 +5582,7 @@ impl App {
                 }
                 Kind::Svg { icon: Some(name), .. } => format!("Icon {name}"),
                 Kind::Svg { .. } => "Svg".to_string(),
-                Kind::CodeEditor { text, error_lines, breakpoints, stopped_line, .. } => {
+                Kind::CodeEditor { text, error_lines, breakpoints, stopped_line, highlights, selection, .. } => {
                     // (A debugger's marks, when there are any.)
                     let mut marks = String::new();
                     if !breakpoints.is_empty() {
@@ -5350,6 +5590,19 @@ impl App {
                     }
                     if *stopped_line > 0 {
                         marks += &format!(" stopped {stopped_line}");
+                    }
+                    // (Found text, and a selection the program can see.)
+                    if !highlights.is_empty() {
+                        let shown: Vec<String> = highlights.iter().take(8).map(|(a, b)| format!("{a}..{b}")).collect();
+                        let more = if highlights.len() > 8 { format!(", … {} in all", highlights.len()) } else { String::new() };
+                        marks += &format!(" highlights [{}{more}]", shown.join(", "));
+                    }
+                    if let Some(s) = selection {
+                        let p = s.locate() as *const i64;
+                        let (a, b) = unsafe { (*p, *p.add(1)) };
+                        if a != b {
+                            marks += &format!(" selected {a}..{b}");
+                        }
                     }
                     format!("CodeEditor errors {error_lines:?}{marks} = {:?}", read_string(text))
                 }
@@ -7823,6 +8076,11 @@ fn text_on_change(n: &Node) -> Option<Callback> {
         Kind::TextField { on_change, .. } | Kind::CodeEditor { on_change, .. } => on_change.clone(),
         _ => None,
     }
+}
+
+/// The byte offset of character `i` of `text` (its end for `i` past it).
+fn char_to_byte(text: &str, i: i64) -> usize {
+    text.char_indices().nth(i.max(0) as usize).map_or(text.len(), |(b, _)| b)
 }
 
 fn editable_text(n: &Node) -> Option<&Callback> {

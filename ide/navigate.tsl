@@ -1,0 +1,576 @@
+// Finding your way: Quick Open, the command palette, Go to line, finding
+// in a file and searching the project, and going back to where you were.
+
+// What the box at the top of the window is for.
+enum Overlay { none, files, commands, line }
+
+// One of the IDE's commands, for the palette and the keys: `key` is how
+// `.shortcut` names its key on this computer ("" for none).
+struct Command {
+    id: String
+    title: String
+    key: String = ""
+}
+
+// A row of the box's list: a file or a command. `marks` are the
+// characters of the title that match what's typed (shown in bold).
+struct PickRow {
+    title: String
+    detail: String
+    value: String
+    marks: [Int] = []
+    // The detail is a key, shown on the right.
+    key: Bool = false
+}
+
+// How well something matches what's typed (higher first), and which of
+// its characters match.
+struct Match {
+    score: Int
+    marks: [Int]
+}
+
+// A place in a file, for going back and forward.
+struct Place {
+    path: String
+    line: Int
+    column: Int = 1
+}
+
+// A line of the project that has what's searched for: the file (relative
+// to the project), the line and column (from 1), how long the match is,
+// and the line's text.
+struct SearchHit {
+    path: String
+    line: Int
+    column: Int
+    length: Int
+    text: String
+}
+
+// Whether the keys are the Mac's (Cmd, and Ctrl for a few). TESSEL_IDE_KEYS
+// can say ("macos", or anything else for Windows and Linux), so tests are
+// the same everywhere.
+fn macKeys() -> Bool {
+    (environment("TESSEL_IDE_KEYS") ?? platform()) == "macos"
+}
+
+// The IDE's commands, with their keys as VS Code has them.
+fn ideCommands() -> [Command] {
+    let mac = macKeys()
+    [
+        Command(id: "quickOpen", title: "Go to file…", key: "p"),
+        Command(id: "palette", title: "Show all commands", key: "shift+p"),
+        Command(id: "goToLine", title: "Go to line…", key: "only+control+g"),
+        Command(id: "back", title: "Go back", key: if mac { "only+control+-" } else { "only+alt+left" }),
+        Command(id: "forward", title: "Go forward", key: if mac { "only+control+shift+-" } else { "only+alt+right" }),
+        Command(id: "find", title: "Find", key: "f"),
+        Command(id: "replace", title: "Replace", key: if mac { "alt+f" } else { "h" }),
+        Command(id: "findNext", title: "Find next", key: if mac { "g" } else { "" }),
+        Command(id: "findPrevious", title: "Find previous", key: if mac { "shift+g" } else { "" }),
+        Command(id: "search", title: "Search in files", key: "shift+f"),
+        Command(id: "save", title: "Save", key: "s"),
+        Command(id: "check", title: "Check", key: "k"),
+        Command(id: "run", title: "Run or stop", key: "r"),
+        Command(id: "debug", title: "Debug or stop debugging", key: "shift+r"),
+        Command(id: "continue", title: "Debug: continue"),
+        Command(id: "stepOver", title: "Debug: step over", key: "'"),
+        Command(id: "stepIn", title: "Debug: step in", key: ";"),
+        Command(id: "stepOut", title: "Debug: step out", key: "shift+;"),
+        Command(id: "build", title: "Build", key: "b"),
+        Command(id: "package", title: "Package"),
+        Command(id: "newFile", title: "New file"),
+        Command(id: "newFolder", title: "New folder"),
+        Command(id: "rename", title: "Rename"),
+        Command(id: "delete", title: "Delete"),
+        Command(id: "closeTab", title: "Close tab", key: "w"),
+        Command(id: "problems", title: "Show Problems"),
+        Command(id: "console", title: "Show Console"),
+        Command(id: "debugPanel", title: "Show Debug"),
+        Command(id: "preview", title: "Show or hide the Markdown preview"),
+        Command(id: "design", title: "Show or hide the Design panel"),
+        Command(id: "docs", title: "Show or hide the Docs panel"),
+        Command(id: "reloadOnSave", title: "Reload on save: on or off"),
+    ]
+}
+
+// The key of a command, as `.shortcut` names it ("" for none).
+fn commandKey(id: String) -> String {
+    ideCommands().first(where: { c in c.id == id })?.key ?? ""
+}
+
+// A key as people read it: "⇧⌘P" on a Mac, "Ctrl+Shift+P" elsewhere.
+fn keyLabel(key: String) -> String {
+    if key == "" {
+        return ""
+    }
+    let mac = macKeys()
+    var parts = key.split("+")
+    // ("-" is a key too: "only+control+-".)
+    if key.hasSuffix("+-") || key == "-" {
+        parts = key.substring(from: 0, to: max(0, key.count - 2)).split("+").filter { p in p != "" }
+        parts.append("-")
+    }
+    let name = parts.last ?? ""
+    let only = parts.contains("only")
+    let control = parts.contains("control")
+    let shift = parts.contains("shift")
+    let alt = parts.contains("alt")
+    let shown = match name {
+        "left" -> if mac { "←" } else { "Left" }
+        "right" -> if mac { "→" } else { "Right" }
+        "enter" -> if mac { "↩" } else { "Enter" }
+        _ -> name.uppercase()
+    }
+    if mac {
+        var out = ""
+        if control {
+            out += "⌃"
+        }
+        if alt {
+            out += "⌥"
+        }
+        if shift {
+            out += "⇧"
+        }
+        if !only {
+            out += "⌘"
+        }
+        return out + shown
+    }
+    var out: [String] = []
+    if control || !only {
+        out.append("Ctrl")
+    }
+    if shift {
+        out.append("Shift")
+    }
+    if alt {
+        out.append("Alt")
+    }
+    out.append(shown)
+    out.joined(separator: "+")
+}
+
+fn isUpper(c: String) -> Bool {
+    c != c.lowercase() && c == c.uppercase()
+}
+
+// Whether a word starts at character `i`: at the start, after a
+// separator, or at a capital after a small letter (`openFile`).
+fn startsWord(chars: [String], i: Int) -> Bool {
+    if i == 0 {
+        return true
+    }
+    let before = chars[i - 1]
+    if "/\\_-. :".contains(before) {
+        return true
+    }
+    isUpper(chars[i]) && !isUpper(before)
+}
+
+// Whether the characters of `query` are in `text`, in that order (large
+// and small letters alike), as VS Code's Quick Open matches: the text
+// that has them side by side, or at the starts of words, comes first.
+fn fuzzyMatch(query: String, text: String) -> Match? {
+    let q = query.lowercase().characters
+    if q.isEmpty {
+        return Match(score: 0, marks: [])
+    }
+    let chars = text.characters
+    let lower = text.lowercase().characters
+    // The whole of it, side by side.
+    if let at = text.lowercase().find(query.lowercase()) {
+        var marks: [Int] = []
+        for i in at..at + q.count {
+            marks.append(i)
+        }
+        var score = 1000 + q.count * 10 - at
+        if startsWord(chars: chars, i: at) {
+            score += 200
+        }
+        return Match(score: score, marks: marks)
+    }
+    // Otherwise each character after the one before.
+    var marks: [Int] = []
+    var score = 0
+    var next = 0
+    for (i, c) in lower.enumerated() {
+        if next < q.count && c == q[next] {
+            score += 10
+            if !marks.isEmpty && marks[marks.count - 1] == i - 1 {
+                score += 30
+            }
+            if startsWord(chars: chars, i: i) {
+                score += 40
+            }
+            marks.append(i)
+            next += 1
+        }
+    }
+    if next < q.count {
+        return nil
+    }
+    Match(score: score - (marks[marks.count - 1] - marks[0]), marks: marks)
+}
+
+// Folders the IDE doesn't look in: hidden ones, and where builds go.
+fn skippedFolder(name: String) -> Bool {
+    name.hasPrefix(".") || name == "target" || name == "build" || name == "node_modules" || name.hasSuffix(".app")
+}
+
+// The project's files, as paths relative to it ("ui/list.tsl"), at most
+// `limit` of them. Hidden files are left out.
+fn projectFiles(root: String, limit: Int) -> [String] {
+    var out: [String] = []
+    var folders = [""]
+    while !folders.isEmpty && out.count < limit {
+        let rel = folders.remove(at: 0)
+        let full = if rel == "" { root } else { join(folder: root, name: rel) }
+        for name in (listFolder(full) ?? []).sorted() {
+            let path = if rel == "" { name } else { "{rel}/{name}" }
+            if isFolder(join(folder: root, name: path)) {
+                if !skippedFolder(name) {
+                    folders.append(path)
+                }
+            } else if !name.hasPrefix(".") && out.count < limit {
+                out.append(path)
+            }
+        }
+    }
+    out
+}
+
+// A file, as a row of Quick Open: its name, and the folder it's in.
+fn fileRow(root: String, rel: String, marks: [Int]) -> PickRow {
+    let folder = if rel.contains("/") { parentOf(path: rel) } else { "" }
+    PickRow(title: fileName(rel), detail: folder, value: join(folder: root, name: rel), marks: marks)
+}
+
+// The rows for Quick Open: the files that match, best first; with nothing
+// typed, the files opened lately first (`recent`, full paths), but not
+// the one that's open (`current`).
+fn fileRows(root: String, files: [String], query: String, recent: [String], current: String) -> [PickRow] {
+    if query.trim() == "" {
+        var rows: [PickRow] = []
+        for path in recent {
+            if path != current && path.hasPrefix(root + "/") {
+                let rel = path.substring(from: root.count + 1, to: path.count)
+                if files.contains(rel) {
+                    rows.append(fileRow(root: root, rel: rel, marks: []))
+                }
+            }
+        }
+        for rel in files {
+            if rows.count >= 50 {
+                break
+            }
+            let path = join(folder: root, name: rel)
+            if !recent.contains(path) && path != current {
+                rows.append(fileRow(root: root, rel: rel, marks: []))
+            }
+        }
+        return rows
+    }
+    let q = query.trim().replace(" ", with: "")
+    var found: [(Int, PickRow)] = []
+    for rel in files {
+        let name = fileName(rel)
+        // (The name counts more than the folders it's in.)
+        if let m = fuzzyMatch(query: q, text: name) {
+            found.append((m.score + 5000 - rel.count, fileRow(root: root, rel: rel, marks: m.marks)))
+        } else if let m = fuzzyMatch(query: q, text: rel) {
+            let skip = rel.count - name.count
+            found.append((m.score - rel.count, fileRow(root: root, rel: rel, marks: m.marks.filter { i in i >= skip }.map { i in i - skip })))
+        }
+    }
+    let sorted = found.sorted(by: { a, b in a.0 > b.0 })
+    var rows: [PickRow] = []
+    for f in sorted {
+        if rows.count >= 50 {
+            break
+        }
+        rows.append(f.1)
+    }
+    rows
+}
+
+// The rows for the command palette.
+fn commandRows(query: String) -> [PickRow] {
+    var found: [(Int, PickRow)] = []
+    for (i, c) in ideCommands().enumerated() {
+        if let m = fuzzyMatch(query: query.trim(), text: c.title) {
+            // (With nothing typed, they keep their order.)
+            found.append((m.score * 100 - i, PickRow(title: c.title, detail: keyLabel(key: c.key), value: c.id, marks: m.marks, key: true)))
+        }
+    }
+    found.sorted(by: { a, b in a.0 > b.0 }).map { f in f.1 }
+}
+
+// `line` or `line:column`, as typed in Go to line.
+fn parseLineColumn(text: String) -> Place? {
+    let parts = text.trim().split(":")
+    if parts.isEmpty || parts.count > 2 {
+        return nil
+    }
+    let line = Int(parts[0].trim()) ?? 0
+    if line < 1 {
+        return nil
+    }
+    let column = if parts.count == 2 { Int(parts[1].trim()) ?? 0 } else { 1 }
+    if column < 1 {
+        return nil
+    }
+    Place(path: "", line: line, column: column)
+}
+
+// The character where `line` and `column` (from 1) are in `text`: at most
+// the end of that line, or of the text.
+fn offsetOf(text: String, line: Int, column: Int) -> Int {
+    var at = 0
+    for (i, piece) in text.split("\n").enumerated() {
+        if i == line - 1 {
+            return at + min(max(column - 1, 0), piece.count)
+        }
+        at += piece.count + 1
+    }
+    text.count
+}
+
+// The line and column (from 1) of character `offset` of `text`.
+fn placeOf(text: String, offset: Int) -> Place {
+    var at = 0
+    for (i, piece) in text.split("\n").enumerated() {
+        if offset <= at + piece.count {
+            return Place(path: "", line: i + 1, column: offset - at + 1)
+        }
+        at += piece.count + 1
+    }
+    Place(path: "", line: 1, column: 1)
+}
+
+fn wordCharacter(c: String) -> Bool {
+    c.lowercase() != c.uppercase() || "0123456789_".contains(c)
+}
+
+// Where `query` is in `text`, as character ranges: with `matchCase`, only
+// with the same large and small letters; with `wholeWord`, only where
+// it's a word of its own.
+fn findInText(text: String, query: String, matchCase: Bool, wholeWord: Bool) -> [Range] {
+    if query == "" {
+        return []
+    }
+    let hay = if matchCase { text } else { text.lowercase() }
+    let needle = if matchCase { query } else { query.lowercase() }
+    if !hay.contains(needle) {
+        return []
+    }
+    let n = needle.count
+    let chars = if wholeWord { text.characters } else { [] }
+    var out: [Range] = []
+    var at = 0
+    let pieces = hay.split(needle)
+    for (i, piece) in pieces.enumerated() {
+        at += piece.count
+        if i < pieces.count - 1 {
+            let whole = !wholeWord || ((at == 0 || !wordCharacter(c: chars[at - 1])) && (at + n >= chars.count || !wordCharacter(c: chars[at + n])))
+            if whole {
+                out.append(at..at + n)
+            }
+            at += n
+        }
+    }
+    out
+}
+
+// The text with each of `ranges` (in order, not overlapping) replaced.
+fn replaceRanges(text: String, ranges: [Range], with: String) -> String {
+    var out = ""
+    var at = 0
+    for r in ranges {
+        out += text.substring(from: at, to: r.start) + with
+        at = r.end
+    }
+    out + text.substring(from: at, to: text.count)
+}
+
+// Searches the project's files for `query`: each line that has it, once
+// for every place it's there. Files open in the editor are searched as
+// they are there (`open`, saved or not). At most `limit` places.
+fn searchFiles(root: String, query: String, matchCase: Bool, wholeWord: Bool, open: [DesignText], limit: Int) -> [SearchHit] {
+    var hits: [SearchHit] = []
+    if query == "" {
+        return hits
+    }
+    for rel in projectFiles(root: root, limit: 20000) {
+        let path = join(folder: root, name: rel)
+        var text = open.first(where: { d in d.path == path })?.text
+        // (Big files are left out, and so are those that aren't text.)
+        if text == nil && (fileSize(path) ?? 0) < 2000000 {
+            text = readFile(path)
+        }
+        if let text = text {
+            if findInText(text: text, query: query, matchCase: matchCase, wholeWord: false).isEmpty {
+                continue
+            }
+            for (i, line) in text.split("\n").enumerated() {
+                for r in findInText(text: line, query: query, matchCase: matchCase, wholeWord: wholeWord) {
+                    hits.append(SearchHit(path: rel, line: i + 1, column: r.start + 1, length: r.end - r.start, text: line.replace("\r", with: "")))
+                    if hits.count >= limit {
+                        return hits
+                    }
+                }
+            }
+        }
+    }
+    hits
+}
+
+// A piece of a text, matched or not.
+struct MarkRun {
+    text: String
+    marked: Bool
+}
+
+// The text in pieces: the characters `marks` in some, the others in the rest.
+fn markRuns(text: String, marks: [Int]) -> [MarkRun] {
+    var runs: [MarkRun] = []
+    for (i, c) in text.characters.enumerated() {
+        let marked = marks.contains(i)
+        if !runs.isEmpty && runs[runs.count - 1].marked == marked {
+            runs[runs.count - 1].text += c
+        } else {
+            runs.append(MarkRun(text: c, marked: marked))
+        }
+    }
+    runs
+}
+
+// The text with characters `marks` in bold, as a row of texts.
+view MarkedText(text: String, marks: [Int], size: Float = 13) {
+    HStack(spacing: 0) {
+        if marks.isEmpty {
+            Text(text).font(size: size)
+        } else {
+            for run in markRuns(text: text, marks: marks) {
+                Text(run.text).font(size: size, weight: if run.marked { .bold } else { .regular }).color(if run.marked { .blue } else { .primary })
+            }
+        }
+    }
+}
+
+// The box at the top of the window, for Quick Open, the commands and Go
+// to line: a field, and what matches what's typed in it. `key` gets the
+// keys the list uses (Up, Down, Enter, Escape), `choose` the row clicked.
+view PickBox(placeholder: String, text: bind String, rows: [PickRow], choice: Int, note: String, changed: fn(), key: fn(String), choose: fn(Int)) {
+    VStack(spacing: 0, alignment: .leading) {
+        TextField(placeholder, text: text, onChange: { changed() })
+            .autofocus()
+            .onFieldKey { k in key(k) }
+            .id("pick")
+            .padding(bottom: 6)
+        if note != "" {
+            Text(note).font(size: 12).color(.secondary).padding(6)
+        }
+        Scroll {
+            VStack(spacing: 0, alignment: .leading) {
+                for (i, r) in rows.enumerated() {
+                    HStack(spacing: 8) {
+                        MarkedText(text: r.title, marks: r.marks)
+                        if r.key {
+                            Spacer()
+                        }
+                        if r.detail != "" {
+                            Text(r.detail).font(size: 12).color(.secondary)
+                        }
+                        if !r.key {
+                            Spacer()
+                        }
+                    }
+                    .padding(horizontal: 8, vertical: 4)
+                    .background(if i == choice { .highlight } else { .clear }, radius: 4)
+                    .hoverBackground(.lightGray, radius: 4)
+                    .onTap { choose(i) }
+                    .id(i)
+                }
+            }
+        }
+        .frame(maxHeight: 320)
+        .id("pickRows")
+    }
+    .frame(width: 560)
+}
+
+// The find bar over the editor: what to find (and what to put in its
+// place), how many there are, and the options.
+view FindBar(
+    text: bind String,
+    replacement: bind String,
+    replacing: Bool,
+    matchCase: Bool,
+    wholeWord: Bool,
+    count: String,
+    key: fn(String),
+    replaceKey: fn(String),
+    command: fn(String)
+) {
+    VStack(spacing: 4, alignment: .leading) {
+        HStack(spacing: 6) {
+            IconButton(icon: if replacing { .chevronDown } else { .chevronRight }) { command("toggleReplace") }.tooltip("Replace")
+            TextField("Find", text: text, onChange: { command("changed") })
+                .onFieldKey { k in key(k) }
+                .id("find")
+                .frame(width: 260)
+            OptionButton(label: "Aa", on: matchCase) { command("matchCase") }.tooltip("Match case")
+            OptionButton(label: "ab", on: wholeWord) { command("wholeWord") }.tooltip("Whole word")
+            Text(count).font(size: 12).color(.secondary).frame(minWidth: 70)
+            IconButton(icon: .arrowUp) { command("previous") }.tooltip("Previous match")
+            IconButton(icon: .arrowDown) { command("next") }.tooltip("Next match")
+            IconButton(icon: .close) { command("close") }.tooltip("Close")
+            Spacer()
+        }
+        if replacing {
+            HStack(spacing: 6) {
+                Spacer().frame(width: 22)
+                TextField("Replace", text: replacement)
+                    .onFieldKey { k in replaceKey(k) }
+                    .id("replace")
+                    .frame(width: 260)
+                Button("Replace") { command("replaceOne") }
+                Button("Replace all") { command("replaceAll") }
+                Spacer()
+            }
+        }
+    }
+    .padding(horizontal: 8, vertical: 6)
+}
+
+// A small switch for an option, like "Aa" for Match case.
+view OptionButton(label: String, on: Bool, action: fn()) {
+    Text(label)
+        .font(size: 12, weight: .semibold)
+        .color(if on { .white } else { .secondary })
+        .padding(horizontal: 5, vertical: 2)
+        .background(if on { .blue } else { .clear }, radius: 4)
+        .hoverBackground(.lightGray, radius: 4)
+        .onTap { action() }
+}
+
+// A line that a search found, with the match in bold: the line from its
+// first word, and not too long before the match.
+view SearchLine(hit: SearchHit) {
+    let line = hit.text
+    let indent = line.count - line.trimStart().count
+    let start = hit.column - 1
+    let from = if start - indent > 50 { start - 40 } else { indent }
+    let before = (if from > indent { "…" } else { "" }) + line.substring(from: from, to: start)
+    let end = min(line.count, start + hit.length)
+    let after = line.substring(from: end, to: min(line.count, end + 120))
+    HStack(spacing: 0) {
+        Text("{hit.line}").font(size: 12).color(.secondary).frame(width: 44)
+        Text(before).font(size: 12)
+        Text(line.substring(from: start, to: end)).font(size: 12, weight: .bold).background(.rgba(255, 204, 0, 0.35))
+        Text(after).font(size: 12)
+        Spacer()
+    }
+}

@@ -21,9 +21,11 @@ struct Doc {
     text: String
     saved: String
     line: Int = 1
+    // What's selected in its editor (characters), or where the cursor is.
+    selection: Range = 0..0
 }
 
-enum Panel { problems, console, debug }
+enum Panel { problems, console, debug, search }
 
 // A line the debugger stops the program at.
 struct Breakpoint {

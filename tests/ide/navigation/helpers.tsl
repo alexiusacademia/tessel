@@ -1,0 +1,8 @@
+// How many words a line has: the count of its pieces between spaces.
+fn wordCount(line: String) -> Int {
+    line.split(" ").filter { w in w != "" }.count
+}
+
+fn twice(n: Int) -> Int {
+    n * 2
+}

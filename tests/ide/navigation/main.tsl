@@ -1,0 +1,47 @@
+// Counts the words in a few lines.
+
+fn main() {
+    let lines = [
+        "the quick brown fox",
+        "jumps over",
+        "the lazy dog",
+    ]
+    var count = 0
+    for line in lines {
+        count += wordCount(line)
+    }
+    print("{count} words")
+    print(twice(count))
+}
+
+// More lines, so that there's something to scroll.
+fn spare1() {}
+fn spare2() {}
+fn spare3() {}
+fn spare4() {}
+fn spare5() {}
+fn spare6() {}
+fn spare7() {}
+fn spare8() {}
+fn spare9() {}
+fn spare10() {}
+fn spare11() {}
+fn spare12() {}
+fn spare13() {}
+fn spare14() {}
+fn spare15() {}
+fn spare16() {}
+fn spare17() {}
+fn spare18() {}
+fn spare19() {}
+fn spare20() {}
+fn spare21() {}
+fn spare22() {}
+fn spare23() {}
+fn spare24() {}
+fn spare25() {}
+fn spare26() {}
+fn spare27() {}
+fn spare28() {}
+fn spare29() {}
+fn spare30() {}

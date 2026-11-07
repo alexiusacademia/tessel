@@ -1,0 +1,56 @@
+// CodeEditor: `highlights:` and a `selection:` the program sets and reads;
+// `startEditing`, `.onFieldKey`, and a shortcut without Cmd (`only+`).
+
+app Finder(width: 520, height: 360) {
+    state source = "let a = 1\nlet b = a + a\nprint(b)\n"
+    state query = ""
+    state found: [Range] = []
+    state current = 0
+    state selection = 0..0
+    state log: [String] = []
+
+    TextField("Find", text: query, onChange: { search() })
+        .onFieldKey { key in
+            log.append(key)
+            match key {
+                "enter", "down" -> step(by: 1)
+                "shift+enter", "up" -> step(by: -1)
+                "escape" -> startEditing("code")
+                _ -> {}
+            }
+        }
+    CodeEditor(text: source, highlights: found, selection: selection).id("code")
+    Text("Selected {selection.start} to {selection.end}")
+    Text("Keys: {log.joined(separator: " ")}")
+        .shortcut("only+control+g") { selection = 4..5 }
+        .shortcut("only+alt+left") { log.append("back") }
+
+    // Every place `query` is in the text, by the pieces between them.
+    fn search() {
+        found = []
+        current = 0
+        if query == "" {
+            return
+        }
+        var at = 0
+        let pieces = source.split(query)
+        for (i, piece) in pieces.enumerated() {
+            at += piece.count
+            if i < pieces.count - 1 {
+                found.append(at..at + query.count)
+                at += query.count
+            }
+        }
+        if !found.isEmpty {
+            selection = found[0]
+        }
+    }
+
+    fn step(by: Int) {
+        if found.isEmpty {
+            return
+        }
+        current = (current + by + found.count) % found.count
+        selection = found[current]
+    }
+}

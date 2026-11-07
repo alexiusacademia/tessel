@@ -1,0 +1,42 @@
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] selected 4..5 = "let a = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 4 to 5"
+    Text "Keys: "
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] selected 22..23 = "let a = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 22 to 23"
+    Text "Keys: enter enter"
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] selected 4..5 = "let a = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 4 to 5"
+    Text "Keys: enter enter shift+enter up"
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] = "let c = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 5 to 5"
+    Text "Keys: enter enter shift+enter up escape"
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] selected 5..7 = "let c = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 5 to 7"
+    Text "Keys: enter enter shift+enter up escape"
+Root
+  View
+    TextField "Find" = "a"
+    CodeEditor errors [] highlights [4..5, 18..19, 22..23] selected 4..5 = "let c = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 4 to 5"
+    Text "Keys: enter enter shift+enter up escape"
+Root
+  View
+    TextField "Find" = "print"
+    CodeEditor errors [] highlights [24..29] selected 24..29 = "let c = 1\nlet b = a + a\nprint(b)\n"
+    Text "Selected 24 to 29"
+    Text "Keys: enter enter shift+enter up escape back"

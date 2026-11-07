@@ -262,6 +262,12 @@ pub enum Kind {
         on_breakpoint: Option<Callback>,
         /// Called after each edit that changes its text.
         on_change: Option<Callback>,
+        /// Stretches of text to mark, as found by a search: character
+        /// offsets (start, end) into the text (see `tsl_ui_code_editor_find`).
+        highlights: Vec<(i64, i64)>,
+        /// `selection:`, a `Range` of character offsets: the selection,
+        /// both ways (see `App::sync_editor_selections`).
+        selection: Option<Callback>,
     },
     /// Tabs: each child is a page, titled by `.tabItem` and identified by `.tag`.
     TabView { selection: Callback, close: Option<Callback> },
@@ -435,6 +441,9 @@ pub struct Mods {
     pub on_appear: Option<Callback>,
     /// `.onSubmit { … }`: runs when Enter is pressed in a text field.
     pub on_submit: Option<Callback>,
+    /// `.onFieldKey { key in … }`: on a text field, gets the keys a one-line
+    /// field has no use for (Up, Down, Escape…) while it's edited.
+    pub on_field_key: Option<Callback>,
     /// `.autofocus()`: a text field or code editor that starts editing when it appears.
     pub autofocus: bool,
     /// `.tabItem("Title")`: the title of a TabView page.
@@ -552,6 +561,7 @@ impl Mods {
             shortcuts,
             on_appear,
             on_submit,
+            on_field_key,
             autofocus,
             tab_title,
             hover_background,
@@ -621,6 +631,7 @@ impl Mods {
         m.shortcuts.extend(shortcuts);
         or(&mut m.on_appear, on_appear);
         or(&mut m.on_submit, on_submit);
+        or(&mut m.on_field_key, on_field_key);
         m.autofocus |= autofocus;
         or(&mut m.tab_title, tab_title);
         or(&mut m.hover_background, hover_background);
@@ -718,6 +729,11 @@ pub struct Shortcut {
     pub key: String,
     pub shift: bool,
     pub alt: bool,
+    /// `only+…`: exactly the keys written, without Cmd (Ctrl on Windows)
+    /// added, like `"only+control+g"` or `"only+alt+left"`; `control` is
+    /// the Ctrl key then.
+    pub only: bool,
+    pub control: bool,
     pub action: Callback,
 }
 
@@ -725,7 +741,11 @@ impl Shortcut {
     /// Reads a shortcut's key: `"s"`, `"shift+s"`, `"alt+shift+left"`.
     pub fn parse(text: &str, action: Callback) -> Shortcut {
         let mut key = text.to_lowercase();
-        let (mut shift, mut alt) = (false, false);
+        let (mut shift, mut alt, mut only, mut control) = (false, false, false, false);
+        if let Some(rest) = key.strip_prefix("only+").filter(|r| !r.is_empty()) {
+            only = true;
+            key = rest.to_string();
+        }
         loop {
             if let Some(rest) = key.strip_prefix("shift+").filter(|r| !r.is_empty()) {
                 shift = true;
@@ -733,11 +753,14 @@ impl Shortcut {
             } else if let Some(rest) = key.strip_prefix("alt+").filter(|r| !r.is_empty()) {
                 alt = true;
                 key = rest.to_string();
+            } else if let Some(rest) = key.strip_prefix("control+").filter(|r| only && !r.is_empty()) {
+                control = true;
+                key = rest.to_string();
             } else {
                 break;
             }
         }
-        Shortcut { key, shift, alt, action }
+        Shortcut { key, shift, alt, only, control, action }
     }
 }
 
@@ -1313,7 +1336,31 @@ pub unsafe extern "C" fn tsl_ui_code_editor(
             stopped_line,
             on_breakpoint,
             on_change,
+            highlights: Vec::new(),
+            selection: None,
         })
+    });
+}
+
+/// `CodeEditor(highlights:selection:)`, for the editor just made: the
+/// stretches to mark (a borrowed `[Range]`, in characters) and the
+/// `selection:` binding (`sel_f` is null without one).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_code_editor_find(highlights: *const crate::List, sel_f: *const c_void, sel_env: *mut Header) {
+    let n = unsafe { crate::tsl_list_len(highlights) };
+    // (A `Range` is two `Int`s.)
+    let marks: Vec<(i64, i64)> = (0..n)
+        .map(|i| unsafe {
+            let r = crate::tsl_list_get(highlights, i, std::ptr::null()) as *const i64;
+            (*r, *r.add(1))
+        })
+        .collect();
+    let selection = (!sel_f.is_null()).then(|| Callback::new(sel_f, sel_env));
+    with_builder(|b| {
+        if let Some(Node { kind: Kind::CodeEditor { highlights, selection: s, .. }, .. }) = b.last() {
+            *highlights = marks;
+            *s = selection;
+        }
     });
 }
 
@@ -2016,6 +2063,13 @@ pub unsafe extern "C" fn tsl_ui_shortcut(key: *const Str, f: *const c_void, env:
 pub unsafe extern "C" fn tsl_ui_on_submit(f: *const c_void, env: *mut Header) {
     let cb = Callback::new(f, env);
     modify(|m| m.on_submit = Some(cb));
+}
+
+/// `.onFieldKey { key in … }` (a `fn(String)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_ui_on_field_key(f: *const c_void, env: *mut Header) {
+    let cb = Callback::new(f, env);
+    modify(|m| m.on_field_key = Some(cb));
 }
 
 #[unsafe(no_mangle)]

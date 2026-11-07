@@ -316,6 +316,8 @@ impl Builtins {
                 P::new("stoppedLine", Ty::Int).default(),
                 P::new("onBreakpoint", Ty::func(vec![Ty::Int], Ty::Void)).default(),
                 P::new("onChange", Ty::func(vec![], Ty::Void)).default(),
+                P::new("highlights", Ty::list(Ty::Range)).default(),
+                P::new("selection", Ty::Range).bind().default(),
             ],
             "Picker" => {
                 let mut selection = P::new("selection", Ty::Any).bind();
@@ -515,7 +517,7 @@ impl Builtins {
             "onTap" => vec![P::unlabeled("action", Ty::func(vec![], Ty::Void))],
             "onDrag" => vec![P::unlabeled("action", Ty::func(vec![Ty::Float, Ty::Float], Ty::Void))],
             "onPointer" => vec![P::unlabeled("action", Ty::func(vec![POINTER_EVENT], Ty::Void))],
-            "onKey" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
+            "onKey" | "onFieldKey" => vec![P::unlabeled("action", Ty::func(vec![Ty::Str], Ty::Void))],
             "onKeyEvent" => vec![P::new("releases", Ty::Bool).default(), P::unlabeled("action", Ty::func(vec![KEY_EVENT], Ty::Void))],
             "cursor" => vec![P::unlabeled("style", CURSOR_STYLE)],
             "offset" => vec![P::new("x", Ty::Float).default(), P::new("y", Ty::Float).default()],
@@ -711,6 +713,8 @@ impl Builtins {
                 params: vec![P::unlabeled("id", Ty::Any), P::new("in", Ty::Any).default(), P::new("align", SCROLL_ALIGN).default()],
                 ret: Ty::Void,
             },
+            // `id` is an `Int` or a `String` (checked specially).
+            "startEditing" => FnSig { params: vec![P::unlabeled("id", Ty::Any)], ret: Ty::Void },
             "copyToClipboard" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::Bool },
             "clipboardText" => FnSig { params: vec![], ret: Ty::opt(Ty::Str) },
             // For the prelude (`readText` and the others that return a `Result`).
@@ -947,7 +951,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
     "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
-    "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "__richId", "__richMarks", "__richApply", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
+    "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "startEditing", "__richId", "__richMarks", "__richApply", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
     "isDarkMode", "addToDate", "daysBetween", "timeZoneOffset", "localTimeZone", "timeZones", "fontFamilies", "chooseFolder", "__openFiles", "__messageDialog", "__printFile", "__dateParts",
@@ -984,6 +988,7 @@ pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
         (Ty::Set(t), "values") => Ty::list((**t).clone()),
         (Ty::List(t), "first" | "last") => Ty::opt((**t).clone()),
         (Ty::List(_), "indices") => Ty::Range,
+        (Ty::Range, "start" | "end") => Ty::Int,
         (Ty::Dict(k, _), "keys") => Ty::list((**k).clone()),
         (Ty::Dict(_, v), "values") => Ty::list((**v).clone()),
         (Ty::Str, "characters") => Ty::list(Ty::Str),
@@ -1365,6 +1370,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
             "urlDecoded", "fileName", "fileExtension", "folder",
         ],
         Ty::Int => &["isEven", "isOdd", "clamped", "bytes", "wrappingAdd", "wrappingSubtract", "wrappingMultiply"],
+        Ty::Range => &["start", "end"],
         Ty::Dict(..) => &["count", "isEmpty", "keys", "values", "removeValue", "contains"],
         Ty::Set(_) => &[
             "count", "isEmpty", "values", "contains", "insert", "remove", "union", "intersection", "subtracting",
@@ -1391,7 +1397,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::View => &[
             "padding", "font", "color", "background", "border", "frame", "opacity", "hidden", "disabled", "onTap",
             "id", "tag", "shortcut", "onAppear", "onSubmit", "tabItem", "hoverBackground", "autofocus",
-            "textAlignment", "animation", "onDrag", "onPointer", "onKey", "cursor", "offset", "clipped", "onDrop",
+            "textAlignment", "animation", "onDrag", "onPointer", "onKey", "onFieldKey", "cursor", "offset", "clipped", "onDrop",
             "tooltip", "accessibilityLabel", "onResize", "onKeyEvent", "draggable", "dropTarget", "contextMenu", "menuBar", "popover", "sheet", "onOpenFile",
             "onCloseRequest", "gridCellColumns", "gridColumnAlignment", "selectable", "lineLimit",
             "rotation", "scale", "trayIcon", "dragFile", "statusBar",

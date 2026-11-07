@@ -1,0 +1,69 @@
+wait 0
+key cmd+p
+tree
+type mn
+key enter
+key cmd+p
+tree
+key escape
+type //
+key cmd+shift+p
+tree
+type cons
+tree
+key enter
+key cmd+z
+key control+g
+type 11:9
+tree
+key enter
+type @
+tree
+key cmd+z
+key control+-
+tree
+key control+-
+tree
+key control+shift+-
+tree
+key cmd+f
+type count
+tree
+key enter
+key enter
+key shift+enter
+key cmd+g
+key cmd+shift+g
+tree
+click "Match case"
+click "Whole word"
+tree
+key cmd+alt+f
+type total
+key enter
+tree
+click "Replace all"
+tree
+click "Close"
+key cmd+z
+tree
+key cmd+shift+f
+type count
+wait 0
+tree
+click "count"
+tree
+click "Search in files"
+key cmd+a
+type wordCount
+click "Match case in files"
+click "Replace in files"
+type countWords
+click "Replace all"
+wait 0
+tree
+click "Replace"
+wait 0
+key cmd+s
+wait 0
+tree

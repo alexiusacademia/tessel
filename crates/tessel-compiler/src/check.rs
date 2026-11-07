@@ -3482,7 +3482,7 @@ impl Checker<'_> {
                     Ty::Error
                 }
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::property(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::Range => match builtins::property(&recv, n) {
                 Some(t) => t,
                 None if builtins::method_of(&recv, n).is_some() => {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}(…)`"));
@@ -3811,6 +3811,19 @@ impl Checker<'_> {
                             if !matches!(t, Ty::Int | Ty::Str | Ty::Error) {
                                 let what = self.a(&t);
                                 self.error(a.value.span, format!("`scrollTo` needs an `Int` or `String`, found {what}")).help(help);
+                            }
+                        }
+                        return Ty::Void;
+                    }
+                    "startEditing" => {
+                        let sig = self.builtins.function(n).unwrap();
+                        self.args(&what, &sig.params, args, trailing, span);
+                        if let Some(a) = args.first().filter(|a| a.label.is_none()) {
+                            let t = self.types.get(&a.value.id).cloned().unwrap_or(Ty::Error);
+                            if !matches!(t, Ty::Int | Ty::Str | Ty::Error) {
+                                let what = self.a(&t);
+                                self.error(a.value.span, format!("`startEditing` needs an `Int` or `String`, found {what}"))
+                                    .help("give it the `.id(…)` of the text field or code editor to edit");
                             }
                         }
                         return Ty::Void;
@@ -4634,13 +4647,30 @@ impl Checker<'_> {
         const NAMED: &[&str] =
             &["enter", "escape", "tab", "backspace", "delete", "left", "right", "up", "down", "home", "end"];
         // Shift and Alt may be asked for too: `"shift+s"`, `"alt+shift+left"`.
-        let mut bare = key.as_str();
-        while let Some(rest) = bare.strip_prefix("shift+").or_else(|| bare.strip_prefix("alt+")).filter(|r| !r.is_empty()) {
-            bare = rest;
+        // `only+` leaves Cmd out, and then Ctrl may be asked for:
+        // `"only+control+g"`, `"only+alt+left"`.
+        let only = key.strip_prefix("only+").filter(|r| !r.is_empty());
+        let mut bare = only.unwrap_or(key.as_str());
+        let (mut control, mut alt) = (false, false);
+        loop {
+            if let Some(rest) = bare.strip_prefix("shift+").filter(|r| !r.is_empty()) {
+                bare = rest;
+            } else if let Some(rest) = bare.strip_prefix("alt+").filter(|r| !r.is_empty()) {
+                (bare, alt) = (rest, true);
+            } else if let Some(rest) = bare.strip_prefix("control+").filter(|r| only.is_some() && !r.is_empty()) {
+                (bare, control) = (rest, true);
+            } else {
+                break;
+            }
         }
         let held = &key[..key.len() - bare.len()];
         let mut chars = bare.chars();
         let single = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_whitespace() && !c.is_uppercase());
+        if (single || NAMED.contains(&bare)) && only.is_some() && !control && !alt {
+            self.error(arg.value.span, format!("`{key}` isn't a key a shortcut can use"))
+                .help("a shortcut with `only+` needs `control+` or `alt+` too, like `\"only+control+g\"`: on its own, the key would type");
+            return;
+        }
         if single || NAMED.contains(&bare) {
             return;
         }
@@ -4650,7 +4680,7 @@ impl Checker<'_> {
             format!("use the lowercase letter (add `shift+` for Shift): `.shortcut(\"{held}{}\")`", bare.to_lowercase())
         } else {
             "use one character, like \"s\", or one of: enter, escape, tab, backspace, delete, left, right, up, down, home, end; \
-             put `shift+` or `alt+` before it to need Shift or Alt too"
+             put `shift+` or `alt+` before it to need Shift or Alt too, and `only+control+` for Ctrl in place of Cmd"
                 .to_string()
         };
         self.error(arg.value.span, format!("`{key}` isn't a key a shortcut can use")).help(help);

@@ -5,6 +5,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 1, Col 1"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -40,6 +41,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -69,7 +71,7 @@ Root
             TabView ["main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n\n    VStack(spacing: 12) {\n        Text(\"Count: {count}\").font(size: 24, weight: .bold)\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -478,6 +480,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 1, Col 1"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -513,6 +516,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -542,7 +546,7 @@ Root
             TabView ["• main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -945,6 +949,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 13, Col 1"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -980,6 +985,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -1009,7 +1015,7 @@ Root
             TabView ["• main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -1406,6 +1412,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 13, Col 2"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -1441,6 +1448,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -1470,7 +1478,7 @@ Root
             TabView ["• main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n(            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -1868,6 +1876,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 13, Col 2"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -1903,6 +1912,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -1932,7 +1942,7 @@ Root
             TabView ["main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -2329,6 +2339,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 13, Col 2"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -2364,6 +2375,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -2393,7 +2405,7 @@ Root
             TabView ["main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack
@@ -2479,6 +2491,7 @@ Root
         Text "Tessel"
         Text "project"
         Spacer
+        Text "Ln 13, Col 2"
         Text "No problems"
         Toggle "Reload on save" = true
         View
@@ -2514,6 +2527,7 @@ Root
             Icon info
             Text "Docs"
       Divider
+      VStack
       HStack
         VStack
           HStack
@@ -2543,7 +2557,7 @@ Root
             TabView ["main.tsl"] selected 0
               CodeEditor errors [] = "app Hello(width: 400, height: 300) {\n    state count = 0\n    state text = \"\"\n\n    VStack(spacing: 12) {\n        HStack {\n            Button(\"Add one\") { count += 1 }\n            TextField(\"Placeholder\", text: text)\n            Button(\"Button\") { }\n            Button(\"Reset\") { count = 0 }.padding(4)\n        }\n        Card(title: \"é card\") {\n            Text(\"inside\")\n            HStack {\n                Button(\"Add one\") { count += 1 }\n                TextField(\"Placeholder\", text: text)\n                Button(\"Button\") { }\n                Button(\"Reset\") { count = 0 }.padding(4)\n            }\n        }\n        for i in 0..2 {\n            Text(\"row {i}\")\n                .color(.secondary)\n        }\n        Text(\"Count: {count}\").font(size: 25, weight: .medium)\n    }\n    .padding(16)\n}\n\nview Card(title: String, content: View) {\n    VStack(alignment: .leading) {\n        Text(title).font(weight: .bold)\n        content\n    }\n    .padding(8)\n    .background(.lightGray, radius: 6)\n}\n"
           Spacer
-          TabView ["Problems (0)", "Console", "Debug"] selected 0
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
             Scroll
               VStack
                 HStack

@@ -1785,7 +1785,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_begin_tray" | "tsl_ui_begin_status_bar" | "tsl_ui_end_status_bar" => (vec![], None),
             "tsl_ui_end_tray" => (vec![i32t, p, i8t], None),
             "tsl_ui_scale" => (vec![f64t, f64t, f64t], None),
-            "tsl_ui_on_pointer" | "tsl_ui_on_key" => (vec![p, p], None),
+            "tsl_ui_on_pointer" | "tsl_ui_on_key" | "tsl_ui_on_field_key" => (vec![p, p], None),
+            "tsl_ui_code_editor_find" => (vec![p, p, p], None),
+            "tsl_start_editing" => (vec![i], None),
             "tsl_ui_on_key_event" => (vec![p, p, i8t], None),
             "tsl_ui_slider" => (vec![p, p, f64t, f64t, f64t, p, p], None),
             "tsl_ui_stepper" => (vec![p, p, i8t, f64t, f64t, f64t, i, p, p], None),
@@ -4193,6 +4195,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
             },
             Ty::List(_) if name == "indices" => self.list_indices(v),
+            Ty::Range => self.b.build_extract_value(v.into_struct_value(), (name == "end") as u32, "").unwrap(),
             Ty::List(elem) => {
                 let len = self.call_rt("tsl_list_len", &[v]).unwrap().into_int_value();
                 match name {
@@ -7271,6 +7274,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     None => self.ctx.i32_type().const_zero().into(),
                 };
                 self.call_rt("tsl_scroll_to", &[ids[0], align, within, scoped]);
+                None
+            }
+            "startEditing" => {
+                // (A `String` id is its hash, as `.id` keeps it.)
+                let x = arg(info.args[0].unwrap());
+                let t = self.ty(x);
+                let v = self.expr(x).unwrap();
+                let id = match t {
+                    Ty::Str => {
+                        let h = self.call_rt("tsl_str_hash", &[v]).unwrap();
+                        self.release(v, &t);
+                        h
+                    }
+                    _ => v,
+                };
+                self.call_rt("tsl_start_editing", &[id]);
                 None
             }
             "print" | "printError" => {

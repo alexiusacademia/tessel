@@ -1,0 +1,22 @@
+click "Find"
+type a
+tree
+key enter
+key enter
+tree
+key shift+enter
+key up
+tree
+key escape
+type c
+tree
+key shift+right
+key shift+right
+tree
+click "Find"
+key control+g
+tree
+key alt+left
+key cmd+a
+type print
+tree

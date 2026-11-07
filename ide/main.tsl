@@ -72,6 +72,33 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     // A newer Tessel, like "v0.1.3", once the startup check finds one.
     state newVersion = ""
     state updating = false
+    // Finding your way (see navigate.tsl): the box at the top of the window
+    // (Quick Open, the commands and Go to line: which by the start of its
+    // text) and the project's files for it, the files opened lately (the
+    // last first), the find bar, the Search panel, and the places to go
+    // back and forward to (`rest`: where the cursor was last seen).
+    state overlayShown = false
+    state overlayText = ""
+    state overlayChoice = 0
+    state overlayFiles: [String] = []
+    state recent: [String] = []
+    state findOpen = false
+    state findText = ""
+    state replaceText = ""
+    state replaceOpen = false
+    state findCase = false
+    state findWord = false
+    state searchText = ""
+    state searchReplace = ""
+    state searchCase = false
+    state searchWord = false
+    state searchHits: [SearchHit] = []
+    state searchStatus = ""
+    state searchRequest = 0
+    state searchConfirm = false
+    state backPlaces: [Place] = []
+    state forwardPlaces: [Place] = []
+    state rest = Place(path: "", line: 0)
 
     VStack(spacing: 0) {
         // Toolbar
@@ -79,13 +106,17 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             Text("Tessel").font(size: 15, weight: .bold)
             Text(fileName(project)).color(.secondary)
             Spacer()
+            // Where the cursor is, as "Ln 12, Col 5".
+            if let h = here() {
+                Text("Ln {h.line}, Col {h.column}").font(size: 12).color(.secondary)
+            }
             Text(status).color(.secondary)
             if newVersion != "" {
                 ToolButton(icon: .download, label: "Update to {newVersion}", tint: .blue) { updateTessel() }.disabled(updating)
             }
             Toggle("Reload on save", isOn: reloadOnSave)
-            ToolButton(icon: .save, label: "Save") { save() }.shortcut("s") { save() }
-            ToolButton(icon: .circleCheck, label: "Check") { check() }.shortcut("k") { check() }
+            ToolButton(icon: .save, label: "Save") { save() }
+            ToolButton(icon: .circleCheck, label: "Check") { check() }
             if debugging != nil {
                 // (While a program is debugged, the debugger's controls.)
                 if debugStopped {
@@ -95,19 +126,19 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     // waiting for a click, when it gets one.)
                     ToolButton(icon: .clock, label: "Pause") { debugSend("pause") }
                 }
-                ToolButton(icon: .arrowRight, label: "Step over") { debugSend("next") }.disabled(!debugStopped).shortcut("'") { debugSend("next") }
-                ToolButton(icon: .arrowDown, label: "Step in") { debugSend("step") }.disabled(!debugStopped).shortcut(";") { debugSend("step") }
-                ToolButton(icon: .arrowUp, label: "Step out") { debugSend("out") }.disabled(!debugStopped).shortcut("shift+;") { debugSend("out") }
-                ToolButton(icon: .stop, label: "Stop", tint: .red) { debugOrStop() }.shortcut("shift+r") { debugOrStop() }
+                ToolButton(icon: .arrowRight, label: "Step over") { debugSend("next") }.disabled(!debugStopped)
+                ToolButton(icon: .arrowDown, label: "Step in") { debugSend("step") }.disabled(!debugStopped)
+                ToolButton(icon: .arrowUp, label: "Step out") { debugSend("out") }.disabled(!debugStopped)
+                ToolButton(icon: .stop, label: "Stop", tint: .red) { debugOrStop() }
             } else if running == nil {
-                ToolButton(icon: .play, label: "Run", tint: .green) { runOrStop() }.shortcut("r") { runOrStop() }
-                ToolButton(icon: .bug, label: "Debug") { debugOrStop() }.shortcut("shift+r") { debugOrStop() }
+                ToolButton(icon: .play, label: "Run", tint: .green) { runOrStop() }
+                ToolButton(icon: .bug, label: "Debug") { debugOrStop() }
             } else {
-                ToolButton(icon: .stop, label: "Stop", tint: .red) { runOrStop() }.shortcut("r") { runOrStop() }
+                ToolButton(icon: .stop, label: "Stop", tint: .red) { runOrStop() }
             }
             // (The debugger's buttons take their room while it's used.)
             if debugging == nil {
-                ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }.shortcut("b") { build(bundle: false) }
+                ToolButton(icon: .hammer, label: "Build") { build(bundle: false) }
                 ToolButton(icon: .package, label: "Package") { build(bundle: true) }
             }
             if isMarkdown(path: current) {
@@ -117,7 +148,41 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
             ToolButton(icon: .info, label: "Docs", tint: if helpOpen { .blue } else { .primary }) { toggleHelp() }
         }
         .padding(8)
+        // Quick Open, the commands and Go to line, under the toolbar.
+        .popover(isPresented: overlayShown) {
+            PickBox(
+                placeholder: "Go to a file (> for commands, : for a line)",
+                text: overlayText,
+                rows: overlayRows(),
+                choice: overlayChoice,
+                note: overlayNote(),
+                changed: { overlayChoice = 0 },
+                key: { k in overlayKey(k: k) },
+                choose: { i in chooseOverlay(index: i) }
+            )
+        }
         Divider()
+        // The find bar, over the editor. (In a stack that's always there,
+        // so the editor stays the same view, with its undo, when it opens.)
+        VStack(spacing: 0) {
+            if findOpen && current != "" {
+                HStack(spacing: 0) {
+                    Spacer().frame(width: explorerWidth + 5)
+                    FindBar(
+                        text: findText,
+                        replacement: replaceText,
+                        replacing: replaceOpen,
+                        matchCase: findCase,
+                        wholeWord: findWord,
+                        count: findCount(),
+                        key: { k in findKey(k: k) },
+                        replaceKey: { k in replaceKey(k: k) },
+                        command: { name in findCommand(name: name) }
+                    )
+                }
+                Divider()
+            }
+        }
 
         // The explorer, the editor and the bottom panel; then, beside them
         // all, the Preview, Design or Docs panel.
@@ -221,7 +286,9 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                                     onComplete: { offset in complete(path: doc.path, offset: offset) },
                                     breakpoints: breakpointLines(path: doc.path),
                                     stoppedLine: stoppedLine(path: doc.path),
-                                    onBreakpoint: { line in toggleBreakpoint(path: doc.path, line: line) }
+                                    onBreakpoint: { line in toggleBreakpoint(path: doc.path, line: line) },
+                                    highlights: findMarks(path: doc.path),
+                                    selection: doc.selection
                                 )
                                     .padding(8)
                                     .id(doc.path)
@@ -257,7 +324,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                                 }
                                 .padding(3)
                                 .hoverBackground(.lightGray)
-                                .onTap { jump(p: p) }
+                                .onTap { jump(path: p.file, line: p.line, column: p.column) }
                             }
                         }
                         .padding(6)
@@ -325,6 +392,62 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
                     }
                     .tabItem("Debug")
                     .tag(Panel.debug)
+
+                    // Search in files: what's looked for, and the lines that have it.
+                    VStack(spacing: 0, alignment: .leading) {
+                        HStack(spacing: 6) {
+                            TextField("Search in files", text: searchText, onChange: { runSearch() })
+                                .onSubmit { runSearch() }
+                                .id("search")
+                                .frame(width: 260)
+                            OptionButton(label: "Aa", on: searchCase) {
+                                searchCase = !searchCase
+                                runSearch()
+                            }
+                            .tooltip("Match case in files")
+                            OptionButton(label: "ab", on: searchWord) {
+                                searchWord = !searchWord
+                                runSearch()
+                            }
+                            .tooltip("Whole word in files")
+                            TextField("Replace in files", text: searchReplace).frame(width: 200)
+                            Button("Replace all") { searchConfirm = true }.disabled(searchHits.isEmpty)
+                            Text(searchStatus).font(size: 12).color(.secondary)
+                            Spacer()
+                        }
+                        .padding(6)
+                        if searchConfirm {
+                            HStack(spacing: 6) {
+                                Text("Replace {searchHits.count} matches in {searchFileCount()} files with \"{searchReplace}\"?").font(size: 12)
+                                Button("Replace") { replaceInFiles() }
+                                Button("Cancel") { searchConfirm = false }
+                                Spacer()
+                            }
+                            .padding(horizontal: 6)
+                        }
+                        Scroll {
+                            VStack(spacing: 1, alignment: .leading) {
+                                for (i, hit) in searchHits.enumerated() {
+                                    if i == 0 || searchHits[i - 1].path != hit.path {
+                                        HStack(spacing: 6) {
+                                            Icon(.fileCode).font(size: 12).color(.blue)
+                                            Text(fileName(hit.path)).font(size: 12, weight: .semibold)
+                                            Text(parentOf(path: hit.path)).font(size: 11).color(.secondary)
+                                            Spacer()
+                                        }
+                                        .padding(top: if i == 0 { 0 } else { 6 }, leading: 3)
+                                    }
+                                    SearchLine(hit: hit)
+                                        .padding(horizontal: 6, vertical: 2)
+                                        .hoverBackground(.lightGray)
+                                        .onTap { jump(path: join(folder: project, name: hit.path), line: hit.line, column: hit.column, length: hit.length) }
+                                }
+                            }
+                            .padding(6)
+                        }
+                    }
+                    .tabItem("Search")
+                    .tag(Panel.search)
                 }
                 .frame(height: panelHeight)
             }
@@ -381,7 +504,28 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
     .onAppear {
         reload()
         checkForUpdate()
+        every(seconds: 1) { noteMove() }
     }
+    // The keys of the IDE's commands (see `ideCommands`).
+    .shortcut(commandKey(id: "quickOpen")) { perform(id: "quickOpen") }
+    .shortcut(commandKey(id: "palette")) { perform(id: "palette") }
+    .shortcut(commandKey(id: "goToLine")) { perform(id: "goToLine") }
+    .shortcut(commandKey(id: "back")) { perform(id: "back") }
+    .shortcut(commandKey(id: "forward")) { perform(id: "forward") }
+    .shortcut(commandKey(id: "find")) { perform(id: "find") }
+    .shortcut(commandKey(id: "replace")) { perform(id: "replace") }
+    .shortcut(commandKey(id: "findNext")) { perform(id: "findNext") }
+    .shortcut(commandKey(id: "findPrevious")) { perform(id: "findPrevious") }
+    .shortcut(commandKey(id: "search")) { perform(id: "search") }
+    .shortcut(commandKey(id: "save")) { perform(id: "save") }
+    .shortcut(commandKey(id: "check")) { perform(id: "check") }
+    .shortcut(commandKey(id: "run")) { perform(id: "run") }
+    .shortcut(commandKey(id: "debug")) { perform(id: "debug") }
+    .shortcut(commandKey(id: "stepOver")) { perform(id: "stepOver") }
+    .shortcut(commandKey(id: "stepIn")) { perform(id: "stepIn") }
+    .shortcut(commandKey(id: "stepOut")) { perform(id: "stepOut") }
+    .shortcut(commandKey(id: "build")) { perform(id: "build") }
+    .shortcut(commandKey(id: "closeTab")) { perform(id: "closeTab") }
 
     // ----- files -----
 
@@ -417,6 +561,8 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         }
         current = path
         selected = path
+        recent.removeAll(where: { p in p == path })
+        recent.insert(path, at: 0)
     }
 
     fn closeDoc(path: String) {
@@ -718,7 +864,7 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
         }
         callShown = index
         let call = calls[index]
-        jump(p: Problem(file: call.path, line: call.line, column: 1, message: ""))
+        show(path: call.path, line: call.line, column: 1, length: 0)
         vars = []
         asked.append(-1)
         debugSend("vars\t{index}")
@@ -1149,22 +1295,539 @@ app Tessel(title: "Tessel", width: 1200, height: 780) {
 
     // ----- errors -----
 
-    fn jump(p: Problem) {
-        open(path: p.file)
-        for doc in docs {
-            if doc.path == p.file {
-                doc.line = p.line
-            }
-        }
-    }
-
     fn jumpTo(text: String) {
         if let p = parseLocation(text: text) {
-            jump(p: p)
+            jump(path: p.file, line: p.line, column: p.column)
         }
     }
 
     fn errorLines(path: String) -> [Int] {
         problems.filter { p in p.file == path }.map { p in p.line }
+    }
+
+    // ----- finding your way -----
+
+    // Runs one of the IDE's commands (see `ideCommands`): from the command
+    // palette, or by its key.
+    fn perform(id: String) {
+        match id {
+            "quickOpen" -> showOverlay(text: "")
+            "palette" -> showOverlay(text: ">")
+            "goToLine" -> showOverlay(text: ":")
+            "back" -> goBack()
+            "forward" -> goForward()
+            "find" -> openFind(replace: false)
+            "replace" -> openFind(replace: true)
+            "findNext" -> findStep(forward: true)
+            "findPrevious" -> findStep(forward: false)
+            "search" -> openSearch()
+            "save" -> save()
+            "check" -> check()
+            "run" -> {
+                if debugging == nil {
+                    runOrStop()
+                }
+            }
+            "debug" -> debugOrStop()
+            "continue" -> {
+                if debugStopped {
+                    debugSend("continue")
+                }
+            }
+            "stepOver" -> {
+                if debugStopped {
+                    debugSend("next")
+                }
+            }
+            "stepIn" -> {
+                if debugStopped {
+                    debugSend("step")
+                }
+            }
+            "stepOut" -> {
+                if debugStopped {
+                    debugSend("out")
+                }
+            }
+            "build" -> {
+                if debugging == nil {
+                    build(bundle: false)
+                }
+            }
+            "package" -> {
+                if debugging == nil {
+                    build(bundle: true)
+                }
+            }
+            "newFile" -> ask(Prompt.newFile)
+            "newFolder" -> ask(Prompt.newFolder)
+            "rename" -> ask(Prompt.rename)
+            "delete" -> ask(Prompt.delete)
+            "closeTab" -> {
+                if current != "" {
+                    closeDoc(path: current)
+                }
+            }
+            "problems" -> { panel = Panel.problems }
+            "console" -> { panel = Panel.console }
+            "debugPanel" -> { panel = Panel.debug }
+            "preview" -> {
+                if isMarkdown(path: current) {
+                    togglePreview()
+                }
+            }
+            "design" -> toggleDesign()
+            "docs" -> toggleHelp()
+            "reloadOnSave" -> { reloadOnSave = !reloadOnSave }
+            _ -> {}
+        }
+    }
+
+    // The box at the top: files, `>` and the commands, or `:` and a line.
+    fn showOverlay(text: String) {
+        overlayFiles = projectFiles(root: project, limit: 20000)
+        overlayText = text
+        overlayChoice = 0
+        overlayShown = true
+        // (When it's open already, its field is edited again.)
+        startEditing("pick")
+    }
+
+    fn overlayMode() -> Overlay {
+        if overlayText.hasPrefix(">") {
+            Overlay.commands
+        } else if overlayText.hasPrefix(":") {
+            Overlay.line
+        } else {
+            Overlay.files
+        }
+    }
+
+    // What's typed, without the `>` or `:` that says what it's for.
+    fn overlayQuery() -> String {
+        if overlayMode() == Overlay.files { overlayText } else { overlayText.substring(from: 1, to: overlayText.count) }
+    }
+
+    fn overlayRows() -> [PickRow] {
+        match overlayMode() {
+            .commands -> commandRows(query: overlayQuery())
+            .line -> []
+            _ -> fileRows(root: project, files: overlayFiles, query: overlayQuery(), recent: recent, current: current)
+        }
+    }
+
+    fn overlayNote() -> String {
+        match overlayMode() {
+            .line -> {
+                let lines = (currentDoc()?.text ?? "").split("\n").count
+                if current == "" {
+                    "Open a file first"
+                } else if let p = parseLineColumn(text: overlayQuery()) {
+                    "Go to line {p.line}, column {p.column}"
+                } else {
+                    "Type a line number between 1 and {lines}, or line:column"
+                }
+            }
+            .commands -> if commandRows(query: overlayQuery()).isEmpty { "No commands match" } else { "" }
+            _ -> if overlayFiles.isEmpty { "No files" } else if overlayRows().isEmpty { "No files match" } else { "" }
+        }
+    }
+
+    // Up and Down choose, Enter goes, Escape closes.
+    fn overlayKey(k: String) {
+        let count = overlayRows().count
+        match k {
+            "down" -> {
+                if count > 0 {
+                    overlayChoice = (overlayChoice + 1) % count
+                    scrollTo(overlayChoice, in: "pickRows")
+                }
+            }
+            "up" -> {
+                if count > 0 {
+                    overlayChoice = (overlayChoice + count - 1) % count
+                    scrollTo(overlayChoice, in: "pickRows")
+                }
+            }
+            "enter" -> chooseOverlay(index: overlayChoice)
+            "escape" -> closeOverlay()
+            _ -> {}
+        }
+    }
+
+    fn chooseOverlay(index: Int) {
+        let rows = overlayRows()
+        match overlayMode() {
+            .line -> {
+                if let p = parseLineColumn(text: overlayQuery()) {
+                    closeOverlay()
+                    if current != "" {
+                        jump(path: current, line: p.line, column: p.column)
+                    }
+                }
+            }
+            .commands -> {
+                if index < rows.count {
+                    closeOverlay()
+                    perform(id: rows[index].value)
+                }
+            }
+            _ -> {
+                if index < rows.count {
+                    closeOverlay()
+                    jump(path: rows[index].value, line: 0, column: 0)
+                }
+            }
+        }
+    }
+
+    // Closes the box, and the editor has the keyboard again.
+    fn closeOverlay() {
+        overlayShown = false
+        overlayText = ""
+        if current != "" {
+            startEditing(current)
+        }
+    }
+
+    fn currentDoc() -> Doc? {
+        docs.first(where: { d in d.path == current })
+    }
+
+    // Where the cursor is.
+    fn here() -> Place? {
+        if let d = currentDoc() {
+            let p = placeOf(text: d.text, offset: d.selection.start)
+            return Place(path: d.path, line: p.line, column: p.column)
+        }
+        nil
+    }
+
+    // Goes to a place in a file: `line` and `column` from 1, and `length`
+    // characters selected there (with `line` 0, where the file was). The
+    // place it leaves is remembered for Go back. Quick Open, Problems,
+    // the Console, Search and Go to line all go through here.
+    fn jump(path: String, line: Int, column: Int, length: Int = 0) {
+        let path = normalize(path: path)
+        if let h = here() {
+            if h.path != path || (line > 0 && line != h.line) {
+                remember(place: h)
+            }
+        }
+        show(path: path, line: line, column: column, length: length)
+    }
+
+    // Shows a place without remembering where the cursor was.
+    fn show(path: String, line: Int, column: Int, length: Int) {
+        open(path: path)
+        if line > 0 {
+            for doc in docs {
+                if doc.path == path {
+                    let at = offsetOf(text: doc.text, line: line, column: column)
+                    doc.selection = at..at + length
+                }
+            }
+        }
+        rest = Place(path: path, line: max(line, 1), column: max(column, 1))
+        startEditing(path)
+    }
+
+    fn remember(place: Place) {
+        if backPlaces.last != place {
+            backPlaces.append(place)
+            if backPlaces.count > 50 {
+                backPlaces.remove(at: 0)
+            }
+        }
+        forwardPlaces = []
+    }
+
+    fn goBack() {
+        if backPlaces.isEmpty {
+            return
+        }
+        let to = backPlaces.remove(at: backPlaces.count - 1)
+        if let h = here() {
+            forwardPlaces.append(h)
+        }
+        show(path: to.path, line: to.line, column: to.column, length: 0)
+    }
+
+    fn goForward() {
+        if forwardPlaces.isEmpty {
+            return
+        }
+        let to = forwardPlaces.remove(at: forwardPlaces.count - 1)
+        if let h = here() {
+            backPlaces.append(h)
+        }
+        show(path: to.path, line: to.line, column: to.column, length: 0)
+    }
+
+    // Every second: a move of the cursor to another file, or ten lines or
+    // more away, is remembered for Go back too.
+    fn noteMove() {
+        if let h = here() {
+            if rest.path != "" && (h.path != rest.path || abs(h.line - rest.line) >= 10) {
+                remember(place: rest)
+            }
+            rest = h
+        }
+    }
+
+    // ----- find and replace -----
+
+    fn openFind(replace: Bool) {
+        if current == "" {
+            return
+        }
+        // Words selected on one line are what's looked for.
+        if let d = currentDoc() {
+            if d.selection.end > d.selection.start {
+                let words = d.text.substring(from: d.selection.start, to: d.selection.end)
+                if !words.contains("\n") {
+                    findText = words
+                }
+            }
+        }
+        findOpen = true
+        if replace {
+            replaceOpen = true
+        }
+        startEditing(if replace && findText != "" { "replace" } else { "find" })
+    }
+
+    fn closeFind() {
+        findOpen = false
+        startEditing(current)
+    }
+
+    // Where what's looked for is in a file's text, for its editor.
+    fn findMarks(path: String) -> [Range] {
+        if !findOpen || path != current {
+            return []
+        }
+        findInText(text: currentDoc()?.text ?? "", query: findText, matchCase: findCase, wholeWord: findWord)
+    }
+
+    // "3 of 12": which match is selected, of how many.
+    fn findCount() -> String {
+        let marks = findMarks(path: current)
+        if findText == "" {
+            return ""
+        }
+        if marks.isEmpty {
+            return "No results"
+        }
+        let selection = currentDoc()?.selection ?? (0..0)
+        for (i, m) in marks.enumerated() {
+            if m == selection {
+                return "{i + 1} of {marks.count}"
+            }
+        }
+        "? of {marks.count}"
+    }
+
+    fn select(range: Range) {
+        for doc in docs {
+            if doc.path == current {
+                doc.selection = range
+            }
+        }
+    }
+
+    // What's looked for changed: the first match from the cursor on.
+    fn refreshFind() {
+        let marks = findMarks(path: current)
+        if marks.isEmpty {
+            return
+        }
+        let from = currentDoc()?.selection.start ?? 0
+        select(range: marks.first(where: { m in m.start >= from }) ?? marks[0])
+    }
+
+    // The next match after the selection (or the one before it), all
+    // the way round.
+    fn findStep(forward: Bool) {
+        if !findOpen {
+            if findText == "" {
+                openFind(replace: false)
+                return
+            }
+            findOpen = true
+        }
+        let marks = findMarks(path: current)
+        if marks.isEmpty {
+            return
+        }
+        let selection = currentDoc()?.selection ?? (0..0)
+        if forward {
+            select(range: marks.first(where: { m in m.start >= selection.end && m != selection }) ?? marks[0])
+        } else {
+            select(range: marks.last(where: { m in m.end <= selection.start && m != selection }) ?? marks[marks.count - 1])
+        }
+    }
+
+    fn findKey(k: String) {
+        match k {
+            "enter" -> findStep(forward: true)
+            "shift+enter" -> findStep(forward: false)
+            "escape" -> closeFind()
+            _ -> {}
+        }
+    }
+
+    fn replaceKey(k: String) {
+        match k {
+            "enter" -> replaceOne()
+            "escape" -> closeFind()
+            _ -> {}
+        }
+    }
+
+    fn findCommand(name: String) {
+        match name {
+            "changed" -> refreshFind()
+            "toggleReplace" -> { replaceOpen = !replaceOpen }
+            "matchCase" -> {
+                findCase = !findCase
+                refreshFind()
+                startEditing("find")
+            }
+            "wholeWord" -> {
+                findWord = !findWord
+                refreshFind()
+                startEditing("find")
+            }
+            "next" -> findStep(forward: true)
+            "previous" -> findStep(forward: false)
+            "close" -> closeFind()
+            "replaceOne" -> replaceOne()
+            "replaceAll" -> replaceAll()
+            _ -> {}
+        }
+    }
+
+    // Replaces the selected match, and goes on to the next one.
+    fn replaceOne() {
+        let marks = findMarks(path: current)
+        if let d = currentDoc() {
+            let s = d.selection
+            if marks.first(where: { m in m == s }) == nil {
+                findStep(forward: true)
+                return
+            }
+            let after = s.start + replaceText.count
+            for doc in docs {
+                if doc.path == current {
+                    doc.text = doc.text.substring(from: 0, to: s.start) + replaceText + doc.text.substring(from: s.end, to: doc.text.count)
+                    doc.selection = after..after
+                }
+            }
+            findStep(forward: true)
+        }
+    }
+
+    // Replaces every match, as one change (one undo).
+    fn replaceAll() {
+        let marks = findMarks(path: current)
+        if marks.isEmpty {
+            return
+        }
+        for doc in docs {
+            if doc.path == current {
+                doc.text = replaceRanges(text: doc.text, ranges: marks, with: replaceText)
+                doc.selection = 0..0
+            }
+        }
+        status = "Replaced {marks.count}"
+    }
+
+    // ----- search in files -----
+
+    fn openSearch() {
+        panel = Panel.search
+        if let d = currentDoc() {
+            if d.selection.end > d.selection.start {
+                let words = d.text.substring(from: d.selection.start, to: d.selection.end)
+                if !words.contains("\n") {
+                    searchText = words
+                }
+            }
+        }
+        startEditing("search")
+        runSearch()
+    }
+
+    // Searches in the background; only the latest search's answer shows.
+    fn runSearch() {
+        searchRequest += 1
+        searchConfirm = false
+        let request = searchRequest
+        let query = searchText
+        if query == "" {
+            searchHits = []
+            searchStatus = ""
+            return
+        }
+        let root = project
+        let matchCase = searchCase
+        let wholeWord = searchWord
+        let open = designTexts()
+        searchStatus = "Searching…"
+        background(work: { searchFiles(root: root, query: query, matchCase: matchCase, wholeWord: wholeWord, open: open, limit: 2000) }) { hits in
+            if request == searchRequest {
+                searchHits = hits
+                searchStatus = if hits.isEmpty {
+                    "No results"
+                } else if hits.count >= 2000 {
+                    "The first 2000 results"
+                } else {
+                    "{hits.count} results in {searchFileCount()} files"
+                }
+            }
+        }
+    }
+
+    fn searchFileCount() -> Int {
+        var count = 0
+        for (i, hit) in searchHits.enumerated() {
+            if i == 0 || searchHits[i - 1].path != hit.path {
+                count += 1
+            }
+        }
+        count
+    }
+
+    // Replace all, in every file found (after the user said yes). Files
+    // open in the editor change there, to be saved; the others are written.
+    fn replaceInFiles() {
+        searchConfirm = false
+        var files: [String] = []
+        for hit in searchHits {
+            if !files.contains(hit.path) {
+                files.append(hit.path)
+            }
+        }
+        var count = 0
+        for rel in files {
+            let path = join(folder: project, name: rel)
+            if docs.first(where: { d in d.path == path }) != nil {
+                for doc in docs {
+                    if doc.path == path {
+                        let marks = findInText(text: doc.text, query: searchText, matchCase: searchCase, wholeWord: searchWord)
+                        count += marks.count
+                        doc.text = replaceRanges(text: doc.text, ranges: marks, with: searchReplace)
+                    }
+                }
+            } else if let text = readFile(path) {
+                let marks = findInText(text: text, query: searchText, matchCase: searchCase, wholeWord: searchWord)
+                if writeFile(path: path, text: replaceRanges(text: text, ranges: marks, with: searchReplace)) {
+                    count += marks.count
+                }
+            }
+        }
+        status = "Replaced {count} in {files.count} files"
+        runSearch()
     }
 }

@@ -1,0 +1,2404 @@
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl"] selected 0
+              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+  Popover
+    View
+      VStack
+        TextField "Go to a file (> for commands, : for a line)" = ""
+        Scroll
+          VStack
+            HStack
+              View
+                HStack
+                  Text "main.tsl"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "guide.md"
+              Text "docs"
+              Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+  Popover
+    View
+      VStack
+        TextField "Go to a file (> for commands, : for a line)" = ""
+        Scroll
+          VStack
+            HStack
+              View
+                HStack
+                  Text "helpers.tsl"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "guide.md"
+              Text "docs"
+              Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 3"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+  Popover
+    View
+      VStack
+        TextField "Go to a file (> for commands, : for a line)" = ">"
+        Scroll
+          VStack
+            HStack
+              View
+                HStack
+                  Text "Go to file…"
+              Spacer
+              Text "⌘P"
+            HStack
+              View
+                HStack
+                  Text "Show all commands"
+              Spacer
+              Text "⇧⌘P"
+            HStack
+              View
+                HStack
+                  Text "Go to line…"
+              Spacer
+              Text "⌃G"
+            HStack
+              View
+                HStack
+                  Text "Go back"
+              Spacer
+              Text "⌃-"
+            HStack
+              View
+                HStack
+                  Text "Go forward"
+              Spacer
+              Text "⌃⇧-"
+            HStack
+              View
+                HStack
+                  Text "Find"
+              Spacer
+              Text "⌘F"
+            HStack
+              View
+                HStack
+                  Text "Replace"
+              Spacer
+              Text "⌥⌘F"
+            HStack
+              View
+                HStack
+                  Text "Find next"
+              Spacer
+              Text "⌘G"
+            HStack
+              View
+                HStack
+                  Text "Find previous"
+              Spacer
+              Text "⇧⌘G"
+            HStack
+              View
+                HStack
+                  Text "Search in files"
+              Spacer
+              Text "⇧⌘F"
+            HStack
+              View
+                HStack
+                  Text "Save"
+              Spacer
+              Text "⌘S"
+            HStack
+              View
+                HStack
+                  Text "Check"
+              Spacer
+              Text "⌘K"
+            HStack
+              View
+                HStack
+                  Text "Run or stop"
+              Spacer
+              Text "⌘R"
+            HStack
+              View
+                HStack
+                  Text "Debug or stop debugging"
+              Spacer
+              Text "⇧⌘R"
+            HStack
+              View
+                HStack
+                  Text "Debug: continue"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Debug: step over"
+              Spacer
+              Text "⌘'"
+            HStack
+              View
+                HStack
+                  Text "Debug: step in"
+              Spacer
+              Text "⌘;"
+            HStack
+              View
+                HStack
+                  Text "Debug: step out"
+              Spacer
+              Text "⇧⌘;"
+            HStack
+              View
+                HStack
+                  Text "Build"
+              Spacer
+              Text "⌘B"
+            HStack
+              View
+                HStack
+                  Text "Package"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "New file"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "New folder"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Rename"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Delete"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Close tab"
+              Spacer
+              Text "⌘W"
+            HStack
+              View
+                HStack
+                  Text "Show Problems"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show Console"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show Debug"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show or hide the Markdown preview"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show or hide the Design panel"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show or hide the Docs panel"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Reload on save: on or off"
+              Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 3"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "//// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 0
+            Scroll
+              VStack
+                HStack
+                  Icon circleCheck
+                  Text "No problems"
+  Popover
+    View
+      VStack
+        TextField "Go to a file (> for commands, : for a line)" = ">cons"
+        Scroll
+          VStack
+            HStack
+              View
+                HStack
+                  Text "Show "
+                  Text "Cons"
+                  Text "ole"
+              Spacer
+            HStack
+              View
+                HStack
+                  Text "Show all "
+                  Text "co"
+                  Text "mma"
+                  Text "n"
+                  Text "d"
+                  Text "s"
+              Spacer
+              Text "⇧⌘P"
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 3"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+  Popover
+    View
+      VStack
+        TextField "Go to a file (> for commands, : for a line)" = ":11:9"
+        Text "Go to line 11, column 9"
+        Scroll
+          VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 11, Col 10"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        @count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 3"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 0
+              CodeEditor errors [] = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 3"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 4"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+        HStack
+          Spacer
+          View
+            VStack
+              HStack
+                View
+                  Icon chevronRight
+                TextField "Find" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                Text "1 of 6"
+                View
+                  Icon arrowUp
+                View
+                  Icon arrowDown
+                View
+                  Icon close
+                Spacer
+        Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] highlights [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 3..8 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 9, Col 9"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+        HStack
+          Spacer
+          View
+            VStack
+              HStack
+                View
+                  Icon chevronRight
+                TextField "Find" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                Text "2 of 6"
+                View
+                  Icon arrowUp
+                View
+                  Icon arrowDown
+                View
+                  Icon close
+                Spacer
+        Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] highlights [3..8, 158..163, 200..205, 213..218, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 9, Col 9"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+        HStack
+          Spacer
+          View
+            VStack
+              HStack
+                View
+                  Icon chevronRight
+                TextField "Find" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                Text "1 of 4"
+                View
+                  Icon arrowUp
+                View
+                  Icon arrowDown
+                View
+                  Icon close
+                Spacer
+        Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 1
+              CodeEditor errors [] highlights [158..163, 200..205, 243..248, 274..279] selected 158..163 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var count = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 11, Col 9"
+        Text "No problems"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+        HStack
+          Spacer
+          View
+            VStack
+              HStack
+                View
+                  Icon chevronDown
+                TextField "Find" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                Text "1 of 3"
+                View
+                  Icon arrowUp
+                View
+                  Icon arrowDown
+                View
+                  Icon close
+                Spacer
+              HStack
+                Spacer
+                TextField "Replace" = "total"
+                Button "Replace"
+                Button "Replace all"
+                Spacer
+        Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] highlights [200..205, 243..248, 274..279] selected 200..205 = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "Replaced 3"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+        HStack
+          Spacer
+          View
+            VStack
+              HStack
+                View
+                  Icon chevronDown
+                TextField "Find" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                Text "No results"
+                View
+                  Icon arrowUp
+                View
+                  Icon arrowDown
+                View
+                  Icon close
+                Spacer
+              HStack
+                Spacer
+                TextField "Replace" = "total"
+                Button "Replace"
+                Button "Replace all"
+                Spacer
+        Divider
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        total += wordCount(line)\n    }\n    print(\"{total} words\")\n    print(twice(total))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "Replaced 3"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 1
+            Scroll
+              VStack
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 1"
+        Text "Replaced 3"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 1
+              CodeEditor errors [] = "// Counts the words in a few lines.\n\nfn main() {\n    let lines = [\n        \"the quick brown fox\",\n        \"jumps over\",\n        \"the lazy dog\",\n    ]\n    var total = 0\n    for line in lines {\n        count += wordCount(line)\n    }\n    print(\"{count} words\")\n    print(twice(count))\n}\n\n// More lines, so that there's something to scroll.\nfn spare1() {}\nfn spare2() {}\nfn spare3() {}\nfn spare4() {}\nfn spare5() {}\nfn spare6() {}\nfn spare7() {}\nfn spare8() {}\nfn spare9() {}\nfn spare10() {}\nfn spare11() {}\nfn spare12() {}\nfn spare13() {}\nfn spare14() {}\nfn spare15() {}\nfn spare16() {}\nfn spare17() {}\nfn spare18() {}\nfn spare19() {}\nfn spare20() {}\nfn spare21() {}\nfn spare22() {}\nfn spare23() {}\nfn spare24() {}\nfn spare25() {}\nfn spare26() {}\nfn spare27() {}\nfn spare28() {}\nfn spare29() {}\nfn spare30() {}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+            VStack
+              HStack
+                TextField "Search in files" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = ""
+                Button "Replace all"
+                Text "9 results in 3 files"
+                Spacer
+              Scroll
+                VStack
+                  HStack
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Text "helpers.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "1"
+                      Text "// How many words a line has: the "
+                      Text "count"
+                      Text " of its pieces between spaces."
+                      Spacer
+                  View
+                    HStack
+                      Text "2"
+                      Text "fn word"
+                      Text "Count"
+                      Text "(line: String) -> Int {"
+                      Spacer
+                  View
+                    HStack
+                      Text "3"
+                      Text "line.split(\" \").filter { w in w != \"\" }."
+                      Text "count"
+                      Text ""
+                      Spacer
+                  HStack
+                    Icon fileCode
+                    Text "main.tsl"
+                    Text "main.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "1"
+                      Text "// "
+                      Text "Count"
+                      Text "s the words in a few lines."
+                      Spacer
+                  View
+                    HStack
+                      Text "11"
+                      Text ""
+                      Text "count"
+                      Text " += wordCount(line)"
+                      Spacer
+                  View
+                    HStack
+                      Text "11"
+                      Text "count += word"
+                      Text "Count"
+                      Text "(line)"
+                      Spacer
+                  View
+                    HStack
+                      Text "13"
+                      Text "print(\"{"
+                      Text "count"
+                      Text "} words\")"
+                      Spacer
+                  View
+                    HStack
+                      Text "14"
+                      Text "print(twice("
+                      Text "count"
+                      Text "))"
+                      Spacer
+                  HStack
+                    Icon fileCode
+                    Text "guide.md"
+                    Text "docs"
+                    Spacer
+                  View
+                    HStack
+                      Text "3"
+                      Text "The program prints the word "
+                      Text "count"
+                      Text " of its lines."
+                      Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 35"
+        Text "Replaced 3"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 0
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+            VStack
+              HStack
+                TextField "Search in files" = "count"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = ""
+                Button "Replace all"
+                Text "9 results in 3 files"
+                Spacer
+              Scroll
+                VStack
+                  HStack
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Text "helpers.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "1"
+                      Text "// How many words a line has: the "
+                      Text "count"
+                      Text " of its pieces between spaces."
+                      Spacer
+                  View
+                    HStack
+                      Text "2"
+                      Text "fn word"
+                      Text "Count"
+                      Text "(line: String) -> Int {"
+                      Spacer
+                  View
+                    HStack
+                      Text "3"
+                      Text "line.split(\" \").filter { w in w != \"\" }."
+                      Text "count"
+                      Text ""
+                      Spacer
+                  HStack
+                    Icon fileCode
+                    Text "main.tsl"
+                    Text "main.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "1"
+                      Text "// "
+                      Text "Count"
+                      Text "s the words in a few lines."
+                      Spacer
+                  View
+                    HStack
+                      Text "11"
+                      Text ""
+                      Text "count"
+                      Text " += wordCount(line)"
+                      Spacer
+                  View
+                    HStack
+                      Text "11"
+                      Text "count += word"
+                      Text "Count"
+                      Text "(line)"
+                      Spacer
+                  View
+                    HStack
+                      Text "13"
+                      Text "print(\"{"
+                      Text "count"
+                      Text "} words\")"
+                      Spacer
+                  View
+                    HStack
+                      Text "14"
+                      Text "print(twice("
+                      Text "count"
+                      Text "))"
+                      Spacer
+                  HStack
+                    Icon fileCode
+                    Text "guide.md"
+                    Text "docs"
+                    Spacer
+                  View
+                    HStack
+                      Text "3"
+                      Text "The program prints the word "
+                      Text "count"
+                      Text " of its lines."
+                      Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 35"
+        Text "Replaced 3"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "• main.tsl"] selected 0
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn wordCount(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+          Spacer
+          TabView ["Problems (0)", "Console", "Debug", "Search"] selected 3
+            VStack
+              HStack
+                TextField "Search in files" = "wordCount"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = "countWords"
+                Button "Replace all"
+                Text "2 results in 2 files"
+                Spacer
+              HStack
+                Text "Replace 2 matches in 2 files with \"countWords\"?"
+                Button "Replace"
+                Button "Cancel"
+                Spacer
+              Scroll
+                VStack
+                  HStack
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Text "helpers.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "2"
+                      Text "fn "
+                      Text "wordCount"
+                      Text "(line: String) -> Int {"
+                      Spacer
+                  HStack
+                    Icon fileCode
+                    Text "main.tsl"
+                    Text "main.tsl"
+                    Spacer
+                  View
+                    HStack
+                      Text "11"
+                      Text "count += "
+                      Text "wordCount"
+                      Text "(line)"
+                      Spacer
+Root
+  View
+    VStack
+      HStack
+        Text "Tessel"
+        Text "project"
+        Spacer
+        Text "Ln 1, Col 35"
+        Text "3 problem(s)"
+        Toggle "Reload on save" = true
+        View
+          HStack
+            Icon save
+            Text "Save"
+        View
+          HStack
+            Icon circleCheck
+            Text "Check"
+        View
+          HStack
+            Icon play
+            Text "Run"
+        View
+          HStack
+            Icon bug
+            Text "Debug"
+        View
+          HStack
+            Icon hammer
+            Text "Build"
+        View
+          HStack
+            Icon package
+            Text "Package"
+        View
+          HStack
+            Icon image
+            Text "Design"
+        View
+          HStack
+            Icon info
+            Text "Docs"
+      Divider
+      VStack
+      HStack
+        VStack
+          HStack
+            VStack
+              HStack
+                Text "EXPLORER"
+                Spacer
+                View
+                  Icon filePlus
+                View
+                  Icon folderPlus
+                View
+                  Icon pencil
+                View
+                  Icon trash
+              Text "PROJECT"
+              Spacer
+              Scroll
+                VStack
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "build"
+                    Spacer
+                  HStack
+                    Spacer
+                    Icon chevronRight
+                    Icon folder
+                    Text "docs"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "helpers.tsl"
+                    Spacer
+                  HStack
+                    Spacer
+                    Spacer
+                    Icon fileCode
+                    Text "main.tsl"
+                    Spacer
+            Spacer
+            TabView ["helpers.tsl", "main.tsl"] selected 0
+              CodeEditor errors [] selected 34..39 = "// How many words a line has: the count of its pieces between spaces.\nfn countWords(line: String) -> Int {\n    line.split(\" \").filter { w in w != \"\" }.count\n}\n\nfn twice(n: Int) -> Int {\n    n * 2\n}\n"
+          Spacer
+          TabView ["Problems (3)", "Console", "Debug", "Search"] selected 3
+            VStack
+              HStack
+                TextField "Search in files" = "wordCount"
+                View
+                  Text "Aa"
+                View
+                  Text "ab"
+                TextField "Replace in files" = "countWords"
+                Button "Replace all" disabled
+                Text "No results"
+                Spacer
+              Scroll
+                VStack
+--- files: .cache, build, docs, helpers.tsl, main.tsl
+--- helpers.tsl
+// How many words a line has: the count of its pieces between spaces.
+fn countWords(line: String) -> Int {
+    line.split(" ").filter { w in w != "" }.count
+}
+
+fn twice(n: Int) -> Int {
+    n * 2
+}
