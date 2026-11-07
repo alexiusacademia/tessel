@@ -4,6 +4,11 @@ name: CI
 # when started by hand (Actions tab), and once a week as a safety net.
 on:
   workflow_dispatch:
+    inputs:
+      tests:
+        description: "Run only these tests of crates/tessel-cli/tests/run.rs (names or parts of them, separated by spaces), with their output shown"
+        type: string
+        default: ""
   schedule:
     - cron: "0 3 * * 1" # Mondays 03:00 UTC
 
@@ -78,28 +83,36 @@ jobs:
 
       # The debugger's and Android's tests run on their own, each with a
       # limit: a test that never ends would otherwise hide what the others said.
-      - name: Test
+      # Only some tests, with all they print (started by hand with `tests`).
+      - name: Test some
+        if: ${{ inputs.tests != '' }}
         timeout-minutes: 40
+        run: cargo test -p tessel-cli --test run -- --nocapture ${{ inputs.tests }}
+
+      - name: Test
+        if: ${{ inputs.tests == '' }}
+        timeout-minutes: 60
         run: cargo test --workspace -- --skip debugger_sessions --skip debug_adapter --skip android_packages
 
       - name: Test the debugger
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.tests == '' }}
         timeout-minutes: 15
         run: cargo test -p tessel-cli --test run debug -- --nocapture
 
       # (With its output read by another program, as the test below reads it.)
       - name: Check android doctor
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.tests == '' }}
         timeout-minutes: 5
         shell: bash
         run: cargo run -q -p tessel-cli -- android doctor | cat || true
 
       - name: Test Android packages
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.tests == '' }}
         timeout-minutes: 15
         run: cargo test -p tessel-cli --test run android_packages -- --nocapture
 
       - name: Build the examples
+        if: ${{ inputs.tests == '' }}
         shell: bash
         run: |
           mkdir -p apps
