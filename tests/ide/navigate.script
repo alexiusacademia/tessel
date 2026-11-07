@@ -13,18 +13,26 @@ type cons
 tree
 key enter
 key cmd+z
-key control+g
+key cmd+shift+p
+type Go to line
+key enter
 type 11:9
 tree
 key enter
 type @
 tree
 key cmd+z
-key control+-
+key cmd+shift+p
+type Go back
+key enter
 tree
-key control+-
+key cmd+shift+p
+type Go back
+key enter
 tree
-key control+shift+-
+key cmd+shift+p
+type Go forward
+key enter
 tree
 key cmd+f
 type count
@@ -32,13 +40,19 @@ tree
 key enter
 key enter
 key shift+enter
-key cmd+g
-key cmd+shift+g
+key cmd+shift+p
+type Find next
+key enter
+key cmd+shift+p
+type Find previous
+key enter
 tree
 click "Match case"
 click "Whole word"
 tree
-key cmd+alt+f
+key cmd+shift+p
+type Replace
+key enter
 type total
 key enter
 tree
@@ -68,11 +82,15 @@ key cmd+s
 wait 0
 tree
 click "main.tsl"
-key control+g
+key cmd+shift+p
+type Go to line
+key enter
 type 11:18
 key enter
 key f12
 wait 0
 tree
-key control+-
+key cmd+shift+p
+type Go back
+key enter
 tree
