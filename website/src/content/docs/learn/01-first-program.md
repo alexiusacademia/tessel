@@ -221,6 +221,10 @@ Type your code, then press **Run** (Cmd+R on macOS, Ctrl+R on Windows). The
 output appears in the **Console** at the bottom. Any errors show up under
 **Problems**, and clicking one jumps to the line.
 
+The editor has the keys of editors like VS Code: Cmd+/ (Ctrl+/ on Windows)
+comments a line out, Alt+Up and Alt+Down move it, and Alt+click adds another
+cursor.
+
 See [The Tessel IDE](/start/ide/) for a full tour. Everything in this course
 works in the IDE and in the terminal alike; the lessons show terminal
 commands because they're short to write down.
