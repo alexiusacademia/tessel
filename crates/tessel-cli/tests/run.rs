@@ -623,7 +623,12 @@ fn ide_session() {
             .env("TESSEL_IDE_KEYS", "macos")
             .output()
             .unwrap();
-        assert!(out.status.success(), "IDE failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        if !out.status.success() {
+            // (What it showed last helps more than the error alone, on a system we can't watch.)
+            let shown = String::from_utf8_lossy(&out.stdout);
+            let tail: Vec<&str> = shown.lines().rev().take(80).collect::<Vec<_>>().into_iter().rev().collect();
+            panic!("IDE failed ({name}):\n{}\n--- what it showed last:\n{}", String::from_utf8_lossy(&out.stderr), tail.join("\n"));
+        }
         // Paths in the output depend on where the project was copied.
         let stdout = String::from_utf8_lossy(&out.stdout).replace(&project.display().to_string(), "PROJECT");
         let mut files: Vec<String> =
@@ -994,7 +999,16 @@ fn query_answers_about_unsaved_code() {
             cmd.args(&text);
         }
         let out = cmd.output().unwrap();
-        let stdout = String::from_utf8_lossy(&out.stdout).replace(&format!("{}/", dir.display()), "");
+        // (Each path, without the test's folder: Windows may name that folder
+        // by its short or long name, with either slash.)
+        let folder_name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let stdout: String = String::from_utf8_lossy(&out.stdout)
+            .split_inclusive('\n')
+            .map(|line| match line.find(&folder_name) {
+                Some(i) => line[i + folder_name.len() + 1..].to_string(),
+                None => line.to_string(),
+            })
+            .collect();
         (out.status.code(), stdout)
     };
     let offset = |word: &str| unsaved.find(word).unwrap();
