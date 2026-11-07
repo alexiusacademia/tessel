@@ -74,6 +74,77 @@ Closing a tab with its **×** button saves your changes first.
 
 On Windows, use Ctrl wherever this page says Cmd.
 
+## Finding your way
+
+The keys are the ones VS Code uses, so they may already be in your fingers.
+
+**Quick Open** (Cmd+P) opens a box at the top of the window. Type a few
+letters of a file's name, in order: `mtsl` finds `main.tsl`. The files whose
+names have the letters side by side, or at the start of words, come first,
+and the letters that match are in bold. Up and Down choose, Enter opens the
+file, and Escape closes the box. With nothing typed, the files you opened
+lately come first.
+
+**The command palette** (Shift+Cmd+P) is the same box with `>` in front: it
+lists everything the IDE can do, with its keys. Type to find a command, and
+press Enter to run it. Delete the `>` to look for files again.
+
+**Go to line** (Ctrl+G, on a Mac too) is the box with `:` in front. Type a
+line number, or `line:column` like `12:5`, and press Enter.
+
+**Find** (Cmd+F) opens a find bar over the editor. Type what to look for:
+every place it's in the file is marked in yellow, and the first one from
+the cursor on is selected. The bar says which one it is ("3 of 12"). Enter
+goes to the next one and Shift+Enter to the one before; Cmd+G and
+Shift+Cmd+G do the same from the editor. **Aa** matches large and small
+letters exactly, and **ab** only whole words. Escape, or the ×, closes the
+bar and puts you back in the editor, with the match selected.
+
+**Replace** (Option+Cmd+F, Ctrl+H on Windows) opens the find bar with a
+second field, for what to put in place. **Replace** changes the selected
+match and goes on to the next; **Replace all** changes all of them at once,
+and one Cmd+Z takes them all back.
+
+**Search in files** (Shift+Cmd+F) opens the **Search** tab at the bottom.
+It looks through every file of the project as you type, and lists each line
+that has what you typed, under its file, with the match in bold. Click a
+line to go there. Files you have open are searched as they are in the
+editor, saved or not. Hidden files and folders (starting with `.`), and
+`build`, `target` and `node_modules`, are left out.
+
+To change what was found in every file, type the new text in **Replace in
+files** and press **Replace all**. The IDE asks first. Open files change in
+the editor, ready to save (or undo); the others are written straight away.
+
+**Go back** (Ctrl+- on a Mac, Alt+Left on Windows) takes you to where you
+were before a jump: before Quick Open, Go to line, a click on a problem or
+a search result, or a move of the cursor to another file or ten lines or
+more away. **Go forward** (Shift+Ctrl+- on a Mac, Alt+Right on Windows)
+goes the other way.
+
+The toolbar shows the line and column the cursor is on, like `Ln 12, Col 5`.
+
+### Keys
+
+| Key | What it does |
+|---|---|
+| Cmd+P | Quick Open: go to a file |
+| Shift+Cmd+P | The command palette |
+| Ctrl+G | Go to line |
+| Cmd+F | Find in the file |
+| Option+Cmd+F (Ctrl+H on Windows) | Replace in the file |
+| Enter, Shift+Enter | Next and previous match, in the find bar |
+| Cmd+G, Shift+Cmd+G | Next and previous match (on a Mac) |
+| Shift+Cmd+F | Search in files |
+| Ctrl+- (Alt+Left on Windows) | Go back |
+| Shift+Ctrl+- (Alt+Right on Windows) | Go forward |
+| Cmd+S | Save |
+| Cmd+K | Check |
+| Cmd+R | Run, or stop |
+| Shift+Cmd+R | Debug, or stop debugging |
+| Cmd+B | Build |
+| Cmd+W | Close the tab |
+
 ## The toolbar
 
 | Button | Shortcut | What it does |
@@ -334,7 +405,7 @@ its variables still there.
 
 ## Problems, console and debug
 
-The bottom of the window has three tabs:
+The bottom of the window has four tabs:
 
 - **Problems** lists the errors from the last check, with the file and line
   of each one. The tab title shows how many there are. Click a problem to
@@ -346,6 +417,8 @@ The bottom of the window has three tabs:
   out of range.
 - **Debug** shows where a program being [debugged](#debugging) is stopped:
   the calls that led there, and their variables.
+- **Search** finds text in all the project's files; see
+  [Finding your way](#finding-your-way).
 
 ## Other editors
 

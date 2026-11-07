@@ -146,6 +146,9 @@ for page in intro.pages {
 print(intro.pages)           // 1..4
 ```
 
+`start` and `end` are its two ends: for `1..4`, `start` is 1 and `end` is 4
+(which isn't in it).
+
 ## Data
 
 `Data` is a sequence of bytes: the contents of a file that isn't text, or

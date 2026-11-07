@@ -2045,6 +2045,27 @@ window, `scrollTo(80, in: "matches")` shows row 80 of the list with
 `in:`, the whole window is looked in, and a row number goes to the first
 lazy list. See [Scrolling from code](/ui/layout/#scrolling-from-code).
 
+### startEditing
+
+```text
+startEditing(_ id: Int or String)
+```
+
+Gives the keyboard to the text field or code editor with this
+[`.id`](/reference/modifiers/#id) (or to the first one inside the view with
+it), as a click in it would: the user can type there at once.
+
+```tessel
+TextField("Find", text: query).id("find")
+…
+Button("Find…") { startEditing("find") }
+```
+
+It's done when the views are next laid out, so a field added in the same
+block can be edited. A code editor goes on with the selection it had (see
+[Finding text](/ui/code-editor/#finding-text)); a text field gets the cursor
+at its end.
+
 ### openURL
 
 ```text

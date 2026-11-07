@@ -956,7 +956,8 @@ Svg("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><circle cx='
 ```text
 CodeEditor(text: bind String, errorLines: [Int] = [], line: bind Int = …,
            completions: [Completion] = [], completionStart: Int = …, onComplete: fn(Int) = …,
-           breakpoints: [Int] = [], stoppedLine: Int = 0, onBreakpoint: fn(Int) = …, onChange: fn() = …)
+           breakpoints: [Int] = [], stoppedLine: Int = 0, onBreakpoint: fn(Int) = …, onChange: fn() = …,
+           highlights: [Range] = [], selection: bind Range = …)
 ```
 
 A multi-line code editor with line numbers and Tessel syntax colors. It's
@@ -973,6 +974,7 @@ CodeEditor(text: code, errorLines: errors, line: line)
 | `line` | Optional. The line the caret is on, starting at 1. The editor updates it as the caret moves, and when your program sets it, the caret jumps to the start of that line. |
 | `completions`, `completionStart`, `onComplete` | Optional. Suggestions shown as the user types; see [Code completion](/ui/code-editor/#code-completion). |
 | `onChange` | Optional. Runs after each edit that changes `text` (not when your program sets it), as for a [`TextField`](#textfield). |
+| `highlights`, `selection` | Optional. Stretches of the text to mark, and what's selected, in characters; see [Finding text](/ui/code-editor/#finding-text). |
 
 - Text is drawn in a 13-point monospaced font, which `.font` doesn't change.
 - **Enter** keeps the current line's indentation, adding one level (4

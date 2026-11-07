@@ -36,4 +36,15 @@ app Main {
         .dropTarget(isTargeted: hovered) { p, x, y in name = p }
         .shortcut("z") { name = "undo" }
         .shortcut("shift+z") { name = "redo" }
+        .shortcut("only+control+g") { name = "line" }
+        .shortcut("only+alt+shift+left") { name = "back" }
+        .shortcut("only+g") { name = "typed" } // error: `only+g` isn't a key a shortcut can use
+        .shortcut("control+g") { name = "ctrl" } // error: `control+g` isn't a key a shortcut can use
+    TextField("Find", text: name)
+        .onFieldKey { key in name = key }
+        .onFieldKey { n in name = n + 1 } // error: can't use `+` on `String` and `Int`
+    Button("Find") { startEditing("find") }
+    Button("Find") { startEditing(3.5) } // error: `startEditing` needs an `Int` or `String`
+    Text("{(1..4).start} {(1..4).end}")
+    Text("{(1..4).middle}") // error: has no property `middle`
 }

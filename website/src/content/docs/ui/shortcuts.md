@@ -67,6 +67,32 @@ Items of the [menu bar](/ui/menus-windows/#the-menu-bar) have shortcuts too
 (`MenuItem("Save As…", shortcut: "cmd+shift+s")`), and menu bar shortcuts
 come before `.shortcut`s.
 
+## Shortcuts without Cmd
+
+A few shortcuts don't use Cmd on a Mac: VS Code goes to a line with Ctrl+G,
+and back with Ctrl+-. Start the key with `only+` to leave Cmd (Ctrl on
+Windows) out, then say which keys are held:
+
+```tessel
+Text(status)
+    .shortcut("only+control+g") { goToLine() }
+    .shortcut("only+alt+left") { goBack() }
+```
+
+- `control+` is the Ctrl key itself. On Windows and Linux, where Ctrl is the
+  shortcut key, `"only+control+g"` is the same Ctrl+G as `.shortcut("g")`.
+- The keys must be exactly those held: `"only+control+g"` doesn't run on
+  Ctrl+Shift+G.
+- `only+` needs `control+` or `alt+`, or the key would just type.
+- These shortcuts work while text is edited too, like the others.
+
+The keys to use often differ between systems. [`platform()`](/reference/stdlib/#platform)
+picks them:
+
+```tessel
+let back = if platform() == "macos" { "only+control+-" } else { "only+alt+left" }
+```
+
 ## Several shortcuts on one view
 
 Each `.shortcut` adds one, so one view can carry a whole menu's worth:
@@ -144,3 +170,4 @@ if running == nil {
 
 To try shortcuts in a [headless test script](/ui/testing/), use
 `key cmd+s` (`cmd` and `ctrl` mean the same there), or `key cmd+shift+z`.
+For one with `only+`, `key control+g` presses the Ctrl key itself.

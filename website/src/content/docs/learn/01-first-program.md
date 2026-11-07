@@ -221,6 +221,10 @@ Type your code, then press **Run** (Cmd+R on macOS, Ctrl+R on Windows). The
 output appears in the **Console** at the bottom. Any errors show up under
 **Problems**, and clicking one jumps to the line.
 
+Two keys help you get around: Cmd+P (Ctrl+P) opens any file of the program
+by typing part of its name, and Shift+Cmd+P (Shift+Ctrl+P) lists every
+command the IDE has, with its key.
+
 See [The Tessel IDE](/start/ide/) for a full tour. Everything in this course
 works in the IDE and in the terminal alike; the lessons show terminal
 commands because they're short to write down.

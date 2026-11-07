@@ -546,6 +546,10 @@ Button("Save") { save() }
   (Option) as well: `"shift+z"`, `"alt+shift+s"`. A shortcut without them
   also runs with them held, unless another shortcut asks for exactly those
   keys: with both `"z"` and `"shift+z"`, Shift+Cmd+Z runs the second.
+- `only+` at the start leaves Cmd (Ctrl) out, for a shortcut with the Ctrl
+  key or Alt instead: `"only+control+g"` is Ctrl+G on every system, and
+  `"only+alt+left"` is Alt+Left. It needs `control+` or `alt+`. See
+  [Shortcuts without Cmd](/ui/shortcuts/#shortcuts-without-cmd).
 - Any other key, such as `"F5"`, `"S"` or `"cmd+s"`, is an error. Don't
   write Cmd or Ctrl: it's added for you.
 - A view can have several shortcuts; each `.shortcut` adds one.
@@ -597,6 +601,38 @@ TextField("New item", text: name)
 
 Enter also stops editing the field. (In a `CodeEditor`, Enter starts a new
 line instead, so `.onSubmit` doesn't apply.)
+
+## onFieldKey
+
+```text
+.onFieldKey(_ action: fn(String))
+```
+
+On a one-line [`TextField`](/reference/views/#textfield): runs `action` with
+the keys the field has no use for, while it's edited. That's for a field
+that goes with a list or a search, like the IDE's Quick Open box and its
+find bar.
+
+```tessel
+TextField("Go to file", text: query)
+    .onFieldKey { key in
+        match key {
+            "down" -> { choice += 1 }
+            "up" -> { choice -= 1 }
+            "enter" -> open(choice)
+            "escape" -> close()
+            _ -> {}
+        }
+    }
+```
+
+- `key` is `"up"`, `"down"`, `"escape"`, `"enter"` or `"shift+enter"`.
+- Enter comes here only when the field has no
+  [`.onSubmit`](#onsubmit); Shift+Enter always does.
+- The field stays edited: the keyboard doesn't leave it. Escape doesn't
+  stop editing it, or close a popover it's in; `action` does what's needed,
+  like closing the box (and [`startEditing`](/reference/stdlib/#startediting)
+  gives the keyboard to another field).
 
 ## tabItem
 

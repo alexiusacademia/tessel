@@ -1,6 +1,6 @@
 ---
 title: Code editor
-description: CodeEditor is a multi-line editor with line numbers, Tessel syntax colors, error highlighting and a line binding for jumping to a line.
+description: CodeEditor is a multi-line editor with line numbers, Tessel syntax colors, error highlighting, a line binding for jumping to a line, and highlights and a selection for finding text.
 ---
 
 `CodeEditor` is a multi-line text editor made for code. It's the editor the
@@ -46,6 +46,8 @@ CodeEditor(text: source, errorLines: problems, line: currentLine)
 | `stoppedLine:` | `Int` | A line to highlight in yellow, as where a program is stopped. 0 (the default) for none. |
 | `onBreakpoint:` | `fn(Int)` | Called with the line when the margin is clicked. |
 | `onChange:` | `fn()` | Called after each edit that changes `text` (not when your program sets it). Optional. |
+| `highlights:` | `[Range]` | Stretches of the text to mark, like what a search found. Optional; see [Finding text](#finding-text). |
+| `selection:` | `bind Range` | What's selected, or where the cursor is. Optional; see [Finding text](#finding-text). |
 
 Line numbers start at 1, as they do in the gutter.
 
@@ -102,6 +104,86 @@ line the cursor is on:
 That's how you jump to an error: store the line in the bound value, for
 example when the user clicks an error in a list. Setting it to the line the
 cursor is already on does nothing, since nothing changed.
+
+## Finding text
+
+Two parameters are for a find bar, like the [Tessel IDE](/start/ide/)'s:
+
+- `highlights:` marks stretches of the text with a yellow background.
+- `selection:` is a two-way binding to what's selected: a `Range` from the
+  first character selected up to the one after the last. With nothing
+  selected, it's where the cursor is (`7..7`), and `start` and `end` are
+  the same.
+
+Both count characters, as [`find`](/language/collections/#strings) and
+`substring` do, from 0 at the start of the text.
+
+```tessel
+app Finder(width: 460, height: 240) {
+    state source = "let a = 1\nlet b = a + a\nprint(b)\n"
+    state query = "a"
+    state selection = 0..0
+
+    VStack(spacing: 8) {
+        TextField("Find", text: query)
+        CodeEditor(text: source, highlights: found(), selection: selection)
+        HStack {
+            Text("Selected: {selection.start} to {selection.end}").color(.secondary)
+            Spacer()
+            Button("Next") { next() }
+        }
+    }
+    .padding(12)
+
+    // Every place `query` is in the text: the pieces between them say where.
+    fn found() -> [Range] {
+        var out: [Range] = []
+        if query == "" {
+            return out
+        }
+        var at = 0
+        let pieces = source.split(query)
+        for (i, piece) in pieces.enumerated() {
+            at += piece.count
+            if i < pieces.count - 1 {
+                out.append(at..at + query.count)
+                at += query.count
+            }
+        }
+        out
+    }
+
+    // The next one after what's selected, or the first.
+    fn next() {
+        let all = found()
+        if let r = all.first(where: { r in r.start >= selection.end }) {
+            selection = r
+        } else if let r = all.first {
+            selection = r
+        }
+    }
+}
+```
+
+- **When the user selects** or moves the cursor, the editor writes the
+  selection into the bound value.
+- **When your code changes the value,** the editor selects that stretch and
+  scrolls to it, if it doesn't show already. Like [`line:`](#following-and-moving-the-cursor),
+  it starts editing, unless another text field is being edited (the find
+  field, say) or a view with [`.onKey`](/reference/modifiers/#onkey) has
+  the keyboard. Then the editor keeps the selection, and shows it, for when
+  it's edited again.
+- A new editor starts with the selection it's given, scrolled to it.
+
+To give the editor the keyboard back, when the find bar closes, call
+[`startEditing`](/reference/stdlib/#startediting) with its
+[`.id`](/reference/modifiers/#id): it goes on with the selection it kept.
+[`.onFieldKey`](/reference/modifiers/#onfieldkey) gives the find field the
+Enter, Shift+Enter and Escape keys, to go to the next match, the one before,
+or close.
+
+Setting `text` and `selection` together, as a Replace button does, is one
+step of the editor's undo history.
 
 ## Code completion
 
