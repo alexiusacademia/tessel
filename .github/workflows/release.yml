@@ -537,6 +537,16 @@ jobs:
               pointers+=("latest-$platform.txt")
             fi
           done
+          # Without macOS's package (see the top), macOS keeps the latest
+          # release that has one: its pointer comes along, so the install
+          # script and `tessel update` on a Mac still find a package.
+          if [[ ! -f latest-macos.txt ]]; then
+            had="$(curl -fsSL --retry 5 "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest-macos.txt" || true)"
+            if [[ "$had" == v* ]]; then
+              echo "$had" > latest-macos.txt
+              pointers+=(latest-macos.txt)
+            fi
+          fi
           # latest.txt: for older install scripts (which are macOS or Windows alike).
           [[ -f latest-macos.txt ]] && cp latest-macos.txt latest.txt && pointers+=(latest.txt)
 
