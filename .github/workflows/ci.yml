@@ -183,7 +183,7 @@ jobs:
         run: |
           name="LLVM-$LLVM_VERSION-Linux-${{ matrix.llvm }}"
           mkdir -p /opt
-          curl -sSfL "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz" | tar -xJ -C /opt \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz" | tar -xJ -C /opt \
             "$name/bin/llvm-config" "$name/include/llvm" "$name/include/llvm-c" "$name/include/lld" \
             --wildcards "$name/lib/libLLVM*.a" "$name/lib/libPolly*.a" "$name/lib/liblld*.a"
           mv "/opt/$name" /opt/llvm

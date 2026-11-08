@@ -48,7 +48,7 @@ docker run --rm -v "$repo:/src" -v "$cache:/cache" -v "$out:/out" -w /src \
   if [ ! -f \$llvm/lib/libPolly.a ]; then
     rm -rf \$llvm
     name=LLVM-$llvm_version-Linux-$llvm_arch
-    curl -sSfL https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvm_version/\$name.tar.xz | tar -xJ -C /cache \
+    curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvm_version/\$name.tar.xz | tar -xJ -C /cache \
       \$name/bin/llvm-config \$name/include/llvm \$name/include/llvm-c \$name/include/lld \
       --wildcards \"\$name/lib/libLLVM*.a\" \"\$name/lib/libPolly*.a\" \"\$name/lib/liblld*.a\"
     mv /cache/\$name \$llvm
