@@ -28,7 +28,7 @@ echo "Tessel $version for linux-$arch"
 
 # What both build containers start with: GCC 13 and Rust.
 tools='dnf -y -q install gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git make perl-core xz tar findutils which >/dev/null &&
-  curl -sSf --retry 5 --retry-all-errors --retry-delay 10 https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain stable >/dev/null &&
+  curl -sSf --retry 5 --retry-delay 10 https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain stable >/dev/null &&
   export PATH=/opt/rh/gcc-toolset-13/root/usr/bin:${CARGO_HOME:-/root/.cargo}/bin:$PATH'
 
 # ---- The runtime and sdk/, on glibc 2.28 ----
@@ -48,7 +48,7 @@ docker run --rm -v "$repo:/src" -v "$cache:/cache" -v "$out:/out" -w /src \
   if [ ! -f \$llvm/lib/libPolly.a ]; then
     rm -rf \$llvm
     name=LLVM-$llvm_version-Linux-$llvm_arch
-    curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvm_version/\$name.tar.xz | tar -xJ -C /cache \
+    curl -sSfL --retry 5 --retry-delay 10 https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvm_version/\$name.tar.xz | tar -xJ -C /cache \
       \$name/bin/llvm-config \$name/include/llvm \$name/include/llvm-c \$name/include/lld \
       --wildcards \"\$name/lib/libLLVM*.a\" \"\$name/lib/libPolly*.a\" \"\$name/lib/liblld*.a\"
     mv /cache/\$name \$llvm
