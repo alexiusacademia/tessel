@@ -216,7 +216,14 @@ jobs:
       - name: Test
         if: ${{ inputs.tests == '' }}
         timeout-minutes: 60
-        run: cargo test --workspace -- --skip android_packages
+        run: cargo test --workspace -- --skip debugger_sessions --skip debug_adapter --skip android_packages
+
+      # (On their own, as on macOS and Windows: they wait on each other's
+      # timing, which a busy runner upsets.)
+      - name: Test the debugger
+        if: ${{ !cancelled() && inputs.tests == '' }}
+        timeout-minutes: 15
+        run: cargo test -p tessel-cli --test run debug -- --nocapture
 
       - name: Build the examples
         if: ${{ inputs.tests == '' }}
