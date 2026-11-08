@@ -6,7 +6,7 @@ description: What Tessel is, who it is for, and what Tessel code looks like.
 Tessel is a small programming language for building desktop apps. You
 describe what your window should look like for the current data, and Tessel
 keeps the screen up to date when that data changes. Your program is compiled
-ahead of time into a native executable for macOS or Windows.
+ahead of time into a native executable for macOS, Windows or Linux.
 
 Here is a complete Tessel app:
 
@@ -113,12 +113,12 @@ so there is no garbage collector and no pauses.
 
 **Its own controls.** Tessel draws every button, text field and toggle
 itself, with the system's graphics (Core Graphics on macOS, Direct2D on
-Windows), rather than using the operating system's widgets. Apps look the
-same on macOS and Windows.
+Windows, the GPU through Vulkan or OpenGL on Linux), rather than using the
+operating system's widgets. Apps look the same on macOS, Windows and Linux.
 
 ## Current status
 
-Tessel is young. It is at version 0.1, it runs on **macOS and Windows**,  and you
+Tessel is young. It is at version 0.1, it runs on **macOS, Windows and Linux**, and you
 [install it](/start/installation/) with one command. The language and its built-in views are
 already enough to write real apps (the [Tessel IDE](/start/ide/) is written
 in Tessel), but many things are still missing, and details may change.

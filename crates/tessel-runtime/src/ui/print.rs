@@ -2,7 +2,8 @@
 //! PDF file as `writePDF` does, and the file is handed to the system to
 //! print. On macOS that's the system's print panel, for the document; on
 //! Windows, the app that opens PDF files is asked to print it (or to open
-//! it, if it can't be asked that).
+//! it, if it can't be asked that); on Linux, the desktop's print dialog
+//! (its Print portal).
 
 use crate::Str;
 
@@ -111,12 +112,78 @@ mod system {
     }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+/// On Linux, the desktop's Print portal (GNOME's, KDE's…) shows its print
+/// dialog and prints the PDF; without one, `lp` prints it to the default
+/// printer.
+#[cfg(target_os = "linux")]
+mod system {
+    use std::collections::HashMap;
+
+    use zbus::blocking::{Connection, Proxy};
+    use zbus::zvariant::{Fd, OwnedObjectPath, OwnedValue, Value};
+
+    pub const DELETE_AFTER: bool = false;
+
+    pub fn print(path: &str, title: &str) -> bool {
+        match portal(path, title) {
+            Some(printed) => printed,
+            None => std::process::Command::new("lp").arg(path).status().is_ok_and(|s| s.success()),
+        }
+    }
+
+    const DESKTOP: &str = "org.freedesktop.portal.Desktop";
+    const PATH: &str = "/org/freedesktop/portal/desktop";
+
+    /// Whether it was printed, or `None` if there's no portal to ask.
+    fn portal(path: &str, title: &str) -> Option<bool> {
+        let conn = Connection::session().ok()?;
+        let print = Proxy::new(&conn, DESKTOP, PATH, "org.freedesktop.portal.Print").ok()?;
+        let none: HashMap<&str, Value> = HashMap::new();
+        // The dialog: the printer and how to print.
+        let (code, results) = ask(&conn, "tessel_prepare", |token| {
+            let options = HashMap::from([("handle_token", Value::from(token)), ("modal", Value::from(true))]);
+            print.call("PreparePrint", &("", title, &none, &none, options))
+        })?;
+        if code != 0 {
+            // Cancelled (or the portal couldn't): not printed.
+            return Some(false);
+        }
+        let token = u32::try_from(results.get("token")?.clone()).ok()?;
+        let file = std::fs::File::open(path).ok()?;
+        let (code, _) = ask(&conn, "tessel_print", |handle| {
+            let options = HashMap::from([("handle_token", Value::from(handle)), ("token", Value::from(token))]);
+            print.call("Print", &("", title, Fd::from(&file), options))
+        })?;
+        Some(code == 0)
+    }
+
+    /// Asks the portal something (`call`, given the request's token) and
+    /// waits for its answer: 0 when done, 1 when the user cancelled, with
+    /// what it found.
+    fn ask(
+        conn: &Connection,
+        token: &str,
+        call: impl FnOnce(&str) -> zbus::Result<OwnedObjectPath>,
+    ) -> Option<(u32, HashMap<String, OwnedValue>)> {
+        // The answer comes as a signal from the request's object, whose
+        // path follows from this connection's name and the token: listen
+        // before asking, so it can't be missed.
+        let sender = conn.unique_name()?.as_str().trim_start_matches(':').replace('.', "_");
+        let token = format!("{token}_{}", std::process::id());
+        let request = Proxy::new(conn, DESKTOP, format!("{PATH}/request/{sender}/{token}"), "org.freedesktop.portal.Request").ok()?;
+        let mut answers = request.receive_signal("Response").ok()?;
+        call(&token).ok()?;
+        let answer = answers.next()?;
+        answer.body().deserialize().ok()
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 mod system {
     pub const DELETE_AFTER: bool = false;
 
-    pub fn print(path: &str, _title: &str) -> bool {
-        std::process::Command::new("lp").arg(path).status().is_ok_and(|s| s.success())
+    pub fn print(_path: &str, _title: &str) -> bool {
+        false
     }
 }
 

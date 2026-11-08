@@ -1,17 +1,18 @@
 ---
 title: The desktop
-description: A tray or menu-bar icon with a menu that keeps the app running, the system's notifications, full screen, and files dragged out of the app.
+description: A tray or menu-bar icon with a menu that keeps the app running, the system's notifications, full screen, and files dragged out of the app, on macOS, Windows and Linux.
 ---
 
 Besides its windows, a desktop app can have an icon in the menu bar
-(macOS) or the taskbar's notification area (Windows), send notifications,
-fill the screen, and hand the user files to drag onto the desktop or into
-other apps. On other systems (and phones), these do nothing.
+(macOS), the taskbar's notification area (Windows) or the panel's tray
+(Linux), send notifications, fill the screen, and hand the user files to
+drag onto the desktop or into other apps. On phones, these do nothing.
 
 ## A tray icon
 
 `.trayIcon` gives the app an icon with a menu, in the menu bar's right
-side on macOS and the taskbar's tray on Windows:
+side on macOS, the taskbar's tray on Windows, and the panel's tray on
+Linux:
 
 ```tessel
 app Uploader(width: 360, height: 240) {
@@ -37,12 +38,18 @@ app Uploader(width: 360, height: 240) {
 ```
 
 - The icon is one of the [built-in icons](/ui/icons/), drawn in the menu
-  bar's color on macOS and to suit the taskbar on Windows.
+  bar's color on macOS, to suit the taskbar on Windows, and light (for a
+  dark panel) on Linux.
 - `title:` is text beside the icon on macOS (a count, a timer's minutes),
-  and the icon's tooltip on Windows. It follows your state like any text.
+  and the icon's tooltip on Windows and Linux. It follows your state like
+  any text.
 - The items are [`MenuItem`s, `MenuDivider`s and `Menu`s](/ui/menus-windows/),
   as in a context menu. On macOS a click on the icon opens the menu; on
-  Windows a right click does, and a left click shows the window.
+  Windows and Linux a right click does, and a left click shows the window.
+- On Linux the icon is a StatusNotifierItem, which KDE, XFCE, Cinnamon and
+  most other desktops show; GNOME shows it with its AppIndicator extension
+  (Ubuntu has it on). Where nothing shows them, the app has no icon (and
+  `keepRunning:` still keeps it running).
 - Put it on a view of the app's main window (any view: it's the app's).
   An app has one tray icon.
 
@@ -79,6 +86,8 @@ Button("Back up now") {
   the system's scripting, which shows them as Script Editor's.
 - On Windows, they come from the app's icon in the tray (a hidden one when
   the app has no `.trayIcon`). Clicking one shows the main window.
+- On Linux, the desktop's notification service shows them (every desktop
+  has one), with the app's name.
 
 ## Full screen
 
@@ -106,7 +115,7 @@ Button(if isFullScreen() { "Leave full screen" } else { "Full screen" }) {
 A view with `.dragFile` can be dragged out of the app, as the file at
 `path`: onto the desktop or into a folder (which copies it), or into
 another app (an email, a chat, an editor), which gets the file as if it
-were dragged from Finder or Explorer.
+were dragged from Finder, Explorer or a Linux file manager.
 
 ```tessel
 HStack {
@@ -124,6 +133,9 @@ HStack {
   down; a click is still a click.
 - Dropped back on the app, it comes to [`.onDrop`](/reference/modifiers/#ondrop)
   like any file.
+- On Linux, dragging uses X11's drag and drop, so an app with `.dragFile`
+  runs on X11: on a Wayland desktop, through XWayland, which they all
+  have. It looks and works the same.
 
 ## In tests
 

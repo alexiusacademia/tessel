@@ -8,8 +8,10 @@ WebView(url: String = "", html: String = "")
 ```
 
 A `WebView` shows a web page with the system's browser engine: WebKit on
-macOS (as Safari), and WebView2 on Windows (as Edge, which comes with
-Windows 11 and nearly every Windows 10).
+macOS (as Safari), WebView2 on Windows (as Edge, which comes with
+Windows 11 and nearly every Windows 10), and WebKitGTK on Linux (as GNOME's
+Web, and many other apps; most desktops have it, and it's
+`libwebkit2gtk-4.1-0` on Debian and Ubuntu).
 
 ```tessel
 app Docs(width: 800, height: 600) {
@@ -44,5 +46,9 @@ app Docs(width: 800, height: 600) {
   a place of its own rather than putting it in one.
 - On Windows, the pages it visits keep their cookies and storage in a
   folder of the app's own, in the user's `AppData\Local`.
+- On Linux, WebKitGTK's view can only be put inside the app's window on
+  X11, so an app with a `WebView` runs on X11: on a Wayland desktop,
+  through XWayland, which they all have. Without WebKitGTK, it shows what
+  it would load, as in a headless run.
 - In a [headless run](/ui/testing/) it shows nothing; `tree` says what it
   would load: `WebView "https://…"`.

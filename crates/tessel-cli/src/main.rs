@@ -1,6 +1,7 @@
 mod android;
 mod debug;
 mod icon;
+mod linux_bundle;
 mod hot;
 mod lsp;
 mod manifest;
@@ -202,14 +203,37 @@ fn main() -> ExitCode {
                 }
                 WINDOWS_BUILD.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            let mut out = out.unwrap_or_else(|| match windows {
-                // (`todos.exe` can sit next to the folder `todos`.)
-                true => {
-                    let full = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
-                    let stem = if full.is_dir() { full.file_name() } else { full.file_stem() };
-                    PathBuf::from(stem.unwrap_or_else(|| "app".as_ref())).with_extension("exe")
+            // `--linux`, `--linux-arm`: a Linux program (x86-64 or ARM64),
+            // built anywhere.
+            let linux = if rest.iter().any(|a| a == "--linux-arm") {
+                Some(LinuxArch::Arm64)
+            } else if rest.iter().any(|a| a == "--linux") {
+                Some(LinuxArch::X64)
+            } else {
+                None
+            };
+            if let Some(arch) = linux {
+                if windows {
+                    eprintln!("tessel: build for Windows or for Linux, not both");
+                    return ExitCode::FAILURE;
                 }
-                false => default_output(Path::new(path)),
+                if !cfg!(feature = "bundled-linker") {
+                    eprintln!("tessel: --linux needs Tessel's built-in linker, which the installed Tessel has (this is a development build)");
+                    return ExitCode::FAILURE;
+                }
+                LINUX_BUILD.store(arch as u8, std::sync::atomic::Ordering::Relaxed);
+            }
+            let stem = || {
+                let full = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+                let stem = if full.is_dir() { full.file_name() } else { full.file_stem() };
+                stem.unwrap_or_else(|| "app".as_ref()).to_string_lossy().into_owned()
+            };
+            let mut out = out.unwrap_or_else(|| match (windows, linux) {
+                // (`todos.exe` can sit next to the folder `todos`.)
+                (true, _) => PathBuf::from(stem()).with_extension("exe"),
+                // (And `todos-linux` next to it and to the Mac's `todos`.)
+                (_, Some(arch)) => PathBuf::from(format!("{}-{}", stem(), arch.suffix())),
+                _ => default_output(Path::new(path)),
             });
             if (cfg!(windows) || windows) && out.extension().is_none() {
                 out.set_extension("exe");
@@ -218,8 +242,10 @@ fn main() -> ExitCode {
             DEBUG_BUILD.store(rest.iter().any(|a| a == "--debug"), std::sync::atomic::Ordering::Relaxed);
             match build(Path::new(path), &out) {
                 Ok(app) if bundle => match make_bundle(&out, app.as_ref(), Some(Path::new(path))) {
-                    Ok(bundle) => {
-                        println!("built {}", bundle.display());
+                    Ok(bundles) => {
+                        for bundle in bundles {
+                            println!("built {}", bundle.display());
+                        }
                         ExitCode::SUCCESS
                     }
                     Err(e) => {
@@ -439,6 +465,63 @@ fn cross_windows() -> bool {
     WINDOWS_BUILD.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The kinds of Linux computers programs are built for.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum LinuxArch {
+    X64 = 1,
+    Arm64 = 2,
+}
+
+impl LinuxArch {
+    /// This computer's, when it's a Linux one.
+    fn host() -> Option<LinuxArch> {
+        match (cfg!(target_os = "linux"), cfg!(target_arch = "aarch64")) {
+            (false, _) => None,
+            (true, true) => Some(LinuxArch::Arm64),
+            (true, false) => Some(LinuxArch::X64),
+        }
+    }
+    fn triple(self) -> &'static str {
+        match self {
+            LinuxArch::X64 => "x86_64-unknown-linux-gnu",
+            LinuxArch::Arm64 => "aarch64-unknown-linux-gnu",
+        }
+    }
+    /// As in the names of Tessel's packages (`tessel-v1.0.0-linux-x64.tar.gz`).
+    fn package(self) -> &'static str {
+        match self {
+            LinuxArch::X64 => "linux-x64",
+            LinuxArch::Arm64 => "linux-arm64",
+        }
+    }
+    /// The end of a built program's name (`todos-linux`), as the option.
+    fn suffix(self) -> &'static str {
+        match self {
+            LinuxArch::X64 => "linux",
+            LinuxArch::Arm64 => "linux-arm",
+        }
+    }
+}
+
+/// Which Linux `build` makes a program for (`tessel build --linux` or
+/// `--linux-arm`): 0 for none, or a `LinuxArch`.
+static LINUX_BUILD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+fn cross_linux() -> Option<LinuxArch> {
+    match LINUX_BUILD.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => Some(LinuxArch::X64),
+        2 => Some(LinuxArch::Arm64),
+        _ => None,
+    }
+}
+
+/// The Linux a program is linked for with the built-in linker: the one
+/// asked for, or this computer's when it's a Linux one with Tessel's parts.
+#[cfg_attr(not(feature = "bundled-linker"), allow(dead_code))]
+fn linux_target() -> Option<LinuxArch> {
+    cross_linux().or_else(|| LinuxArch::host().filter(|_| bundled_sdk().is_some()))
+}
+
 /// What building Windows apps on a Mac needs from the Windows build of
 /// Tessel: its runtime library (MinGW) and the Windows libraries it links
 /// with (`sdk/`). They aren't in the Mac's package (most people never need
@@ -450,19 +533,48 @@ fn windows_parts() -> Result<PathBuf, String> {
     if let Some(d) = std::env::var_os("TESSEL_WINDOWS_PARTS").map(PathBuf::from) {
         return if has(&d) { Ok(d) } else { Err(format!("TESSEL_WINDOWS_PARTS: `{}` has no libtessel_runtime.a and sdk/", d.display())) };
     }
-    let dir = update::home()?.join("windows").join(tessel_compiler::VERSION);
+    let package = format!("tessel-v{}-windows-x64-parts.tar.gz", tessel_compiler::VERSION);
+    download_parts("Windows apps", &PathBuf::from("windows"), &package, has)
+}
+
+/// What building Linux programs needs: the runtime library and, in `sdk/`,
+/// the C library's files programs are linked against (see
+/// install/linux-parts.sh). Downloaded the first time, like the Windows
+/// parts, into `linux-x64/<version>/` (or `linux-arm64/`) in Tessel's
+/// folder; on Linux, Tessel's own package has them for its kind of computer.
+/// TESSEL_LINUX_PARTS names a folder that has them instead.
+fn linux_parts(arch: LinuxArch) -> Result<PathBuf, String> {
+    let has = |d: &Path| d.join("libtessel_runtime.a").is_file() && d.join("sdk").join("Scrt1.o").is_file();
+    if let Some(d) = std::env::var_os("TESSEL_LINUX_PARTS").map(PathBuf::from) {
+        return if has(&d) { Ok(d) } else { Err(format!("TESSEL_LINUX_PARTS: `{}` has no libtessel_runtime.a and sdk/", d.display())) };
+    }
+    if LinuxArch::host() == Some(arch) {
+        if let Some(dir) = bundled_sdk().as_deref().and_then(Path::parent).filter(|d| has(d)) {
+            return Ok(dir.to_path_buf());
+        }
+    }
+    let package = format!("tessel-v{}-{}-parts.tar.gz", tessel_compiler::VERSION, arch.package());
+    download_parts("Linux programs", &PathBuf::from(arch.package()), &package, has)
+}
+
+/// Downloads `package` from this version's release, once, into
+/// `<folder>/<version>/` in Tessel's folder. `what` says what it's for.
+fn download_parts(what: &str, folder: &Path, package: &str, has: impl Fn(&Path) -> bool) -> Result<PathBuf, String> {
+    let dir = update::home()?.join(folder).join(tessel_compiler::VERSION);
     if has(&dir) {
         return Ok(dir);
     }
-    eprintln!("Getting what Windows apps are built with (once for each version of Tessel)…");
+    eprintln!("Getting what {what} are built with (once for each version of Tessel)…");
     let version = format!("v{}", tessel_compiler::VERSION);
-    let package = format!("tessel-{version}-windows-x64-parts.tar.gz");
     let staging = dir.with_extension("download");
     let _ = std::fs::remove_dir_all(&staging);
-    update::fetch_part(&version, &package, &staging).map_err(|e| format!("can't get what Windows apps are built with: {e}"))?;
-    let _ = std::fs::remove_file(staging.join(&package));
+    update::fetch_part(&version, package, &staging).map_err(|e| format!("can't get what {what} are built with: {e}"))?;
+    let _ = std::fs::remove_file(staging.join(package));
     if !has(&staging) {
-        return Err(format!("`{package}` doesn't have what Windows apps are built with"));
+        return Err(format!("`{package}` doesn't have what {what} are built with"));
+    }
+    if let Some(parent) = dir.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
     // (Another `tessel` may have put them there meanwhile: as good.)
     if std::fs::rename(&staging, &dir).is_err() && !has(&dir) {
@@ -479,6 +591,9 @@ const RUNTIME_LIB: &str = if cfg!(target_env = "msvc") { "tessel_runtime.lib" } 
 fn runtime_lib() -> Result<PathBuf, String> {
     if cross_windows() {
         return Ok(windows_parts()?.join("libtessel_runtime.a"));
+    }
+    if let Some(arch) = cross_linux() {
+        return Ok(linux_parts(arch)?.join("libtessel_runtime.a"));
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // `tessel` may be a symlink (e.g. in /usr/local/bin) to the real one.
@@ -602,6 +717,9 @@ fn target_triple() -> Option<String> {
     if cross_windows() {
         return Some("x86_64-pc-windows-gnu".to_string());
     }
+    if let Some(arch) = cross_linux() {
+        return Some(arch.triple().to_string());
+    }
     (cfg!(windows) && bundled_sdk().is_some()).then(|| "x86_64-pc-windows-gnu".to_string())
 }
 
@@ -611,6 +729,9 @@ fn target_triple() -> Option<String> {
 fn link(obj: &Path, runtime: &Path, out: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
     if cross_windows() {
         return bundled::link(obj, runtime, out, &windows_parts()?.join("sdk"), gui, resources);
+    }
+    if let Some(arch) = cross_linux() {
+        return bundled::link(obj, runtime, out, &linux_parts(arch)?.join("sdk"), gui, resources);
     }
     if let Some(sdk) = bundled_sdk() {
         return bundled::link(obj, runtime, out, &sdk, gui, resources);
@@ -659,10 +780,17 @@ mod bundled {
 
     pub fn link(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, gui: bool, resources: Option<&Path>) -> Result<(), String> {
         // (On a Mac, a Windows app for `tessel build --windows`.)
-        #[cfg(target_os = "macos")]
-        let args = if super::cross_windows() { mingw_args(obj, runtime, out, sdk, gui, resources) } else { macos_args(obj, runtime, out, sdk)? };
-        #[cfg(not(target_os = "macos"))]
-        let args = mingw_args(obj, runtime, out, sdk, gui, resources);
+        let args = if let Some(arch) = super::linux_target() {
+            elf_args(obj, runtime, out, sdk, arch)
+        } else if super::cross_windows() || cfg!(windows) {
+            mingw_args(obj, runtime, out, sdk, gui, resources)
+        } else {
+            #[cfg(target_os = "macos")]
+            let args = macos_args(obj, runtime, out, sdk)?;
+            #[cfg(not(target_os = "macos"))]
+            let args = Vec::new();
+            args
+        };
         let args: Vec<CString> = args.into_iter().map(|a| CString::new(a).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
         let ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
         let mut output: *mut c_char = std::ptr::null_mut();
@@ -714,6 +842,37 @@ mod bundled {
         Ok(args)
     }
 
+    /// ld.lld arguments for a Linux program: the program and the runtime
+    /// with glibc's and GCC's files from `sdk/` (see install/linux-parts.sh),
+    /// in the order gcc uses. The program runs with the system's glibc,
+    /// 2.28 or newer.
+    fn elf_args(obj: &Path, runtime: &Path, out: &Path, sdk: &Path, arch: super::LinuxArch) -> Vec<String> {
+        let path = |p: &Path| p.to_string_lossy().into_owned();
+        let file = |name: &str| path(&sdk.join(name));
+        let (emulation, loader) = match arch {
+            super::LinuxArch::X64 => ("elf_x86_64", "/lib64/ld-linux-x86-64.so.2"),
+            super::LinuxArch::Arm64 => ("aarch64linux", "/lib/ld-linux-aarch64.so.1"),
+        };
+        let mut args: Vec<String> = ["ld.lld", "-m", emulation, "-pie", "--hash-style=gnu", "--build-id", "--eh-frame-hdr"]
+            .map(String::from)
+            .to_vec();
+        args.extend(["-z", "relro", "-z", "now", "-z", "noexecstack", "-dynamic-linker", loader].map(String::from));
+        // No symbols or debug information, and none of the runtime the
+        // program doesn't use: much smaller programs.
+        args.extend(["--strip-all".into(), "--gc-sections".into()]);
+        args.extend(["-o".into(), path(out), file("Scrt1.o"), file("crti.o"), file("crtbeginS.o")]);
+        args.extend([path(obj), path(runtime)]);
+        // Shared libraries only where something is used from them.
+        args.push("--as-needed".into());
+        for lib in ["libgcc_s.so.1", "libutil.so.1", "librt.so.1", "libpthread.so.0", "libm.so.6", "libdl.so.2", "libc.so.6"] {
+            args.push(file(lib));
+        }
+        let loader_file = Path::new(loader).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        args.extend([file("libc_nonshared.a"), file("libpthread_nonshared.a"), file(&loader_file), file("libgcc.a")]);
+        args.extend([file("crtendS.o"), file("crtn.o")]);
+        args
+    }
+
     /// ld.lld arguments in MinGW mode (Windows): the program and the runtime
     /// with MinGW-w64's C runtime and Windows import libraries from `sdk/`,
     /// in the order clang's MinGW driver uses.
@@ -759,12 +918,17 @@ fn version_info(found: Option<&manifest::Found>, app_name: Option<&str>, program
     }
 }
 
-fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<PathBuf, String> {
-    if cfg!(windows) || cross_windows() {
-        return make_installer(exe, app, program);
+/// The app's bundles: on macOS, `Name.app`; on Windows, its installer; on
+/// Linux, its AppImage and .deb.
+fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Result<Vec<PathBuf>, String> {
+    if cfg!(windows) && cross_linux().is_none() || cross_windows() {
+        return make_installer(exe, app, program).map(|p| vec![p]);
+    }
+    if let Some(arch) = cross_linux().or_else(LinuxArch::host) {
+        return make_linux_packages(exe, app, program, arch);
     }
     if !cfg!(target_os = "macos") {
-        return Ok(exe.to_path_buf());
+        return Ok(vec![exe.to_path_buf()]);
     }
     let found = program.and_then(|p| manifest::find(p).ok().flatten());
     let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
@@ -829,7 +993,44 @@ fn make_bundle(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>) -> Res
     std::fs::write(contents.join("Resources/AppIcon.icns"), icon.icns()).map_err(|e| format!("can't write the app's icon: {e}"))?;
     // Last, so a bundle with its executable is a complete one.
     std::fs::rename(exe, contents.join("MacOS").join(name)).map_err(|e| format!("can't move the executable into the bundle: {e}"))?;
-    Ok(bundle)
+    Ok(vec![bundle])
+}
+
+/// A Linux app's AppImage and .deb, next to its program, which is removed
+/// once they hold it.
+fn make_linux_packages(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>, arch: LinuxArch) -> Result<Vec<PathBuf>, String> {
+    let found = program.and_then(|p| manifest::find(p).ok().flatten());
+    let info = found.as_ref().map(|f| f.manifest.app.clone()).unwrap_or_default();
+    let icon = icon::Icon::of_program(program, manifest::icon_path(found.as_ref()).as_deref())?;
+    let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+    let name = info.name.clone().unwrap_or_else(|| app.map_or(stem, |a| a.name.as_str()).to_string());
+    let id = info.id.clone().unwrap_or_else(|| tessel_compiler::default_app_id(&name));
+    let mut types = Vec::new();
+    for d in documents(&info, app) {
+        let icon = match manifest::document_icon(found.as_ref(), &d).filter(|_| d.owned) {
+            Some(file) => Some(icon::Icon::of_document(&file)?),
+            None => None,
+        };
+        types.push((d, icon));
+    }
+    let packaged = linux_bundle::App {
+        name: &name,
+        id: &id,
+        version: info.version.as_deref().unwrap_or("1.0"),
+        description: info.description.as_deref().unwrap_or(""),
+        author: info.author.as_deref().unwrap_or(""),
+        category: info.category.as_deref(),
+        icon: &icon,
+        documents: types,
+        arch: match arch {
+            LinuxArch::X64 => "x86_64",
+            LinuxArch::Arm64 => "aarch64",
+        },
+    };
+    let runtime = linux_parts(arch)?.join("sdk").join("appimage-runtime");
+    let made = linux_bundle::make(exe, &packaged, &runtime)?;
+    let _ = std::fs::remove_file(exe);
+    Ok(made)
 }
 
 /// The installer of a Windows app: `<Name> Setup.exe` next to the
@@ -995,9 +1196,15 @@ fn platform_link_args() -> Vec<String> {
         args.extend(["-lobjc", "-liconv", "-Wl,-dead_strip", "-Wl,-x", "-Wl,-S", "-mmacosx-version-min=11.0"].map(String::from));
         args
     } else {
-        vec![]
+        LINUX_LINK_ARGS.iter().map(|a| a.to_string()).collect()
     }
 }
+
+/// What a Linux program links with besides the runtime: glibc's parts, and
+/// libgcc_s for unwinding. (Windows, the GPU and fonts are loaded as the
+/// program runs, so a command-line program needs nothing more.)
+const LINUX_LINK_ARGS: &[&str] =
+    &["-Wl,--gc-sections", "-Wl,--as-needed", "-lgcc_s", "-lutil", "-lrt", "-lpthread", "-lm", "-ldl", "-lc"];
 
 /// Opens the IDE on `folder`, compiling it first if this version of Tessel
 /// hasn't yet (it's cached until the IDE or `tessel` itself changes).

@@ -1,7 +1,8 @@
 name: CI
 
-# Tests run locally before each push; this runs them on macOS and Windows
-# when started by hand (Actions tab), and once a week as a safety net.
+# Tests run locally before each push; this runs them on macOS, Windows and
+# Linux (x86-64 and ARM64) when started by hand (Actions tab), and once a
+# week as a safety net.
 on:
   workflow_dispatch:
     inputs:
@@ -137,3 +138,89 @@ jobs:
           path: apps/
           # (For trying a build by hand; the repository's storage is limited.)
           retention-days: 3
+
+  # Linux, in AlmaLinux 9 (glibc 2.34, what `tessel` itself needs), with
+  # what a desktop has: fonts (DejaVu and Liberation, which tests/run's
+  # `.linux.out` files are for) and Mesa's software GPU, as apps draw only
+  # through the GPU there. LLVM is its official Linux build.
+  test-linux:
+    name: Test (linux-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            llvm: X64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            llvm: ARM64
+    runs-on: ${{ matrix.runner }}
+    container: almalinux:9
+    steps:
+      - name: Install the system's parts
+        run: |
+          dnf -y -q install gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git xz tar make perl-core \
+            zlib-devel libzstd-devel libxml2-devel libffi-devel which findutils \
+            fontconfig dejavu-sans-fonts dejavu-sans-mono-fonts dejavu-serif-fonts \
+            liberation-mono-fonts liberation-sans-fonts liberation-serif-fonts \
+            mesa-dri-drivers mesa-libEGL mesa-libgbm vulkan-loader
+          echo "/opt/rh/gcc-toolset-13/root/usr/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/llvm
+          key: llvm-${{ env.LLVM_VERSION }}-linux-${{ matrix.arch }}-polly
+
+      - name: Install LLVM
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          name="LLVM-$LLVM_VERSION-Linux-${{ matrix.llvm }}"
+          mkdir -p /opt
+          curl -sSfL "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz" | tar -xJ -C /opt \
+            "$name/bin/llvm-config" "$name/include/llvm" "$name/include/llvm-c" "$name/include/lld" \
+            --wildcards "$name/lib/libLLVM*.a" "$name/lib/libPolly*.a" "$name/lib/liblld*.a"
+          mv "/opt/$name" /opt/llvm
+
+      # LLVM's llvm-config: its shared library isn't there (only static
+      # ones are), and it names the build machine's libzstd.a by its path.
+      - name: Point llvm-sys at LLVM
+        run: |
+          mkdir -p /opt/llvm-prefix/bin
+          ln -sfn /opt/llvm/lib /opt/llvm-prefix/lib
+          ln -sfn /opt/llvm/include /opt/llvm-prefix/include
+          cat > /opt/llvm-prefix/bin/llvm-config <<'EOF'
+          #!/bin/sh
+          case " $* " in *" --link-shared "*) exit 1;; esac
+          /opt/llvm/bin/llvm-config "$@" | sed 's#[^ ]*/libzstd\.a#-lzstd#g'
+          EOF
+          chmod +x /opt/llvm-prefix/bin/llvm-config
+          echo "LLVM_SYS_221_PREFIX=/opt/llvm-prefix" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Test some
+        if: ${{ inputs.tests != '' }}
+        timeout-minutes: 40
+        run: cargo test -p tessel-cli --test run -- --nocapture ${{ inputs.tests }}
+
+      - name: Test
+        if: ${{ inputs.tests == '' }}
+        timeout-minutes: 60
+        run: cargo test --workspace -- --skip android_packages
+
+      - name: Build the examples
+        if: ${{ inputs.tests == '' }}
+        run: |
+          mkdir -p apps
+          ./target/debug/tessel build examples/counter -o apps/counter
+          ./target/debug/tessel build examples/todos -o apps/todos

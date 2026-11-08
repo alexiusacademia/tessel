@@ -612,6 +612,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(label, &Ty::Str);
             }
             "WebView" => {
+                self.needs_x11 = true;
                 let (url, html) = (string(self, a(0)), string(self, a(1)));
                 self.call_rt("tsl_ui_web_view", &[url, html]);
                 self.release(url, &Ty::Str);
@@ -1399,6 +1400,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.pass_closure("tsl_ui_on_drop", &[], action);
             }
             "dragFile" => {
+                self.needs_x11 = true;
                 let path = self.expr_as(a(0).unwrap(), &Ty::Str).unwrap();
                 self.call_rt("tsl_ui_drag_file", &[path]);
                 self.release(path, &Ty::Str);

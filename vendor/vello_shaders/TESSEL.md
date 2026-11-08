@@ -4,7 +4,7 @@
 # vello_shaders 0.10.0, patched for ARM Mali GPUs
 
 This is the `vello_shaders` crate from crates.io (0.10.0), used in place of
-it through `[patch.crates-io]` in the workspace's `Cargo.toml`. Only six
+it through `[patch.crates-io]` in the workspace's `Cargo.toml`. Only a few
 lines of its WGSL differ (`diff -r` against the published crate shows them).
 
 ## Why
@@ -51,3 +51,12 @@ https://github.com/linebender/vello/issues/1816#issuecomment-6360706095
 
 When updating vello, check whether the published shaders still read out
 of bounds this way, and drop this copy if they don't.
+
+## Half floats (2026-11-08)
+
+On Linux with Mesa's software Vulkan driver (lavapipe), `flatten` failed to
+load: wgpu 29 only accepts `unpack2x16float` from GPUs that report 16-bit
+float support ("Shader requires capability SHADER_FLOAT16_IN_FLOAT32"),
+and lavapipe doesn't. Its one use, reading a stroke's miter limit, now
+calls `half_to_f32` (in `flatten.wgsl`), which decodes the same half float
+with integer math.

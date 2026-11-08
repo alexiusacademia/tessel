@@ -323,6 +323,8 @@ installed.
   executable moves inside it. On Windows (and with `--windows` on a Mac)
   it's the app's installer, `Name Setup.exe`, with the executable inside it
   (see [The installer of a Windows app](#the-installer-of-a-windows-app)).
+  On Linux (and with `--linux` anywhere) it's an AppImage and a `.deb`
+  (see [Linux packages](#linux-packages)).
 
 On Windows, apps (programs with an `app`) are built without a console
 window.
@@ -388,6 +390,72 @@ it worked.
 The installer adds less than 1 MB, and the app inside it is compressed, so
 it's often smaller than the app itself (`Todos Setup.exe` is 2 MB, for a
 2.3 MB `todos.exe`). Like the app, it isn't signed (see above).
+
+### For Linux
+
+```sh
+tessel build <path> --linux [-o <output>]
+tessel build <path> --linux-arm [-o <output>]
+```
+
+`--linux` builds the program for 64-bit Linux on PCs and most servers
+(x86-64); `--linux-arm` for ARM64 Linux (a Raspberry Pi 4 or 5 with a
+64-bit system, ARM servers). They work on a Mac, on Windows and on Linux,
+and the program is named after yours with `-linux` or `-linux-arm`
+(`tessel build todos --linux` makes `todos-linux`), so it doesn't take the
+place of the one for your own computer.
+
+The program runs on any Linux with glibc 2.28 or newer: Ubuntu 18.10,
+Debian 10, Fedora 29, RHEL 8 and everything since. It needs nothing else
+installed to start: what it uses of the system (windows on X11 or Wayland,
+the GPU, fonts) it finds as it runs. So a program with only `fn main()`
+also runs on a server. An `app` needs a desktop, and for some of its views
+more of it:
+
+| What | Needs |
+|---|---|
+| Windows, drawing, text | X11 or Wayland, OpenGL or Vulkan (Mesa's or the GPU maker's driver), fontconfig |
+| [`WebView`](/ui/web/) | WebKitGTK 4.1 (or 4.0); the app runs on X11 (XWayland on a Wayland desktop) |
+| [`VideoPlayer`](/ui/media/), `playSound` | GStreamer 1.x, with its "good" plugins (and "libav" for MP4 and H.264) |
+| [`.trayIcon`](/ui/desktop/#a-tray-icon) | A tray that shows StatusNotifierItems: KDE, XFCE, Cinnamon, GNOME with its AppIndicator extension |
+| [`.dragFile`](/ui/desktop/#dragging-files-out) | X11 (the app runs there, through XWayland on a Wayland desktop) |
+| [`printDocument`](/ui/dialogs/#printing) | The desktop's print portal (`lp` without one) |
+
+Desktop Linux systems have all of these, or have them a package away. A
+view whose part is missing does what it does in a headless run: a web view
+shows what it would load, a video doesn't play.
+
+What Linux programs are built with (Tessel's runtime for Linux, glibc's
+files and the AppImage runtime, about 30 MB) isn't in the Mac's or
+Windows's package: the first `--linux` (or `--linux-arm`) build downloads
+it, once for each version of Tessel. On Linux, Tessel has it for its own
+kind of computer.
+
+### Linux packages
+
+```sh
+tessel build <path> --linux --bundle [-o <output>]
+```
+
+With `--bundle`, a Linux build makes two packages next to where the program
+would go, with the program inside them:
+
+- **`Name-x86_64.AppImage`** (or `-aarch64`): one file that runs on nearly
+  every desktop Linux. Downloaded, it's marked as a program
+  (`chmod +x Name-x86_64.AppImage`, or **Properties → Allow executing**) and
+  opened. AppImage tools (AppImageLauncher, Gear Lever) add it to the menus.
+- **`name_1.0_amd64.deb`** (or `_arm64`): the package Debian, Ubuntu, Linux
+  Mint and Pop!_OS install (`sudo apt install ./name_1.0_amd64.deb`, or by
+  opening it). It puts the program in `/usr/bin`, the app in the menus with
+  its icon, and its file types in the system.
+
+Both carry the app's icon (at every size Linux uses), its name, version,
+description and author from [`tessel.toml`](/start/project/), and the files
+it opens: its [own document types](/start/project/#the-apps-own-documents)
+(`owned = true`) become new types with their icons, so file managers show
+them and open them with the app; it's offered for the other kinds of files
+it opens. The app's [`category`](/start/project/#the-app) chooses where it
+is in the menus.
 
 ### For Android
 
@@ -733,6 +801,7 @@ summary and exits with status 1.
 | `ANDROID_HOME` | `tessel build --android` | The Android SDK's folder, if it isn't in the usual place. `ANDROID_NDK_HOME` and `JAVA_HOME` name the NDK and the JDK the same way. |
 | `TESSEL_ANDROID_KEYSTORE_PASSWORD` | `tessel build --android` | The password of the keystore `tessel.toml` names; `TESSEL_ANDROID_KEY_PASSWORD` is the key's, if it differs. See [Publishing on Google Play](/guides/android/#publishing-on-google-play). |
 | `TESSEL_WINDOWS_PARTS` | `tessel build --windows` | A folder with Tessel's runtime for Windows (`libtessel_runtime.a`) and the Windows libraries (`sdk/`) to build with, instead of downloading them. |
+| `TESSEL_LINUX_PARTS` | `tessel build --linux` | A folder with Tessel's runtime for Linux (`libtessel_runtime.a` and `sdk/`) to build with, instead of the one it downloads. |
 | `TESSEL_HOME` | `tessel pin`, libraries | Tessel's folder, where other versions are installed (in `versions/`) and libraries are downloaded (in `packages/`). The install scripts use it too. |
 | `TESSEL_INDEX` | Libraries | Another [library index](/guides/libraries/) instead of the public one: a folder on this computer (then `tessel publish` writes its entries there, for trying libraries out) or the address of a `.tar.gz` of one. |
 | `TESSEL_NO_UPDATE_CHECK` | The IDE | When set, the IDE doesn't check for a newer Tessel when it opens. |

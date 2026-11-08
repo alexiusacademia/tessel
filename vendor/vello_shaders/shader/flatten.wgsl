@@ -546,6 +546,22 @@ fn draw_cap(
     write_line_with_transform(line_ix, path_ix, start, end, transform);
 }
 
+// (Tessel: what `unpack2x16float(bits)[0]` gives, without it: wgpu only
+// lets a shader use it on GPUs with 16-bit floats, and some (Mesa's
+// software Vulkan) have none. See TESSEL.md.)
+fn half_to_f32(bits: u32) -> f32 {
+    let h = bits & 0xffffu;
+    let e = (h >> 10u) & 0x1fu;
+    let m = f32(h & 0x3ffu);
+    var v = (1.0 + m / 1024.0) * exp2(f32(i32(e) - 15));
+    if e == 0u {
+        v = m * exp2(-24.0);
+    } else if e == 0x1fu {
+        v = 65504.0;
+    }
+    return select(v, -v, (h & 0x8000u) != 0u);
+}
+
 fn draw_join(
     path_ix: u32, style_flags: u32, p0: vec2f,
     tan_prev: vec2f, tan_next: vec2f,
@@ -566,7 +582,7 @@ fn draw_join(
         }
         case STYLE_FLAGS_JOIN_MITER: {
             let hypot = length(vec2f(cr, d));
-            let miter_limit = unpack2x16float(style_flags & STYLE_MITER_LIMIT_MASK)[0];
+            let miter_limit = half_to_f32(style_flags & STYLE_MITER_LIMIT_MASK);
 
             var line_ix: u32;
             // Given the two tangents `tan_prev` and `tan_next` arranged tail-to-tail, the

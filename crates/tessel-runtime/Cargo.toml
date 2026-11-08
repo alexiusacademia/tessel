@@ -8,7 +8,7 @@ license.workspace = true
 # The renderers: the GPU one (vello, wgpu and parley), and the system's
 # (`native`). Where the system's is on, apps use it; elsewhere the GPU's.
 default = ["gpu", "native"]
-gpu = ["dep:vello", "dep:skrifa", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster"]
+gpu = ["dep:vello", "dep:skrifa", "dep:wgpu", "dep:parley", "dep:image", "dep:pollster", "dep:fontique"]
 # The system's renderer: on macOS Core Graphics, Core Text and ImageIO (see
 # ui/mac); on Windows Direct2D, DirectWrite and WIC (see ui/win). They come
 # with the system, so apps carry none of them.
@@ -102,11 +102,42 @@ wgpu = { version = "29", optional = true, default-features = false, features = [
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 wgpu = { version = "29", optional = true, default-features = false, features = ["std", "parking_lot", "wgsl", "vulkan", "gles"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux finds fonts with fontconfig, which programs load as they start
+# rather than link with, so a command-line program also runs where there's
+# none (a server).
+fontique = { version = "0.11", features = ["fontconfig-dlopen"], optional = true }
+# Open and Save dialogs through the desktop's portal (GNOME, KDE…), over
+# D-Bus, so apps need no GTK.
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+# The clipboard on Wayland too (where the desktop offers it; X11's through
+# XWayland otherwise).
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+# Talking to the desktop over D-Bus: its Print portal (ui/print.rs), tray
+# (ui/tray.rs) and notifications.
+zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
+# The tray icon and its menu (StatusNotifierItem, as KDE, GNOME with its
+# AppIndicator extension, XFCE and Cinnamon show them).
+ksni = { version = "0.3.7", default-features = false, features = ["async-io", "blocking"] }
+# Loading GStreamer (sound and video, ui/gstreamer.rs) as the first player
+# opens, so programs don't depend on it.
+libloading = "0.8"
+# Dragging a file out of the app on X11 (ui/desktop.rs), over its own
+# connection to the X server.
+x11rb = "0.13"
+
 # What Android has no counterpart of (or its own, see ui/android.rs).
 # Screen readers (VoiceOver, Narrator) are told what's in the window.
-[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 accesskit = "0.25"
 accesskit_winit = { version = "0.34", default-features = false, features = ["rwh_06"] }
+
+# On Linux, screen readers (Orca) listen over AT-SPI, which AccessKit speaks
+# on a thread of its own.
+[target.'cfg(target_os = "linux")'.dependencies.accesskit_winit]
+version = "0.34"
+default-features = false
+features = ["rwh_06", "accesskit_unix", "async-io"]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 # The clipboard, for text only (its picture support would bring image decoders).

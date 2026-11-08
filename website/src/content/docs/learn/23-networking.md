@@ -249,7 +249,7 @@ By default the server listens on `127.0.0.1`: only your own computer can
 open it. `host: "0.0.0.0"` lets the whole local network, which makes a
 program a remote control for itself: a page with buttons, opened on a
 phone. (The first time, macOS and Windows ask whether to let the app
-accept connections: that's their firewall.)
+accept connections: that's their firewall. Linux usually doesn't ask.)
 
 ## Worked example: a chat for the local network
 

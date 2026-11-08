@@ -1139,14 +1139,25 @@ pub(super) enum Shell {
     /// An item of the tray icon's menu (its path), or a click on the icon
     /// itself (which shows the main window).
     Tray(Vec<usize>),
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     TrayClick,
 }
 
 pub(super) static SHELL: Mutex<Vec<Shell>> = Mutex::new(Vec::new());
 
+/// Whether the program has a `WebView` or `.dragFile` (the compiler says so
+/// as it starts). On Linux such an app runs on X11 (through XWayland on a
+/// Wayland desktop): only there can WebKitGTK's view be put in its window,
+/// or a file be dragged out of it.
+static NEEDS_X11: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_needs_x11() {
+    NEEDS_X11.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Hands the app something from the system (on any thread) and wakes it.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
 pub(super) fn shell_post(event: Shell) {
     SHELL.lock().unwrap().push(event);
     if let Some(proxy) = WAKE.lock().unwrap().as_ref() {
@@ -7183,7 +7194,7 @@ struct WindowApp {
     /// A press a menu or popover took: its release is ignored too.
     swallow: bool,
     /// What tells screen readers what's in each window (see `access`).
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     access: HashMap<WindowId, super::access::system::Adapter>,
 }
 
@@ -7243,8 +7254,19 @@ thread_local! {
 }
 
 fn run_window(app: App) -> i32 {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     let made = EventLoop::new();
+    // (On Linux, Wayland when the desktop has it, except for an app with a
+    // web view or that drags files out: see `NEEDS_X11`.)
+    #[cfg(target_os = "linux")]
+    let made = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = EventLoop::builder();
+        if NEEDS_X11.load(std::sync::atomic::Ordering::Relaxed) && std::env::var_os("DISPLAY").is_some() {
+            builder.with_x11();
+        }
+        builder.build()
+    };
     // (On Android the loop is the activity's.)
     #[cfg(target_os = "android")]
     let made = {
@@ -7286,7 +7308,7 @@ fn run_window(app: App) -> i32 {
         ime: false,
         ime_caret: None,
         swallow: false,
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         access: HashMap::new(),
     };
     w.app.ui.anim.enabled = true;
@@ -7372,7 +7394,7 @@ impl WindowApp {
             });
         // (Shown once the system's hold on it for screen readers is there:
         // it has to be there first.)
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         let attrs = attrs.with_visible(false);
         // The app's icon is icon group 1 in its .exe (`tessel build` puts it
         // there): show it in the title bar and the taskbar.
@@ -7384,6 +7406,22 @@ impl WindowApp {
                 Err(_) => attrs,
             }
         };
+        // On Linux the desktop knows which app a window is by its class (X11)
+        // or app ID (Wayland): the app's ID (`dev.tessel.todos`), as its
+        // .desktop file is named (see `tessel build --bundle`), for its icon
+        // and name in the dock.
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::wayland::WindowAttributesExtWayland;
+            let id = crate::stdlib::app_info().get(1).cloned().filter(|i| !i.is_empty());
+            let name = id.unwrap_or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.file_stem().map(|s| s.to_string_lossy().into_owned()))
+                    .unwrap_or_else(|| "tessel-app".to_string())
+            });
+            WindowAttributesExtWayland::with_name(attrs, name.clone(), name)
+        };
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -7394,7 +7432,7 @@ impl WindowApp {
         if key == 0 && self.app.appearance == 0 && theme::set_dark(window.theme() == Some(winit::window::Theme::Dark)) {
             self.app.dirty = true;
         }
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         {
             self.access.insert(window.id(), super::access::system::adapter(event_loop, &window));
             window.set_visible(true);
@@ -7418,7 +7456,7 @@ impl WindowApp {
             self.focus(0);
         }
         self.parked.retain(|w| open(w.key));
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         {
             let there: Vec<WindowId> = self.parked.iter().filter_map(|w| w.window.as_ref()).chain(&self.window).map(|w| w.id()).collect();
             self.access.retain(|id, _| there.contains(id));
@@ -7811,7 +7849,7 @@ impl WindowApp {
             window.request_redraw();
         }
         // A screen reader, if one's listening, is told what the window shows now.
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         if let Some(adapter) = self.access.get_mut(&window.id()) {
             let app = &self.app;
             adapter.update_if_active(|| {
@@ -7823,7 +7861,7 @@ impl WindowApp {
 
     /// Does what screen readers asked for (see `access::system::asked`): a
     /// press where the view is, or a step of a slider or stepper.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     fn accessible_asks(&mut self) -> bool {
         let asked = super::access::system::asked();
         for (window, id, action) in &asked {
@@ -8003,7 +8041,7 @@ impl ApplicationHandler for WindowApp {
             eprintln!("event: {event:?}");
         }
         self.screen_lost(event_loop);
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         if let Some(adapter) = self.access.get_mut(&id) {
             let window = self.window.iter().chain(self.parked.iter().filter_map(|w| w.window.as_ref())).find(|w| w.id() == id);
             if let Some(window) = window {
@@ -8412,7 +8450,7 @@ impl ApplicationHandler for WindowApp {
         if self.phone_input() {
             self.app.dirty = true;
         }
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         if self.accessible_asks() | super::access::system::wanted() {
             self.request_all();
         }
@@ -8454,7 +8492,8 @@ impl ApplicationHandler for WindowApp {
         }
         self.after_app(event_loop);
         // Wake for the next timer, for a tooltip that's waiting to show, or
-        // for a notice that's to go.
+        // for a notice that's to go. (On Linux, web views' GTK runs then too.)
+        media |= super::webview::pump();
         let soon = media.then(|| now() + 1.0 / 60.0);
         let next = [next_timer(), self.app.tip_time(), notice_time(), soon].into_iter().flatten().fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.min(t))));
         let next = next.map(|t| Instant::now() + Duration::from_secs_f64((t - now()).max(0.0)));

@@ -1,0 +1,50 @@
+Root [0,0 360x260]
+  View [93,84 174x93]
+    VStack [93,84 174x93]
+      HStack [113,104 134x28]
+        Text "Units" [113,110 36x16]
+        Picker menu [157,104 90x28]
+          Text "Meters" [167,110 48x16]
+          Text "Feet" [157,104 0x0]
+          Text "Inches" [157,104 0x0]
+      Text "Chosen: meters" [113,140 111x16]
+Root [0,0 360x260]
+  View [93,84 174x93]
+    VStack [93,84 174x93]
+      HStack [113,104 134x28]
+        Text "Units" [113,110 36x16]
+        Picker menu open focused [157,104 90x28]
+          Text "Meters" [183,144 48x16]
+          Text "Feet" [183,168 30x16]
+          Text "Inches" [183,192 45x16]
+      Text "Chosen: meters" [113,140 111x16]
+Root
+  View
+    VStack
+      HStack
+        Text "Units"
+        Picker menu
+          Text "Meters"
+          Text "Feet"
+          Text "Inches"
+      Text "Chosen: feet"
+Root
+  View
+    VStack
+      HStack
+        Text "Units"
+        Picker menu focused
+          Text "Meters"
+          Text "Feet"
+          Text "Inches"
+      Text "Chosen: inches"
+Root
+  View
+    VStack
+      HStack
+        Text "Units"
+        Picker menu focused
+          Text "Meters"
+          Text "Feet"
+          Text "Inches"
+      Text "Chosen: inches"

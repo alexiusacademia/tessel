@@ -8,7 +8,8 @@
 # Its latest is 0.16.3, whose `tessel update` reads GitHub.)
 #
 # The packages contain `tessel` with LLVM and its linker built in, the runtime
-# library and sdk/. They need nothing else installed.
+# library and sdk/. They need nothing else installed. Linux's are built in
+# containers by install/release-linux.sh, for x86-64 and ARM64.
 #
 # Everything runs on GitHub's runners (free for a public repository), and the
 # packages go from the package jobs to the publish job as artifacts. A tag
@@ -29,6 +30,10 @@ on:
         default: false
       windows:
         description: "Also build the Windows package (a tag always does)"
+        type: boolean
+        default: false
+      linux:
+        description: "Also build the Linux packages (a tag always does)"
         type: boolean
         default: false
 
@@ -365,10 +370,85 @@ jobs:
           retention-days: 3
           compression-level: 0
 
+  # Linux: built and checked by install/release-linux.sh (in containers:
+  # the runtime on glibc 2.28, tessel on 2.34, checked on Ubuntu 22.04).
+  package-linux:
+    name: Package (linux-${{ matrix.arch }})
+    if: github.event_name == 'push' || inputs.linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match the version in Cargo.toml ($version)"
+            exit 1
+          fi
+
+      # LLVM and Cargo's downloads, between runs.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cache
+          key: linux-release-${{ matrix.arch }}-llvm-${{ env.LLVM_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: linux-release-${{ matrix.arch }}-llvm-${{ env.LLVM_VERSION }}-
+
+      - name: Build, package and check
+        timeout-minutes: 90
+        run: |
+          install/release-linux.sh dist "$RUNNER_TEMP/cache"
+          # (The containers wrote as root.)
+          sudo chown -R "$(id -u)" dist "$RUNNER_TEMP/cache"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tessel-linux-${{ matrix.arch }}
+          path: dist/tessel-*
+          retention-days: 3
+          compression-level: 0
+
+  # Windows's tessel builds Linux programs (and their packages) with the
+  # Linux parts: `tessel build --linux`.
+  check-windows-to-linux:
+    name: Check Windows to Linux
+    needs: [package, package-linux]
+    if: github.event_name == 'push' || (inputs.windows && inputs.linux)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tessel-*
+          path: dist
+          merge-multiple: true
+      - name: Build a Linux app on Windows
+        shell: bash
+        run: |
+          mkdir -p check/win check/linux
+          unzip -q dist/tessel-*-windows-x64.zip -d check/win
+          tar -xzf dist/tessel-*-linux-x64-parts.tar.gz -C check/linux
+          export TESSEL_LINUX_PARTS="$PWD/check/linux"
+          check/win/tessel.exe build examples/todos --linux -o check/out/todos
+          # An ELF program for x86-64 Linux.
+          [[ "$(head -c 4 check/out/todos | od -An -c | tr -d ' ')" == "177ELF" ]] || { echo "::error::not a Linux program"; exit 1; }
+          check/win/tessel.exe build examples/todos --linux --bundle -o check/out/bundle/todos
+          ls check/out/bundle/*.AppImage check/out/bundle/*.deb
+
   publish:
     name: Publish
-    needs: package
-    if: github.ref_type == 'tag' || inputs.publish
+    needs: [package, package-linux, check-windows-to-linux]
+    if: always() && (github.ref_type == 'tag' || inputs.publish) && needs.package.result == 'success' && (needs.package-linux.result == 'success' || needs.package-linux.result == 'skipped') && (needs.check-windows-to-linux.result == 'success' || needs.check-windows-to-linux.result == 'skipped')
     # On a Mac, to check that the Mac's tessel builds Windows apps.
     runs-on: macos-15
     permissions:
@@ -402,10 +482,26 @@ jobs:
             file "dist/check/setup/Todos Setup.exe" | grep -q "PE32+ executable (GUI) x86-64" || { echo "::error::tessel build --windows --bundle didn't make an installer"; exit 1; }
             rm -rf dist/check
           fi
+          # And Linux programs, for each kind of Linux computer, with their
+          # AppImage and .deb (`tessel build --linux --bundle`).
+          for arch in x64 arm64; do
+            parts="$(ls dist/tessel-*-linux-$arch-parts.tar.gz 2>/dev/null || true)"
+            [[ -n "$parts" ]] || continue
+            [[ -d dist/check/mac ]] || { mkdir -p dist/check/mac && tar -xzf dist/tessel-*-macos-arm64.tar.gz -C dist/check/mac; }
+            mkdir -p "dist/check/linux-$arch"
+            tar -xzf "$parts" -C "dist/check/linux-$arch"
+            flag=--linux; [[ $arch == arm64 ]] && flag=--linux-arm
+            kind="x86-64"; [[ $arch == arm64 ]] && kind="ARM aarch64"
+            TESSEL_LINUX_PARTS="$PWD/dist/check/linux-$arch" dist/check/mac/tessel build examples/todos $flag -o "dist/check/todos-$arch"
+            file "dist/check/todos-$arch" | grep -q "ELF 64-bit LSB pie executable, $kind" || { echo "::error::tessel build $flag didn't make a Linux program"; exit 1; }
+            TESSEL_LINUX_PARTS="$PWD/dist/check/linux-$arch" dist/check/mac/tessel build examples/todos $flag --bundle -o "dist/check/bundle-$arch/todos"
+            ls "dist/check/bundle-$arch/"*.AppImage "dist/check/bundle-$arch/"*.deb
+          done
+          rm -rf dist/check
           (cd dist && shasum -a 256 tessel-* > SHA256SUMS)
           # The newest version for each platform built this time.
           pointers=()
-          for platform in macos windows; do
+          for platform in macos windows linux; do
             if ls dist/tessel-*-"$platform"-* > /dev/null 2>&1; then
               echo "$version" > "latest-$platform.txt"
               pointers+=("latest-$platform.txt")

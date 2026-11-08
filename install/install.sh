@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs Tessel on macOS:
+# Installs Tessel on macOS or Linux:
 #   curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
 # Set TESSEL_VERSION=v0.1.0 to install a specific version, and
 # TESSEL_NO_STATS=1 to leave the download and install uncounted.
@@ -12,15 +12,35 @@ DIR="${TESSEL_HOME:-$HOME/.tessel}"
 
 fail() { echo "tessel install: $*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Darwin" ] || fail "this script is for macOS; on Windows, use install.ps1"
-case "$(uname -m)" in
-  arm64) ARCH=arm64 ;;
-  *) fail "Tessel currently supports Apple silicon Macs (arm64) only" ;;
+case "$(uname -s)" in
+  Darwin)
+    OS=macos
+    case "$(uname -m)" in
+      arm64) ARCH=arm64 ;;
+      *) fail "on macOS, Tessel supports Apple silicon Macs (arm64) only" ;;
+    esac
+    ;;
+  Linux)
+    OS=linux
+    case "$(uname -m)" in
+      x86_64 | amd64) ARCH=x64 ;;
+      aarch64 | arm64) ARCH=arm64 ;;
+      *) fail "on Linux, Tessel supports x86-64 and ARM64 computers" ;;
+    esac
+    # Tessel itself needs glibc 2.34 (Ubuntu 22.04, Debian 12, Fedora 35,
+    # RHEL 9 or newer). (The programs it builds need only 2.28.)
+    GLIBC="$(ldd --version 2>/dev/null | head -1 | sed 's/.* //')"
+    case "$GLIBC" in
+      2.[0-9] | 2.[12][0-9] | 2.3[0-3]) fail "Tessel needs glibc 2.34 or newer (Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9); this system has $GLIBC" ;;
+      "") fail "Tessel needs glibc (2.34 or newer); this system has another C library (Alpine's musl?)" ;;
+    esac
+    ;;
+  *) fail "this script is for macOS and Linux; on Windows, use install.ps1" ;;
 esac
 
-VERSION="${TESSEL_VERSION:-$(curl -fsSL "$GITHUB/latest/download/latest-macos.txt" || curl -fsSL "$BUCKET/latest-macos.txt")}" || fail "can't reach $GITHUB"
+VERSION="${TESSEL_VERSION:-$(curl -fsSL "$GITHUB/latest/download/latest-$OS.txt" || { [ "$OS" = macos ] && curl -fsSL "$BUCKET/latest-macos.txt"; })}" || fail "can't reach $GITHUB"
 case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
-FILE="tessel-$VERSION-macos-$ARCH.tar.gz"
+FILE="tessel-$VERSION-$OS-$ARCH.tar.gz"
 echo "Installing Tessel $VERSION into $DIR/bin"
 
 TMP="$(mktemp -d)"
@@ -50,10 +70,10 @@ count() {
   PING="${TESSEL_STATS_URL:-https://stats.syncster.dev/v1/ping}"
   V="${VERSION#v}"
   TOLD=1
-  curl -fsS -m 5 -o /dev/null "$PING?app=tessel&type=download&v=$V&os=macos" || true
+  curl -fsS -m 5 -o /dev/null "$PING?app=tessel&type=download&v=$V&os=$OS" || true
   ID="$(kept id)"
   OLD="$(kept reported)"
-  [ -n "$ID" ] || ID="$(uuidgen | tr 'A-Z' 'a-z')"
+  [ -n "$ID" ] || ID="$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null) | tr 'A-Z' 'a-z')"
   [ -n "$ID" ] || return 0
   KIND=install
   PREV=""
@@ -65,7 +85,7 @@ count() {
   save "$OLD" || return 0
   # The version is noted only once the count has taken it, so one that
   # didn't arrive is sent by the next install or `tessel update`.
-  if curl -fsS -m 5 -o /dev/null "$PING?app=tessel&type=$KIND&id=$ID&v=$V&os=macos&arch=$ARCH$PREV"; then
+  if curl -fsS -m 5 -o /dev/null "$PING?app=tessel&type=$KIND&id=$ID&v=$V&os=$OS&arch=$ARCH$PREV"; then
     save "$V"
   fi
 }
@@ -75,8 +95,13 @@ count 2>/dev/null || true
 case ":$PATH:" in
   *":$DIR/bin:"*) ;;
   *)
-    PROFILE="$HOME/.zshrc"
-    [ -n "${SHELL:-}" ] && [ "$(basename "$SHELL")" = "bash" ] && PROFILE="$HOME/.bash_profile"
+    # The shell's startup file: zsh's; bash's (.bash_profile on macOS,
+    # .bashrc on Linux); otherwise .profile.
+    case "$(basename "${SHELL:-sh}")" in
+      zsh) PROFILE="$HOME/.zshrc" ;;
+      bash) if [ "$OS" = macos ]; then PROFILE="$HOME/.bash_profile"; else PROFILE="$HOME/.bashrc"; fi ;;
+      *) if [ "$OS" = macos ]; then PROFILE="$HOME/.zshrc"; else PROFILE="$HOME/.profile"; fi ;;
+    esac
     LINE="export PATH=\"$DIR/bin:\$PATH\""
     if ! grep -qsF "$LINE" "$PROFILE"; then
       printf '\n# Tessel\n%s\n' "$LINE" >> "$PROFILE"

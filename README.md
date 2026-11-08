@@ -1,8 +1,8 @@
 # Tessel
 
 A small, compiled language for building native apps, with the UI written
-in the language itself. The same source builds an app for macOS, Windows
-and Android.
+in the language itself. The same source builds an app for macOS, Windows,
+Linux and Android.
 
 ```tessel
 app Counter(width: 320, height: 200) {
@@ -109,6 +109,13 @@ Windows (PowerShell):
 irm https://github.com/alexiusacademia/tessel/releases/latest/download/install.ps1 | iex
 ```
 
+Linux (x86-64 or ARM64, glibc 2.34 or newer: Ubuntu 22.04, Debian 12,
+Fedora 35, RHEL 9 and later), the same script as macOS:
+
+```sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
+```
+
 `tessel update` brings an installation up to date.
 [Installation](https://tessel-lang.syncster.dev/start/installation/) has
 the details.
@@ -131,6 +138,8 @@ tessel new hello          # a project to start from
 tessel run hello          # build and run (with --hot: reload as you save)
 tessel check hello        # only look for errors
 tessel build hello --bundle           # an app to double-click (macOS: Hello.app)
+tessel build hello --windows          # a Windows app, on a Mac
+tessel build hello --linux --bundle   # a Linux AppImage and .deb, anywhere
 tessel build hello --android          # an Android package (needs the Android SDK)
 tessel debug hello        # stop at lines, step, and look at variables
 tessel repl               # type code, a line at a time
@@ -184,7 +193,10 @@ cargo test    # unit tests, error-message fixtures, and the programs in tests/
 
 On Windows, build with `cargo build --target x86_64-pc-windows-msvc` (see
 `.cargo/config.toml`) and set `LLVM_SYS_221_PREFIX` to an LLVM 22 install;
-`.github/workflows/ci.yml` shows the exact steps.
+on Linux, use LLVM's own Linux build (glibc 2.34 or newer, GCC 13) with
+the small `llvm-config` wrapper `.github/workflows/ci.yml` makes, and
+fonts and Mesa for the app tests. The workflow shows the exact steps for
+each system.
 
 Use `cargo build --release` for much smaller app binaries: `tessel build`
 links against the runtime library built next to the `tessel` executable.
@@ -223,9 +235,12 @@ to 0.16.3 were also copied to the old `tessel-releases` bucket, which
 Tessel 0.15.1 and earlier update from; its latest is 0.16.3.) A
 package holds
 `tessel`, the runtime library, and `sdk/`: stubs of the macOS libraries
-apps use (`install/macos-stubs.py`), or MinGW-w64's C runtime and Windows
-import libraries (`install/windows-sdk.sh`). The runtime for Android is
-published alongside, and fetched the first time an app is built for it.
+apps use (`install/macos-stubs.py`), MinGW-w64's C runtime and Windows
+import libraries (`install/windows-sdk.sh`), or glibc 2.28's and GCC's
+files with the AppImage runtime (`install/linux-parts.sh`). Linux's
+packages are built and checked in containers by `install/release-linux.sh`.
+The runtimes for Windows, Linux and Android are published alongside, and
+fetched the first time an app is built for one of them elsewhere.
 
 ## How Tessel is made
 

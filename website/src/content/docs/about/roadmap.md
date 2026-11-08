@@ -22,11 +22,13 @@ its first releases came so quickly. The dates on
 - **The compiler:** type checking with clear error messages, and native code
   through LLVM. Built apps are single executables that need nothing else
   installed.
-- **Platforms:** macOS (11 and later) and Windows. Both are built and tested
-  on every change. Apps can also be built for
-  [Android](/guides/android/) (11 and later), which is newer and has so far
-  been tried only on an emulator; there an app can read the phone's
-  location, satellites and compass. There's no Linux or iOS support yet.
+- **Platforms:** macOS (11 and later), Windows and Linux (x86-64 and ARM64;
+  Tessel itself on glibc 2.34 and later, the apps it builds from 2.28). All
+  three are built and tested before every release, and each builds apps
+  for the others (`--windows` on a Mac, `--linux` anywhere). Apps can also
+  be built for [Android](/guides/android/) (11 and later), which is newer
+  and has so far been tried only on an emulator; there an app can read the
+  phone's location, satellites and compass. There's no iOS support yet.
 - **UI:** windows, HiDPI screens, `state` and `bind`, stacks, `Scroll`,
   `Text` (selectable, or cut short), `Button`, `TextField`, `SearchField`,
   `Link`, `Toggle`, `Picker` (segments or radio buttons), `TabView`, grids,
@@ -89,7 +91,7 @@ These are the main gaps you may run into today.
   and shows variables, but can't change a value, work out an expression, or
   stop on a condition, and doesn't reach apps on Android.
 - **Accessibility:** apps tell [screen readers](/ui/accessibility/) what's
-  in their windows on macOS and Windows, but text can't be read or edited
+  in their windows on macOS, Windows and Linux, but text can't be read or edited
   piece by piece through one, menus drawn in the window aren't described,
   and it hasn't been tried with Narrator on Windows. Not on Android yet.
 - **Packaging:** `tessel build --bundle` makes a `.app` on macOS and an

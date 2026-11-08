@@ -11,9 +11,43 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.22.0
+
+*November 8, 2026*
+
+**Linux.** Tessel runs on Linux, and builds Linux apps from anywhere:
+
+- **Tessel itself on Linux**, on PCs (x86-64) and ARM64 computers with
+  glibc 2.34 or newer (Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9 and
+  later). The install script and `tessel update` know it, and it needs no
+  compiler. See [Installation](/start/installation/#linux).
+- **`tessel build --linux` and `--linux-arm`** build a Linux program on a
+  Mac, on Windows or on Linux. It runs on any Linux with glibc 2.28 or
+  newer, and finds what it uses of the system (X11 or Wayland, the GPU,
+  fonts) as it runs, so a command-line program also runs on a server. See
+  [For Linux](/start/cli/#for-linux).
+- **`--bundle`** makes an **AppImage** and a **`.deb`**, with the app's icon,
+  menu entry and file types. See [Linux packages](/start/cli/#linux-packages).
+- **Everything apps do**, on Linux too: windows on X11 and Wayland, drawn
+  through the GPU (Vulkan or OpenGL, including Mesa's software drivers);
+  the clipboard; Open and Save dialogs (the desktop's portal); screen
+  readers (Orca); [sound and video](/ui/media/) (GStreamer);
+  [web pages](/ui/web/) (WebKitGTK); the [tray icon and
+  notifications](/ui/desktop/); [dragging files out](/ui/desktop/#dragging-files-out);
+  and [printing](/ui/dialogs/#printing) (the desktop's print dialog).
+- `platform()` is `"linux"` there.
+
+Fixed:
+
+- Strokes with miter joins made the GPU renderer fail on GPUs without
+  16-bit floats (Mesa's software Vulkan driver, some older GPUs).
+
+0.21.1 was not published either (Apple's notarization timed out three
+times), so the IDE's VS Code-like features below arrive with this release.
+
 ## 0.21.1
 
-*November 7, 2026*
+*November 7, 2026* (not published; in 0.22.0)
 
 (0.21.0 was tagged but never published: Apple took too long to notarize
 it, and a test of the IDE needed fixing for Windows.)

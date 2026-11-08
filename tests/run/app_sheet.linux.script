@@ -1,0 +1,22 @@
+click "Rename…"
+tree
+click "Work"
+key cmd+a
+type "Final"
+key enter
+click "Rename…"
+type "X"
+click "Cancel"
+click "chevronUp"
+click "chevronUp"
+click "Georgia"
+type "liberation mono"
+tree
+click "Liberation Mono"
+click "Work"
+tree
+click "Cancel"
+click "Notice"
+tree
+wait 3
+tree

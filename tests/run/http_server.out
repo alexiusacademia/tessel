@@ -14,4 +14,4 @@ head: 200 0 3
 server: GET /hello query "x" from true, host header true
 fetch: hi x
 after stopping: false
-port in use: true
+port 1: true

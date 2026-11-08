@@ -7,7 +7,7 @@ When an app's data grows past what's comfortable to load and save in one
 piece (thousands of records, or data you want to search and sort), keep it
 in a database. Tessel has [SQLite](https://sqlite.org) built in: a whole
 database in one file, read and changed with SQL, which works the same on
-macOS and Windows and needs nothing installed.
+macOS, Windows and Linux and needs nothing installed.
 
 For smaller data, like settings or a document, [saving it as JSON](/guides/json/)
 is simpler.

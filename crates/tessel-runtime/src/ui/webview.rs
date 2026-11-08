@@ -1,9 +1,10 @@
 //! `WebView(url:)` and `WebView(html:)`: web pages shown by the system's
 //! own browser engine, in a view of the system's put over the window where
 //! the `WebView` is laid out (WKWebView on macOS; WebView2 on Windows, which
-//! Windows 11 and nearly every Windows 10 have). Being the system's, it's
-//! drawn over the app's views: a popover doesn't show over it. Elsewhere,
-//! and in a headless run, the view shows what it would load.
+//! Windows 11 and nearly every Windows 10 have; WebKitGTK on Linux, on X11).
+//! Being the system's, it's drawn over the app's views: a popover doesn't
+//! show over it. Elsewhere, and in a headless run, the view shows what it
+//! would load.
 
 use std::collections::HashMap;
 
@@ -29,6 +30,17 @@ pub fn sync(window: &Window, scale: f64, views: &HashMap<u64, Wanted>) {
     mac::sync(window, views);
     #[cfg(all(windows, feature = "native"))]
     win::sync(window, scale, views);
+    #[cfg(target_os = "linux")]
+    gtk::sync(window, scale, views);
+}
+
+/// Lets the system's web views do their work (on Linux, GTK's): whether
+/// there are any, so the app comes back soon to let them again.
+pub fn pump() -> bool {
+    #[cfg(target_os = "linux")]
+    return gtk::pump();
+    #[cfg(not(target_os = "linux"))]
+    false
 }
 
 /// Shows a page in a web view of its own, and says its title once it's
@@ -45,7 +57,7 @@ pub fn check_web_view(html: &str) -> Result<String, String> {
 }
 
 /// Whether `url` is a file's path rather than a web address.
-#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", windows, target_os = "linux")), allow(dead_code))]
 fn is_file(url: &str) -> bool {
     !url.contains("://") && !url.starts_with("about:") && !url.starts_with("data:") && !url.starts_with("mailto:")
 }
@@ -501,5 +513,212 @@ mod win {
                 make_controller(key, HWND(hwnd as *mut c_void));
             }
         }
+    }
+}
+
+// ===== Linux: WebKitGTK =====
+
+#[cfg(target_os = "linux")]
+mod gtk {
+    //! WebKitGTK's view, in a GtkPlug: a GTK window that's put inside
+    //! another program's X11 window (the app's), where it's moved to the
+    //! `WebView`'s place. GTK, GDK and WebKitGTK are loaded as the first
+    //! web view shows, not linked: without them (or on Wayland, where one
+    //! program's window can't be put in another's), the view shows what it
+    //! would load, as elsewhere.
+
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::ffi::{CString, c_char, c_int, c_ulong, c_void};
+    use std::sync::OnceLock;
+
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use winit::window::Window;
+
+    use super::Wanted;
+
+    type Ptr = *mut c_void;
+
+    struct Gtk {
+        _libs: Vec<libloading::Library>,
+        plug_new: unsafe extern "C" fn(c_ulong) -> Ptr,
+        web_view_new: unsafe extern "C" fn() -> Ptr,
+        container_add: unsafe extern "C" fn(Ptr, Ptr),
+        show_all: unsafe extern "C" fn(Ptr),
+        show: unsafe extern "C" fn(Ptr),
+        hide: unsafe extern "C" fn(Ptr),
+        destroy: unsafe extern "C" fn(Ptr),
+        set_size_request: unsafe extern "C" fn(Ptr, c_int, c_int),
+        get_window: unsafe extern "C" fn(Ptr) -> Ptr,
+        move_resize: unsafe extern "C" fn(Ptr, c_int, c_int, c_int, c_int),
+        window_show: unsafe extern "C" fn(Ptr),
+        load_uri: unsafe extern "C" fn(Ptr, *const c_char),
+        load_html: unsafe extern "C" fn(Ptr, *const c_char, *const c_char),
+        iteration: unsafe extern "C" fn(Ptr, c_int) -> c_int,
+    }
+
+    unsafe impl Send for Gtk {}
+    unsafe impl Sync for Gtk {}
+
+    fn gtk() -> Option<&'static Gtk> {
+        static GTK: OnceLock<Option<Gtk>> = OnceLock::new();
+        GTK.get_or_init(|| unsafe { load_gtk() }).as_ref()
+    }
+
+    unsafe fn load_gtk() -> Option<Gtk> {
+        let open = |name: &str| unsafe { libloading::Library::new(name) }.ok();
+        let gtk = open("libgtk-3.so.0")?;
+        let gdk = open("libgdk-3.so.0")?;
+        let webkit = open("libwebkit2gtk-4.1.so.0").or_else(|| open("libwebkit2gtk-4.0.so.37"))?;
+        let glib = open("libglib-2.0.so.0")?;
+        macro_rules! f {
+            ($lib:expr, $name:literal) => {
+                *unsafe { $lib.get(concat!($name, "\0").as_bytes()) }.ok()?
+            };
+        }
+        // GTK on X11 (where its window can go in the app's), whatever the
+        // desktop.
+        let init_check: unsafe extern "C" fn(*mut c_int, *mut c_void) -> c_int = f!(gtk, "gtk_init_check");
+        let set_backends: unsafe extern "C" fn(*const c_char) = f!(gdk, "gdk_set_allowed_backends");
+        unsafe {
+            set_backends(c"x11".as_ptr());
+            if init_check(std::ptr::null_mut(), std::ptr::null_mut()) == 0 {
+                return None;
+            }
+        }
+        let g = Gtk {
+            plug_new: f!(gtk, "gtk_plug_new"),
+            web_view_new: f!(webkit, "webkit_web_view_new"),
+            container_add: f!(gtk, "gtk_container_add"),
+            show_all: f!(gtk, "gtk_widget_show_all"),
+            show: f!(gtk, "gtk_widget_show"),
+            hide: f!(gtk, "gtk_widget_hide"),
+            destroy: f!(gtk, "gtk_widget_destroy"),
+            set_size_request: f!(gtk, "gtk_widget_set_size_request"),
+            get_window: f!(gtk, "gtk_widget_get_window"),
+            move_resize: f!(gdk, "gdk_window_move_resize"),
+            window_show: f!(gdk, "gdk_window_show"),
+            load_uri: f!(webkit, "webkit_web_view_load_uri"),
+            load_html: f!(webkit, "webkit_web_view_load_html"),
+            iteration: f!(glib, "g_main_context_iteration"),
+            _libs: Vec::new(),
+        };
+        Some(Gtk { _libs: vec![gtk, gdk, webkit, glib], ..g })
+    }
+
+    /// A web view showing: its GtkPlug, its WebKitWebView, and what it was
+    /// last told.
+    struct Shown {
+        plug: Ptr,
+        view: Ptr,
+        wanted: Wanted,
+    }
+
+    thread_local! {
+        static SHOWN: RefCell<HashMap<(u64, u64), Shown>> = RefCell::new(HashMap::new());
+    }
+
+    fn c(s: &str) -> CString {
+        CString::new(s.replace('\0', "")).unwrap_or_default()
+    }
+
+    /// The address to load: a file's path as a `file://` one.
+    fn address(url: &str) -> String {
+        if !super::is_file(url) {
+            return url.to_string();
+        }
+        let full = std::fs::canonicalize(url).unwrap_or_else(|_| url.into());
+        format!("file://{}", full.to_string_lossy())
+    }
+
+    fn load(g: &Gtk, view: Ptr, w: &Wanted) {
+        unsafe {
+            if w.url.is_empty() {
+                (g.load_html)(view, c(&w.html).as_ptr(), c("about:blank").as_ptr());
+            } else {
+                (g.load_uri)(view, c(&address(&w.url)).as_ptr());
+            }
+        }
+    }
+
+    pub fn sync(window: &Window, scale: f64, views: &HashMap<u64, Wanted>) {
+        let RawWindowHandle::Xlib(handle) = (match window.window_handle() {
+            Ok(h) => h.as_raw(),
+            Err(_) => return,
+        }) else {
+            return;
+        };
+        let xid = handle.window;
+        SHOWN.with(|shown| {
+            let mut shown = shown.borrow_mut();
+            if views.is_empty() && !shown.keys().any(|(w, _)| *w == xid as u64) {
+                return;
+            }
+            let Some(g) = gtk() else { return };
+            // Gone from the window: taken away.
+            shown.retain(|(w, key), s| {
+                let keep = *w != xid as u64 || views.contains_key(key);
+                if !keep {
+                    unsafe { (g.destroy)(s.plug) };
+                }
+                keep
+            });
+            for (key, wanted) in views {
+                let entry = shown.entry((xid as u64, *key));
+                let s = match entry {
+                    std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(v) => unsafe {
+                        let plug = (g.plug_new)(xid as c_ulong);
+                        let view = (g.web_view_new)();
+                        if plug.is_null() || view.is_null() {
+                            continue;
+                        }
+                        (g.container_add)(plug, view);
+                        (g.show_all)(plug);
+                        load(g, view, wanted);
+                        v.insert(Shown { plug, view, wanted: Wanted { url: String::new(), html: String::new(), ..wanted.clone() } })
+                    },
+                };
+                if (s.wanted.url != wanted.url || s.wanted.html != wanted.html) && !(s.wanted.url.is_empty() && s.wanted.html.is_empty()) {
+                    load(g, s.view, wanted);
+                }
+                // In pixels, where the view is in the window.
+                let r = &wanted.rect;
+                let (x, y) = ((r.x * scale).round() as c_int, (r.y * scale).round() as c_int);
+                let (w, h) = (((r.w * scale).round() as c_int).max(1), ((r.h * scale).round() as c_int).max(1));
+                unsafe {
+                    if wanted.visible {
+                        (g.show)(s.plug);
+                        (g.set_size_request)(s.plug, w, h);
+                        let gdk = (g.get_window)(s.plug);
+                        if !gdk.is_null() {
+                            (g.move_resize)(gdk, x, y, w, h);
+                            // (A plug waits for the window it's in to show
+                            // it, which only GTK's own sockets do.)
+                            (g.window_show)(gdk);
+                        }
+                    } else {
+                        (g.hide)(s.plug);
+                    }
+                }
+                s.wanted = wanted.clone();
+            }
+        });
+    }
+
+    pub fn pump() -> bool {
+        let any = SHOWN.with(|s| !s.borrow().is_empty());
+        if !any {
+            return false;
+        }
+        if let Some(g) = gtk() {
+            // (Everything GTK has waiting, without waiting for more.)
+            for _ in 0..100 {
+                if unsafe { (g.iteration)(std::ptr::null_mut(), 0) } == 0 {
+                    break;
+                }
+            }
+        }
+        true
     }
 }

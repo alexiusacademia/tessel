@@ -8,7 +8,7 @@ it work: stop it at a line, see what its variables hold there, and go on a
 line at a time.
 
 It's part of Tessel itself. There's nothing else to install, and it works
-the same on macOS and Windows.
+the same on macOS, Windows and Linux.
 
 You can use it in three places: the [Tessel IDE](#in-the-tessel-ide),
 [VS Code](#in-vs-code), and [a terminal](#in-a-terminal).

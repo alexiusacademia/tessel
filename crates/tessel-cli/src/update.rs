@@ -51,6 +51,8 @@ fn platform() -> Option<(&'static str, &'static str, &'static str)> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => Some(("macos", "macos-arm64", "tar.gz")),
         ("windows", "x86_64") => Some(("windows", "windows-x64", "zip")),
+        ("linux", "x86_64") => Some(("linux", "linux-x64", "tar.gz")),
+        ("linux", "aarch64") => Some(("linux", "linux-arm64", "tar.gz")),
         _ => None,
     }
 }

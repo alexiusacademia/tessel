@@ -1,7 +1,7 @@
 //! Sound and video: `playSound` and the `VideoPlayer` view.
 //!
 //! The system decodes them (AVFoundation on macOS, Media Foundation on
-//! Windows) and plays their sound; the runtime takes each new picture of a
+//! Windows, GStreamer on Linux: see gstreamer.rs) and plays their sound; the runtime takes each new picture of a
 //! video and draws it itself, like any other picture, with controls of its
 //! own. A headless run (and a system without either) has a stand-in player
 //! that plays nothing and keeps time on the app's clock, so tests can say
@@ -31,6 +31,8 @@ enum Inner {
     Mac(mac::Player),
     #[cfg(all(windows, feature = "native"))]
     Win(win::Player),
+    #[cfg(target_os = "linux")]
+    Gst(super::gstreamer::Player),
 }
 
 /// The stand-in: how far it is, and since when (on the app's clock) it's
@@ -67,7 +69,9 @@ impl Player {
             let made = mac::Player::open(path, video).map(Inner::Mac);
             #[cfg(all(windows, feature = "native"))]
             let made = win::Player::open(path, video).map(Inner::Win);
-            #[cfg(not(any(target_os = "macos", all(windows, feature = "native"))))]
+            #[cfg(target_os = "linux")]
+            let made = super::gstreamer::Player::open(path, video).map(Inner::Gst);
+            #[cfg(not(any(target_os = "macos", all(windows, feature = "native"), target_os = "linux")))]
             let made = {
                 let _ = video;
                 Some(stand())
@@ -91,6 +95,8 @@ impl Player {
             Inner::Mac(p) => p.play(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.play(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.play(),
         }
     }
 
@@ -104,6 +110,8 @@ impl Player {
             Inner::Mac(p) => p.pause(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.pause(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.pause(),
         }
     }
 
@@ -114,6 +122,8 @@ impl Player {
             Inner::Mac(p) => p.playing(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.playing(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.playing(),
         }
     }
 
@@ -125,6 +135,8 @@ impl Player {
             Inner::Mac(p) => p.position(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.position(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.position(),
         };
         if p.is_finite() { p.max(0.0) } else { 0.0 }
     }
@@ -137,6 +149,8 @@ impl Player {
             Inner::Mac(p) => p.duration(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.duration(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.duration(),
         };
         if d.is_finite() { d.max(0.0) } else { 0.0 }
     }
@@ -154,6 +168,8 @@ impl Player {
             Inner::Mac(p) => p.seek(to),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.seek(to),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.seek(to),
         }
     }
 
@@ -165,6 +181,8 @@ impl Player {
             Inner::Mac(p) => p.set_volume(v),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.set_volume(v),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.set_volume(v),
         }
         let _ = v;
     }
@@ -187,6 +205,8 @@ impl Player {
             Inner::Mac(p) => p.frame(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.frame(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.frame(),
         };
         let Some((w, h, rgba)) = frame else { return false };
         match super::backend::picture_from_rgba(w, h, rgba) {
@@ -206,6 +226,8 @@ impl Player {
             Inner::Mac(p) => p.size(),
             #[cfg(all(windows, feature = "native"))]
             Inner::Win(p) => p.size(),
+            #[cfg(target_os = "linux")]
+            Inner::Gst(p) => p.size(),
         };
         s.filter(|(w, h)| *w > 0.0 && *h > 0.0)
     }

@@ -31,6 +31,8 @@ mod text;
 mod tray;
 mod desktop;
 pub(crate) mod media;
+#[cfg(target_os = "linux")]
+mod gstreamer;
 mod webview;
 
 // The renderer: what draws, lays text out and reads pictures. With the

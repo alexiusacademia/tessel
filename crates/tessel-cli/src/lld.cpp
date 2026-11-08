@@ -16,6 +16,9 @@ LLD_HAS_DRIVER(macho)
 LLD_HAS_DRIVER(coff)
 LLD_HAS_DRIVER(mingw)
 #endif
+#if defined(TESSEL_LLD_ELF)
+LLD_HAS_DRIVER(elf)
+#endif
 
 // Links with `args` (args[0] names the flavor, e.g. "ld64.lld"). Returns the
 // exit code, and the linker's messages in `*output` (free with tessel_lld_free).
@@ -29,6 +32,9 @@ extern "C" int tessel_lld_link(const char *const *args, int count, char **output
 #if defined(TESSEL_LLD_COFF)
         {lld::WinLink, &lld::coff::link},
         {lld::MinGW, &lld::mingw::link},
+#endif
+#if defined(TESSEL_LLD_ELF)
+        {lld::Gnu, &lld::elf::link},
 #endif
     };
     lld::Result result = lld::lldMain(llvm::ArrayRef<const char *>(args, count), out, out, drivers);

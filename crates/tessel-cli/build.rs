@@ -209,14 +209,15 @@ fn main() {
     for flag in cxxflags.split_whitespace() {
         build.flag(flag);
     }
+    // Every `tessel` links Windows and Linux programs (for `--windows` and
+    // `--linux`); a Mac's also links Mac ones.
+    build.define("TESSEL_LLD_COFF", None);
+    build.define("TESSEL_LLD_ELF", None);
     let libs: &[&str] = if target_os == "macos" {
-        // (And Windows's, for `tessel build --windows`.)
         build.define("TESSEL_LLD_MACHO", None);
-        build.define("TESSEL_LLD_COFF", None);
-        &["lldMachO", "lldCOFF", "lldMinGW", "lldCommon"]
+        &["lldMachO", "lldCOFF", "lldMinGW", "lldELF", "lldCommon"]
     } else {
-        build.define("TESSEL_LLD_COFF", None);
-        &["lldCOFF", "lldMinGW", "lldCommon"]
+        &["lldCOFF", "lldMinGW", "lldELF", "lldCommon"]
     };
     build.compile("tessel_lld");
     println!("cargo:rustc-link-search=native={}", prefix.join("lib").display());

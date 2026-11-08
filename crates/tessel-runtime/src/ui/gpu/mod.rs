@@ -224,7 +224,20 @@ impl Screen {
     pub fn new(window: Arc<Window>) -> Result<Screen, String> {
         let size = window.inner_size();
         let mut cx = RenderContext::new();
-        let surface = pollster::block_on(cx.create_surface(window, size.width.max(1), size.height.max(1), wgpu::PresentMode::AutoVsync))
+        // On Linux, OpenGL (the GPU's driver where there's no Vulkan one)
+        // draws to a window only through the display it's on (X11 or
+        // Wayland), which the instance must be given.
+        #[cfg(target_os = "linux")]
+        {
+            cx.instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                display: Some(Box::new(window.clone())),
+                backends: wgpu::Backends::from_env().unwrap_or_default(),
+                flags: wgpu::InstanceFlags::from_build_config().with_env(),
+                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+                backend_options: wgpu::BackendOptions::from_env_or_default(),
+            });
+        }
+        let surface = pollster::block_on(cx.create_surface(window,size.width.max(1), size.height.max(1), wgpu::PresentMode::AutoVsync))
             .map_err(|e| e.to_string())?;
         Ok(Screen { cx, renderer: None, surface, origin: (0.0, 0.0) })
     }

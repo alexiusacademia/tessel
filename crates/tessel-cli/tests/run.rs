@@ -61,8 +61,12 @@ fn run_programs() {
         let env_file = std::fs::read_to_string(dir.join(format!("{name}.env"))).unwrap_or_default();
         let env: Vec<(&str, &str)> = env_file.lines().filter_map(|l| l.trim().split_once('=')).collect();
         cmd.envs(env.iter().copied());
-        // UI apps run headless, driven by `<name>.script`.
-        if let Ok(script) = std::fs::read_to_string(dir.join(format!("{name}.script"))) {
+        // UI apps run headless, driven by `<name>.script` (or
+        // `<name>.linux.script` and the like, where what's on the screen
+        // differs, as the fonts there).
+        let own_script = dir.join(format!("{name}.{}.script", std::env::consts::OS));
+        let script_file = if own_script.exists() { own_script } else { dir.join(format!("{name}.script")) };
+        if let Ok(script) = std::fs::read_to_string(script_file) {
             cmd.env("TESSEL_SCRIPT", script);
         }
         // Programs that read input get `<name>.stdin` (and no input otherwise).
@@ -80,6 +84,11 @@ fn run_programs() {
         // `<name>.stderr`: what a program that succeeds writes to stderr.
         let expected_stderr = std::fs::read_to_string(dir.join(format!("{name}.stderr"))).unwrap_or_default();
         if stdout != expected_out {
+            // (With TESSEL_TEST_ACTUAL set, what it printed is kept in
+            // `<name>.actual`, to look at, or to become a new `.out`.)
+            if std::env::var_os("TESSEL_TEST_ACTUAL").is_some() {
+                let _ = std::fs::write(dir.join(format!("{name}.actual")), stdout.as_bytes());
+            }
             failures.push(format!("{name}: stdout differs\n--- expected\n{expected_out}--- got\n{stdout}"));
         }
         match &expected_err {

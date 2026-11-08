@@ -16,8 +16,9 @@ In this lesson you'll learn:
 - how `request` reads a stream from the web, like internet radio, as it
   arrives
 - how `showNotification` tells the user something from outside the window
-- how `.trayIcon` puts an icon and a menu in the menu bar (macOS) or the
-  taskbar's tray (Windows), and keeps the app running there
+- how `.trayIcon` puts an icon and a menu in the menu bar (macOS), the
+  taskbar's tray (Windows) or the panel's (Linux), and keeps the app
+  running there
 - `setFullScreen`, and `.dragFile` for files dragged out of the app
 - how your app's own kind of file opens with it when double-clicked, with
   its own icon
@@ -182,8 +183,8 @@ under `tessel run` on macOS, they come from the system's scripting.
 
 ## Living in the tray
 
-`.trayIcon` puts an icon in the menu bar (macOS) or the taskbar's tray
-(Windows), with a menu of your app's commands. With `keepRunning: true`,
+`.trayIcon` puts an icon in the menu bar (macOS), the taskbar's tray
+(Windows) or the panel's tray (Linux), with a menu of your app's commands. With `keepRunning: true`,
 closing the window doesn't end the app: it goes on in the tray, and
 `showWindow()` brings the window back.
 
@@ -206,7 +207,7 @@ app Clipper(width: 320, height: 200) {
 
 The icon is one of the [built-in icons](/ui/icons/), drawn to suit the menu
 bar and the tray. `title:` puts a few words beside it on macOS (and is the
-icon's tooltip on Windows): a timer's minutes, a count.
+icon's tooltip on Windows and Linux): a timer's minutes, a count.
 
 ## The whole screen, and files dragged out
 
@@ -273,8 +274,8 @@ app Notes(width: 420, height: 280) {
 }
 ```
 
-It takes effect in the built app: `tessel build --bundle` on a Mac, and the
-installer on Windows. Leave `owned` out for kinds of files other apps make
+It takes effect in the built app: `tessel build --bundle` on a Mac, the
+installer on Windows, and the AppImage and `.deb` on Linux. Leave `owned` out for kinds of files other apps make
 too (`csv`, `png`): your app is then offered in **Open With** for them,
 and they keep the app and icon they have.
 

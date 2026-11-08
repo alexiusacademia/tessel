@@ -1,0 +1,30 @@
+Root [0,0 400x300]
+  View [150,79 100x141]
+    VStack [150,79 100x141]
+      HStack [150,79 100x28]
+        Text "A" [150,85 10x16]
+        Button "Tap 0" [167,79 65x28]
+        Text "B" [241,85 10x16]
+      Text "Big" [189,128 22x16]
+      Text "Wide" [183,164 35x16]
+      Button "Turn" [171,192 58x28]
+Root [0,0 400x300]
+  View [165,61 70x178]
+    VStack [165,61 70x178]
+      HStack [168,61 63x65]
+        Text "A" [168,85 10x16]
+        Button "Tap 0" [167,79 65x28]
+        Text "B" [222,85 10x16]
+      Text "Big" [189,146 22x16]
+      Text "Wide" [183,183 35x16]
+      Button "Turn" [171,211 58x28]
+Root
+  View
+    VStack
+      HStack
+        Text "A"
+        Button "Tap 1"
+        Text "B"
+      Text "Big"
+      Text "Wide"
+      Button "Turn"

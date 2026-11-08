@@ -56,10 +56,26 @@ pub struct TslType {
     pub kind: i64,
 }
 
-unsafe extern "C" {
-    fn malloc(size: usize) -> *mut u8;
-    fn free(p: *mut u8);
-    fn realloc(p: *mut u8, size: usize) -> *mut u8;
+// The C library's allocator, which programs share with the runtime.
+mod c {
+    use std::ffi::c_void;
+    unsafe extern "C" {
+        pub fn malloc(size: usize) -> *mut c_void;
+        pub fn free(p: *mut c_void);
+        pub fn realloc(p: *mut c_void, size: usize) -> *mut c_void;
+    }
+}
+
+unsafe fn malloc(size: usize) -> *mut u8 {
+    unsafe { c::malloc(size) as *mut u8 }
+}
+
+unsafe fn free(p: *mut u8) {
+    unsafe { c::free(p as *mut std::ffi::c_void) }
+}
+
+unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
+    unsafe { c::realloc(p as *mut std::ffi::c_void, size) as *mut u8 }
 }
 
 unsafe fn alloc(size: usize) -> *mut u8 {

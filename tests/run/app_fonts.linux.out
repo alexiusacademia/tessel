@@ -1,0 +1,13 @@
+monospaced true, Liberation Mono true, system false, missing true, named true
+families: true, sorted: true
+DejaVu Serif: true, hidden: false
+Root
+  View
+    VStack
+      Text "System, italic"
+      Text "Liberation Mono"
+      Text "Monospaced"
+      VStack
+        Text "Inherited"
+        Text "Upright again"
+      Canvas (1 text)

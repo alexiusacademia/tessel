@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install Tessel on macOS or Windows with one command.
+description: Install Tessel on macOS, Windows or Linux with one command.
 ---
 
 Tessel is a single download: the `tessel` command (which includes the IDE
@@ -43,6 +43,27 @@ This installs Tessel into `%LOCALAPPDATA%\Tessel\bin` and adds it to your
 
 Tessel runs on 64-bit Windows 10 and 11.
 
+## Linux
+
+In a terminal:
+
+```sh
+curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/install.sh | sh
+```
+
+This installs Tessel into `~/.tessel/bin` and adds that folder to your
+`PATH` (in `~/.bashrc`, `~/.zshrc` or `~/.profile`, for your shell). Open a
+new terminal afterwards.
+
+Tessel runs on 64-bit Linux, on PCs (x86-64) and ARM64 computers, with
+glibc 2.34 or newer: Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9 (and Rocky
+and Alma 9), or anything newer. It builds programs that run on older
+systems too, from glibc 2.28 (see [For Linux](/start/cli/#for-linux)). It
+needs no compiler: its own linker is inside it.
+
+The [IDE](/start/ide/) and the apps you build use your desktop's windows
+(X11 or Wayland), GPU driver and fonts, which every desktop Linux has.
+
 ## Check that it works
 
 ```sh
@@ -81,6 +102,8 @@ release:
 |---|---|
 | macOS (Apple silicon) | `tessel-<version>-macos-arm64.tar.gz` |
 | Windows (64-bit) | `tessel-<version>-windows-x64.zip` |
+| Linux (x86-64) | `tessel-<version>-linux-x64.tar.gz` |
+| Linux (ARM64) | `tessel-<version>-linux-arm64.tar.gz` |
 
 Unpack it into a folder and add the folder to your `PATH`. Each release
 also has a `SHA256SUMS` file to check the download against. (Releases up to
@@ -91,7 +114,8 @@ On macOS, `tessel` is signed with a Developer ID and notarized by Apple, so
 it runs even when downloaded with a web browser.
 
 Keep `libtessel_runtime.a` (`tessel_runtime.lib` on Windows) in the same
-folder as `tessel`: every app you build is linked with it.
+folder as `tessel`, and on Linux and Windows the `sdk` folder too: every
+app you build is linked with them.
 
 ## Updating
 
@@ -130,7 +154,7 @@ Each message holds:
 - a random id made on your computer the first time (kept in the `stats` file
   in Tessel's folder), which names this installation and not you;
 - the version of Tessel, and the version before it on an update;
-- the system (macOS or Windows) and the processor's kind (arm64 or x86_64).
+- the system (macOS, Windows or Linux) and the processor's kind (arm64 or x86_64).
 
 Nothing else is sent: not your name or your computer's, not your files or
 your code, not which commands you run or what your programs do. Your
@@ -169,6 +193,7 @@ curl -fsSL https://github.com/alexiusacademia/tessel/releases/latest/download/in
 
 ## Uninstalling
 
-Delete `~/.tessel` (macOS) or `%LOCALAPPDATA%\Tessel` (Windows), and remove
-the `PATH` line the installer added to `~/.zshrc` (macOS) or your user
-`Path` variable (Windows).
+Delete `~/.tessel` (macOS and Linux) or `%LOCALAPPDATA%\Tessel` (Windows),
+and remove the `PATH` line the installer added to `~/.zshrc` (macOS), your
+shell's startup file (Linux: `~/.bashrc`, `~/.zshrc` or `~/.profile`) or
+your user `Path` variable (Windows).

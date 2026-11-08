@@ -4,8 +4,11 @@ description: Play sound files with playSound and control them through a Sound, a
 ---
 
 The system decodes sound and video (AVFoundation on macOS, Media
-Foundation on Windows), so the files it plays play: MP3, M4A/AAC, WAV and
-more for sound; MP4 and MOV (H.264, HEVC) for video. Tessel draws the
+Foundation on Windows, GStreamer on Linux), so the files it plays play:
+MP3, M4A/AAC, WAV and more for sound; MP4 and MOV (H.264, HEVC) for video.
+On Linux, what plays depends on GStreamer's plugins: "good" and "base"
+(Ogg, WebM, WAV, FLAC), and "libav" (or "ugly") for MP3, AAC and H.264;
+desktop systems have them or offer them when such a file is first opened. Tessel draws the
 video's pictures and controls itself, like its other views.
 
 ## Playing a sound

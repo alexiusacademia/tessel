@@ -7,7 +7,7 @@
 //! pressed. Views that only arrange others (stacks, groups) aren't named:
 //! what's in them belongs to the nearest view around them that is.
 //!
-//! On macOS and Windows that description goes to the system through
+//! On macOS, Windows and Linux that description goes to the system through
 //! AccessKit (`system`), whenever a screen reader is listening.
 
 use super::layout::{read_string, Rect};
@@ -320,7 +320,7 @@ pub fn listing(items: &[Item]) -> String {
 }
 
 /// Telling the system, with AccessKit.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 pub mod system {
     use std::sync::Mutex;
 

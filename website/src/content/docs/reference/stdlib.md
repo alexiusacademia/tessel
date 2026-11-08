@@ -1741,8 +1741,8 @@ else a failure. Timers, downloads and other work still waiting are dropped.
 platform() -> String
 ```
 
-The system the program is running on: `"macos"`, `"windows"` or
-`"android"`.
+The system the program is running on: `"macos"`, `"windows"`, `"linux"`
+or `"android"`.
 
 ```tessel
 let shortcut = if platform() == "macos" { "Cmd+S" } else { "Ctrl+S" }

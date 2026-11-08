@@ -45,7 +45,7 @@ fn main() {
     deleteFile(file)
     deleteFile(dir)
     // The system
-    print(platform() == "macos" || platform() == "windows")
+    print(platform() == "macos" || platform() == "windows" || platform() == "linux")
     print(arguments().count)
     print(homeFolder() != "")
     let d = Data(text: "Tessel")

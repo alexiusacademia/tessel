@@ -545,6 +545,10 @@ struct Gen<'ctx, 'a> {
     design_inner: HashSet<ExprId>,
     /// The body of the `view` (or `app`) being compiled.
     design_body: Option<&'a Block>,
+    /// Whether a view has a `WebView` or `.dragFile`: on Linux the app then
+    /// runs on X11 (where WebKitGTK's view can be put in its window, and a
+    /// file dragged out of it).
+    needs_x11: bool,
 }
 
 /// A view's source: a `view` declaration or the `app`.
@@ -615,6 +619,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             design_blocks: Vec::new(),
             design_inner: HashSet::new(),
             design_body: None,
+            needs_x11: false,
         }
     }
 
@@ -830,6 +835,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         let p = self.ptr_ty().into();
         let f = self.declare_rt("tsl_set_app_info", &[p; 7], None);
         self.b.build_call(f, &args, "").unwrap();
+        if self.needs_x11 {
+            let f = self.declare_rt("tsl_ui_needs_x11", &[], None);
+            self.b.build_call(f, &[], "").unwrap();
+        }
     }
 
     /// The function that runs a REPL entry's statements. The session's

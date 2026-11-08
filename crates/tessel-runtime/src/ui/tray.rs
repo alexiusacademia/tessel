@@ -1,6 +1,7 @@
 //! The app's icon in the system's tray (`.trayIcon`): the menu bar's right
-//! side on macOS, the taskbar's notification area on Windows; and the
-//! system's notifications (`showNotification`). Elsewhere, neither.
+//! side on macOS, the taskbar's notification area on Windows, the panel's
+//! tray on Linux (a StatusNotifierItem); and the system's notifications
+//! (`showNotification`). Elsewhere, neither.
 //!
 //! The icon is one of the built-in ones, drawn by the runtime. Its menu's
 //! items come to the app as `Shell::Tray` (a click on the icon itself on
@@ -29,7 +30,7 @@ impl TrayInfo {
 
 /// Draws a built-in icon `px` pixels square in `color`: its pixels, four
 /// bytes each (red, green, blue, opacity).
-#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", windows, target_os = "linux")), allow(dead_code))]
 fn icon_pixels(name: &str, px: u32, color: super::Rgba) -> Vec<u8> {
     super::svg::enable_icons();
     let Some(svg) = super::svg::icon(name, color) else { return vec![0; (px * px * 4) as usize] };
@@ -493,6 +494,151 @@ mod win {
     }
 }
 
+// ===== Linux =====
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use ksni::blocking::TrayMethods;
+    use ksni::menu::{CheckmarkItem, MenuItem, StandardItem, SubMenu};
+
+    use super::super::app::{Shell, shell_post};
+    use super::super::menu::Entry;
+    use super::TrayInfo;
+
+    /// A menu item as the tray's service (on its own thread) keeps it.
+    #[derive(Clone)]
+    enum Item {
+        Choice { label: String, enabled: bool, checked: bool },
+        Divider,
+        Sub { label: String, enabled: bool, items: Vec<Item> },
+    }
+
+    fn items(entries: &[Entry]) -> Vec<Item> {
+        entries
+            .iter()
+            .map(|e| match e {
+                Entry::Item { label, enabled, checked, .. } => Item::Choice { label: label.clone(), enabled: *enabled, checked: *checked },
+                Entry::Divider => Item::Divider,
+                Entry::Sub { title, enabled, items: sub } => Item::Sub { label: title.clone(), enabled: *enabled, items: items(sub) },
+            })
+            .collect()
+    }
+
+    /// The icon in the tray: what the panel asks the app for.
+    struct Icon {
+        id: String,
+        title: String,
+        /// ARGB, as the panel takes it.
+        pixels: Vec<u8>,
+        size: i32,
+        items: Vec<Item>,
+    }
+
+    /// (A label's `_` would mark its access key: `__` is one `_`.)
+    fn label(text: &str) -> String {
+        text.replace('_', "__")
+    }
+
+    fn menu(items: &[Item], path: &mut Vec<usize>) -> Vec<MenuItem<Icon>> {
+        let mut out = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            path.push(i);
+            let here = path.clone();
+            let activate: Box<dyn Fn(&mut Icon) + Send> = Box::new(move |_| shell_post(Shell::Tray(here.clone())));
+            out.push(match item {
+                Item::Choice { label: text, enabled, checked: true } => {
+                    CheckmarkItem { label: label(text), enabled: *enabled, checked: true, activate, ..Default::default() }.into()
+                }
+                Item::Choice { label: text, enabled, .. } => StandardItem { label: label(text), enabled: *enabled, activate, ..Default::default() }.into(),
+                Item::Divider => MenuItem::Separator,
+                Item::Sub { label: text, enabled, items } => {
+                    SubMenu { label: label(text), enabled: *enabled, submenu: menu(items, path), ..Default::default() }.into()
+                }
+            });
+            path.pop();
+        }
+        out
+    }
+
+    impl ksni::Tray for Icon {
+        fn id(&self) -> String {
+            self.id.clone()
+        }
+        fn title(&self) -> String {
+            self.title.clone()
+        }
+        fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+            vec![ksni::Icon { width: self.size, height: self.size, data: self.pixels.clone() }]
+        }
+        /// A click on the icon itself shows the main window (as on Windows).
+        fn activate(&mut self, _x: i32, _y: i32) {
+            shell_post(Shell::TrayClick);
+        }
+        fn menu(&self) -> Vec<MenuItem<Self>> {
+            menu(&self.items, &mut Vec::new())
+        }
+    }
+
+    static TRAY: Mutex<Option<ksni::blocking::Handle<Icon>>> = Mutex::new(None);
+
+    pub fn set(info: Option<&TrayInfo>) {
+        let mut tray = TRAY.lock().unwrap();
+        let Some(info) = info else {
+            if let Some(handle) = tray.take() {
+                handle.shutdown().wait();
+            }
+            return;
+        };
+        // Drawn light: panels are mostly dark.
+        let size = 32;
+        let rgba = super::icon_pixels(info.icon, size as u32, super::super::Rgba([235, 235, 235, 255]));
+        let pixels: Vec<u8> = rgba.chunks_exact(4).flat_map(|p| [p[3], p[0], p[1], p[2]]).collect();
+        let items = items(&info.items);
+        let title = info.title.clone();
+        if let Some(handle) = tray.as_ref() {
+            handle.update(|icon| {
+                icon.title = title;
+                icon.pixels = pixels;
+                icon.items = items;
+            });
+            return;
+        }
+        let id = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "tessel-app".into());
+        // (No tray to show it in, or no D-Bus: nothing shows.)
+        *tray = Icon { id, title, pixels, size, items }.spawn().ok();
+    }
+
+    pub fn shutdown() {
+        set(None);
+    }
+
+    /// A notification, through the desktop's notification service.
+    pub fn notify(app: &str, title: &str, message: &str) {
+        let (app, title, message) = (app.to_string(), title.to_string(), message.to_string());
+        // (On its own thread: the bus may take a moment.)
+        std::thread::spawn(move || {
+            let Ok(conn) = zbus::blocking::Connection::session() else { return };
+            let hints: HashMap<&str, zbus::zvariant::Value> = HashMap::new();
+            let actions: Vec<&str> = Vec::new();
+            let _: zbus::Result<u32> = conn
+                .call_method(
+                    Some("org.freedesktop.Notifications"),
+                    "/org/freedesktop/Notifications",
+                    Some("org.freedesktop.Notifications"),
+                    "Notify",
+                    &(app.as_str(), 0u32, "", title.as_str(), message.as_str(), actions, hints, -1i32),
+                )
+                .and_then(|reply| reply.body().deserialize());
+        });
+    }
+}
+
 #[cfg(all(windows, feature = "native"))]
 fn hwnd_of(window: Option<&Window>) -> Option<windows::Win32::Foundation::HWND> {
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -509,6 +655,8 @@ pub fn set(window: Option<&Window>, info: Option<&TrayInfo>) {
     mac::set(info);
     #[cfg(all(windows, feature = "native"))]
     win::set(hwnd_of(window), info);
+    #[cfg(target_os = "linux")]
+    linux::set(info);
 }
 
 /// Shows a notification from the system.
@@ -518,6 +666,8 @@ pub fn notify(window: Option<&Window>, app: &str, title: &str, message: &str) {
     mac::notify(title, message);
     #[cfg(all(windows, feature = "native"))]
     win::notify(hwnd_of(window), app, title, message);
+    #[cfg(target_os = "linux")]
+    linux::notify(app, title, message);
 }
 
 /// Takes the tray icon away, as the app ends.
@@ -526,4 +676,6 @@ pub fn shutdown() {
     mac::shutdown();
     #[cfg(all(windows, feature = "native"))]
     win::shutdown();
+    #[cfg(target_os = "linux")]
+    linux::shutdown();
 }

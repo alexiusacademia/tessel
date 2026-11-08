@@ -21,6 +21,8 @@ In this lesson you'll learn:
 - how to load saved data when the app starts, with `.onAppear`
 - how to switch between two modes with an enum and `match`
 - how to check the whole app with a script
+- how to turn it into an app others can install, on macOS, Windows and
+  Linux
 
 It uses almost everything from the course: structs, enums, lists,
 closures, JSON files, and the app ideas from the
@@ -629,6 +631,35 @@ That's why `CardRow` takes an `onDelete` function instead.
 As with any program in a folder, run the folder
 (`tessel run flashcards`), not `main.tsl`, or the names from the other files
 are missing.
+
+## Sharing it
+
+`tessel run` is for you, while you work on it. To give the app to someone
+else, build it with `--bundle`:
+
+```sh
+tessel build flashcards --bundle
+```
+
+On a Mac that makes `Flashcards.app`, an app to double-click or drag into
+**Applications**; on Windows, `Flashcards Setup.exe`, its installer; on
+Linux, `Flashcards-x86_64.AppImage` (one file that runs as it is) and
+`flashcards_1.0_amd64.deb` (which Ubuntu and Debian install, with the app
+in their menus). They hold everything the app needs: the person who gets
+it doesn't install Tessel.
+
+You don't need each kind of computer to build for it. Add the system to
+build for:
+
+```sh
+tessel build flashcards --windows --bundle     # on a Mac
+tessel build flashcards --linux --bundle       # anywhere; --linux-arm for ARM64
+```
+
+The first such build downloads what that system's apps are built with,
+once. A `tessel.toml` next to `main.tsl` gives the app its name, version,
+icon and more (see [Projects](/start/project/)); the packages take them
+from there.
 
 ## Ideas to extend it
 
