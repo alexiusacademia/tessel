@@ -28,7 +28,7 @@ echo "Tessel $version for linux-$arch"
 
 # What both build containers start with: GCC 13 and Rust.
 tools='dnf -y -q install gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git make perl-core xz tar findutils which >/dev/null &&
-  curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain stable >/dev/null &&
+  curl -sSf --retry 5 --retry-all-errors --retry-delay 10 https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain stable >/dev/null &&
   export PATH=/opt/rh/gcc-toolset-13/root/usr/bin:${CARGO_HOME:-/root/.cargo}/bin:$PATH'
 
 # ---- The runtime and sdk/, on glibc 2.28 ----

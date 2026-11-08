@@ -14,7 +14,10 @@
 # Everything runs on GitHub's runners (free for a public repository), and the
 # packages go from the package jobs to the publish job as artifacts. A tag
 # builds both platforms, and publishes only if both succeed, so the two
-# platforms are always at the same version. A manual run builds macOS,
+# platforms are always at the same version, except that Apple's notarizing
+# doesn't hold the others back: when only the macOS package failed, the
+# release is published without it, and running the macOS job again (with
+# Publish after it) adds it. A manual run builds macOS,
 # and Windows too if `windows` is ticked. Each platform has its own
 # latest-<platform>.txt.
 name: Release
@@ -423,7 +426,8 @@ jobs:
   check-windows-to-linux:
     name: Check Windows to Linux
     needs: [package, package-linux]
-    if: github.event_name == 'push' || (inputs.windows && inputs.linux)
+    # (Also when only the macOS package failed.)
+    if: always() && needs.package-linux.result == 'success' && (github.event_name == 'push' || (inputs.windows && inputs.linux))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -435,6 +439,10 @@ jobs:
       - name: Build a Linux app on Windows
         shell: bash
         run: |
+          if ! ls dist/tessel-*-windows-x64.zip > /dev/null 2>&1; then
+            echo "::error::there's no Windows package"
+            exit 1
+          fi
           mkdir -p check/win check/linux
           unzip -q dist/tessel-*-windows-x64.zip -d check/win
           tar -xzf dist/tessel-*-linux-x64-parts.tar.gz -C check/linux
@@ -448,7 +456,8 @@ jobs:
   publish:
     name: Publish
     needs: [package, package-linux, check-windows-to-linux]
-    if: always() && (github.ref_type == 'tag' || inputs.publish) && needs.package.result == 'success' && (needs.package-linux.result == 'success' || needs.package-linux.result == 'skipped') && (needs.check-windows-to-linux.result == 'success' || needs.check-windows-to-linux.result == 'skipped')
+    # (Without macOS's package when only that failed: see the top.)
+    if: always() && (github.ref_type == 'tag' || inputs.publish) && needs.package.result != 'cancelled' && (needs.package-linux.result == 'success' || needs.package-linux.result == 'skipped') && (needs.check-windows-to-linux.result == 'success' || needs.check-windows-to-linux.result == 'skipped')
     # On a Mac, to check that the Mac's tessel builds Windows apps.
     runs-on: macos-15
     permissions:
@@ -469,6 +478,26 @@ jobs:
         run: |
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           ls -la dist
+          # Every platform a tag builds must be here, but macOS may come
+          # later (Apple's notarizing can take hours).
+          missing=()
+          for p in macos-arm64.tar.gz windows-x64.zip linux-x64.tar.gz linux-arm64.tar.gz; do
+            ls dist/tessel-*-$p > /dev/null 2>&1 || missing+=("$p")
+          done
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            for m in "${missing[@]}"; do
+              if [[ "$m" == macos-* ]]; then
+                echo "::warning::no macOS package (Apple?): published without it; run the macOS job again to add it"
+              else
+                echo "::error::the $m package is missing"
+                exit 1
+              fi
+            done
+          fi
+          if ! ls dist/tessel-*-macos-arm64.tar.gz > /dev/null 2>&1 && ! ls dist/tessel-*-windows-x64.zip > /dev/null 2>&1 && ! ls dist/tessel-*-linux-* > /dev/null 2>&1; then
+            echo "::error::there's nothing to publish"
+            exit 1
+          fi
           # The Mac's tessel builds a Windows app with the Windows parts
           # (`tessel build --windows`), before anything is published.
           if ls dist/tessel-*-macos-arm64.tar.gz dist/tessel-*-windows-x64-parts.tar.gz > /dev/null 2>&1; then
@@ -487,6 +516,7 @@ jobs:
           for arch in x64 arm64; do
             parts="$(ls dist/tessel-*-linux-$arch-parts.tar.gz 2>/dev/null || true)"
             [[ -n "$parts" ]] || continue
+            ls dist/tessel-*-macos-arm64.tar.gz > /dev/null 2>&1 || continue
             [[ -d dist/check/mac ]] || { mkdir -p dist/check/mac && tar -xzf dist/tessel-*-macos-arm64.tar.gz -C dist/check/mac; }
             mkdir -p "dist/check/linux-$arch"
             tar -xzf "$parts" -C "dist/check/linux-$arch"
@@ -557,7 +587,10 @@ jobs:
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           file="tessel-$version-macos-arm64.tar.gz"
           sha="$(awk -v f="$file" '$2 == f { print $1 }' dist/SHA256SUMS)"
-          [[ -n "$sha" ]] || { echo "::error::SHA256SUMS has no $file"; exit 1; }
+          if [[ -z "$sha" ]]; then
+            echo "::warning::no macOS package yet; the Homebrew formula is updated when it's added"
+            exit 0
+          fi
           key="$RUNNER_TEMP/tap-key"
           printf '%s\n' "$TAP_DEPLOY_KEY" > "$key"
           chmod 600 "$key"
