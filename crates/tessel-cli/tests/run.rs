@@ -72,6 +72,22 @@ fn run_programs() {
         // Programs that read input get `<name>.stdin` (and no input otherwise).
         let stdin = std::fs::read(dir.join(format!("{name}.stdin"))).unwrap_or_default();
         let out = run_with_input(&mut cmd, &stdin);
+        // A GPU program (`gpu_…`) runs again on the CPU fallback, which must
+        // print the same (see docs/gpu.md).
+        if name.starts_with("gpu_") {
+            // (and checks the WGSL made for the GPU, which a computer
+            // without one, as CI, wouldn't otherwise).
+            cmd.env("TESSEL_GPU", "cpu").env("TESSEL_GPU_CHECK", "1");
+            let cpu = run_with_input(&mut cmd, &stdin);
+            if cpu.stdout != out.stdout || cpu.status.code() != out.status.code() {
+                failures.push(format!(
+                    "{name}: the CPU fallback prints otherwise\n--- the GPU's\n{}--- the CPU's\n{}{}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&cpu.stdout),
+                    String::from_utf8_lossy(&cpu.stderr)
+                ));
+            }
+        }
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         // (Text is laid out by the system, so a program whose output has

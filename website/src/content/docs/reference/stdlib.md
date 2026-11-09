@@ -1198,6 +1198,74 @@ given as it is:
 try db.execute("INSERT INTO t (a, b, c) VALUES (?, ?, ?)", [42, "text", nil])
 ```
 
+## GPU compute
+
+Kernels and GPU buffers. See [Computing on the GPU](/guides/gpu/), which
+also says what 32-bit precision means for results.
+
+### kernel fn
+
+```text
+kernel fn name(_ index: Int | (Int, Int) | (Int, Int, Int), parameters…)
+```
+
+A function run on the GPU once for each index of a range, by
+[`gpu.run`](#gpurun). Its other parameters are `GPUBuffer<Float32>`,
+`GPUBuffer<Int>`, `Float32`, `Int` and `Bool`; it returns nothing. Its body
+uses a part of Tessel (numbers, `if`, `for` over a range, `while`, buffer
+elements, the math functions); anything else is a compile error. In a
+kernel `Int` is 32-bit and wraps around, `a / 0` is `a` and `a % 0` is 0,
+and an index outside a buffer uses its last element.
+
+### GPUBuffer
+
+```text
+GPUBuffer<Float32>(count: Int)
+GPUBuffer<Int>(count: Int)
+GPUBuffer(from: [Float32])
+GPUBuffer(from: [Int])
+```
+
+Numbers kept on the GPU (all zero with `count:`). A `GPUBuffer<Int>` holds
+32-bit whole numbers.
+
+| | |
+|---|---|
+| `count: Int` | How many numbers it holds. |
+| `read() -> [Float32]` (or `[Int]`) | Copies them back, after the runs queued before it. |
+| `write(_ values: [Float32])` (or `[Int]`) | Copies a list in, from the start; numbers past the buffer's end are left out. |
+| `fill(_ value: Float32)` (or `Int`) | Sets every number. |
+| `copy(from: GPUBuffer)` | Copies another buffer of the same kind, on the GPU (as many numbers as the smaller one has). |
+
+### gpu.run
+
+```text
+gpu.run(kernel, over: Int | (Int, Int) | (Int, Int, Int), values…)
+```
+
+Queues `kernel` to run for each index from 0 up to `over` (on each axis),
+with `values` for its parameters after the index, and returns at once. Runs
+happen in the order they're queued.
+
+### gpu.sum, gpu.min, gpu.max, gpu.dot
+
+```text
+gpu.sum(_ b: GPUBuffer<Float32>) -> Float
+gpu.min(_ b: GPUBuffer<Float32>) -> Float
+gpu.max(_ b: GPUBuffer<Float32>) -> Float
+gpu.dot(_ a: GPUBuffer<Float32>, _ b: GPUBuffer<Float32>) -> Float
+```
+
+The sum, smallest, largest, and the sum of `a[i] * b[i]`, after the runs
+queued before. Blocks of 256 numbers are added in 32-bit, and the blocks'
+results in 64-bit with compensation.
+
+### gpu.wait, gpu.device, gpu.isCPU
+
+`gpu.wait()` waits until every queued run is done. `gpu.device` is the
+GPU's name, or `"CPU"` when kernels run on the CPU's cores instead (no
+usable GPU, or `TESSEL_GPU=cpu`); `gpu.isCPU` says which.
+
 ## Data
 
 `Data` holds raw bytes: the contents of a file that isn't text, the result of

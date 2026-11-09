@@ -1,0 +1,34 @@
+// Float32: 32-bit floats (what GPUs compute with): literals that take it
+// from their context, arithmetic, comparisons, conversions both ways, the
+// math functions, text (with the fewest digits that read back), lists,
+// and saving.
+
+struct Sample {
+    level: Float32
+    readings: [Float32]
+}
+
+fn main() {
+    let a: Float32 = 0.1
+    let b = Float32(3)
+    let c = a * b + 1
+    print(a, b, c)
+    print(Float(a), Float32(Float(a)) == a)
+    print(Int(Float32(7.9)), Int(Float32(-7.9)), Float32("2.5") ?? 0, Float32("x") ?? -1)
+    print(sqrt(Float32(2)), pow(a, 2), floor(Float32(-1.5)), abs(Float32(-3)), min(a, b), max(a, 0.05))
+    print(a < b, a == 0.1, -a, Float32(16777217))
+    var total: Float32 = 0
+    for x in [Float32(1.5), 2.25, 3] {
+        total += x
+    }
+    print(total, [Float32(3), 1, 2].sorted())
+    let s = Sample(level: 0.1, readings: [1.5, 2.25])
+    let json = toJson(s)
+    print(json)
+    if let back: Sample = fromJson(json) {
+        print(back == s)
+    }
+    if let back: Sample = fromBinary(toBinary(s)) {
+        print(back.level == s.level)
+    }
+}

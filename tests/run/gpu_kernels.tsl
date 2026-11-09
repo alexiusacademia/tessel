@@ -1,0 +1,82 @@
+// GPU compute: kernels over 1, 2 and 3 axes, GPU buffers of Float32 and
+// Int, their methods, and the reductions. Every number here is exact in 32
+// bits, so the GPU and the CPU fallback print the same (the harness runs
+// it on both).
+
+kernel fn scale(_ i: Int, xs: GPUBuffer<Float32>, by: Float32) {
+    xs[i] = xs[i] * by + Float32(i)
+}
+
+kernel fn table(_ at: (Int, Int), out: GPUBuffer<Int>, width: Int) {
+    let (x, y) = at
+    out[x + width * y] = x * 10 + y
+}
+
+kernel fn cube(_ at: (Int, Int, Int), out: GPUBuffer<Float32>, n: Int, flag: Bool) {
+    let (i, j, k) = at
+    let c = i + n * (j + n * k)
+    // An `if` that gives a value, a loop, and `break` and `continue`.
+    let sign: Float32 = if (i + j + k) % 2 == 0 { 1.0 } else { -1.0 }
+    var steps = 0
+    for t in 0..10 {
+        if t == 1 { continue }
+        if t > c { break }
+        steps += 1
+    }
+    var w = 0
+    while w < k {
+        w += 1
+    }
+    out[c] = sign * Float32(steps + w) + (if flag { 0.5 } else { 0.0 })
+}
+
+// What a GPU does with Ints (32-bit): wrapping, and / and % by zero.
+kernel fn ints(_ i: Int, out: GPUBuffer<Int>) {
+    let big = 2147483647
+    let zero = i - i
+    out[0] = big + 1
+    out[1] = 7 / zero
+    out[2] = 7 % zero
+    out[3] = (-big - 1) / (zero - 1)
+    out[4] = (1 << 33) + (-16 >> 2)
+    out[5] = (12 & 10) + (12 | 3) + (5 ^ 1) + abs(-4) + min(3, 9) + max(3, 9)
+    out[6] = Int(Float32(7.9)) + Int(Float32(-7.9))
+    // Past the end of the buffer: the last element.
+    out[100] = 42
+}
+
+fn main() {
+    let xs = GPUBuffer(from: [Float32(1), 2, 3, 4])
+    gpu.run(scale, over: xs.count, xs, 2)
+    print(xs.read(), xs.count)
+    print(gpu.sum(xs), gpu.min(xs), gpu.max(xs), gpu.dot(xs, xs))
+
+    let t = GPUBuffer<Int>(count: 6)
+    gpu.run(table, over: (3, 2), t, 3)
+    print(t.read())
+
+    let n = 3
+    let c = GPUBuffer<Float32>(count: n * n * n)
+    gpu.run(cube, over: (n, n, n), c, n, true)
+    print(c.read())
+
+    // write, fill and copy, and a buffer from Ints.
+    let a = GPUBuffer<Float32>(count: 5)
+    a.fill(1.5)
+    a.write([Float32(9), 8])
+    let b = GPUBuffer<Float32>(count: 5)
+    b.copy(from: a)
+    print(b.read(), gpu.sum(b))
+    let ones = GPUBuffer(from: [7, -3, 2147483647])
+    print(ones.read())
+    let r = GPUBuffer<Int>(count: 8)
+    gpu.run(ints, over: 1, r)
+    print(r.read())
+
+    // Lots of numbers: the reductions add blocks of 256 and then the blocks.
+    let many = GPUBuffer<Float32>(count: 1000000)
+    many.fill(0.5)
+    print(gpu.sum(many), gpu.dot(many, many), gpu.max(many))
+    gpu.wait()
+    print(gpu.isCPU == (gpu.device == "CPU"))
+}

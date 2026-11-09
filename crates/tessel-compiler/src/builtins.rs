@@ -959,7 +959,7 @@ impl Builtins {
 }
 
 pub const FUNCTION_NAMES: &[&str] = &[
-    "print", "fetch", "after", "Int", "Float", "String", "readFile", "writeFile", "listFolder", "fileExists",
+    "print", "fetch", "after", "Int", "Float", "Float32", "GPUBuffer", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
     "stopCommand", "sendToCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
@@ -997,7 +997,7 @@ fn mutating(params: Vec<P>, ret: Ty) -> Method {
 /// Properties (no call) of built-in types.
 pub fn property(recv: &Ty, name: &str) -> Option<Ty> {
     Some(match (recv, name) {
-        (Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_), "count") => Ty::Int,
+        (Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_), "count") => Ty::Int,
         (Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_), "isEmpty") => Ty::Bool,
         (Ty::Set(t), "values") => Ty::list((**t).clone()),
         (Ty::List(t), "first" | "last") => Ty::opt((**t).clone()),
@@ -1034,6 +1034,17 @@ fn equatable(t: &Ty) -> bool {
 pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
     let pred = |t: &Ty| Ty::func(vec![t.clone()], Ty::Bool);
     Some(match recv {
+        // (A handle: these change what's on the GPU, not the variable.)
+        Ty::GpuBuffer(t) => {
+            let t = (**t).clone();
+            match name {
+                "read" => method(vec![], Ty::list(t)),
+                "write" => method(vec![P::unlabeled("values", Ty::list(t))], Ty::Void),
+                "fill" => method(vec![P::unlabeled("value", t)], Ty::Void),
+                "copy" => method(vec![P::new("from", recv.clone())], Ty::Void),
+                _ => return None,
+            }
+        }
         Ty::List(t) => {
             let t = (**t).clone();
             match name {
@@ -1371,6 +1382,7 @@ pub fn graphics_variant<'a>(name: &'a str, first_label: Option<&str>) -> &'a str
 /// Names shown in "did you mean" suggestions for members of built-in types.
 pub fn member_names(recv: &Ty) -> &'static [&'static str] {
     match recv {
+        Ty::GpuBuffer(_) => &["count", "read", "write", "fill", "copy"],
         Ty::List(_) => &[
             "count", "isEmpty", "first", "last", "append", "insert", "remove", "removeAll", "filter", "contains", "enumerated",
             "reversed", "map", "sorted", "joined", "index", "lastIndex", "firstIndex", "any", "all", "sum", "min",
@@ -1761,6 +1773,7 @@ pub fn runtime_property(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Data, "base64") => rt("tsl_data_base64"),
         (Ty::Data, "hex") => rt("tsl_data_hex"),
         (Ty::Data, "count") => rt("tsl_data_len"),
+        (Ty::GpuBuffer(_), "count") => rt("tsl_gpu_buffer_count"),
         (Ty::Data, "isEmpty") => rt("tsl_data_is_empty"),
         (Ty::Data, "bytes") => rt("tsl_data_ints"),
         (Ty::Data, "text") => rt("tsl_data_text"),

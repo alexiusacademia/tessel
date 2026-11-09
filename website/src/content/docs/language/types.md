@@ -17,6 +17,7 @@ fields, and empty lists or dictionaries.
 |---|---|---|
 | `Int` | `0`, `42`, `-7`, `1_000` | A whole number (64-bit) |
 | `Float` | `0.5`, `3.14`, `2.0` | A decimal number (64-bit) |
+| `Float32` | `Float32(0.5)` | A decimal number in 32 bits, as GPUs use |
 | `Bool` | `true`, `false` | A truth value |
 | `String` | `"hi"`, `"Hello, {name}"` | Text |
 | `Range` | `0..3`, `1..n` | A range of whole numbers |
@@ -93,6 +94,31 @@ See [Math](/reference/stdlib/#math) for the full list.
 program. Dividing by zero gives infinity, which prints as `inf`. And, as in
 most languages, some decimal fractions can't be stored exactly:
 `0.1 + 0.2` prints `0.30000000000000004`.
+
+## Float32
+
+A `Float32` is a 32-bit floating-point number: about 7 significant digits
+instead of a `Float`'s 16, in half the memory. It's what
+[GPU kernels](/guides/gpu/) compute with, and it's handy for big lists of
+measurements that don't need more.
+
+A number becomes a `Float32` where one is expected, or with `Float32(…)`:
+
+```tessel
+let a: Float32 = 0.1
+let b = Float32(3)
+print(a * b + 1)                 // 1.3
+print(Float(a))                  // 0.10000000149011612
+print([Float32(3), 1, 2].sorted()) // [1.0, 2.0, 3.0]
+```
+
+It has arithmetic, comparisons, the math functions (`sqrt(a)` of a
+`Float32` is a `Float32`), and it prints with the fewest digits that read
+back as the same `Float32`, so `0.1` prints as `0.1`. Mixing it with a
+`Float` needs a conversion, either way: `Float(a)` is exact, `Float32(x)`
+rounds to the nearest `Float32`. `Float32("2.5")` reads text, as `Float`
+does. `Float32` values save to [JSON and binary](/reference/stdlib/#json-and-binary)
+like any other number.
 
 ## Bool
 
@@ -305,6 +331,7 @@ convert with `Int(…)`, `Float(…)` and `String(…)`:
 | `Int(x)` | `Int` or `Float` | `Int` | Drops the fraction: `Int(3.99)` is `3`, `Int(-2.99)` is `-2` |
 | `Int(text)` | `String` | `Int?` | `nil` if the text isn't a whole number |
 | `Float(text)` | `String` | `Float?` | `nil` if the text isn't a number |
+| `Float32(x)` | `Int`, `Float` or `Float32` | `Float32` | The nearest `Float32` |
 | `String(x)` | `Int`, `Float`, `Bool`, `String` or an enum | `String` | Same text as `"{x}"` |
 
 ```tessel

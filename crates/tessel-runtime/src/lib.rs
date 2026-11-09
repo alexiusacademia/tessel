@@ -26,6 +26,7 @@ mod sensors;
 mod setup;
 mod stack_guard;
 mod stdlib;
+mod gpu_compute;
 pub mod ui;
 
 use std::ffi::{c_char, CStr};
@@ -624,6 +625,28 @@ pub unsafe extern "C" fn tsl_str_interpolate(pieces: *const Piece, n: i64) -> *m
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_str_from_float(x: f64) -> *mut Str {
     str_new(&format_float(x))
+}
+
+/// A `Float32` as text: as a `Float` is, but with the fewest digits that
+/// read back as the same 32-bit value (`0.1`, not `0.10000000149011612`).
+pub fn format_float32(x: f32) -> String {
+    if x.is_finite() && x.fract() == 0.0 && x.abs() < 1e16 {
+        format!("{x:.1}")
+    } else {
+        format!("{x}")
+    }
+}
+
+/// The Float a `Float32` is written as: its shortest digits (`0.1`), so
+/// what's saved reads as it's shown, and back as the same `Float32`.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_float32_as_written(x: f32) -> f64 {
+    if x.is_finite() { format!("{x}").parse().unwrap_or(x as f64) } else { x as f64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_str_from_float32(x: f32) -> *mut Str {
+    str_new(&format_float32(x))
 }
 
 #[unsafe(no_mangle)]

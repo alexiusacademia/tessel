@@ -1,0 +1,10 @@
+Root
+  View
+    VStack
+      Text "Sum: 0.0"
+      Button "Grow"
+Root
+  View
+    VStack
+      Text "Sum: 3072.0"
+      Button "Grow"

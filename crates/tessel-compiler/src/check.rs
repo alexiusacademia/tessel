@@ -45,6 +45,8 @@ pub struct Checked {
     /// Functions declared inside functions, by the span of their name: the
     /// signature, and the parameters (for their default values).
     pub local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
+    /// The `kernel fn`s, by name (see docs/gpu.md).
+    pub kernels: HashMap<String, KernelInfo>,
     pub ifaces: Vec<IfaceDef>,
     /// The type each `is` / `as?` checks for.
     pub cast_targets: HashMap<ExprId, Ty>,
@@ -155,6 +157,7 @@ impl Checked {
             Ty::Void => "()".into(),
             Ty::Int => "Int".into(),
             Ty::Float => "Float".into(),
+            Ty::Float32 => "Float32".into(),
             Ty::Bool => "Bool".into(),
             Ty::Str => "String".into(),
             Ty::Data => "Data".into(),
@@ -164,6 +167,7 @@ impl Checked {
             Ty::List(t) => format!("[{}]", self.show(t)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
             Ty::Set(t) => format!("Set<{}>", self.show(t)),
+            Ty::GpuBuffer(t) => format!("GPUBuffer<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -241,6 +245,16 @@ pub enum ArgRef {
     Many(usize, usize),
 }
 
+/// A `kernel fn`: how many axes its index has (1, 2 or 3), and the types
+/// of its other parameters, in order.
+#[derive(Clone, Debug)]
+pub struct KernelInfo {
+    pub dims: usize,
+    pub params: Vec<Ty>,
+    /// Whether its signature is a kernel's (without errors).
+    pub valid: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct CallInfo {
     pub callee: Callee,
@@ -278,6 +292,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
     }
     let builtins = Builtins::standard();
     let mut c = Checker {
+        in_kernel: false,
         diags,
         builtins,
         structs,
@@ -304,6 +319,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
         sql_value: None,
         view_fns: HashMap::new(),
         local_fns: HashMap::new(),
+        kernels: HashMap::new(),
         completion: None,
         ifaces: Vec::new(),
         cast_targets: HashMap::new(),
@@ -372,6 +388,7 @@ fn check(program: &Program, diags: &mut Diagnostics, require_entry: bool, repl: 
             .collect(),
         view_fns: c.view_fns,
         local_fns: c.local_fns,
+        kernels: c.kernels,
         conforms: c.conforms.iter().map(|(t, i, _)| (t.clone(), *i)).collect(),
         ifaces: c.ifaces,
         cast_targets: c.cast_targets,
@@ -492,11 +509,14 @@ enum Mode {
     Content,
 }
 
-const PRIMITIVES: &[&str] = &["Int", "Float", "Bool", "String", "Data", "Range", "View"];
+const PRIMITIVES: &[&str] = &["Int", "Float", "Float32", "Bool", "String", "Data", "Range", "View"];
 const MUTATING: &[&str] =
     &["append", "insert", "remove", "removeAll", "removeValue", "removeFirst", "removeLast", "appendAll"];
 
 struct Checker<'a> {
+    /// Checking a `kernel fn`'s body (see docs/gpu.md): numbers with a point
+    /// are `Float32`s, and only the GPU subset is allowed.
+    in_kernel: bool,
     /// Checking a REPL entry: the session's variables declared with `var`.
     repl_mutable: Option<HashSet<String>>,
     repl: Option<ReplChecked>,
@@ -537,6 +557,7 @@ struct Checker<'a> {
     sql_value: Option<usize>,
     view_fns: HashMap<(String, String), FnSig>,
     local_fns: HashMap<Span, (FnSig, Vec<Param>)>,
+    kernels: HashMap<String, KernelInfo>,
     completion: Option<Vec<Suggestion>>,
     ifaces: Vec<IfaceDef>,
     cast_targets: HashMap<ExprId, Ty>,
@@ -593,6 +614,7 @@ impl Checker<'_> {
             Ty::Void => "()".into(),
             Ty::Int => "Int".into(),
             Ty::Float => "Float".into(),
+            Ty::Float32 => "Float32".into(),
             Ty::Bool => "Bool".into(),
             Ty::Str => "String".into(),
             Ty::Data => "Data".into(),
@@ -602,6 +624,7 @@ impl Checker<'_> {
             Ty::List(t) => format!("[{}]", self.show(t)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
             Ty::Set(t) => format!("Set<{}>", self.show(t)),
+            Ty::GpuBuffer(t) => format!("GPUBuffer<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -992,6 +1015,7 @@ impl Checker<'_> {
             TypeExpr::Named(id) => match id.name.as_str() {
                 "Int" => Ty::Int,
                 "Float" => Ty::Float,
+                "Float32" => Ty::Float32,
                 "Bool" => Ty::Bool,
                 "String" => Ty::Str,
                 "Data" => Ty::Data,
@@ -999,6 +1023,10 @@ impl Checker<'_> {
                 "View" => Ty::View,
                 "Set" => {
                     self.error(id.span, "`Set` needs the type of its items, like `Set<Int>`");
+                    Ty::Error
+                }
+                "GPUBuffer" => {
+                    self.error(id.span, "`GPUBuffer` needs the type of its numbers, like `GPUBuffer<Float32>`");
                     Ty::Error
                 }
                 "$error" => Ty::Error,
@@ -1051,6 +1079,7 @@ impl Checker<'_> {
                 },
             },
             TypeExpr::Generic(id, args, span) if id.name == "Set" => self.set_type(args, *span),
+            TypeExpr::Generic(id, args, span) if id.name == "GPUBuffer" => self.gpu_buffer_type(args, *span),
             TypeExpr::Generic(id, args, span) => self.generic_name_ty(&id.name, args, *span),
             TypeExpr::List(t, _) => Ty::list(self.resolve(t)),
             TypeExpr::Dict(kt, v, _) => {
@@ -1263,7 +1292,14 @@ impl Checker<'_> {
                     self.ifaces[id].methods = methods;
                     self.ifaces[id].props = props;
                 }
-                Item::Fn(f) => self.fns[id] = self.fn_sig(f, true),
+                Item::Fn(f) => {
+                    self.fns[id] = self.fn_sig(f, true);
+                    if f.kernel {
+                        let sig = self.fns[id].clone();
+                        let k = self.kernel_sig(f, &sig);
+                        self.kernels.insert(f.name.name.clone(), k);
+                    }
+                }
                 Item::View(v) => {
                     self.no_variadic(&v.params, "a view");
                     self.views[id] = self.params_sig(&v.params, true);
@@ -1563,6 +1599,20 @@ impl Checker<'_> {
     }
 
     fn fn_body(&mut self, f: &FnDecl, sig: &FnSig) {
+        if f.kernel {
+            self.in_kernel = true;
+            self.fn_body_inner(f, sig);
+            self.in_kernel = false;
+            if self.kernels.contains_key(&f.name.name) {
+                let mut names: Vec<String> = f.params.iter().map(|p| p.name.name.clone()).collect();
+                self.kernel_block(&f.body, &mut names);
+            }
+            return;
+        }
+        self.fn_body_inner(f, sig);
+    }
+
+    fn fn_body_inner(&mut self, f: &FnDecl, sig: &FnSig) {
         // What an `async fn` returns goes to its completion block.
         let ret = match (f.is_async, sig.params.last().map(|p| &p.ty)) {
             (true, Some(Ty::Fn(ps, _))) => ps.first().cloned().unwrap_or(Ty::Void),
@@ -1985,6 +2035,11 @@ impl Checker<'_> {
     /// (so it can call itself). Like a closure, it uses the variables around
     /// it: `let`s as they were, `var`s as they are when it runs.
     fn local_fn(&mut self, f: &FnDecl) {
+        if f.kernel {
+            self.error(f.name.span, "a `kernel fn` must be at the top level of a file")
+                .help("move it out of this function");
+            return;
+        }
         if let Some(g) = f.generics.first() {
             self.error(g.name.span, "a function declared inside another function can't be generic")
                 .help("declare it at the top level of the file");
@@ -2113,16 +2168,20 @@ impl Checker<'_> {
             return;
         }
         let tt = self.expr(target, None);
-        // (`data[i] = byte` sets a byte of a `Data` that can be changed.)
-        let place = match &target.kind {
-            ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::Data)) => self.place(object),
-            _ => self.place(target),
-        };
-        self.note_write(target);
-        if !tt.has_error()
-            && let Err(err) = place {
-                self.report_place(err, target.span, "change");
-            }
+        // (A GPU buffer is a handle: its elements change on the GPU.)
+        let gpu_element = matches!(&target.kind, ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::GpuBuffer(_))));
+        if !gpu_element {
+            // (`data[i] = byte` sets a byte of a `Data` that can be changed.)
+            let place = match &target.kind {
+                ExprKind::Index(object, _) if matches!(self.types.get(&object.id), Some(Ty::Data)) => self.place(object),
+                _ => self.place(target),
+            };
+            self.note_write(target);
+            if !tt.has_error()
+                && let Err(err) = place {
+                    self.report_place(err, target.span, "change");
+                }
+        }
         match op {
             // `ages["Bob"] = …`: the entry is optional (`= nil` removes it),
             // but a mismatch is about the value type.
@@ -2136,7 +2195,7 @@ impl Checker<'_> {
             AssignOp::Set => {
                 self.expect(value, &tt);
             }
-            AssignOp::Op(BinOp::Add) if matches!(tt, Ty::Int | Ty::Float | Ty::Str | Ty::List(_) | Ty::Data | Ty::Error) => {
+            AssignOp::Op(BinOp::Add) if matches!(tt, Ty::Int | Ty::Float | Ty::Float32 | Ty::Str | Ty::List(_) | Ty::Data | Ty::Error) => {
                 self.expect(value, &tt);
             }
             AssignOp::Op(op) if op.is_bitwise() && matches!(tt, Ty::Int | Ty::Error) => {
@@ -2481,10 +2540,18 @@ impl Checker<'_> {
                 self.error(e.span, format!("`{n}<…>` is a type; to create one, call it: `{n}<…>(…)`"));
                 Ty::Error
             }
-            ExprKind::Int(_) => {
-                if matches!(expected.map(strip_opt), Some(Ty::Float)) { Ty::Float } else { Ty::Int }
-            }
-            ExprKind::Float(_) => Ty::Float,
+            ExprKind::Int(_) => match expected.map(strip_opt) {
+                Some(Ty::Float) => Ty::Float,
+                Some(Ty::Float32) => Ty::Float32,
+                _ => Ty::Int,
+            },
+            // (Inside a kernel, a number with a point is a `Float32`: see `in_kernel`.)
+            ExprKind::Float(_) => match expected.map(strip_opt) {
+                Some(Ty::Float32) => Ty::Float32,
+                Some(Ty::Float) => Ty::Float,
+                _ if self.in_kernel => Ty::Float32,
+                _ => Ty::Float,
+            },
             ExprKind::Bool(_) => Ty::Bool,
             ExprKind::Nil => match expected {
                 Some(t @ Ty::Opt(_)) => t.clone(),
@@ -2658,7 +2725,7 @@ impl Checker<'_> {
                 Ty::Int
             }
             ExprKind::Unary(UnaryOp::Neg, x) => {
-                let t = self.expr(x, expected.filter(|t| strip_opt(t) == &Ty::Float));
+                let t = self.expr(x, expected.filter(|t| matches!(strip_opt(t), Ty::Float | Ty::Float32)));
                 if !t.is_numeric() {
                     let what = self.a(&t);
                     self.error(x.span, format!("`-` needs a number, found {what}"));
@@ -2692,6 +2759,17 @@ impl Checker<'_> {
                     Ty::Data => {
                         self.expect(index, &Ty::Int);
                         Ty::Int
+                    }
+                    // In a kernel, an element; elsewhere it's on the GPU.
+                    Ty::GpuBuffer(el) if self.in_kernel => {
+                        self.expect(index, &Ty::Int);
+                        *el
+                    }
+                    Ty::GpuBuffer(_) => {
+                        self.expect(index, &Ty::Int);
+                        self.error(e.span, "a GPU buffer's numbers are on the GPU: only a kernel can use them one by one")
+                            .help("`buffer.read()` gives them all as a list; `buffer.write(list)` sets them");
+                        Ty::Error
                     }
                     Ty::Error => Ty::Error,
                     Ty::Opt(_) => {
@@ -2740,7 +2818,7 @@ impl Checker<'_> {
     /// Can a value of `t` be shown inside a list, dictionary, set or tuple?
     fn shows_inside(&self, t: &Ty) -> bool {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => true,
+            Ty::Int | Ty::Float | Ty::Float32 | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => true,
             Ty::Opt(x) | Ty::List(x) | Ty::Set(x) => self.shows_inside(x),
             Ty::Dict(k, v) => self.shows_inside(k) && self.shows_inside(v),
             Ty::Struct(id) if is_tuple_name(&self.structs[*id].name) => {
@@ -2758,7 +2836,7 @@ impl Checker<'_> {
 
     fn showable(&mut self, t: &Ty, span: Span) {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => {}
+            Ty::Int | Ty::Float | Ty::Float32 | Ty::Bool | Ty::Str | Ty::Range | Ty::Enum(_) | Ty::Error | Ty::Generic(_) => {}
             Ty::Opt(_) => {
                 self.error(span, "this might be `nil`, so it can't be shown as text directly")
                     .help("give it a default with `??`, like \"{name ?? \"none\"}\"");
@@ -2993,7 +3071,7 @@ impl Checker<'_> {
                     let (a, b) = (self.a(&lt), self.a(&rt));
                     self.error(l.span.to(r.span), format!("can't compare {a} with {b}"))
                         .help("convert one side with `Float(…)` or `Int(…)`");
-                } else if !matches!(lt, Ty::Int | Ty::Float | Ty::Str) {
+                } else if !matches!(lt, Ty::Int | Ty::Float | Ty::Float32 | Ty::Str) {
                     let a = self.a(&lt);
                     self.error(l.span, format!("`{}` works on numbers and text, not {a}", op.symbol()));
                 }
@@ -3017,6 +3095,7 @@ impl Checker<'_> {
                     }
                     (Ty::Str, _) | (_, Ty::Str) => "to put a value into text, use \"{…}\", like \"Total: {total}\"",
                     (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => "convert one side with `Float(…)` or `Int(…)`",
+                    (Ty::Float32, _) | (_, Ty::Float32) => "convert one side with `Float32(…)` (or `Float(…)`)",
                     _ => "arithmetic works on two numbers of the same type",
                 };
                 self.error(l.span.to(r.span), format!("can't use `{}` on {a} and {b}", op.symbol())).help(help);
@@ -3079,7 +3158,9 @@ impl Checker<'_> {
 
     /// Checks two operands so a literal (`1`, `nil`, `.all`) takes its type from the other side.
     fn operand_pair(&mut self, l: &Expr, r: &Expr, hint: Option<&Ty>) -> (Ty, Ty) {
-        if needs_context(l) && !needs_context(r) {
+        // (`1 + 2.5`: the number with a point says it's a `Float`.)
+        let int_then_float = matches!(l.kind, ExprKind::Int(_)) && matches!(r.kind, ExprKind::Float(_));
+        if needs_context(l) && (!needs_context(r) || int_then_float) {
             let rt = self.expr(r, hint);
             let lt = self.expr(l, Some(&rt));
             (lt, rt)
@@ -3380,6 +3461,21 @@ impl Checker<'_> {
             self.complete_member(object);
             return Ty::Error;
         }
+        if let ExprKind::Name(g) = &object.kind
+            && g == "gpu"
+            && self.lookup(g).is_none()
+            && !self.globals.contains_key(g)
+        {
+            return match name.name.as_str() {
+                "device" => Ty::Str,
+                "isCPU" => Ty::Bool,
+                n => {
+                    self.error(name.span, format!("`gpu` has no `{n}`"))
+                        .help("it has `device` and `isCPU`, and `run`, `wait`, `sum`, `min`, `max` and `dot`");
+                    Ty::Error
+                }
+            };
+        }
         // `Rect.zero`: a `static let` of a type.
         match self.static_member(object, name) {
             Some((full, Global::Const(i))) => {
@@ -3482,7 +3578,7 @@ impl Checker<'_> {
                     Ty::Error
                 }
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::Range => match builtins::property(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::Range | Ty::GpuBuffer(_) => match builtins::property(&recv, n) {
                 Some(t) => t,
                 None if builtins::method_of(&recv, n).is_some() => {
                     self.error(name.span, format!("`{n}` is a method; call it with `{n}(…)`"));
@@ -3600,6 +3696,7 @@ impl Checker<'_> {
             }
             ExprKind::GenericName(n, targs) => match self.generic_name_ty(n, targs, callee.span) {
                 Ty::Set(t) if n == "Set" => self.set_init(Some(*t), args, trailing, span, expected),
+                Ty::GpuBuffer(t) if n == "GPUBuffer" => self.gpu_buffer_init(Some(*t), args, trailing, span, expected),
                 Ty::Struct(id) => {
                     let name = self.structs[id].name.clone();
                     self.call_name(&name, callee.span, args, trailing, span, expected)
@@ -3701,6 +3798,11 @@ impl Checker<'_> {
             Some(Global::GenericFn(_) | Global::GenericStruct(_) | Global::GenericEnum(_) | Global::Const(_)) => {
                 unreachable!("handled above")
             }
+            Some(Global::Fn(_)) if self.kernels.contains_key(n) => {
+                self.error(span, format!("`{n}` is a kernel: run it with `gpu.run({n}, over: …)`"));
+                self.args_unchecked(args, trailing);
+                Ty::Error
+            }
             Some(Global::Fn(i)) => {
                 let sig = self.fns[i].clone();
                 self.set_callee(Callee::Fn(n.to_string()));
@@ -3787,9 +3889,16 @@ impl Checker<'_> {
                     self.set_callee(Callee::BuiltinFn(n.to_string()));
                 }
                 match n {
-                    "Int" | "Float" | "String" => return self.conversion(n, args, trailing, span),
+                    "Int" | "Float" | "Float32" | "String" => return self.conversion(n, args, trailing, span),
+                    "sqrt" | "exp" | "log" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "floor" | "ceil"
+                    | "round" | "pow" | "atan2"
+                        if trailing.is_none() && args.len() == math_arity(n) && args.iter().all(|a| a.label.is_none()) =>
+                    {
+                        return self.math_fn(n, args);
+                    }
                     "Data" => return self.data_init(args, trailing, span),
                     "Set" => return self.set_init(None, args, trailing, span, expected),
+                    "GPUBuffer" => return self.gpu_buffer_init(None, args, trailing, span, expected),
                     "background" => return self.background(args, trailing, span),
                     "toJson" | "toBinary" | "fromJson" | "fromBinary" => {
                         return self.codec_call(n, args, trailing, span, expected);
@@ -4049,7 +4158,7 @@ impl Checker<'_> {
 
     fn saveable_parts(&self, t: &Ty, open: &mut Vec<Ty>) -> Result<(), String> {
         match t {
-            Ty::Int | Ty::Float | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error | Ty::Generic(_) => Ok(()),
+            Ty::Int | Ty::Float | Ty::Float32 | Ty::Bool | Ty::Str | Ty::Data | Ty::Range | Ty::Error | Ty::Generic(_) => Ok(()),
             Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => self.saveable_in(e, open),
             Ty::Dict(k, v) => {
                 if !matches!(**k, Ty::Str | Ty::Int | Ty::Bool) && !matches!(**k, Ty::Enum(_)) {
@@ -4072,6 +4181,7 @@ impl Checker<'_> {
                 Ok(())
             }
             Ty::Fn(..) => Err("functions can't be saved".into()),
+            Ty::GpuBuffer(_) => Err("GPU buffers can't be saved; save what `read()` gives".into()),
             Ty::Iface(i) => {
                 // Saved with its type's name, so any conforming type can be loaded back.
                 for (t, _, _) in self.conforms.iter().filter(|(_, j, _)| j == i) {
@@ -4085,6 +4195,36 @@ impl Checker<'_> {
     }
 
     /// `abs(x)`, `min(a, b, …)`, `max(a, b, …)`: on `Int`s or `Float`s.
+    /// `sqrt(x)`, `pow(x, p)` and the other math functions: on `Float`s, or
+    /// on `Float32`s (a `Float32` gives a `Float32`; literals go along with
+    /// the other argument). Inside a kernel, on `Float32`s.
+    fn math_fn(&mut self, n: &str, args: &[Arg]) -> Ty {
+        let literal = |e: &Expr| matches!(e.kind, ExprKind::Int(_) | ExprKind::Float(_));
+        let lead = args.iter().position(|a| !literal(&a.value)).unwrap_or(0);
+        let hint = if self.in_kernel { Ty::Float32 } else { Ty::Float };
+        let t = self.expr(&args[lead].value, Some(&hint));
+        let ty = match t {
+            Ty::Float32 => Ty::Float32,
+            Ty::Error => Ty::Error,
+            _ if self.in_kernel => {
+                self.mismatch(args[lead].value.span, &Ty::Float32, &t);
+                Ty::Float32
+            }
+            Ty::Float => Ty::Float,
+            _ => {
+                self.mismatch(args[lead].value.span, &Ty::Float, &t);
+                Ty::Float
+            }
+        };
+        for (i, a) in args.iter().enumerate() {
+            if i != lead {
+                self.expect(&a.value, &ty);
+            }
+        }
+        let _ = n;
+        ty
+    }
+
     fn numeric_fn(&mut self, n: &str, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
         if let Some(a) = args.iter().find(|a| matches!(a.value.kind, ExprKind::Spread(_))) {
             let e = self.error(a.value.span, format!("`{n}` takes its values one by one"));
@@ -4138,13 +4278,14 @@ impl Checker<'_> {
         let (target, from_text) = match n {
             "Int" => (Ty::Int, Ty::opt(Ty::Int)),
             "Float" => (Ty::Float, Ty::opt(Ty::Float)),
+            "Float32" => (Ty::Float32, Ty::opt(Ty::Float32)),
             _ => {
                 self.showable(&t, arg.value.span);
                 return Ty::Str;
             }
         };
         match t {
-            Ty::Int | Ty::Float => target,
+            Ty::Int | Ty::Float | Ty::Float32 => target,
             // Parsing text can fail, so it gives an optional.
             Ty::Str => from_text,
             Ty::Error => target,
@@ -4270,6 +4411,14 @@ impl Checker<'_> {
                 }
                 _ => Ty::Error,
             };
+        }
+        // `gpu.run(…)`, `gpu.sum(…)`…: the GPU (see docs/gpu.md).
+        if let ExprKind::Name(g) = &object.kind
+            && g == "gpu"
+            && self.lookup(g).is_none()
+            && !self.globals.contains_key(g)
+        {
+            return self.gpu_call(name, args, trailing, span);
         }
         let ot = self.expr(object, None);
         let optional = optional || object.in_optional_chain();
@@ -4464,7 +4613,7 @@ impl Checker<'_> {
                 self.args(&what, &[p], args, trailing, span);
                 Ty::Void
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data => match builtins::method_of(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::GpuBuffer(_) => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {
@@ -4473,7 +4622,7 @@ impl Checker<'_> {
                     self.args(&what, &m.sig.params, args, trailing, span);
                     if let (Ty::List(elem) | Ty::Set(elem), "sorted") = (&recv, n) {
                         let by_given = trailing.is_some() || args.iter().any(|a| a.label.is_some());
-                        if !by_given && !matches!(**elem, Ty::Int | Ty::Float | Ty::Str | Ty::Error) {
+                        if !by_given && !matches!(**elem, Ty::Int | Ty::Float | Ty::Float32 | Ty::Str | Ty::Error) {
                             let el = self.a(elem);
                             self.error(span, format!("{el} values have no natural order, so `sorted()` needs a rule"))
                                 .help("pass one, like `sorted(by: { a, b in a.title < b.title })`");
@@ -5555,6 +5704,76 @@ impl Checker<'_> {
         Ty::set(t)
     }
 
+    /// `GPUBuffer<T>`: `T` is `Float32` or `Int` (32-bit on the GPU).
+    fn gpu_buffer_type(&mut self, targs: &[TypeExpr], span: Span) -> Ty {
+        let [item] = targs else {
+            self.error(span, "`GPUBuffer` takes one type, like `GPUBuffer<Float32>`");
+            return Ty::Error;
+        };
+        let t = self.resolve(item);
+        if !matches!(t, Ty::Float32 | Ty::Int | Ty::Error) {
+            let what = self.a(&t);
+            self.error(item.span(), format!("a GPU buffer holds `Float32`s or `Int`s, not {what}"))
+                .help("GPUs compute with 32-bit numbers: use `GPUBuffer<Float32>` (or `GPUBuffer<Int>`)");
+            return Ty::Error;
+        }
+        Ty::GpuBuffer(Box::new(t))
+    }
+
+    /// `GPUBuffer<Float32>(count: n)` (zeros), or `GPUBuffer(from: list)`.
+    fn gpu_buffer_init(&mut self, elem: Option<Ty>, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
+        self.set_callee(Callee::BuiltinFn("GPUBuffer".into()));
+        let elem = elem.or_else(|| match expected.map(strip_opt) {
+            Some(Ty::GpuBuffer(t)) => Some((**t).clone()),
+            _ => None,
+        });
+        let label = args.first().and_then(|a| a.label.as_ref()).map(|l| l.name.as_str());
+        match (args, label, trailing) {
+            ([a], Some("count"), None) => {
+                self.expect(&a.value, &Ty::Int);
+                if let Some(f) = self.frames.last_mut() {
+                    f.args = vec![Some(ArgRef::Arg(0))];
+                }
+                match elem {
+                    Some(t) => Ty::GpuBuffer(Box::new(t)),
+                    None => {
+                        self.error(span, "can't tell what numbers this buffer holds")
+                            .help("write the type, like `GPUBuffer<Float32>(count: n)`");
+                        Ty::Error
+                    }
+                }
+            }
+            ([a], Some("from"), None) => {
+                let lt = match &elem {
+                    Some(t) => self.expect(&a.value, &Ty::list(t.clone())),
+                    None => self.expr(&a.value, None),
+                };
+                if let Some(f) = self.frames.last_mut() {
+                    f.args = vec![Some(ArgRef::Arg(0))];
+                }
+                match lt {
+                    Ty::List(t) if matches!(*t, Ty::Float32 | Ty::Int) => Ty::GpuBuffer(t),
+                    Ty::List(t) if *t == Ty::Float => {
+                        self.error(a.value.span, "a GPU buffer holds `Float32`s, and this is a list of `Float`s")
+                            .help("convert them first: `xs.map { x in Float32(x) }`");
+                        Ty::Error
+                    }
+                    t if t.has_error() => Ty::Error,
+                    t => {
+                        let what = self.a(&t);
+                        self.error(a.value.span, format!("a GPU buffer is made from a list of `Float32`s or `Int`s, not {what}"));
+                        Ty::Error
+                    }
+                }
+            }
+            _ => {
+                self.args_unchecked(args, trailing);
+                self.error(span, "make a GPU buffer with `GPUBuffer<Float32>(count: n)` or `GPUBuffer(from: list)`");
+                Ty::Error
+            }
+        }
+    }
+
     /// `Set(list)`, `Set<Int>()`, or `Set()` where the type is known.
     fn set_init(&mut self, elem: Option<Ty>, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
         self.set_callee(Callee::BuiltinFn("Set".into()));
@@ -5609,6 +5828,9 @@ impl Checker<'_> {
     fn generic_name_ty(&mut self, n: &str, targs: &[TypeExpr], span: Span) -> Ty {
         if n == "Set" {
             return self.set_type(targs, span);
+        }
+        if n == "GPUBuffer" {
+            return self.gpu_buffer_type(targs, span);
         }
         let args: Vec<Ty> = targs.iter().map(|a| self.resolve(a)).collect();
         // (`Stack<Int>`: the name is what it starts with.)
@@ -5902,9 +6124,14 @@ fn fits_with(found: &Ty, expected: &Ty, conforms: &[(Ty, usize, Span)]) -> bool 
     }
 }
 
+/// How many arguments a math function takes.
+fn math_arity(n: &str) -> usize {
+    if matches!(n, "pow" | "atan2") { 2 } else { 1 }
+}
+
 fn equatable(t: &Ty) -> bool {
     match t {
-        Ty::Fn(..) | Ty::View | Ty::Any => false,
+        Ty::Fn(..) | Ty::View | Ty::Any | Ty::GpuBuffer(_) => false,
         Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => equatable(t),
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,
@@ -5918,7 +6145,7 @@ fn is_nil(e: &Expr) -> bool {
 /// Expressions whose type comes from context.
 fn needs_context(e: &Expr) -> bool {
     match &e.kind {
-        ExprKind::Nil | ExprKind::DotName(_) | ExprKind::Int(_) => true,
+        ExprKind::Nil | ExprKind::DotName(_) | ExprKind::Int(_) | ExprKind::Float(_) => true,
         ExprKind::List(items) => items.is_empty(),
         ExprKind::Dict(pairs) => pairs.is_empty(),
         _ => false,
@@ -6232,3 +6459,6 @@ fn no_effect(e: &Expr) -> bool {
         _ => false,
     }
 }
+
+#[path = "check_gpu.rs"]
+mod gpu;

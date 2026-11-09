@@ -10,6 +10,8 @@ pub enum Ty {
     Void,
     Int,
     Float,
+    /// A 32-bit float: what GPUs compute with (see docs/gpu.md).
+    Float32,
     Bool,
     Str,
     /// Raw bytes (`Data`): files, and the binary encoding of values.
@@ -20,6 +22,9 @@ pub enum Ty {
     Dict(Box<Ty>, Box<Ty>),
     /// `Set<T>`: stored like a `[T: Bool]` dictionary.
     Set(Box<Ty>),
+    /// `GPUBuffer<T>` (`T` is `Float32` or `Int`): numbers kept on the GPU
+    /// between kernel runs (see docs/gpu.md). A handle: copies share it.
+    GpuBuffer(Box<Ty>),
     Opt(Box<Ty>),
     Fn(Vec<Ty>, Box<Ty>),
     Struct(usize),
@@ -59,7 +64,7 @@ impl Ty {
     }
 
     pub fn is_numeric(&self) -> bool {
-        matches!(self, Ty::Int | Ty::Float | Ty::Error | Ty::Generic(_))
+        matches!(self, Ty::Int | Ty::Float | Ty::Float32 | Ty::Error | Ty::Generic(_))
     }
 
     /// Does this type contain an error anywhere (so mismatches aren't reported)?

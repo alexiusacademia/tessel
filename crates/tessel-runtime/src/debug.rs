@@ -84,6 +84,7 @@ const FUNCTION: u64 = 11;
 const VIEW: u64 = 12;
 const IFACE: u64 = 13;
 const RANGE: u64 = 14;
+const FLOAT32: u64 = 16;
 
 /// A variable of a call: its name, and how to find its value.
 struct Local {
@@ -556,6 +557,7 @@ unsafe fn write(out: &mut String, at: *const u8, ty: *const Type, depth: usize) 
         match t.kind {
             INT => out.push_str(&(*(at as *const i64)).to_string()),
             FLOAT => out.push_str(&crate::format_float(*(at as *const f64))),
+            FLOAT32 => out.push_str(&crate::format_float32(*(at as *const f32))),
             BOOL => out.push_str(if *at != 0 { "true" } else { "false" }),
             STR => {
                 let s = *(at as *const *const Str);

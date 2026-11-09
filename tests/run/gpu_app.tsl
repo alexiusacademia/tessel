@@ -1,0 +1,19 @@
+// GPU compute in an app: a button queues kernel runs on a buffer the app
+// keeps, and the window shows their sum (on the GPU, or the CPU fallback).
+
+kernel fn grow(_ i: Int, xs: GPUBuffer<Float32>, by: Float32) {
+    xs[i] = xs[i] + by * Float32(i % 4)
+}
+
+app Grower(width: 320, height: 200) {
+    state total = 0.0
+    let xs = GPUBuffer<Float32>(count: 4096)
+
+    VStack(spacing: 12) {
+        Text("Sum: {total}")
+        Button("Grow") {
+            gpu.run(grow, over: xs.count, xs, 0.5)
+            total = gpu.sum(xs)
+        }
+    }
+}

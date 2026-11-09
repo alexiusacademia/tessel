@@ -1,0 +1,52 @@
+// GPU compute: what a kernel can't be, or do, and `gpu.run`'s and
+// GPUBuffer's mistakes.
+
+let limit = 3
+
+fn helper(x: Float32) -> Float32 { x }
+
+kernel fn noIndex() { // error: a kernel's first parameter is its index
+}
+
+kernel fn wrongIndex(_ at: String, xs: GPUBuffer<Float32>) { // error: a kernel's index is an `Int`, `(Int, Int)` or `(Int, Int, Int)`, not `String`
+}
+
+kernel fn wide(_ i: Int, x: Float) { // error: a kernel computes with 32-bit numbers: use `Float32`, not `Float`
+}
+
+kernel fn texts(_ i: Int, names: [String]) { // error: a kernel can take `GPUBuffer`s, `Float32`, `Int` and `Bool`, not `[String]`
+}
+
+kernel fn gives(_ i: Int) -> Int { // error: a kernel returns nothing: it writes its results into buffers
+    0 // error: a kernel can't do this on its own
+}
+
+kernel fn subset(_ i: Int, xs: GPUBuffer<Float32>, n: Int) {
+    let s = "text" // error: a kernel has no text
+    let list = [1, 2] // error: a kernel can't make lists or dictionaries
+    let y = helper(x: xs[i]) // error: a kernel can't call `helper`
+    let z = Float(xs[i]) // error: a kernel can't call `Float`
+    xs[i] = Float32(limit) // error: a kernel can only use its parameters and its own variables, not `limit`
+    for v in [1, 2] { // error: in a kernel, `for` goes over a range of numbers
+    }
+    let big = 3000000000 // error: this number is too big for a kernel
+    let f: fn(Int) -> Int = { x in x } // error: a kernel can't have closures
+    let m = match n { // error: a kernel can't use `match`
+        0 -> 1
+        _ -> 2
+    }
+}
+
+fn main() {
+    let b = GPUBuffer<Float32>(count: 4)
+    let x = b[0] // error: a GPU buffer's numbers are on the GPU: only a kernel can use them one by one
+    let wrong = GPUBuffer<String>(count: 2) // error: a GPU buffer holds `Float32`s or `Int`s, not `String`
+    let doubles = GPUBuffer(from: [1.5, 2.5]) // error: a GPU buffer holds `Float32`s, and this is a list of `Float`s
+    subset(0, xs: b, n: 1) // error: `subset` is a kernel: run it with `gpu.run(subset, over: …)`
+    gpu.run(helper, over: 1) // error: `helper` isn't a kernel
+    gpu.run(subset, b, 1) // error: say how many times `subset` runs
+    gpu.run(subset, over: 4, b) // error: `subset` takes 2 values after its index, and this gives 1
+    gpu.run(subset, over: (2, 2), b, 1) // error: expected `Int`, found `(Int, Int)`
+    let s = gpu.sum(GPUBuffer<Int>(count: 3)) // error: expected `GPUBuffer<Float32>`, found `GPUBuffer<Int>`
+    gpu.launch() // error: `gpu` has no `launch`
+}

@@ -1,0 +1,334 @@
+// The GPU kernels of one time step of a free-surface flow solver: a VOF
+// volume fraction F in cells of an n×n×n box, and velocities u, v, w on
+// the cells' faces (a staggered grid, as Riptide has). Water is 1000 times
+// as dense as the air over it; the box's walls are closed and its top is
+// open to the air (pressure 0 there).
+//
+// Indexes: a cell (i, j, k) is i + n·(j + n·k); a u face (on the left of
+// cell i) is i + (n+1)·(j + n·k), a v face j-side i + n·(j + (n+1)·k), a w
+// face i + n·(j + n·k) with k up to n.
+//
+// Author: Alexius Academia
+// Date: 2026-11-09
+
+// ===== advection (semi-Lagrangian, trilinear) =====
+
+// u on its faces, carried back along the velocity by dt.
+kernel fn advectU(_ at: (Int, Int, Int), u: GPUBuffer<Float32>, v: GPUBuffer<Float32>, w: GPUBuffer<Float32>, out: GPUBuffer<Float32>, n: Int, dt: Float32) {
+    let (i, j, k) = at
+    let nu = n + 1
+    let c = i + nu * (j + n * k)
+    if i == 0 || i == n {
+        out[c] = 0.0
+        return
+    }
+    let vv = 0.25 * (v[i - 1 + n * (j + nu * k)] + v[i + n * (j + nu * k)] + v[i - 1 + n * (j + 1 + nu * k)] + v[i + n * (j + 1 + nu * k)])
+    let ww = 0.25 * (w[i - 1 + n * (j + n * k)] + w[i + n * (j + n * k)] + w[i - 1 + n * (j + n * (k + 1))] + w[i + n * (j + n * (k + 1))])
+    let s = dt * Float32(n)
+    let x = min(max(Float32(i) - s * u[c], 0.0), Float32(n))
+    let y = min(max(Float32(j) - s * vv, 0.0), Float32(n - 1))
+    let z = min(max(Float32(k) - s * ww, 0.0), Float32(n - 1))
+    let x0 = min(Int(x), n - 1)
+    let y0 = min(Int(y), n - 2)
+    let z0 = min(Int(z), n - 2)
+    let fx = x - Float32(x0)
+    let fy = y - Float32(y0)
+    let fz = z - Float32(z0)
+    let a = x0 + nu * (y0 + n * z0)
+    let sy = nu
+    let sz = nu * n
+    let c00 = u[a] * (1.0 - fx) + u[a + 1] * fx
+    let c10 = u[a + sy] * (1.0 - fx) + u[a + sy + 1] * fx
+    let c01 = u[a + sz] * (1.0 - fx) + u[a + sz + 1] * fx
+    let c11 = u[a + sy + sz] * (1.0 - fx) + u[a + sy + sz + 1] * fx
+    out[c] = (c00 * (1.0 - fy) + c10 * fy) * (1.0 - fz) + (c01 * (1.0 - fy) + c11 * fy) * fz
+}
+
+// v on its faces.
+kernel fn advectV(_ at: (Int, Int, Int), u: GPUBuffer<Float32>, v: GPUBuffer<Float32>, w: GPUBuffer<Float32>, out: GPUBuffer<Float32>, n: Int, dt: Float32) {
+    let (i, j, k) = at
+    let nu = n + 1
+    let c = i + n * (j + nu * k)
+    if j == 0 || j == n {
+        out[c] = 0.0
+        return
+    }
+    let uu = 0.25 * (u[i + nu * (j - 1 + n * k)] + u[i + 1 + nu * (j - 1 + n * k)] + u[i + nu * (j + n * k)] + u[i + 1 + nu * (j + n * k)])
+    let ww = 0.25 * (w[i + n * (j - 1 + n * k)] + w[i + n * (j + n * k)] + w[i + n * (j - 1 + n * (k + 1))] + w[i + n * (j + n * (k + 1))])
+    let s = dt * Float32(n)
+    let x = min(max(Float32(i) - s * uu, 0.0), Float32(n - 1))
+    let y = min(max(Float32(j) - s * v[c], 0.0), Float32(n))
+    let z = min(max(Float32(k) - s * ww, 0.0), Float32(n - 1))
+    let x0 = min(Int(x), n - 2)
+    let y0 = min(Int(y), n - 1)
+    let z0 = min(Int(z), n - 2)
+    let fx = x - Float32(x0)
+    let fy = y - Float32(y0)
+    let fz = z - Float32(z0)
+    let a = x0 + n * (y0 + nu * z0)
+    let sy = n
+    let sz = n * nu
+    let c00 = v[a] * (1.0 - fx) + v[a + 1] * fx
+    let c10 = v[a + sy] * (1.0 - fx) + v[a + sy + 1] * fx
+    let c01 = v[a + sz] * (1.0 - fx) + v[a + sz + 1] * fx
+    let c11 = v[a + sy + sz] * (1.0 - fx) + v[a + sy + sz + 1] * fx
+    out[c] = (c00 * (1.0 - fy) + c10 * fy) * (1.0 - fz) + (c01 * (1.0 - fy) + c11 * fy) * fz
+}
+
+// w on its faces, with gravity (dt·g) added. The top face is open: its w
+// is carried too.
+kernel fn advectW(_ at: (Int, Int, Int), u: GPUBuffer<Float32>, v: GPUBuffer<Float32>, w: GPUBuffer<Float32>, out: GPUBuffer<Float32>, n: Int, dt: Float32, g: Float32) {
+    let (i, j, k) = at
+    let nu = n + 1
+    let c = i + n * (j + n * k)
+    if k == 0 {
+        out[c] = 0.0
+        return
+    }
+    let kc = min(k, n - 1)
+    let uu = 0.25 * (u[i + nu * (j + n * (k - 1))] + u[i + 1 + nu * (j + n * (k - 1))] + u[i + nu * (j + n * kc)] + u[i + 1 + nu * (j + n * kc)])
+    let vv = 0.25 * (v[i + n * (j + nu * (k - 1))] + v[i + n * (j + 1 + nu * (k - 1))] + v[i + n * (j + nu * kc)] + v[i + n * (j + 1 + nu * kc)])
+    let s = dt * Float32(n)
+    let x = min(max(Float32(i) - s * uu, 0.0), Float32(n - 1))
+    let y = min(max(Float32(j) - s * vv, 0.0), Float32(n - 1))
+    let z = min(max(Float32(k) - s * w[c], 0.0), Float32(n))
+    let x0 = min(Int(x), n - 2)
+    let y0 = min(Int(y), n - 2)
+    let z0 = min(Int(z), n - 1)
+    let fx = x - Float32(x0)
+    let fy = y - Float32(y0)
+    let fz = z - Float32(z0)
+    let a = x0 + n * (y0 + n * z0)
+    let sy = n
+    let sz = n * n
+    let c00 = w[a] * (1.0 - fx) + w[a + 1] * fx
+    let c10 = w[a + sy] * (1.0 - fx) + w[a + sy + 1] * fx
+    let c01 = w[a + sz] * (1.0 - fx) + w[a + sz + 1] * fx
+    let c11 = w[a + sy + sz] * (1.0 - fx) + w[a + sy + sz + 1] * fx
+    out[c] = (c00 * (1.0 - fy) + c10 * fy) * (1.0 - fz) + (c01 * (1.0 - fy) + c11 * fy) * fz + dt * g
+}
+
+// ===== the pressure equation =====
+//
+// A·p = b, in the form of flows through faces: (A·p)[c] = Σ wf·(p[c] −
+// p[neighbour]) + top[c]·p[c], with wf = h/ρ(face) (a face's area over the
+// distance, over its density) and top[c] the open top's (twice that, as
+// the air is half a cell away). wx[c] is the weight of the face on the
+// left of cell c (0 at the wall), wy the one in front, wz the one below.
+
+// The finest level's weights from the volume fraction.
+kernel fn weights(_ at: (Int, Int, Int), f: GPUBuffer<Float32>, wx: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, top: GPUBuffer<Float32>, n: Int, h: Float32) {
+    let (i, j, k) = at
+    let c = i + n * (j + n * k)
+    let rho = 1.0 + 999.0 * min(max(f[c], 0.0), 1.0)
+    wx[c] = if i == 0 { 0.0 } else { 2.0 * h / (rho + 1.0 + 999.0 * min(max(f[c - 1], 0.0), 1.0)) }
+    wy[c] = if j == 0 { 0.0 } else { 2.0 * h / (rho + 1.0 + 999.0 * min(max(f[c - n], 0.0), 1.0)) }
+    wz[c] = if k == 0 { 0.0 } else { 2.0 * h / (rho + 1.0 + 999.0 * min(max(f[c - n * n], 0.0), 1.0)) }
+    top[c] = if k == n - 1 { 2.0 * h / rho } else { 0.0 }
+}
+
+// A coarse level's weights (m cells a side) from the finer one's (2m): a
+// coarse face is 4 fine ones, at twice the distance. (The open top's are
+// `coarsenTop`'s.)
+kernel fn coarsen(_ at: (Int, Int, Int), fx: GPUBuffer<Float32>, fy: GPUBuffer<Float32>, fz: GPUBuffer<Float32>, cx: GPUBuffer<Float32>, cy: GPUBuffer<Float32>, cz: GPUBuffer<Float32>, m: Int) {
+    let (i, j, k) = at
+    let c = i + m * (j + m * k)
+    let n = 2 * m
+    let f = 2 * i + n * (2 * j + n * 2 * k)
+    let sy = n
+    let sz = n * n
+    cx[c] = 0.5 * (fx[f] + fx[f + sy] + fx[f + sz] + fx[f + sy + sz])
+    cy[c] = 0.5 * (fy[f] + fy[f + 1] + fy[f + sz] + fy[f + 1 + sz])
+    cz[c] = 0.5 * (fz[f] + fz[f + 1] + fz[f + sy] + fz[f + 1 + sy])
+}
+
+kernel fn coarsenTop(_ at: (Int, Int, Int), ft: GPUBuffer<Float32>, ct: GPUBuffer<Float32>, m: Int) {
+    let (i, j, k) = at
+    let c = i + m * (j + m * k)
+    let n = 2 * m
+    let f = 2 * i + n * (2 * j + n * (2 * k + 1))
+    ct[c] = 0.5 * (ft[f] + ft[f + 1] + ft[f + n] + ft[f + n + 1])
+}
+
+// Each cell's own weight (A's diagonal).
+kernel fn diagonal(_ at: (Int, Int, Int), wx: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, top: GPUBuffer<Float32>, d: GPUBuffer<Float32>, m: Int) {
+    let (i, j, k) = at
+    let c = i + m * (j + m * k)
+    var s = wx[c] + wy[c] + wz[c] + top[c]
+    if i < m - 1 { s += wx[c + 1] }
+    if j < m - 1 { s += wy[c + m] }
+    if k < m - 1 { s += wz[c + m * m] }
+    d[c] = s
+}
+
+// out = A·x (and with `minus`, out = b − A·x).
+kernel fn applyA(_ at: (Int, Int, Int), x: GPUBuffer<Float32>, b: GPUBuffer<Float32>, wx: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, d: GPUBuffer<Float32>, out: GPUBuffer<Float32>, m: Int, minus: Bool) {
+    let (i, j, k) = at
+    let c = i + m * (j + m * k)
+    var s = d[c] * x[c]
+    if i > 0 { s -= wx[c] * x[c - 1] }
+    if i < m - 1 { s -= wx[c + 1] * x[c + 1] }
+    if j > 0 { s -= wy[c] * x[c - m] }
+    if j < m - 1 { s -= wy[c + m] * x[c + m] }
+    if k > 0 { s -= wz[c] * x[c - m * m] }
+    if k < m - 1 { s -= wz[c + m * m] * x[c + m * m] }
+    out[c] = if minus { b[c] - s } else { s }
+}
+
+// One half of a red-black Gauss-Seidel sweep: the cells of one colour,
+// one thread each (over (m/2, m, m): the i of a cell is 2·h or 2·h + 1,
+// whichever has the colour). With `fresh`, x is taken to be 0 before the
+// sweep (the V-cycle starts from zero): the other colour's cells are set
+// to 0 too, so nothing needs clearing first.
+kernel fn smooth(_ at: (Int, Int, Int), x: GPUBuffer<Float32>, b: GPUBuffer<Float32>, wx: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, d: GPUBuffer<Float32>, m: Int, colour: Int, fresh: Bool) {
+    let (h, j, k) = at
+    let i = 2 * h + (j + k + colour) % 2
+    if i >= m {
+        return
+    }
+    let c = i + m * (j + m * k)
+    if fresh {
+        // (This colour's cells' neighbours are all of the other colour: 0.)
+        x[c] = b[c] / d[c]
+        let o = 2 * h + 1 - (j + k + colour) % 2
+        if o < m {
+            x[o + m * (j + m * k)] = 0.0
+        }
+        return
+    }
+    var s = b[c]
+    if i > 0 { s += wx[c] * x[c - 1] }
+    if i < m - 1 { s += wx[c + 1] * x[c + 1] }
+    if j > 0 { s += wy[c] * x[c - m] }
+    if j < m - 1 { s += wy[c + m] * x[c + m] }
+    if k > 0 { s += wz[c] * x[c - m * m] }
+    if k < m - 1 { s += wz[c + m * m] * x[c + m * m] }
+    x[c] = s / d[c]
+}
+
+// A coarse level's right side: the sum of its 8 fine cells' residuals
+// b − A·x (worked out here, without keeping them).
+kernel fn restrict(_ at: (Int, Int, Int), x: GPUBuffer<Float32>, b: GPUBuffer<Float32>, wx: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, d: GPUBuffer<Float32>, coarse: GPUBuffer<Float32>, m: Int) {
+    let (ci, cj, ck) = at
+    let n = 2 * m
+    var total: Float32 = 0
+    for q in 0..8 {
+        let i = 2 * ci + q % 2
+        let j = 2 * cj + (q / 2) % 2
+        let k = 2 * ck + q / 4
+        let c = i + n * (j + n * k)
+        var s = d[c] * x[c]
+        if i > 0 { s -= wx[c] * x[c - 1] }
+        if i < n - 1 { s -= wx[c + 1] * x[c + 1] }
+        if j > 0 { s -= wy[c] * x[c - n] }
+        if j < n - 1 { s -= wy[c + n] * x[c + n] }
+        if k > 0 { s -= wz[c] * x[c - n * n] }
+        if k < n - 1 { s -= wz[c + n * n] * x[c + n * n] }
+        total += b[c] - s
+    }
+    coarse[ci + m * (cj + m * ck)] = total
+}
+
+// The fine level's x gets its coarse cell's correction.
+kernel fn prolong(_ at: (Int, Int, Int), coarse: GPUBuffer<Float32>, fine: GPUBuffer<Float32>, n: Int) {
+    let (i, j, k) = at
+    let m = n / 2
+    fine[i + n * (j + n * k)] += coarse[i / 2 + m * (j / 2 + m * (k / 2))]
+}
+
+// ===== conjugate gradients' vector steps =====
+
+// x += α·d, r −= α·q
+kernel fn step(_ c: Int, x: GPUBuffer<Float32>, r: GPUBuffer<Float32>, d: GPUBuffer<Float32>, q: GPUBuffer<Float32>, alpha: Float32) {
+    x[c] += alpha * d[c]
+    r[c] -= alpha * q[c]
+}
+
+// d = z + β·d
+kernel fn direction(_ c: Int, d: GPUBuffer<Float32>, z: GPUBuffer<Float32>, beta: Float32) {
+    d[c] = z[c] + beta * d[c]
+}
+
+// ===== the velocities' divergence, and the projection =====
+
+// b = −(the flow out of each cell)·h²/dt: what the pressure must undo (A
+// is positive, as −∇·(∇p/ρ) is).
+kernel fn divergence(_ at: (Int, Int, Int), u: GPUBuffer<Float32>, v: GPUBuffer<Float32>, w: GPUBuffer<Float32>, b: GPUBuffer<Float32>, n: Int, h: Float32, dt: Float32) {
+    let (i, j, k) = at
+    let nu = n + 1
+    let out = u[i + 1 + nu * (j + n * k)] - u[i + nu * (j + n * k)] + v[i + n * (j + 1 + nu * k)] - v[i + n * (j + nu * k)] + w[i + n * (j + n * (k + 1))] - w[i + n * (j + n * k)]
+    b[i + n * (j + n * k)] = 0.0 - out * h * h / dt
+}
+
+// The velocities on the faces lose the pressure's push: u −= dt·(p − p
+// next door)/(ρ·h), as the weights have it (wf = h/ρ, so dt·wf·Δp/h²).
+kernel fn projectU(_ at: (Int, Int, Int), u: GPUBuffer<Float32>, p: GPUBuffer<Float32>, wx: GPUBuffer<Float32>, n: Int, h: Float32, dt: Float32) {
+    let (i, j, k) = at
+    if i == 0 || i == n {
+        return
+    }
+    let c = i + n * (j + n * k)
+    u[i + (n + 1) * (j + n * k)] -= dt * wx[c] * (p[c] - p[c - 1]) / (h * h)
+}
+
+kernel fn projectV(_ at: (Int, Int, Int), v: GPUBuffer<Float32>, p: GPUBuffer<Float32>, wy: GPUBuffer<Float32>, n: Int, h: Float32, dt: Float32) {
+    let (i, j, k) = at
+    if j == 0 || j == n {
+        return
+    }
+    let c = i + n * (j + n * k)
+    v[i + n * (j + (n + 1) * k)] -= dt * wy[c] * (p[c] - p[c - n]) / (h * h)
+}
+
+kernel fn projectW(_ at: (Int, Int, Int), w: GPUBuffer<Float32>, p: GPUBuffer<Float32>, wz: GPUBuffer<Float32>, top: GPUBuffer<Float32>, n: Int, h: Float32, dt: Float32) {
+    let (i, j, k) = at
+    if k == 0 {
+        return
+    }
+    if k == n {
+        // The open top: the air's pressure is 0.
+        let c = i + n * (j + n * (n - 1))
+        w[i + n * (j + n * n)] -= dt * top[c] * (0.0 - p[c]) / (h * h)
+        return
+    }
+    let c = i + n * (j + n * k)
+    w[c] -= dt * wz[c] * (p[c] - p[c - n * n]) / (h * h)
+}
+
+// ===== the volume fraction =====
+
+// F moves with the faces' flows, taking its value from the cell the flow
+// comes from (donor cell). What leaves one cell enters the next, so the
+// water's volume only changes by rounding (and by what leaves at the top).
+//
+// What leaves through the open top is added up in `left` (per column), so
+// the volume can be checked: what's in the box and what left.
+kernel fn moveF(_ at: (Int, Int, Int), f: GPUBuffer<Float32>, u: GPUBuffer<Float32>, v: GPUBuffer<Float32>, w: GPUBuffer<Float32>, out: GPUBuffer<Float32>, left: GPUBuffer<Float32>, n: Int, dt: Float32) {
+    let (i, j, k) = at
+    let nu = n + 1
+    let c = i + n * (j + n * k)
+    let s = dt * Float32(n)
+    let fc = f[c]
+    // Through the left, right, front, back, bottom and top faces.
+    let ul = u[i + nu * (j + n * k)]
+    let ur = u[i + 1 + nu * (j + n * k)]
+    let vf = v[i + n * (j + nu * k)]
+    let vb = v[i + n * (j + 1 + nu * k)]
+    let wd = w[i + n * (j + n * k)]
+    let wu = w[i + n * (j + n * (k + 1))]
+    let inL = if ul > 0.0 { ul * (if i > 0 { f[c - 1] } else { 0.0 }) } else { ul * fc }
+    let outR = if ur > 0.0 { ur * fc } else { ur * (if i < n - 1 { f[c + 1] } else { 0.0 }) }
+    let inF = if vf > 0.0 { vf * (if j > 0 { f[c - n] } else { 0.0 }) } else { vf * fc }
+    let outB = if vb > 0.0 { vb * fc } else { vb * (if j < n - 1 { f[c + n] } else { 0.0 }) }
+    let inD = if wd > 0.0 { wd * (if k > 0 { f[c - n * n] } else { 0.0 }) } else { wd * fc }
+    let outU = if wu > 0.0 { wu * fc } else { wu * (if k < n - 1 { f[c + n * n] } else { 0.0 }) }
+    out[c] = fc + s * (inL - outR + inF - outB + inD - outU)
+    if k == n - 1 {
+        left[i + n * j] += s * outU
+    }
+}
+
+// |a|, for the Courant number.
+kernel fn magnitude(_ c: Int, a: GPUBuffer<Float32>, out: GPUBuffer<Float32>) {
+    out[c] = abs(a[c])
+}

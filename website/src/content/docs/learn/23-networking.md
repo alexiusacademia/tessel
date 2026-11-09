@@ -494,4 +494,4 @@ fn main() {
 - For more, see [Sockets and servers](/guides/networking/) and the
   [reference](/reference/stdlib/#sockets).
 
-**Next:** [24. Where to go next](/learn/21-next-steps/)
+**Next:** [24. Number-crunching on the GPU](/learn/24-gpu/)

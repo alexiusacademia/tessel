@@ -197,9 +197,9 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), Tok::Ident(w) if w == word)
     }
 
-    /// `fn`, or `async fn`.
+    /// `fn`, `async fn` or `kernel fn`.
     fn at_fn(&self) -> bool {
-        self.at(&Tok::Fn) || (self.at_word("async") && *self.peek_at(1) == Tok::Fn)
+        self.at(&Tok::Fn) || ((self.at_word("async") || self.at_word("kernel")) && *self.peek_at(1) == Tok::Fn)
     }
 
     /// `static fn`, `static async fn` or `static let`.
@@ -478,6 +478,7 @@ impl<'a> Parser<'a> {
             constant: false,
             prop: false,
             is_async: false,
+            kernel: false,
         })
     }
 
@@ -749,6 +750,7 @@ impl<'a> Parser<'a> {
             constant: true,
             prop: false,
             is_async: false,
+            kernel: false,
         })
     }
 
@@ -775,12 +777,14 @@ impl<'a> Parser<'a> {
             constant: false,
             prop: true,
             is_async: false,
+            kernel: false,
         })
     }
 
     fn fn_decl(&mut self) -> PResult<FnDecl> {
         let is_async = self.at_word("async");
-        if is_async {
+        let kernel = self.at_word("kernel");
+        if is_async || kernel {
             self.bump();
         }
         self.bump(); // fn
@@ -799,7 +803,7 @@ impl<'a> Parser<'a> {
             params.push(done_param(ret.clone(), close));
         }
         let body = self.block()?;
-        Ok(FnDecl { name, generics, params, ret, body, constant: false, prop: false, is_async })
+        Ok(FnDecl { name, generics, params, ret, body, constant: false, prop: false, is_async, kernel })
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {

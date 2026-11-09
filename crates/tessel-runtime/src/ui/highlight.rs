@@ -11,7 +11,7 @@ use super::Rgba;
 const KEYWORDS: &[&str] = &[
     "app", "view", "struct", "enum", "interface", "fn", "let", "var", "state", "bind", "if", "else", "for", "in", "match",
     "return", "try", "while", "break", "continue", "true", "false", "nil", "import", "public", "private", "async",
-    "await", "static",
+    "await", "static", "kernel",
 ];
 
 /// The kinds of tokens that get a color of their own.

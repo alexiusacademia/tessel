@@ -1,5 +1,5 @@
 ---
-title: 24. Where to go next
+title: 25. Where to go next
 description: A look back at what you've learned, ideas for projects to build next, how to use the reference, and advice for growing as a programmer.
 ---
 
@@ -36,7 +36,7 @@ You designed your own types: **structs** that group values together, and
 and `sorted`. **Interfaces** let different types share abilities, and
 **generics** let one function or type work with any type.
 
-### Building real programs (lessons 16–22)
+### Building real programs (lessons 16–24)
 
 You made programs remember things with **files** and **JSON**, and split
 them into several files. You looked at **algorithms**: searching, sorting,
@@ -48,7 +48,9 @@ drawing it step by step. Then you gave apps the pieces real ones have:
 **forms** that line up in a grid, pickers, search, **tables edited in
 place**, **rich text**, turned and scaled views, **sound and video**, **web
 pages**, **notifications**, a **tray icon**, and files dragged out of the
-app.
+app. Your programs **talked over the network** with sockets, and served
+web pages of their own, and you ran **kernels on the GPU** to work on
+millions of numbers at once.
 
 Most importantly, you practiced the real skill underneath all of this:
 breaking a problem into small steps, and turning each step into code.
@@ -206,6 +208,10 @@ But remember lesson 17: a better algorithm matters far more than a faster
 language. A good algorithm in Python beats a bad one in C. Write clear code
 first, measure when something feels slow, and fix the part that's actually
 slow.
+
+And when the slow part is the same small step done to millions of numbers,
+lesson 24's [GPU kernels](/guides/gpu/) can make it many times faster
+again.
 
 ## Advice for the road
 

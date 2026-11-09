@@ -175,6 +175,10 @@ pub struct FnDecl {
     /// `async fn`: it can `await`. Its last parameter (`DONE_PARAM`, added
     /// by the parser) is the block that gets its result, of type `ret`.
     pub is_async: bool,
+    /// `kernel fn`: run once for each index of a range, on the GPU (or the
+    /// CPU's cores without one). Only the GPU subset is allowed in it; see
+    /// docs/gpu.md.
+    pub kernel: bool,
 }
 
 /// The name of the function behind a `static` member of a type.

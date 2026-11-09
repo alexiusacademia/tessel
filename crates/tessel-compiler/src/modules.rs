@@ -151,7 +151,7 @@ fn tessel_names() -> &'static HashSet<String> {
         names.extend(lists.iter().flat_map(|l| l.iter().map(|n| n.to_string())));
         names.extend(builtins::enums().into_iter().map(|e| e.name));
         names.extend(builtins::structs().into_iter().map(|s| s.name));
-        names.extend(["Int", "Float", "Bool", "String", "Data", "Range", "View", "Set", "pi"].map(String::from));
+        names.extend(["Int", "Float", "Float32", "GPUBuffer", "gpu", "Bool", "String", "Data", "Range", "View", "Set", "pi"].map(String::from));
         let (mut diags, mut next_id) = (Diagnostics::default(), 0);
         let prelude = crate::parser::parse_file(crate::source::PRELUDE_FILE, crate::source::PRELUDE, &mut diags, &mut next_id);
         names.extend(prelude.items.iter().map(|i| i.name().name.clone()));

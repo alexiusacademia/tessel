@@ -61,7 +61,7 @@ true  false  nil
 
 `import`, `public` and `private` are keywords only where they begin an
 import or a declaration (or a member, for `private`); elsewhere they can be
-used as names. So are `async` (before `fn`), `static` (before `fn` or `let`
+used as names. So are `async` and `kernel` (before `fn`), `static` (before `fn` or `let`
 in a struct or enum) and `await` (before a call).
 
 `_` is also reserved: it marks an unlabeled parameter, ignores a closure
@@ -208,7 +208,7 @@ parentheses: `view Header { … }`.
 ### Functions and parameters
 
 ```text
-fn_decl = "async"? "fn" IDENT generics? params ("->" type)? block ;
+fn_decl = ("async" | "kernel")? "fn" IDENT generics? params ("->" type)? block ;
 params  = "(" (param ("," param)* ","?)? ")" ;
 param   = "_"? IDENT ":" "bind"? type "..."? ("=" expr)? ;
 ```

@@ -121,7 +121,7 @@
         },
         {
           "name": "storage.modifier.tessel",
-          "match": "\\b(bind)\\b|^\\s*(public|private)\\b|\\b(async|static)(?=\\s+(fn|let|async)\\b)"
+          "match": "\\b(bind)\\b|^\\s*(public|private)\\b|\\b(async|static|kernel)(?=\\s+(fn|let|async)\\b)"
         },
         {
           "name": "storage.type.tessel",

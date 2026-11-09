@@ -30,6 +30,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 "i32" => g.ctx.i32_type().into(),
                 "i64" => g.i64().into(),
                 "f64" => g.ctx.f64_type().into(),
+                "f32" => g.ctx.f32_type().into(),
                 _ => g.ptr_ty().into(),
             }
         };
@@ -111,6 +112,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Ty::Float => {
                 let v = self.load(t, vp);
+                p(self.tree_call("tsl_tree_float", &["f64"], Some("ptr"), &[v]))
+            }
+            // (As the Float with its shortest digits, `0.1`, which reads
+            // back as the same Float32.)
+            Ty::Float32 => {
+                let v = self.load(t, vp);
+                let v = self.tree_call("tsl_float32_as_written", &["f32"], Some("f64"), &[v]).unwrap();
                 p(self.tree_call("tsl_tree_float", &["f64"], Some("ptr"), &[v]))
             }
             Ty::Bool => {
@@ -331,6 +339,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             Ty::Float => {
                 let r = self.tree_call("tsl_tree_as_float", &["ptr", "ptr"], Some("i8"), &[h.into(), out.into()]);
+                self.truthy(r)
+            }
+            Ty::Float32 => {
+                let f64t = self.ctx.f64_type();
+                let tmp = self.alloca(f64t.into(), "f");
+                let r = self.tree_call("tsl_tree_as_float", &["ptr", "ptr"], Some("i8"), &[h.into(), tmp.into()]);
+                let v = self.b.build_load(f64t, tmp, "").unwrap().into_float_value();
+                let v = self.b.build_float_trunc(v, self.ctx.f32_type(), "").unwrap();
+                self.b.build_store(out, v).unwrap();
                 self.truthy(r)
             }
             Ty::Bool => {

@@ -76,7 +76,8 @@ the ideas stick.
 - [21. Forms, tables and rich text](/learn/21-forms-tables/)
 - [22. Sound, video, the web and the desktop](/learn/22-media-desktop/)
 - [23. Talking over the network](/learn/23-networking/)
-- [24. Where to go next](/learn/21-next-steps/)
+- [24. Number-crunching on the GPU](/learn/24-gpu/)
+- [25. Where to go next](/learn/21-next-steps/)
 
 Ready? Start with [1. Your first program](/learn/01-first-program/).
 

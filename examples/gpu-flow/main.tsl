@@ -1,0 +1,374 @@
+// gpu-flow: the expensive core of one time step of a free-surface water
+// flow solver (as Riptide's), on the GPU with Tessel's GPU compute, to
+// measure it: a dam break in a 1 m box of 96×96×96 cells (884 736), with
+//
+// 1. the velocities carried along (semi-Lagrangian advection) and gravity,
+// 2. the pressure solved (conjugate gradients, preconditioned with a
+//    multigrid V-cycle, or with Jacobi), to a relative residual of 1e-6,
+//    and the velocities made divergence-free,
+// 3. the water's volume fraction moved with them (VOF, donor-cell fluxes).
+//
+//   tessel build examples/gpu-flow -o gpu-flow
+//   ./gpu-flow [steps] [n] [multigrid|jacobi] [dt]
+//   TESSEL_GPU=cpu ./gpu-flow ...     (the CPU fallback, on every core)
+//
+// FLOW_PHASES=1 times each part of a step (waiting for the GPU between
+// them); FLOW_PARTS=1 times a V-cycle, the vector steps and a dot product
+// on their own. It prints the solve's residual as conjugate gradients has
+// it and worked out again (also in 64-bit on the CPU), the divergence left
+// after the projection, and the water's volume (with what left through the
+// open top).
+//
+// Author: Alexius Academia
+// Date: 2026-11-09
+
+// One level of the multigrid: its weights (see kernels.tsl), and its own
+// unknowns, right side and residual.
+struct Level {
+    m: Int
+    wx: GPUBuffer<Float32>
+    wy: GPUBuffer<Float32>
+    wz: GPUBuffer<Float32>
+    top: GPUBuffer<Float32>
+    d: GPUBuffer<Float32>
+    x: GPUBuffer<Float32>
+    b: GPUBuffer<Float32>
+    r: GPUBuffer<Float32>
+}
+
+fn level(_ m: Int) -> Level {
+    let c = m * m * m
+    Level(
+        m: m,
+        wx: GPUBuffer<Float32>(count: c),
+        wy: GPUBuffer<Float32>(count: c),
+        wz: GPUBuffer<Float32>(count: c),
+        top: GPUBuffer<Float32>(count: c),
+        d: GPUBuffer<Float32>(count: c),
+        x: GPUBuffer<Float32>(count: c),
+        b: GPUBuffer<Float32>(count: c),
+        r: GPUBuffer<Float32>(count: c)
+    )
+}
+
+struct Flow {
+    n: Int
+    h: Float32
+    f: GPUBuffer<Float32>
+    f2: GPUBuffer<Float32>
+    u: GPUBuffer<Float32>
+    v: GPUBuffer<Float32>
+    w: GPUBuffer<Float32>
+    u2: GPUBuffer<Float32>
+    v2: GPUBuffer<Float32>
+    w2: GPUBuffer<Float32>
+    // The pressure, the right side, and conjugate gradients' vectors.
+    p: GPUBuffer<Float32>
+    b: GPUBuffer<Float32>
+    r: GPUBuffer<Float32>
+    z: GPUBuffer<Float32>
+    d: GPUBuffer<Float32>
+    q: GPUBuffer<Float32>
+    // What left through the open top, per column (in cells of water).
+    left: GPUBuffer<Float32>
+    levels: [Level]
+}
+
+// A box of n cells a side, with a block of water 0.4 wide and 0.6 high
+// against its left wall.
+fn flow(_ n: Int) -> Flow {
+    let cells = n * n * n
+    var start: [Float32] = []
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
+                let water = Float(i) + 0.5 < 0.4 * Float(n) && Float(k) + 0.5 < 0.6 * Float(n)
+                start.append(if water { 1.0 } else { 0.0 })
+            }
+        }
+    }
+    var levels: [Level] = []
+    var m = n
+    while m >= 3 && m % 2 == 0 {
+        levels.append(level(m))
+        m = m / 2
+    }
+    levels.append(level(m))
+    let faces = (n + 1) * n * n
+    Flow(
+        n: n,
+        h: Float32(1.0 / Float(n)),
+        f: GPUBuffer(from: start),
+        f2: GPUBuffer<Float32>(count: cells),
+        u: GPUBuffer<Float32>(count: faces),
+        v: GPUBuffer<Float32>(count: faces),
+        w: GPUBuffer<Float32>(count: faces),
+        u2: GPUBuffer<Float32>(count: faces),
+        v2: GPUBuffer<Float32>(count: faces),
+        w2: GPUBuffer<Float32>(count: faces),
+        p: GPUBuffer<Float32>(count: cells),
+        b: GPUBuffer<Float32>(count: cells),
+        r: GPUBuffer<Float32>(count: cells),
+        z: GPUBuffer<Float32>(count: cells),
+        d: GPUBuffer<Float32>(count: cells),
+        q: GPUBuffer<Float32>(count: cells),
+        left: GPUBuffer<Float32>(count: n * n),
+        levels: levels
+    )
+}
+
+kernel fn jacobi(_ c: Int, r: GPUBuffer<Float32>, d: GPUBuffer<Float32>, z: GPUBuffer<Float32>) {
+    z[c] = r[c] / d[c]
+}
+
+// The multigrid's weights on every level, from the volume fraction.
+fn setUp(_ s: Flow) {
+    let n = s.n
+    let top = s.levels[0]
+    gpu.run(weights, over: (n, n, n), s.f, top.wx, top.wy, top.wz, top.top, n, s.h)
+    gpu.run(diagonal, over: (n, n, n), top.wx, top.wy, top.wz, top.top, top.d, n)
+    for i in 1..s.levels.count {
+        let fine = s.levels[i - 1]
+        let c = s.levels[i]
+        let m = c.m
+        gpu.run(coarsen, over: (m, m, m), fine.wx, fine.wy, fine.wz, c.wx, c.wy, c.wz, m)
+        gpu.run(coarsenTop, over: (m, m, m), fine.top, c.top, m)
+        gpu.run(diagonal, over: (m, m, m), c.wx, c.wy, c.wz, c.top, c.d, m)
+    }
+}
+
+// A red-black sweep: `first`'s colour, then the other. `fresh`: x starts at 0.
+fn sweep(_ l: Level, x: GPUBuffer<Float32>, b: GPUBuffer<Float32>, first: Int, fresh: Bool) {
+    let m = l.m
+    let half = (m + 1) / 2
+    gpu.run(smooth, over: (half, m, m), x, b, l.wx, l.wy, l.wz, l.d, m, first, fresh)
+    gpu.run(smooth, over: (half, m, m), x, b, l.wx, l.wy, l.wz, l.d, m, 1 - first, false)
+}
+
+// z = M⁻¹·r: one V-cycle from zero, with red-black Gauss-Seidel (red then
+// black on the way down, black then red on the way up, so it's symmetric,
+// as conjugate gradients need).
+fn vcycle(_ s: Flow, r: GPUBuffer<Float32>, z: GPUBuffer<Float32>) {
+    let count = s.levels.count
+    var xs = [z]
+    var bs = [r]
+    for i in 1..count {
+        xs.append(s.levels[i].x)
+        bs.append(s.levels[i].b)
+    }
+    for i in 0..count - 1 {
+        let l = s.levels[i]
+        sweep(l, x: xs[i], b: bs[i], first: 0, fresh: true)
+        sweep(l, x: xs[i], b: bs[i], first: 0, fresh: false)
+        let mc = s.levels[i + 1].m
+        gpu.run(restrict, over: (mc, mc, mc), xs[i], bs[i], l.wx, l.wy, l.wz, l.d, bs[i + 1], mc)
+    }
+    let last = s.levels[count - 1]
+    sweep(last, x: xs[count - 1], b: bs[count - 1], first: 0, fresh: true)
+    for _ in 0..7 {
+        sweep(last, x: xs[count - 1], b: bs[count - 1], first: 0, fresh: false)
+    }
+    var i = count - 2
+    while i >= 0 {
+        let l = s.levels[i]
+        let m = l.m
+        gpu.run(prolong, over: (m, m, m), xs[i + 1], xs[i], m)
+        sweep(l, x: xs[i], b: bs[i], first: 1, fresh: false)
+        sweep(l, x: xs[i], b: bs[i], first: 1, fresh: false)
+        i -= 1
+    }
+}
+
+fn precondition(_ s: Flow, multigrid: Bool) {
+    if multigrid {
+        vcycle(s, r: s.r, z: s.z)
+    } else {
+        let n = s.n
+        gpu.run(jacobi, over: n * n * n, s.r, s.levels[0].d, s.z)
+    }
+}
+
+// A·p = b by preconditioned conjugate gradients, from the last step's p,
+// to a relative residual (‖r‖/‖b‖) of `tolerance`: the rounds, and the
+// residual. Each round waits for the GPU twice (for r·z and d·q); ‖r‖ is
+// only asked for once r·z (which falls as ‖r‖² does) says it's close.
+fn solve(_ s: Flow, tolerance: Float, limit: Int, multigrid: Bool) -> (Int, Float) {
+    let n = s.n
+    let a = s.levels[0]
+    gpu.run(applyA, over: (n, n, n), s.p, s.b, a.wx, a.wy, a.wz, a.d, s.r, n, true)
+    let bb = gpu.dot(s.b, s.b)
+    if bb == 0.0 {
+        return (0, 0.0)
+    }
+    let rr0 = gpu.dot(s.r, s.r)
+    if sqrt(rr0 / bb) < tolerance {
+        return (0, sqrt(rr0 / bb))
+    }
+    precondition(s, multigrid: multigrid)
+    s.d.copy(from: s.z)
+    var rz = gpu.dot(s.r, s.z)
+    let rz0 = rz
+    for round in 0..limit {
+        gpu.run(applyA, over: (n, n, n), s.d, s.b, a.wx, a.wy, a.wz, a.d, s.q, n, false)
+        let alpha = rz / gpu.dot(s.d, s.q)
+        gpu.run(step, over: n * n * n, s.p, s.r, s.d, s.q, Float32(alpha))
+        precondition(s, multigrid: multigrid)
+        let next = gpu.dot(s.r, s.z)
+        // (r·z/r₀·z₀ estimates (‖r‖/‖r₀‖)²; ‖r‖ itself is checked when it's near.)
+        if next / rz0 * rr0 / bb < 100.0 * tolerance * tolerance {
+            let rel = sqrt(max(gpu.dot(s.r, s.r), 0.0) / bb)
+            if rel < tolerance {
+                return (round + 1, rel)
+            }
+        }
+        let beta = next / rz
+        rz = next
+        gpu.run(direction, over: n * n * n, s.d, s.z, Float32(beta))
+    }
+    (limit, sqrt(max(gpu.dot(s.r, s.r), 0.0) / bb))
+}
+
+// With FLOW_PHASES set, each part of a step is timed (waiting for the GPU
+// after each, which makes the step itself slower).
+fn mark(_ phases: bind [Float], _ i: Int) {
+    if environment("FLOW_PHASES") != nil {
+        gpu.wait()
+        let t = now()
+        phases[i] += t - phases[4]
+        phases[4] = t
+    }
+}
+
+// One time step: the rounds the pressure took, and its residual.
+fn advance(_ s: Flow, dt: Float32, multigrid: Bool, phases: bind [Float]) -> (Int, Float) {
+    mark(phases, 3)
+    let n = s.n
+    let g: Float32 = -9.81
+    gpu.run(advectU, over: (n + 1, n, n), s.u, s.v, s.w, s.u2, n, dt)
+    gpu.run(advectV, over: (n, n + 1, n), s.u, s.v, s.w, s.v2, n, dt)
+    gpu.run(advectW, over: (n, n, n + 1), s.u, s.v, s.w, s.w2, n, dt, g)
+    s.u.copy(from: s.u2)
+    s.v.copy(from: s.v2)
+    s.w.copy(from: s.w2)
+    mark(phases, 0)
+    setUp(s)
+    gpu.run(divergence, over: (n, n, n), s.u, s.v, s.w, s.b, n, s.h, dt)
+    mark(phases, 3)
+    let solved = solve(s, tolerance: 1e-6, limit: 400, multigrid: multigrid)
+    mark(phases, 1)
+    let a = s.levels[0]
+    gpu.run(projectU, over: (n + 1, n, n), s.u, s.p, a.wx, n, s.h, dt)
+    gpu.run(projectV, over: (n, n + 1, n), s.v, s.p, a.wy, n, s.h, dt)
+    gpu.run(projectW, over: (n, n, n + 1), s.w, s.p, a.wz, a.top, n, s.h, dt)
+    gpu.run(moveF, over: (n, n, n), s.f, s.u, s.v, s.w, s.f2, s.left, n, dt)
+    s.f.copy(from: s.f2)
+    mark(phases, 2)
+    solved
+}
+
+fn main() {
+    let args = arguments()
+    let steps = Int(args.first ?? "") ?? 20
+    let n = if args.count > 1 { Int(args[1]) ?? 96 } else { 96 }
+    let multigrid = !args.contains("jacobi")
+    // The step in seconds (Riptide's dam break takes about 0.0037).
+    var dt: Float32 = 0.001
+    if args.count > 3 {
+        dt = Float32(Float(args[3]) ?? 0.001)
+    }
+    print("device: {gpu.device}")
+    print("grid: {n}×{n}×{n} = {n * n * n} cells, {steps} steps of {dt} s, preconditioner: {if multigrid { "multigrid" } else { "Jacobi" }}")
+    let s = flow(n)
+    let volume0 = gpu.sum(s.f)
+
+    // A first step, before timing (the GPU's pipelines are made then).
+    var phases = [0.0, 0.0, 0.0, 0.0, now()]
+    let first = advance(s, dt: dt, multigrid: multigrid, phases: phases)
+    phases = [0.0, 0.0, 0.0, 0.0, now()]
+    print("first step: {first.0} rounds, residual {first.1}")
+
+    var rounds = 0
+    var worst = 0.0
+    var times: [Float] = []
+    for _ in 0..steps {
+        let t0 = now()
+        let r = advance(s, dt: dt, multigrid: multigrid, phases: phases)
+        gpu.wait()
+        times.append(now() - t0)
+        rounds += r.0
+        worst = max(worst, r.1)
+    }
+    var total = 0.0
+    for t in times {
+        total += t
+    }
+    let ms = 1000.0 * total / Float(max(steps, 1))
+    let sorted = times.sorted()
+    let median = 1000.0 * sorted[sorted.count / 2]
+    print("per step: {ms.formatted(1)} ms on average, {median.formatted(1)} ms median")
+    if environment("FLOW_PHASES") != nil {
+        let per = Float(max(steps, 1))
+        let part: fn(Int) -> String = { i in (1000.0 * phases[i] / per).formatted(2) }
+        print("parts (ms a step): advection {part(0)}, set-up {part(3)}, pressure {part(1)}, projection and VOF {part(2)}")
+    }
+    print("pressure: {Float(rounds) / Float(max(steps, 1))} rounds a step, the largest residual reached {worst}")
+
+    // How well the last pressure satisfies its equation, worked out again
+    // (not conjugate gradients' running residual).
+    let a = s.levels[0]
+    gpu.run(applyA, over: (n, n, n), s.p, s.b, a.wx, a.wy, a.wz, a.d, s.r, n, true)
+    let trueResidual = sqrt(gpu.dot(s.r, s.r) / gpu.dot(s.b, s.b))
+    print("true relative residual of the last solve: {trueResidual}")
+    // The same, worked out in 64-bit on the CPU from the 32-bit numbers.
+    let (P, B) = (s.p.read(), s.b.read())
+    let (WX, WY, WZ, D) = (a.wx.read(), a.wy.read(), a.wz.read(), a.d.read())
+    var rr = 0.0
+    var bb = 0.0
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
+                let c = i + n * (j + n * k)
+                var ax = Float(D[c]) * Float(P[c])
+                if i > 0 { ax -= Float(WX[c]) * Float(P[c - 1]) }
+                if i < n - 1 { ax -= Float(WX[c + 1]) * Float(P[c + 1]) }
+                if j > 0 { ax -= Float(WY[c]) * Float(P[c - n]) }
+                if j < n - 1 { ax -= Float(WY[c + n]) * Float(P[c + n]) }
+                if k > 0 { ax -= Float(WZ[c]) * Float(P[c - n * n]) }
+                if k < n - 1 { ax -= Float(WZ[c + n * n]) * Float(P[c + n * n]) }
+                let res = Float(B[c]) - ax
+                rr += res * res
+                bb += Float(B[c]) * Float(B[c])
+            }
+        }
+    }
+    print("the same in 64-bit on the CPU: {sqrt(rr / bb)}")
+
+    // What's left of the divergence after the projection, against what it was.
+    gpu.run(divergence, over: (n, n, n), s.u, s.v, s.w, s.r, n, s.h, dt)
+    gpu.run(magnitude, over: n * n * n, s.r, s.q)
+    print("largest divergence left (as A·p's units): {gpu.max(s.q)}, right side's largest: {gpu.max(s.b)}")
+
+    if environment("FLOW_PARTS") != nil {
+        gpu.wait()
+        var t = now()
+        for _ in 0..100 { vcycle(s, r: s.r, z: s.z) }
+        gpu.wait()
+        print("a V-cycle alone: {(10.0 * (now() - t) * 100.0 / 100.0).formatted(3)} ms")
+        t = now()
+        for _ in 0..100 {
+            gpu.run(applyA, over: (n, n, n), s.d, s.b, a.wx, a.wy, a.wz, a.d, s.q, n, false)
+            gpu.run(step, over: n * n * n, s.p, s.r, s.d, s.q, 0.0)
+            gpu.run(direction, over: n * n * n, s.d, s.z, 0.0)
+        }
+        gpu.wait()
+        print("A·d, step, direction: {(10.0 * (now() - t)).formatted(3)} ms")
+        t = now()
+        var x = 0.0
+        for _ in 0..100 { x += gpu.dot(s.r, s.z) }
+        print("a dot: {(10.0 * (now() - t)).formatted(3)} ms")
+    }
+    let volume = gpu.sum(s.f)
+    let left = gpu.sum(s.left)
+    print("water volume: {volume0} cells at the start, {volume} after {steps + 1} steps, and {left} left through the open top")
+    print("drift (in the box and gone, against the start): {(volume + left - volume0) / volume0}")
+}

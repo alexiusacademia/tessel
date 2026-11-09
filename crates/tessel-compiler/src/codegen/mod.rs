@@ -44,6 +44,7 @@ use crate::types::{FnSig, Ty};
 mod codec;
 mod coro;
 mod debug;
+mod kernel;
 mod stdlib;
 mod ui;
 
@@ -466,6 +467,9 @@ struct Gen<'ctx, 'a> {
     errors: Vec<Diagnostic>,
 
     fn_decls: HashMap<String, &'a FnDecl>,
+    /// The `kernel fn`s, and their descriptions for the runtime (see kernel.rs).
+    kernel_decls: HashMap<String, &'a FnDecl>,
+    kernel_descs: HashMap<String, PointerValue<'ctx>>,
     fns: HashMap<String, FunctionValue<'ctx>>,
     /// Functions with `bind` parameters compiled a second time to take the
     /// caller's storage as a plain pointer (see `binds_direct`): the
@@ -579,6 +583,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             sources,
             errors: Vec::new(),
             fn_decls: HashMap::new(),
+            kernel_decls: HashMap::new(),
+            kernel_descs: HashMap::new(),
             fns: HashMap::new(),
             direct_fns: HashMap::new(),
             direct_now: false,
@@ -657,6 +663,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 }
                 Item::Interface(_) => {}
+                Item::Fn(f) if f.kernel => {
+                    self.kernel_decls.insert(f.name.name.clone(), f);
+                }
                 Item::Fn(f) => {
                     self.fn_decls.insert(f.name.name.clone(), f);
                 }
@@ -680,6 +689,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         if !self.errors.is_empty() {
             return;
         }
+
+        // The kernels (GPU code, and their native versions) first.
+        self.compile_kernels();
 
         // Declare every function first so bodies can call each other.
         let fn_names: Vec<String> = self.fn_decls.keys().cloned().collect();
@@ -1212,8 +1224,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Void => return None,
             Ty::Int => self.i64().into(),
             Ty::Float => self.ctx.f64_type().into(),
+            Ty::Float32 => self.ctx.f32_type().into(),
             Ty::Bool => self.ctx.bool_type().into(),
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) => self.ptr_ty().into(),
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) => self.ptr_ty().into(),
             // A view value is a closure that emits the view when called.
             Ty::View => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Range => self.ctx.struct_type(&[self.i64().into(), self.i64().into()], false).into(),
@@ -1280,6 +1293,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         match t {
             Ty::Int => "i".into(),
             Ty::Float => "f".into(),
+            Ty::Float32 => "g".into(),
             Ty::Bool => "b".into(),
             Ty::Str => "s".into(),
             Ty::Data => "d".into(),
@@ -1289,6 +1303,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::List(t) => format!("L{}", self.key(t)),
             Ty::Dict(k, v) => format!("D{}{}", self.key(k), self.key(v)),
             Ty::Set(t) => format!("Z{}", self.key(t)),
+            Ty::GpuBuffer(t) => format!("G{}", self.key(t)),
             Ty::Opt(t) => format!("O{}", self.key(t)),
             Ty::Fn(ps, r) => format!("F{}_{}", ps.iter().map(|p| self.key(p)).collect::<String>(), self.key(r)),
             Ty::Struct(id) => format!("S{}{}", self.checked.structs[*id].name.len(), self.checked.structs[*id].name),
@@ -1300,7 +1315,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn needs_rc(&self, t: &Ty) -> bool {
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
             Ty::Enum(id) => self.has_payload(*id),
             Ty::Struct(id) => self.checked.structs[*id].fields.iter().any(|f| self.needs_rc(&f.ty)),
             Ty::Opt(inner) => self.needs_rc(inner),
@@ -1716,6 +1731,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_str_concat" => (vec![p, i], Some(p)),
             "tsl_str_from_int" => (vec![i], Some(p)),
             "tsl_str_from_float" => (vec![f64t], Some(p)),
+            "tsl_str_from_float32" => (vec![self.ctx.f32_type().into()], Some(p)),
+            "tsl_gpu_buffer_new" => (vec![i8t, i], Some(p)),
+            "tsl_gpu_buffer_from" => (vec![i8t, p], Some(p)),
+            "tsl_gpu_buffer_count" => (vec![p], Some(i)),
+            "tsl_gpu_buffer_read" => (vec![p, p], Some(p)),
+            "tsl_gpu_buffer_write" | "tsl_gpu_buffer_copy" => (vec![p, p], None),
+            "tsl_gpu_buffer_fill" => (vec![p, i], None),
+            "tsl_gpu_run" => (vec![p, i, i, i, p], None),
+            "tsl_gpu_wait" => (vec![], None),
+            "tsl_gpu_reduce" => (vec![i, p, p], Some(f64t)),
+            "tsl_gpu_device" => (vec![], Some(p)),
+            "tsl_gpu_is_cpu" => (vec![], Some(i8t)),
             "tsl_str_from_bool" => (vec![i8t], Some(p)),
             "tsl_data_eq" => (vec![p, p], Some(i8t)),
             "tsl_data_concat" => (vec![p, p], Some(p)),
@@ -1949,7 +1976,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let f = if retain { "tsl_retain" } else { "tsl_release" };
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) => {
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) => {
                 self.call_rt(f, &[v]);
             }
             Ty::Fn(..) | Ty::Enum(_) | Ty::View | Ty::Iface(_) => {
@@ -2153,7 +2180,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             None => null,
         };
         let hash = if payload.is_none() && hashable(&t, self) { self.hash_helper(&t) } else { null };
-        let cmp = if payload.is_none() && matches!(t, Ty::Int | Ty::Float | Ty::Str) { self.cmp_helper(&t) } else { null };
+        let cmp = if payload.is_none() && matches!(t, Ty::Int | Ty::Float | Ty::Float32 | Ty::Str) { self.cmp_helper(&t) } else { null };
         let i = self.i64();
         let p = self.ptr_ty();
         let ty = self.ctx.struct_type(&[i.into(), i.into(), p.into(), p.into(), p.into(), p.into(), p.into(), i.into()], false);
@@ -2352,10 +2379,18 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Int | Ty::Bool => {
                 self.b.build_int_compare(IntPredicate::EQ, a.into_int_value(), b.into_int_value(), "").unwrap()
             }
-            Ty::Float => self
+            Ty::Float | Ty::Float32 => self
                 .b
                 .build_float_compare(FloatPredicate::OEQ, a.into_float_value(), b.into_float_value(), "")
                 .unwrap(),
+            // (The same buffer: a handle compares by identity.)
+            Ty::GpuBuffer(_) => {
+                let (x, y) = (a.into_pointer_value(), b.into_pointer_value());
+                let i = self.i64();
+                let x = self.b.build_ptr_to_int(x, i, "").unwrap();
+                let y = self.b.build_ptr_to_int(y, i, "").unwrap();
+                self.b.build_int_compare(IntPredicate::EQ, x, y, "").unwrap()
+            }
             Ty::Str => {
                 let r = self.call_rt("tsl_str_eq", &[a, b]);
                 self.truthy(r)
@@ -2448,7 +2483,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn compare(&mut self, op: BinOp, a: Val<'ctx>, b: Val<'ctx>, t: &Ty) -> IntValue<'ctx> {
         match t {
-            Ty::Float => {
+            Ty::Float | Ty::Float32 => {
                 let p = match op {
                     BinOp::Lt => FloatPredicate::OLT,
                     BinOp::Le => FloatPredicate::OLE,
@@ -3539,11 +3574,13 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             // A list passed as a variadic parameter's values: the list itself.
             ExprKind::Spread(list) => self.expr_as(list, &t),
             ExprKind::Continuation => Some(self.continuation(&t)),
-            ExprKind::Int(n) => Some(if t == Ty::Float {
-                self.ctx.f64_type().const_float(*n as f64).into()
-            } else {
-                self.i64().const_int(*n as u64, true).into()
+            ExprKind::Int(n) => Some(match t {
+                Ty::Float => self.ctx.f64_type().const_float(*n as f64).into(),
+                Ty::Float32 => self.ctx.f32_type().const_float(*n as f32 as f64).into(),
+                _ => self.i64().const_int(*n as u64, true).into(),
             }),
+            // (A `Float32` constant is the nearest 32-bit value, as the GPU has it.)
+            ExprKind::Float(x) if t == Ty::Float32 => Some(self.ctx.f32_type().const_float(*x as f32 as f64).into()),
             ExprKind::Float(x) => Some(self.ctx.f64_type().const_float(*x).into()),
             ExprKind::Bool(b) => Some(self.ctx.bool_type().const_int(*b as u64, false).into()),
             ExprKind::Nil => Some(self.none(&t)),
@@ -3625,7 +3662,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             ExprKind::Unary(UnaryOp::Neg, x) => {
                 let v = self.expr(x).unwrap();
-                Some(if t == Ty::Float {
+                Some(if matches!(t, Ty::Float | Ty::Float32) {
                     self.b.build_float_neg(v.into_float_value(), "").unwrap().into()
                 } else {
                     let zero = self.i64().const_zero().into();
@@ -3634,6 +3671,17 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             ExprKind::Binary(op, l, r) => self.binary(*op, l, r, &t, e.span),
             ExprKind::Call { callee, args, trailing } => self.call(e, callee, args, trailing.as_deref()),
+            // `gpu.device`, `gpu.isCPU` (the checker gave `gpu` no type: it's no value).
+            ExprKind::Member { object, name, .. }
+                if matches!(&object.kind, ExprKind::Name(g) if g == "gpu") && !self.checked.types.contains_key(&object.id) =>
+            {
+                if name.name == "device" {
+                    self.call_rt("tsl_gpu_device", &[])
+                } else {
+                    let r = self.call_rt("tsl_gpu_is_cpu", &[]);
+                    Some(self.truthy(r).into())
+                }
+            }
             ExprKind::Member { object, name, optional } => self.member(e, object, name, *optional),
             ExprKind::Index(object, index) => self.index(e, object, index),
             ExprKind::Closure { params, body } => Some(self.closure(params, body, &t)),
@@ -3681,6 +3729,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Str => v,
             Ty::Int => self.call_rt("tsl_str_from_int", &[v]).unwrap(),
             Ty::Float => self.call_rt("tsl_str_from_float", &[v]).unwrap(),
+            Ty::Float32 => self.call_rt("tsl_str_from_float32", &[v]).unwrap(),
             Ty::Bool => {
                 let b = self.to_c_bool(v.into_int_value());
                 self.call_rt("tsl_str_from_bool", &[b]).unwrap()
@@ -4037,7 +4086,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// Arithmetic on borrowed operands; the result is owned.
     fn arith(&mut self, op: BinOp, l: Val<'ctx>, r: Val<'ctx>, t: &Ty, span: Span) -> Val<'ctx> {
         match t {
-            Ty::Float => {
+            Ty::Float | Ty::Float32 => {
                 let (a, b) = (l.into_float_value(), r.into_float_value());
                 match op {
                     BinOp::Add => self.b.build_float_add(a, b, "").unwrap(),
@@ -5322,6 +5371,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 self.builtin_method(recv, name, object, &info, &arg, args, trailing, &t, e.span, None)
             }
+            Callee::BuiltinFn(name) if name == "GPUBuffer" => Some(self.gpu_buffer_init(args, &t)),
+            Callee::BuiltinFn(name) if name.starts_with("gpu.") => self.gpu_builtin(name, args),
             Callee::BuiltinFn(name) => self.builtin_fn(name, args, &info, &arg, &t, e.span),
             Callee::Value => {
                 // A local holding a function: the checker records its type on the variable.
@@ -5771,6 +5822,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         span: Span,
         slot: Option<PointerValue<'ctx>>,
     ) -> Option<Val<'ctx>> {
+        if let Ty::GpuBuffer(_) = recv {
+            return self.gpu_buffer_method(recv, name, object, args);
+        }
         // Methods that change the receiver work on its storage (`slot`, if
         // the caller already has it).
         match (recv, name) {
@@ -6993,6 +7047,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Bool => self.i8().into(),
             Ty::Int => self.i64().into(),
             Ty::Float => self.ctx.f64_type().into(),
+            Ty::Float32 => self.ctx.f32_type().into(),
             _ => self.ptr_ty().into(),
         }
     }
@@ -7352,13 +7407,35 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(end, &Ty::Str);
                 None
             }
-            "Int" | "Float" | "String" => {
+            "Int" | "Float" | "Float32" | "String" => {
                 let x = &args[0].value;
                 let xt = self.ty(x);
                 let v = self.expr(x).unwrap();
+                let (f32t, f64t) = (self.ctx.f32_type(), self.ctx.f64_type());
                 Some(match (name, &xt) {
                     ("String", _) => self.stringify(v, &xt),
-                    ("Int", Ty::Int) | ("Float", Ty::Float) => v,
+                    ("Int", Ty::Int) | ("Float", Ty::Float) | ("Float32", Ty::Float32) => v,
+                    ("Float32", Ty::Float) => self.b.build_float_trunc(v.into_float_value(), f32t, "").unwrap().into(),
+                    ("Float", Ty::Float32) => self.b.build_float_ext(v.into_float_value(), f64t, "").unwrap().into(),
+                    ("Float32", Ty::Int) => self.b.build_signed_int_to_float(v.into_int_value(), f32t, "").unwrap().into(),
+                    ("Int", Ty::Float32) => {
+                        let intr = Intrinsic::find("llvm.fptosi.sat").unwrap();
+                        let f = intr.get_declaration(&self.module, &[self.i64().into(), f32t.into()]).unwrap();
+                        self.b.build_call(f, &[v.into()], "").unwrap().try_as_basic_value().basic().unwrap()
+                    }
+                    ("Float32", Ty::Str) => {
+                        // Read as a Float, then rounded to 32 bits.
+                        let out = self.alloca(f64t.into(), "parsed");
+                        self.b.build_store(out, f64t.const_zero()).unwrap();
+                        let ok = self.call_rt("tsl_str_to_float", &[v, out.into()]);
+                        let ok = self.truthy(ok);
+                        let n = self.load(&Ty::Float, out).into_float_value();
+                        let n = self.b.build_float_trunc(n, f32t, "").unwrap();
+                        self.release(v, &Ty::Str);
+                        let st = self.llty(t).unwrap().into_struct_type();
+                        let s = self.b.build_insert_value(st.get_undef(), ok, 0, "").unwrap();
+                        self.b.build_insert_value(s, n, 1, "").unwrap().into_struct_value().into()
+                    }
                     ("Int", Ty::Float) => {
                         let intr = Intrinsic::find("llvm.fptosi.sat").unwrap();
                         let f = intr.get_declaration(&self.module, &[self.i64().into(), self.ctx.f64_type().into()]).unwrap();
@@ -7428,10 +7505,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 Some(self.truthy(r).into())
             }
             "currentFolder" => self.call_rt("tsl_current_folder", &[]),
-            _ if MATH_FNS.contains(&name) && *t == Ty::Float => {
+            _ if MATH_FNS.contains(&name) && matches!(t, Ty::Float | Ty::Float32) => {
                 // Math arguments are always positional (`pow(x, 2.0)`).
-                let a = self.expr_as(&args[0].value, &Ty::Float).unwrap();
-                let b = args.get(1).map(|x| self.expr_as(&x.value, &Ty::Float).unwrap());
+                let ft = t.clone();
+                let a = self.expr_as(&args[0].value, &ft).unwrap();
+                let b = args.get(1).map(|x| self.expr_as(&x.value, &ft).unwrap());
                 // LLVM's own operations where it has them (so they're
                 // optimized, and `sqrt` is one instruction); else the C library.
                 let f = match name {
@@ -7450,7 +7528,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     "max" => "llvm.maxnum.f64",
                     other => other,
                 };
-                let f64t = self.ctx.f64_type();
+                // (`Float32`: LLVM's `.f32` operations, or the C library's `…f` functions.)
+                let f = if ft == Ty::Float32 {
+                    if let Some(stem) = f.strip_suffix(".f64") { format!("{stem}.f32") } else { format!("{f}f") }
+                } else {
+                    f.to_string()
+                };
+                let f = f.as_str();
+                let f64t = if ft == Ty::Float32 { self.ctx.f32_type() } else { self.ctx.f64_type() };
                 let n = if b.is_some() { 2 } else { 1 };
                 let func = self.module.get_function(f).unwrap_or_else(|| {
                     let params: Vec<BasicMetadataTypeEnum> = vec![f64t.into(); n];
@@ -7463,7 +7548,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 let mut r = self.b.build_call(func, &call_args, "").unwrap().try_as_basic_value().basic();
                 // `min` and `max` of more than two values, from the left.
                 for x in args.iter().skip(2) {
-                    let c = self.expr_as(&x.value, &Ty::Float).unwrap();
+                    let c = self.expr_as(&x.value, &ft).unwrap();
                     r = self.b.build_call(func, &[r.unwrap().into(), c.into()], "").unwrap().try_as_basic_value().basic();
                 }
                 r

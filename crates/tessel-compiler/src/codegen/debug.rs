@@ -55,6 +55,7 @@ const VIEW: u64 = 12;
 const IFACE: u64 = 13;
 const RANGE: u64 = 14;
 const OTHER: u64 = 15;
+const FLOAT32: u64 = 16;
 
 impl<'ctx, 'a> Gen<'ctx, 'a> {
     /// The function being started (its context is pushed, and it's a
@@ -252,6 +253,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             }
             (Ty::Int, _) => INT,
             (Ty::Float, _) => FLOAT,
+            (Ty::Float32, _) => FLOAT32,
             (Ty::Bool, _) => BOOL,
             (Ty::Str, _) => STR,
             (Ty::Data, _) => DATA,

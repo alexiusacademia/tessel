@@ -11,6 +11,34 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.23.0
+
+*Not released yet*
+
+**GPU compute.** Programs run their own number-crunching on the GPU:
+
+- **`kernel fn`**: a function written in Tessel that runs once for each
+  index of a list, a grid or a block of cells, all at once on the GPU. It
+  uses a part of the language a GPU can run (numbers, `if`, loops, buffer
+  elements, the math functions); anything else is a compile error at its
+  line. See [Computing on the GPU](/guides/gpu/).
+- **`GPUBuffer`** keeps numbers on the GPU between runs, with `read`,
+  `write`, `fill` and `copy(from:)` to move them.
+- **`gpu.run(kernel, over: size, values…)`** queues a run over 1, 2 or 3
+  axes and returns at once; **`gpu.sum`**, **`gpu.min`**, **`gpu.max`** and
+  **`gpu.dot`** add up a buffer, with the blocks' sums added in 64-bit.
+- It runs on Metal (macOS), DirectX 12 (Windows) and Vulkan (Linux), and in
+  sandboxed App Store apps. **Without a usable GPU**, kernels run on the
+  CPU's cores with the same 32-bit numbers; `TESSEL_GPU=cpu` asks for
+  that.
+- On an M5 Pro, a water simulation's time step on 885 000 cells (with a
+  pressure solve to 1e-6) takes 9.4 ms on the GPU and 40.5 ms on all the
+  CPU's cores.
+- **`Float32`**, a 32-bit decimal number, is a type in the whole language:
+  arithmetic, the math functions, conversions, lists, printing with the
+  fewest digits, JSON. See [Float32](/language/types/#float32).
+- A new lesson: [24. Number-crunching on the GPU](/learn/24-gpu/).
+
 ## 0.22.0
 
 *November 8, 2026*
