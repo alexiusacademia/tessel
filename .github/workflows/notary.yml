@@ -1,0 +1,41 @@
+# Asks Apple's notary service what became of tessel's submissions: the
+# recent ones (`history`), and one in detail (`info` and its `log`) when
+# its id is given. Started by hand, with the release's notarizing secrets.
+name: Notary
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission:
+        description: "A submission's id, to see in detail (optional)"
+        type: string
+        default: ""
+
+jobs:
+  notary:
+    runs-on: macos-15
+    steps:
+      - name: Ask Apple
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: MGUT6927DK
+          SUBMISSION: ${{ inputs.submission }}
+        run: |
+          trim() { printf '%s' "$1" | tr -d '[:space:]'; }
+          if [[ -n "$NOTARY_APPLE_ID" ]]; then
+            auth=(--apple-id "$(trim "$NOTARY_APPLE_ID")" --password "$(trim "$NOTARY_PASSWORD")" --team-id "$NOTARY_TEAM_ID")
+          else
+            echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+            auth=(--key "$RUNNER_TEMP/key.p8" --key-id "$(trim "$NOTARY_KEY_ID")")
+            [[ -n "$NOTARY_ISSUER_ID" ]] && auth+=(--issuer "$(trim "$NOTARY_ISSUER_ID")")
+          fi
+          xcrun notarytool history "${auth[@]}" | head -40
+          if [[ -n "$SUBMISSION" ]]; then
+            xcrun notarytool info "$SUBMISSION" "${auth[@]}"
+            xcrun notarytool log "$SUBMISSION" "${auth[@]}" || true
+          fi
+          rm -f "$RUNNER_TEMP/key.p8"
