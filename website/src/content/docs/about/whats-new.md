@@ -13,7 +13,7 @@ are listed together under its last version. See
 
 ## 0.23.0
 
-*Not released yet*
+*November 9, 2026*
 
 **GPU compute.** Programs run their own number-crunching on the GPU:
 

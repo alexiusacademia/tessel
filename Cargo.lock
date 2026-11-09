@@ -3619,7 +3619,7 @@ dependencies = [
 
 [[package]]
 name = "tessel-cli"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "backhand",
  "cc",
@@ -3640,14 +3640,14 @@ dependencies = [
 
 [[package]]
 name = "tessel-compiler"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "inkwell",
 ]
 
 [[package]]
 name = "tessel-runtime"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "accesskit",
  "accesskit_winit",
