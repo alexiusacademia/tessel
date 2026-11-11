@@ -1,0 +1,6 @@
+get 1 x []
+get 2 y [0-99]
+wait 0.5 busy
+wait 0.5 slow
+get 3 z []
+wait 2.0 busy

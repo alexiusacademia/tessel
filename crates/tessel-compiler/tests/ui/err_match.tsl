@@ -35,3 +35,8 @@ fn dots() {
     let g = .all // error: can't tell which type `.all` belongs to
     let h = Filter.none // error: has no case `.none`
 }
+
+// An enum case value's default must be of its type.
+enum Fetch {
+    get(url: String, tries: Int = "three") // error: expected `Int`
+}

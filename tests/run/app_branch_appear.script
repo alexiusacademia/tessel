@@ -1,0 +1,10 @@
+tree
+click "else 0"
+click "else 1"
+click "Ask"
+click "Switch"
+tree
+click "then 0"
+click "Ask"
+click "Switch"
+tree

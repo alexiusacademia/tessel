@@ -951,6 +951,10 @@ pub(super) struct Builder {
     windows: Vec<Node>,
     /// How many `Window`s were declared so far (open or not): their identity.
     window_count: u64,
+    /// The `if`/`match` branch the views being made are in (0 outside
+    /// any), and the enclosing ones': mixed into their identity.
+    branch: u64,
+    branches: Vec<u64>,
 }
 
 impl Builder {
@@ -965,8 +969,9 @@ impl Builder {
             (self.parent().key, "id", id, salt).hash(&mut h);
             return h.finish();
         }
+        let branch = self.branch;
         let p = self.parent();
-        child_key(p.key, p.children.len(), salt)
+        child_key(p.key, p.children.len(), salt ^ branch)
     }
 
     fn leaf(&mut self, kind: Kind) {
@@ -1000,8 +1005,9 @@ impl Builder {
             (self.parent().key, "id", id, salt).hash(&mut h);
             return h.finish();
         }
+        let branch = self.branch;
         let p = self.parent();
-        child_key(p.key, p.children.len(), salt)
+        child_key(p.key, p.children.len(), salt ^ branch)
     }
 
     /// Opens a container with its own identity (rather than a position).
@@ -1118,6 +1124,8 @@ pub fn build_all(root: &Callback) -> Built {
             overlay_at: Vec::new(),
             windows: Vec::new(),
             window_count: 0,
+            branch: 0,
+            branches: Vec::new(),
         })
     });
     root.call();
@@ -2150,6 +2158,22 @@ pub unsafe extern "C" fn tsl_ui_tab_item(title: *const Str) {
 pub unsafe extern "C" fn tsl_ui_hover_background(color: i32, values: *const Header, radius: f64) {
     let c = unsafe { theme::color(color, values) };
     modify(|m| m.hover_background = Some((c, radius)));
+}
+
+/// The views made until `tsl_ui_branch_end` are in branch `tag` of an `if`
+/// or a `match` in a view: they're other views than another branch's, even
+/// of the same kind in the same place.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_branch(tag: i32) {
+    with_builder(|b| {
+        b.branches.push(b.branch);
+        b.branch = hash_key((b.branch, "branch", tag));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_ui_branch_end() {
+    with_builder(|b| b.branch = b.branches.pop().unwrap_or(0));
 }
 
 #[unsafe(no_mangle)]

@@ -9,4 +9,4 @@ Root
     VStack
       Text "Open"
       Button "Ask"
-      Text "popover false, sheet false, keys seen 2"
+      Text "popover false, sheet false, keys seen 1"

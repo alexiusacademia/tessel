@@ -1,0 +1,44 @@
+// An `if`'s view and its `else`'s are different views, even of the same
+// kind in the same place: the one that comes appears (issue #70). So are
+// a `match`'s arms'.
+
+enum Mode { a, b }
+
+view Host(ask: Bool, ran: bind Int, w: Float) {
+    ZStack {
+        if ask {
+            Spacer().frame(width: w, height: w).onAppear { ran += 1 }
+        } else {
+            Spacer().frame(width: 0, height: 0)
+        }
+    }
+}
+
+view Counter(label: String) {
+    state n = 0
+    Button("{label} {n}") { n += 1 }
+}
+
+app BranchAppear(width: 300, height: 200) {
+    state ask = false
+    state zero = 0
+    state one = 0
+    state mode = Mode.a
+    state arms = 0
+    VStack {
+        Button("Ask") { ask = !ask }
+        Button("Switch") { mode = if mode == .a { .b } else { .a } }
+        Text("zero {zero} one {one} arms {arms}")
+        Host(ask: ask, ran: zero, w: 0)
+        Host(ask: ask, ran: one, w: 1)
+        match mode {
+            .a -> Text("in a").onAppear { arms += 1 }
+            .b -> Text("in b").onAppear { arms += 1 }
+        }
+        if ask {
+            Counter(label: "then")
+        } else {
+            Counter(label: "else")
+        }
+    }
+}

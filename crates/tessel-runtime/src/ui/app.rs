@@ -291,6 +291,19 @@ enum Event {
 }
 
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
+/// Set when an event is posted, for loops without a window to wait on.
+static POSTED: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
+
+/// Waits until background work posts an event, or `limit` passes (without
+/// a window: a window's event loop is woken instead).
+fn wait_for_events(limit: Duration) {
+    let (posted, cv) = &POSTED;
+    let mut p = posted.lock().unwrap();
+    if !*p {
+        p = cv.wait_timeout(p, limit).unwrap().0;
+    }
+    *p = false;
+}
 /// Wakes the window's event loop when background work produces something.
 static WAKE: Mutex<Option<EventLoopProxy<()>>> = Mutex::new(None);
 /// Running commands, so `stopCommand` can stop them.
@@ -331,6 +344,10 @@ static WAKE_SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 
 fn post(event: Event) {
     EVENTS.lock().unwrap().push(event);
+    // A loop waiting without a window (`fn main`, headless runs) goes on now.
+    let (posted, cv) = &POSTED;
+    *posted.lock().unwrap() = true;
+    cv.notify_all();
     // A wake for each result would starve timers and drawing: winit hands
     // the app wakes for as long as more arrive, and a result's block can
     // start work that finishes before the next wake is looked for (#56).
@@ -803,9 +820,10 @@ pub fn run_until_idle() {
         if !ran && next_timer().is_none() && !background_busy() {
             return;
         }
-        // Sleep until the next timer, but check for background results often.
-        let wait = next_timer().map_or(0.005, |t| (t - now()).clamp(0.0, 0.005));
-        std::thread::sleep(Duration::from_secs_f64(wait));
+        // Wait until the next timer, or a background result, whichever
+        // comes first (the result goes on at once).
+        let wait = next_timer().map_or(0.05, |t| (t - now()).clamp(0.0, 0.05));
+        wait_for_events(Duration::from_secs_f64(wait));
     }
 }
 
@@ -844,7 +862,7 @@ fn settle(app: &mut App, deadline: Instant) {
             app.dirty = true;
             app.update();
         } else {
-            std::thread::sleep(Duration::from_millis(5));
+            wait_for_events(Duration::from_millis(5));
         }
     }
 }
@@ -2083,6 +2101,25 @@ impl App {
     fn popovers(&self) -> Vec<&Node> {
         let Some(tree) = &self.tree else { return Vec::new() };
         tree.children.iter().filter(|c| matches!(c.kind, Kind::Popover { .. })).collect()
+    }
+
+    /// While a sheet is up, where keys go: the popovers from the topmost
+    /// down to the sheet on top (the views behind it don't get them).
+    /// `None` without a sheet.
+    fn key_roots(&self) -> Option<Vec<&Node>> {
+        let popovers = self.popovers();
+        let sheet = popovers.iter().rposition(|p| matches!(p.kind, Kind::Popover { edge, .. } if edge == super::SHEET))?;
+        Some(popovers[sheet..].iter().rev().copied().collect())
+    }
+
+    /// The view with the keyboard, if keys may go to it (not behind a sheet).
+    fn keys_to_node(&self) -> Option<&Node> {
+        let key = self.ui.keys_to?;
+        let n = match self.key_roots() {
+            Some(roots) => roots.into_iter().find_map(|r| r.find(key))?,
+            None => self.node(key)?,
+        };
+        (!n.mods.hidden && !n.layout.style.disabled).then_some(n)
     }
 
     /// Where to look for what's at a point: the topmost popover it's in,
@@ -3954,9 +3991,14 @@ impl App {
         if key.is_empty() {
             return false;
         }
-        // The view with the keyboard first, then the first one with `.onKey`.
-        let to = self.ui.keys_to.and_then(|k| self.node(k)).filter(|n| !n.mods.hidden && !n.layout.style.disabled);
-        let Some(cb) = to.and_then(|n| n.mods.on_key.clone()).or_else(|| self.tree.as_ref().and_then(find)) else { return false };
+        // The view with the keyboard first, then the first one with `.onKey`
+        // (in the sheet on top, when one is up).
+        let to = self.keys_to_node();
+        let first = || match self.key_roots() {
+            Some(roots) => roots.into_iter().find_map(find),
+            None => self.tree.as_ref().and_then(find),
+        };
+        let Some(cb) = to.and_then(|n| n.mods.on_key.clone()).or_else(first) else { return false };
         cb.call_with(crate::str_new(key) as *mut u8);
         self.dirty = true;
         true
@@ -3977,11 +4019,16 @@ impl App {
         if name.is_empty() {
             return false;
         }
-        // The view with the keyboard first, then the first one with `.onKeyEvent`.
-        let to = self.ui.keys_to.and_then(|k| self.node(k)).filter(|n| !n.mods.hidden && !n.layout.style.disabled);
+        // The view with the keyboard first, then the first one with
+        // `.onKeyEvent` (in the sheet on top, when one is up).
+        let to = self.keys_to_node();
+        let first = || match self.key_roots() {
+            Some(roots) => roots.into_iter().find_map(find),
+            None => self.tree.as_ref().and_then(find),
+        };
         let Some((cb, releases)) = to
             .and_then(|n| n.mods.on_key_event.as_ref().map(|cb| (cb.clone(), n.mods.key_releases)))
-            .or_else(|| self.tree.as_ref().and_then(find))
+            .or_else(first)
         else {
             return false;
         };
@@ -6835,10 +6882,10 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                                 eprintln!("script: `{label}` never appeared (in an hour of the app's time)");
                                 return 2;
                             }
-                            None => std::thread::sleep(Duration::from_millis(5)),
+                            None => wait_for_events(Duration::from_millis(5)),
                         }
                     } else {
-                        std::thread::sleep(Duration::from_millis(5));
+                        wait_for_events(Duration::from_millis(5));
                     }
                 }
             }
@@ -6858,7 +6905,7 @@ fn script_steps(app: &mut App, script: &str) -> i32 {
                             app.dirty = true;
                             app.update();
                         } else {
-                            std::thread::sleep(Duration::from_millis(5));
+                            wait_for_events(Duration::from_millis(5));
                         }
                     }
                 }

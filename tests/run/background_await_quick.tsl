@@ -1,0 +1,15 @@
+// An awaited `background` job comes back as soon as it's done, not on the
+// next tick of a timer (#72: it took ~6 ms each, even doing nothing).
+
+async fn main() {
+    let t = now()
+    var total = 0
+    for k in 0..300 {
+        let r = await background { k }
+        total += r
+    }
+    let each = (now() - t) / 300.0 * 1000.0
+    print("total {total}")
+    // (Before the fix: 5 to 6 ms each. Allow a slow machine plenty.)
+    print("quick: {each < 3.0}")
+}

@@ -21,6 +21,9 @@ kernel fn gives(_ i: Int) -> Int { // error: a kernel returns nothing: it writes
     0 // error: a kernel can't do this on its own
 }
 
+kernel fn tooMany(_ i: Int, b0: GPUBuffer<Float32>, b1: GPUBuffer<Float32>, b2: GPUBuffer<Float32>, b3: GPUBuffer<Float32>, b4: GPUBuffer<Float32>, b5: GPUBuffer<Float32>, b6: GPUBuffer<Float32>, b7: GPUBuffer<Float32>, b8: GPUBuffer<Float32>, b9: GPUBuffer<Float32>, b10: GPUBuffer<Float32>, b11: GPUBuffer<Float32>, b12: GPUBuffer<Float32>, b13: GPUBuffer<Float32>, b14: GPUBuffer<Float32>, b15: GPUBuffer<Float32>, b16: GPUBuffer<Float32>, b17: GPUBuffer<Float32>, b18: GPUBuffer<Float32>, b19: GPUBuffer<Float32>, b20: GPUBuffer<Float32>, b21: GPUBuffer<Float32>, b22: GPUBuffer<Float32>, b23: GPUBuffer<Float32>, b24: GPUBuffer<Float32>, b25: GPUBuffer<Float32>, b26: GPUBuffer<Float32>, b27: GPUBuffer<Float32>, b28: GPUBuffer<Float32>, b29: GPUBuffer<Float32>, scale: Float32) { // error: a kernel takes at most 29 buffers, and `tooMany` takes 30
+}
+
 kernel fn subset(_ i: Int, xs: GPUBuffer<Float32>, n: Int) {
     let s = "text" // error: a kernel has no text
     let list = [1, 2] // error: a kernel can't make lists or dictionaries

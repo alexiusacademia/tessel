@@ -419,15 +419,22 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                         self.declare_value(&name.name, &ty, Some(inner));
                     }
                 }
+                // The branches' views are different views (an `if`'s view
+                // appears when its condition turns true, even when the
+                // `else` made one of the same kind).
+                self.ui_branch(0);
                 self.content_block(then, false);
+                self.ui_branch_end();
                 self.pop_scope();
                 self.br(done);
                 self.b.position_at_end(else_bb);
+                self.ui_branch(1);
                 match otherwise {
                     Some(Else::Block(b)) => self.content_block(b, false),
                     Some(Else::If(e)) => self.content_expr(e),
                     None => {}
                 }
+                self.ui_branch_end();
                 self.br(done);
                 self.b.position_at_end(done);
             }
@@ -462,6 +469,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 self.release(v, &t);
             }
+        }
+    }
+
+    /// Views made from here to `ui_branch_end` are in branch `tag` of an
+    /// `if` or `match`: their identity says which.
+    pub(super) fn ui_branch(&mut self, tag: u32) {
+        let t = self.ctx.i32_type().const_int(tag as u64, false);
+        self.call_rt("tsl_ui_branch", &[t.into()]);
+    }
+
+    pub(super) fn ui_branch_end(&mut self) {
+        if !self.terminated() {
+            self.call_rt("tsl_ui_branch_end", &[]);
         }
     }
 

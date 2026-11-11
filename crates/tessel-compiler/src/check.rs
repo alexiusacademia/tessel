@@ -1556,6 +1556,13 @@ impl Checker<'_> {
                 }
                 Item::Enum(d) => {
                     let id = id.unwrap();
+                    for (c, def) in d.cases.iter().zip(self.enums[id].cases.clone()) {
+                        for (p, ps) in c.fields.iter().zip(&def.fields) {
+                            if let Some(default) = &p.default {
+                                self.default_value(default, &ps.ty);
+                            }
+                        }
+                    }
                     let methods = self.enums[id].methods.clone();
                     self.method_bodies(&d.methods, &methods, Ty::Enum(id), Vec::new());
                 }

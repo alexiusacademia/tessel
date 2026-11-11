@@ -1,0 +1,15 @@
+// A kernel with as many buffers as one can take (29), and values besides.
+
+kernel fn gather(_ i: Int, b0: GPUBuffer<Float32>, b1: GPUBuffer<Float32>, b2: GPUBuffer<Float32>, b3: GPUBuffer<Float32>, b4: GPUBuffer<Float32>, b5: GPUBuffer<Float32>, b6: GPUBuffer<Float32>, b7: GPUBuffer<Float32>, b8: GPUBuffer<Float32>, b9: GPUBuffer<Float32>, b10: GPUBuffer<Float32>, b11: GPUBuffer<Float32>, b12: GPUBuffer<Float32>, b13: GPUBuffer<Float32>, b14: GPUBuffer<Float32>, b15: GPUBuffer<Float32>, b16: GPUBuffer<Float32>, b17: GPUBuffer<Float32>, b18: GPUBuffer<Float32>, b19: GPUBuffer<Float32>, b20: GPUBuffer<Float32>, b21: GPUBuffer<Float32>, b22: GPUBuffer<Float32>, b23: GPUBuffer<Float32>, b24: GPUBuffer<Float32>, b25: GPUBuffer<Float32>, b26: GPUBuffer<Float32>, b27: GPUBuffer<Float32>, out: GPUBuffer<Float32>, scale: Float32, add: Int) {
+    out[i] = (b0[i] + b1[i] + b2[i] + b3[i] + b4[i] + b5[i] + b6[i] + b7[i] + b8[i] + b9[i] + b10[i] + b11[i] + b12[i] + b13[i] + b14[i] + b15[i] + b16[i] + b17[i] + b18[i] + b19[i] + b20[i] + b21[i] + b22[i] + b23[i] + b24[i] + b25[i] + b26[i] + b27[i]) * scale + Float32(add)
+}
+
+fn main() {
+    var bs: [GPUBuffer<Float32>] = []
+    for q in 0..28 {
+        bs.append(GPUBuffer(from: [Float32(q), Float32(q * 2)]))
+    }
+    let out = GPUBuffer<Float32>(count: 2)
+    gpu.run(gather, over: 2, bs[0], bs[1], bs[2], bs[3], bs[4], bs[5], bs[6], bs[7], bs[8], bs[9], bs[10], bs[11], bs[12], bs[13], bs[14], bs[15], bs[16], bs[17], bs[18], bs[19], bs[20], bs[21], bs[22], bs[23], bs[24], bs[25], bs[26], bs[27], out, Float32(0.5), 1)
+    print(out.read())
+}

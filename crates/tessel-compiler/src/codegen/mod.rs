@@ -489,6 +489,7 @@ struct Gen<'ctx, 'a> {
     method_decls: HashMap<(String, String), (&'a FnDecl, Ty)>,
     methods: HashMap<(String, String), FunctionValue<'ctx>>,
     struct_decls: HashMap<usize, &'a StructDecl>,
+    enum_decls: HashMap<usize, &'a EnumDecl>,
     struct_types: HashMap<usize, StructType<'ctx>>,
     type_infos: HashMap<String, PointerValue<'ctx>>,
     helpers: HashMap<String, FunctionValue<'ctx>>,
@@ -595,6 +596,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             method_decls: HashMap::new(),
             methods: HashMap::new(),
             struct_decls: HashMap::new(),
+            enum_decls: HashMap::new(),
             struct_types: HashMap::new(),
             type_infos: HashMap::new(),
             helpers: HashMap::new(),
@@ -658,6 +660,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 }
                 Item::Enum(d) => {
                     let id = self.checked.enums.iter().position(|e| e.name == d.name.name).unwrap();
+                    self.enum_decls.insert(id, d);
                     for m in &d.methods {
                         self.method_decls.insert((d.name.name.clone(), m.name.name.clone()), (m, Ty::Enum(id)));
                     }
@@ -1788,7 +1791,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             "tsl_ui_on_appear" | "tsl_ui_on_submit" => (vec![p, p], None),
             "tsl_ui_begin_tabs" => (vec![p, p, p, p], None),
             "tsl_ui_divider" | "tsl_ui_autofocus" => (vec![], None),
-            "tsl_ui_icon" => (vec![i32t], None),
+            "tsl_ui_icon" | "tsl_ui_branch" => (vec![i32t], None),
+            "tsl_ui_branch_end" => (vec![], None),
             "tsl_ui_begin_ribbon" => (vec![p, p], None),
             "tsl_ui_begin_ribbon_tab" => (vec![p], None),
             "tsl_ui_begin_ribbon_group" => (vec![p, i32t], None),
@@ -4588,7 +4592,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Enum(_) => (Some(sv.into_int_value()), None),
             _ => (None, None),
         };
-        for arm in arms {
+        for (arm_index, arm) in arms.iter().enumerate() {
             let (body_bb, next_bb) = (self.block_named("arm"), self.block_named("next"));
             // Each pattern in turn: the arm runs at the first that matches.
             for (i, pattern) in arm.patterns.iter().enumerate() {
@@ -4631,6 +4635,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     }
                 }
             }
+            // In a view, each arm's views are views of their own.
+            if content {
+                self.ui_branch(arm_index as u32);
+            }
             let v = match &arm.body.kind {
                 ExprKind::Block(b) if content => {
                     self.content_block(b, false);
@@ -4654,6 +4662,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 if !self.terminated() {
                     self.b.build_store(slot, v).unwrap();
                 }
+            }
+            if content && !self.terminated() {
+                self.call_rt("tsl_ui_branch_end", &[]);
             }
             self.pop_scope();
             self.br(done);
@@ -5324,7 +5335,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 for (i, f) in fields.iter().enumerate() {
                     let v = match info.args[i] {
                         Some(r) => self.expr_as(arg(r), &f.ty).unwrap(),
-                        None => unreachable!("enum case values have no defaults"),
+                        None => {
+                            let decl = self.enum_decls[&id];
+                            let default = decl.cases[case].fields[i].default.as_ref().expect("checked: a value left out has a default");
+                            self.expr_as(default, &f.ty).unwrap()
+                        }
                     };
                     let fp = self.b.build_struct_gep(pt, data, i as u32, "").unwrap();
                     self.store(&f.ty, fp, v);

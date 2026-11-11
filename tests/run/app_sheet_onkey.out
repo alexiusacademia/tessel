@@ -1,0 +1,8 @@
+Root
+  View
+    VStack
+      Text "main got: ab"
+      Text "sheet got: xy"
+      Button "Open sheet"
+      View
+        Text ""

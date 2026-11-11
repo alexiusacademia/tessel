@@ -458,6 +458,10 @@ to the first one in the window until one is clicked: a click in a view with
 `.onKey` or `.onKeyEvent` gives it the keyboard. A click in a sheet or a
 popover over a canvas doesn't: the canvas that had the keyboard keeps it.
 
+While a sheet is up, keys go to the sheet: to its views with `.onKey` or
+`.onKeyEvent`, and not to the window behind it. When the sheet closes, the
+window gets them again.
+
 ## Saving a drawing as a picture
 
 [`renderImage`](/reference/stdlib/#renderimage) runs a drawing block without

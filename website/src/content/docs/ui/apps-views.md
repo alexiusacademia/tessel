@@ -331,3 +331,8 @@ app Notes(width: 400, height: 300) {
 The block runs once per appearance, not on every rebuild. If the view goes away
 (an `if` stops showing it) and comes back, it runs again. It may change state;
 the window is then rebuilt with the new values.
+
+An `if`'s view and its `else`'s are different views, even when they're the
+same kind of view in the same place: when the condition changes, the view of
+the branch that comes appears (its `.onAppear` runs, and its `state` starts
+fresh). The same goes for the arms of a `match`.

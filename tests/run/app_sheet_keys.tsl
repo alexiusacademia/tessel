@@ -1,0 +1,23 @@
+// While a sheet is up, keys go to the sheet's `.onKeyEvent`, not to the
+// window behind it (#69). After it closes, the window gets them again.
+view Marker() { Text("").frame(width: 0, height: 0) }
+
+app SheetKeys(width: 400, height: 300) {
+    state mainGot = ""
+    state sheetGot = ""
+    state open = false
+    VStack {
+        Text("main got: {mainGot}")
+        Text("sheet got: {sheetGot}")
+        Button("Open sheet") { open = true }
+        Marker().sheet(isPresented: open) {
+            VStack {
+                Text("In the sheet")
+                Button("Close") { open = false }
+            }
+            .onKeyEvent { e in sheetGot = sheetGot + e.key }
+        }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onKeyEvent { e in mainGot = mainGot + e.key }
+}

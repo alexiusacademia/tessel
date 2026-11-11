@@ -1,0 +1,45 @@
+Root
+  View
+    VStack
+      Button "Ask"
+      Button "Switch"
+      Text "zero 0 one 0 arms 1"
+      View
+        ZStack
+          Spacer
+      View
+        ZStack
+          Spacer
+      Text "in a"
+      View
+        Button "else 0"
+Root
+  View
+    VStack
+      Button "Ask"
+      Button "Switch"
+      Text "zero 1 one 1 arms 2"
+      View
+        ZStack
+          Spacer
+      View
+        ZStack
+          Spacer
+      Text "in b"
+      View
+        Button "then 0"
+Root
+  View
+    VStack
+      Button "Ask"
+      Button "Switch"
+      Text "zero 1 one 1 arms 3"
+      View
+        ZStack
+          Spacer
+      View
+        ZStack
+          Spacer
+      Text "in a"
+      View
+        Button "else 0"

@@ -12,6 +12,9 @@ const KERNEL_MATH: &[&str] = &[
     "abs", "min", "max",
 ];
 
+/// The most `GPUBuffer`s a kernel can take (Metal's limit).
+const MAX_KERNEL_BUFFERS: usize = 29;
+
 impl Checker<'_> {
     /// A kernel's signature: its index, then buffers and plain values, and
     /// no result. `None` (with errors) when it isn't one.
@@ -67,6 +70,15 @@ impl Checker<'_> {
                 }
             }
             params.push(ps.ty.clone());
+        }
+        // Metal takes at most 29 buffers in a kernel (31 slots, less the
+        // kernel's values and wgpu's array lengths); the CPU fallback would
+        // take more, so catch it here.
+        let buffers = params.iter().filter(|t| matches!(t, Ty::GpuBuffer(_))).count();
+        if buffers > MAX_KERNEL_BUFFERS {
+            self.error(f.name.span, format!("a kernel takes at most {MAX_KERNEL_BUFFERS} buffers, and `{}` takes {buffers}", f.name.name))
+                .help("split it into two kernels, or keep several fields in one buffer (numbers and values like `Int` don't count)");
+            ok = false;
         }
         KernelInfo { dims: dims.unwrap_or(1), params, valid: ok && dims.is_some() }
     }

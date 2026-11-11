@@ -1,0 +1,23 @@
+// An enum case's value may have a default, used when a call leaves it out.
+
+enum Act {
+    get(job: Int, url: String, range: String = "")
+    wait(seconds: Float = 0.5, why: String = "busy")
+}
+
+fn show(_ a: Act) {
+    match a {
+        .get(j, u, r) -> print("get {j} {u} [{r}]")
+        .wait(s, w) -> print("wait {s} {w}")
+    }
+}
+
+fn main() {
+    show(Act.get(job: 1, url: "x"))
+    show(Act.get(job: 2, url: "y", range: "0-99"))
+    let w: Act = .wait()
+    show(w)
+    show(.wait(why: "slow"))
+    let acts = [Act.get(job: 3, url: "z"), .wait(seconds: 2.0)]
+    for a in acts { show(a) }
+}

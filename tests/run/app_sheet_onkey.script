@@ -1,0 +1,7 @@
+key a
+click "Open sheet"
+key x
+key y
+click "Close"
+key b
+tree

@@ -356,6 +356,18 @@ let box: Shape = .rectangle(width: 3, height: 4)
 let shapes = [Shape.circle(radius: 1), .rectangle(width: 2, height: 5), .empty]
 ```
 
+A case's value can have a default, like a function's parameter. A call that
+leaves it out gets the default:
+
+```tessel
+enum Request {
+    get(url: String, range: String = "")
+}
+
+let all = Request.get(url: "notes.txt")
+let part = Request.get(url: "notes.txt", range: "0-99")
+```
+
 To get the values back out, use `match`. Each arm names the case, and gives
 names to its values in order:
 

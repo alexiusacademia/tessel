@@ -1,5 +1,6 @@
 // Escape closes an open popover (and a sheet) even when the app takes key
 // events with `.onKeyEvent` (issue #15); with none open, the app gets it.
+// While the sheet is up, other keys go to it, not to the app (#69).
 
 app PopoverEscape(title: "Popover", width: 320, height: 220) {
     state open = false

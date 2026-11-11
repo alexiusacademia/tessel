@@ -575,6 +575,8 @@ mod gpu {
         reduce: Option<Pipeline>,
         partials: Option<wgpu::Buffer>,
         max_groups: u32,
+        /// How many buffers a kernel may take on this GPU.
+        max_buffers: u32,
     }
 
     impl Gpu {
@@ -623,6 +625,13 @@ mod gpu {
                 name: info.name.clone(),
                 align: limits.min_uniform_buffer_offset_alignment as u64,
                 max_groups: limits.max_compute_workgroups_per_dimension,
+                // On Metal two of the 31 slots it reports go to the kernel's
+                // values and to wgpu's table of array lengths.
+                max_buffers: if info.backend == wgpu::Backend::Metal {
+                    limits.max_storage_buffers_per_shader_stage.saturating_sub(2)
+                } else {
+                    limits.max_storage_buffers_per_shader_stage
+                },
                 device,
                 queue,
                 encoder: None,
@@ -735,6 +744,12 @@ mod gpu {
             if !self.pipelines.contains_key(&key) {
                 let source = unsafe { CStr::from_ptr(k.wgsl) }.to_string_lossy();
                 let buffers = kinds.iter().filter(|k| matches!(**k, K_BUF_F32 | K_BUF_INT)).count();
+                if buffers > self.max_buffers as usize {
+                    crate::fatal(&format!(
+                        "`gpu.run({name}, …)`: `{name}` takes {buffers} buffers, and this GPU ({}) takes at most {} in one kernel; split the kernel, or keep several fields in one buffer",
+                        self.name, self.max_buffers
+                    ));
+                }
                 let p = make_pipeline(&self.device, name, &source, buffers, false);
                 self.pipelines.insert(key, p);
             }

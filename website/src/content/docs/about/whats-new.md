@@ -11,6 +11,31 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.23.1
+
+*November 11, 2026*
+
+Fixes for five reported problems:
+
+- **A kernel with too many buffers** is now a compile error at its line: a
+  kernel takes at most 29 buffers, which is what Apple's GPUs allow. Before,
+  it compiled and then stopped the program on Metal at its first run (the
+  CPU fallback ran it, so testing there didn't show it). A GPU that allows
+  fewer says so at `gpu.run`. ([#73](https://github.com/alexiusacademia/tessel/issues/73))
+- **An awaited `background` job comes back as soon as it's done**: about
+  0.05 ms for one that does nothing, instead of about 6 ms. Programs without
+  a window looked for finished work only every 5 ms. Splitting a computation
+  into many short rounds of jobs now pays off. ([#72](https://github.com/alexiusacademia/tessel/issues/72))
+- **Enum case values can have defaults**, like `get(url: String, range:
+  String = "")`, and a call that leaves the value out gets it. Before,
+  `tessel check` accepted it and building crashed. ([#71](https://github.com/alexiusacademia/tessel/issues/71))
+- **An `if`'s view and its `else`'s are different views**, even of the
+  same kind: when the condition turns true, the `if` branch's view appears,
+  so its `.onAppear` runs and its `state` starts fresh. The same goes for a
+  `match`'s arms. ([#70](https://github.com/alexiusacademia/tessel/issues/70))
+- **Keys go to a sheet while it's up**: its `.onKey` and `.onKeyEvent` get
+  them, and the window behind it doesn't. ([#69](https://github.com/alexiusacademia/tessel/issues/69))
+
 ## 0.23.0
 
 *November 9, 2026*

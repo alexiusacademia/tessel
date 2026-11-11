@@ -1213,7 +1213,8 @@ A function run on the GPU once for each index of a range, by
 [`gpu.run`](#gpurun). Its other parameters are `GPUBuffer<Float32>`,
 `GPUBuffer<Int>`, `Float32`, `Int` and `Bool`; it returns nothing. Its body
 uses a part of Tessel (numbers, `if`, `for` over a range, `while`, buffer
-elements, the math functions); anything else is a compile error. In a
+elements, the math functions); anything else is a compile error. It takes
+at most 29 buffers (any number of plain values). In a
 kernel `Int` is 32-bit and wraps around, `a / 0` is `a` and `a % 0` is 0,
 and an index outside a buffer uses its last element.
 

@@ -50,6 +50,9 @@ A kernel is a function marked `kernel`. Its first parameter is its
 `(Int, Int, Int)` for a block of cells. Its other parameters are
 `GPUBuffer<Float32>`s, `GPUBuffer<Int>`s and plain `Float32`, `Int` and
 `Bool` values. It returns nothing: it writes its results into buffers.
+A kernel takes at most 29 buffers (that's what Apple's GPUs allow; plain
+values don't count). For more, split it into two kernels, or keep several
+fields in one buffer.
 
 ```tessel
 kernel fn spread(_ at: (Int, Int), t: GPUBuffer<Float32>, next: GPUBuffer<Float32>, n: Int) {

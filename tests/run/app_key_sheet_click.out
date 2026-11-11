@@ -2,9 +2,9 @@ Root
   View
     VStack
       Text "window keys: d"
-      Text "pane keys: ab"
+      Text "pane keys: b"
       Text "under keys: "
-      Text "sheet keys: c"
+      Text "sheet keys: ac"
       HStack
         Canvas (empty)
         Canvas (empty)
