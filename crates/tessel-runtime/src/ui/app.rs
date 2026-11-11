@@ -239,8 +239,10 @@ fn fire_timers() -> bool {
     let t = now();
     let due: Vec<Timer> = TIMERS.with(|timers| {
         let mut timers = timers.borrow_mut();
-        let (due, later): (Vec<Timer>, Vec<Timer>) = timers.drain(..).partition(|x| x.due <= t);
+        let (mut due, later): (Vec<Timer>, Vec<Timer>) = timers.drain(..).partition(|x| x.due <= t);
         *timers = later;
+        // Earliest first, when a late wake finds several due.
+        due.sort_by(|a, b| a.due.total_cmp(&b.due));
         due
     });
     let fired = !due.is_empty();
