@@ -119,7 +119,7 @@ unsafe extern "C" fn grow_drop(h: *mut crate::Header) {
 /// `grow_capacity`)? They're the ones whose drop function is `grow_drop`.
 unsafe fn is_growable(d: *const Str) -> bool {
     let drop: unsafe extern "C" fn(*mut crate::Header) = grow_drop;
-    unsafe { std::ptr::fn_addr_eq((*d).h.drop, drop) }
+    unsafe { (*d).h.drop.is_some_and(|f| std::ptr::fn_addr_eq(f, drop)) }
 }
 
 /// A new growable `Data` holding `bytes`.

@@ -39,7 +39,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 #[repr(C)]
 pub struct Header {
     rc: i64,
-    drop: unsafe extern "C" fn(*mut Header),
+    /// How to free it. Constants the compiler makes (text in the program)
+    /// have none: they're never freed, and the field is null.
+    drop: Option<unsafe extern "C" fn(*mut Header)>,
 }
 
 /// Describes a value type stored inside a list, dictionary or box.
@@ -89,7 +91,7 @@ unsafe fn alloc(size: usize) -> *mut u8 {
 
 unsafe fn new_object(size: usize, drop: unsafe extern "C" fn(*mut Header)) -> *mut Header {
     let h = unsafe { alloc(size) } as *mut Header;
-    unsafe { h.write(Header { rc: 1, drop }) };
+    unsafe { h.write(Header { rc: 1, drop: Some(drop) }) };
     h
 }
 
@@ -123,12 +125,16 @@ pub unsafe extern "C" fn tsl_release(obj: *mut Header) {
     if rc & SHARED != 0 {
         if c.fetch_sub(1, Ordering::Release) == SHARED + 1 {
             std::sync::atomic::fence(Ordering::Acquire);
-            unsafe { ((*obj).drop)(obj) };
+            if let Some(drop) = unsafe { (*obj).drop } {
+                unsafe { drop(obj) };
+            }
         }
     } else {
         c.store(rc - 1, Ordering::Relaxed);
         if rc == 1 {
-            unsafe { ((*obj).drop)(obj) };
+            if let Some(drop) = unsafe { (*obj).drop } {
+                unsafe { drop(obj) };
+            }
         }
     }
 }
