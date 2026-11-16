@@ -1,0 +1,35 @@
+// Lists of floats to and from Data in one step (#80), 4 or 8 bytes each,
+// the smallest byte first unless `bigEndian: true`.
+
+fn main() {
+    let xs: [Float32] = [1.5, -2.0, 0.25]
+    let d = Data(float32s: xs)
+    print(d.count)
+    print(d.bytes)
+    print(d.float32s())
+    print(d.float32s() == xs)
+    print(d.float32(at: 4))
+
+    let big = Data(float32s: xs, bigEndian: true)
+    print(big.bytes.slice(from: 0, to: 4))
+    print(big.float32s(bigEndian: true))
+
+    // A [Float] as 32-bit floats, and as 64-bit ones.
+    let ys = [0.1, 1e10, -3.0]
+    print(Data(float32s: ys).float32s())
+    let wide = Data(float64s: ys)
+    print(wide.count)
+    print(wide.float64s() == ys)
+    print(Data(float64s: ys, bigEndian: true).float64s(bigEndian: true))
+
+    // Bytes left over at the end are left out.
+    print(Data(bytes: [0, 0, 128, 63, 1, 2]).float32s())
+    print(Data().float64s())
+
+    // A big list, as a file would hold it.
+    var many: [Float32] = []
+    for i in 0..100000 { many.append(Float32(i) * 0.5) }
+    let file = Data(float32s: many)
+    let back = file.float32s()
+    print("{file.count} {back.count} {back[99999]} {back == many}")
+}

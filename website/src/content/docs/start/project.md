@@ -57,8 +57,9 @@ The `[app]` table says what the app says about itself:
 | `id` | A name no other app has, written like a reversed web address: `com.example.tally`. macOS tells apps apart by it, so keep it the same from one version to the next. | `dev.tessel.` and the name |
 | `version` | The version people see, like `1.2.0`. | `1.0` |
 | `build` | A build number, for telling builds of one version apart. | The version |
-| `description` | What the app is, in a few words. Windows shows it in the file's Details. | — |
+| `description` | What the app is, in a few words. Windows shows it in the file's Details. Lines after the first (in a `"""` string) are a longer description, which Linux software centers show. | — |
 | `author` | Who makes the app: a person or a company. | — |
+| `email` | How to reach the author. The Linux package (`.deb`) gives it as its maintainer's address. | — |
 | `copyright` | The copyright notice, like `© 2026 Example Surveys`. | — |
 | `icon` | A square PNG, relative to `tessel.toml`. See [the app's icon](/start/cli/#the-apps-icon). | `icon.png` next to the code |
 | `category` | Where the App Store and Finder file the app: `business`, `developer-tools`, `education`, `entertainment`, `finance`, `games`, `graphics-design`, `healthcare-fitness`, `lifestyle`, `medical`, `music`, `news`, `photography`, `productivity`, `reference`, `social-networking`, `sports`, `travel`, `utilities`, `video` or `weather`. | — |

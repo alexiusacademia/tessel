@@ -1035,6 +1035,16 @@ pub struct List {
     data: *mut u8,
 }
 
+/// Where a list's elements are (for the runtime's own loops over them).
+pub(crate) unsafe fn list_data(l: *const List) -> *mut u8 {
+    unsafe { (*l).data }
+}
+
+/// Sets how many elements a list has (after writing them into its room).
+pub(crate) unsafe fn set_list_len(l: *mut List, len: i64) {
+    unsafe { (*l).len = len }
+}
+
 unsafe fn elem_size(l: *const List) -> usize {
     unsafe { (*(*l).elem).size as usize }
 }

@@ -175,7 +175,10 @@ the standard menus around yours:
 - **Window**: Minimize (Cmd+M), Zoom and Close Window (Cmd+W).
 
 A menu of yours called "Edit" or "Window" gets its items after the standard
-ones. One with the app's name is the app menu: its items go after About, so
+ones. In your Edit menu, an item with the keys of a standard one (Cmd+Z,
+Shift+Cmd+Z, Cmd+X, Cmd+C, Cmd+V or Cmd+A) takes its place instead:
+`MenuItem("Undo Mute Drums", shortcut: "cmd+z")` comes first, where Undo
+was. While a text field is edited, it does what the standard item would. One with the app's name is the app menu: its items go after About, so
 that's where Settings… goes (`MenuItem("Settings…", shortcut: "cmd+,")`), and
 an About… of your own takes the place of the standard one. Drawn in the
 window (on Windows), it's a menu of its own. An app without `.menuBar` still gets the standard menus on macOS.
@@ -195,7 +198,9 @@ far.
 A menu bar item's shortcut works wherever the keyboard focus is, before the
 views' own [`.shortcut`s](/ui/shortcuts/). If an item has Cmd+C (or another
 of the editing keys: A, X, V, Z), the text being edited keeps it: the key,
-and the item, copy the text instead. A standard item whose keys one of your
+and the item, copy the text instead. An item with a key without Cmd
+(`shortcut: "m"` or `"space"`) leaves it to the text field being edited, so
+typing works; when no text is edited, the key runs the item. A standard item whose keys one of your
 items (or a view's `.shortcut`) has gives them up: with a `.shortcut("w")`,
 Cmd+W runs it rather than closing the window.
 

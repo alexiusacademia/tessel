@@ -76,6 +76,8 @@ pub struct App {
     pub build: Option<String>,
     pub description: Option<String>,
     pub author: Option<String>,
+    /// How to reach the author (the Linux package's maintainer address).
+    pub email: Option<String>,
     pub copyright: Option<String>,
     /// A PNG, relative to the manifest (`icon.png` next to the program
     /// otherwise).

@@ -577,6 +577,108 @@ pub(crate) static FLOAT_TYPE: TslType = TslType {
     kind: 0,
 };
 
+unsafe extern "C" fn float32_eq(a: *const u8, b: *const u8) -> bool {
+    unsafe { *(a as *const f32) == *(b as *const f32) }
+}
+
+unsafe extern "C" fn float32_hash(a: *const u8) -> u64 {
+    let v = unsafe { *(a as *const f32) };
+    if v == 0.0 { 0 } else { v.to_bits() as u64 }
+}
+
+unsafe extern "C" fn float32_cmp(a: *const u8, b: *const u8) -> i32 {
+    let (a, b) = unsafe { (*(a as *const f32), *(b as *const f32)) };
+    a.partial_cmp(&b).map_or(0, |o| o as i32)
+}
+
+/// Element type of `[Float32]`, for lists the runtime creates.
+pub(crate) static FLOAT32_TYPE: TslType = TslType {
+    size: 4,
+    align: 4,
+    retain: None,
+    release: None,
+    eq: Some(float32_eq),
+    hash: Some(float32_hash),
+    cmp: Some(float32_cmp),
+    kind: 0,
+};
+
+/// `Data(float32s:)` of a `[Float32]`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_from_float32s(list: *const List, big: u8) -> *mut Str {
+    unsafe { data_from_floats(list, 1, 4, big) }
+}
+
+/// `Data(float32s:)` of a `[Float]` (each made a 32-bit float).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_from_floats_as32(list: *const List, big: u8) -> *mut Str {
+    unsafe { data_from_floats(list, 0, 4, big) }
+}
+
+/// `Data(float64s:)` of a `[Float]`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_from_float64s(list: *const List, big: u8) -> *mut Str {
+    unsafe { data_from_floats(list, 0, 8, big) }
+}
+
+/// `Data(float32s: list)` (4 bytes each) and `Data(float64s: list)` (8):
+/// `list` is a `[Float]`, or a `[Float32]` when `list32`. The smallest byte
+/// first, unless `big`.
+unsafe fn data_from_floats(list: *const List, list32: u8, width: i64, big: u8) -> *mut Str {
+    let n = unsafe { crate::tsl_list_len(list) } as usize;
+    let mut bytes = Vec::with_capacity(n * width as usize);
+    unsafe {
+        let data = crate::list_data(list);
+        for i in 0..n {
+            let x = if list32 != 0 { *(data as *const f32).add(i) as f64 } else { *(data as *const f64).add(i) };
+            match (width, big != 0) {
+                (4, false) => bytes.extend((x as f32).to_le_bytes()),
+                (4, true) => bytes.extend((x as f32).to_be_bytes()),
+                (_, false) => bytes.extend(x.to_le_bytes()),
+                (_, true) => bytes.extend(x.to_be_bytes()),
+            }
+        }
+    }
+    data_new(&bytes)
+}
+
+/// `data.float32s()`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_float32s(d: *const Str, big: u8) -> *mut List {
+    unsafe { data_to_floats(d, 4, big) }
+}
+
+/// `data.float64s()`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_data_float64s(d: *const Str, big: u8) -> *mut List {
+    unsafe { data_to_floats(d, 8, big) }
+}
+
+/// `data.float32s()` (a `[Float32]`) and `data.float64s()` (a `[Float]`):
+/// the numbers stored 4 or 8 bytes each, from the start (bytes left over
+/// at the end are left out).
+unsafe fn data_to_floats(d: *const Str, width: i64, big: u8) -> *mut List {
+    let bytes = unsafe { data_bytes(d) };
+    let w = width as usize;
+    let n = bytes.len() / w;
+    let elem = if w == 4 { &FLOAT32_TYPE } else { &FLOAT_TYPE };
+    unsafe {
+        let list = crate::tsl_list_new(elem, n as i64);
+        let out = crate::list_data(list);
+        for (i, c) in bytes.chunks_exact(w).enumerate() {
+            if w == 4 {
+                let b: [u8; 4] = c.try_into().unwrap();
+                *(out as *mut f32).add(i) = if big != 0 { f32::from_be_bytes(b) } else { f32::from_le_bytes(b) };
+            } else {
+                let b: [u8; 8] = c.try_into().unwrap();
+                *(out as *mut f64).add(i) = if big != 0 { f64::from_be_bytes(b) } else { f64::from_le_bytes(b) };
+            }
+        }
+        crate::set_list_len(list, n as i64);
+        list
+    }
+}
+
 // ===== the tree =====
 
 pub enum Tree {

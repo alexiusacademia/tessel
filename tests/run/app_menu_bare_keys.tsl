@@ -1,0 +1,18 @@
+// Menu shortcuts without Cmd leave the keys a text field uses to the field
+// while it's edited (#75); otherwise they run. Cmd shortcuts always run.
+struct Box { n: Int = 0, t: String = "" }
+
+app MenuKeys(width: 300, height: 200) {
+    state b = Box()
+    VStack {
+        Text("n {b.n}")
+        TextField("Name", text: b.t)
+    }
+    .menuBar {
+        Menu("Play") {
+            MenuItem("Play/Pause", shortcut: "space") { b.n += 1 }
+            MenuItem("Mute", shortcut: "m") { b.n += 10 }
+            MenuItem("Refresh", shortcut: "cmd+r") { b.n += 100 }
+        }
+    }
+}

@@ -1287,6 +1287,8 @@ print(bytes == Data(text: "Hi!"))       // true
 | `Data()` | No bytes. |
 | `Data(bytes: [Int])` | The given bytes. Each `Int` should be from 0 to 255; other values are wrapped into that range. |
 | `Data(text: String)` | The text's bytes in UTF-8. |
+| `Data(float32s: [Float32], bigEndian: Bool = false)` | The numbers as 4-byte floats, the smallest byte first (unless `bigEndian`). A `[Float]` works too, each number made 32-bit. |
+| `Data(float64s: [Float], bigEndian: Bool = false)` | The numbers as 8-byte floats. |
 
 | Member | Returns | |
 |---|---|---|
@@ -1300,6 +1302,8 @@ print(bytes == Data(text: "Hi!"))       // true
 | `slice(from: Int, to: Int)` | `Data` | The bytes from index `from` up to `to`. |
 | `int8(at:)`, `int16(at:)`, `uint16(at:)`, `int32(at:)`, `uint32(at:)`, `int64(at:)` | `Int` | The whole number stored in the bytes starting at an index. |
 | `float32(at:)`, `float64(at:)` | `Float` | The decimal number stored there. |
+| `float32s(bigEndian: Bool = false)` | `[Float32]` | All the 4-byte floats, from the start (bytes left over at the end are left out). |
+| `float64s(bigEndian: Bool = false)` | `[Float]` | All the 8-byte floats. |
 | `compressed(_ format: String = "zlib")` | `Data` | The bytes, made smaller. |
 | `decompressed(_ format: String = "zlib")` | `Data?` | Compressed bytes, as they were. |
 | `hash(_ algorithm: String = "sha256")` | `Data` | The bytes' digest: SHA-256, SHA-1, SHA-512, MD5 and others. See [hash and hex](#hash-and-hex). |
@@ -1383,6 +1387,18 @@ var out: [Int] = []
 out += (258).bytes(count: 2)                // [2, 1]
 out += (1.5).bytes(count: 4)                // [0, 0, 192, 63]
 let data = Data(bytes: out)
+```
+
+A whole list of decimal numbers, like the samples of a sound or a grid of
+heights, goes to bytes and back in one step, 4 bytes each with `float32s`
+or 8 with `float64s`. That's a copy, quick even for millions of numbers:
+
+```tessel
+let samples: [Float32] = [0.5, -0.25, 1.0]
+let raw = Data(float32s: samples)
+print(raw.count)                            // 12
+print(raw.float32s())                       // [0.5, -0.25, 1.0]
+print(Data(float64s: [1.5]).bytes)          // [0, 0, 0, 0, 0, 0, 248, 63]
 ```
 
 ### slice and latin1

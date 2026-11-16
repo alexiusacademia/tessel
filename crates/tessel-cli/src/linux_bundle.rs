@@ -22,6 +22,8 @@ pub struct App<'a> {
     pub version: &'a str,
     pub description: &'a str,
     pub author: &'a str,
+    /// The manifest's `email`.
+    pub email: &'a str,
     /// The manifest's `category`, as macOS names it (`productivity`).
     pub category: Option<&'a str>,
     pub icon: &'a Icon,
@@ -129,7 +131,9 @@ fn desktop_entry(app: &App, exec: &str) -> String {
         app.id,
     );
     if !app.description.is_empty() {
-        entry += &format!("Comment={}\n", escape_desktop(app.description));
+        // (Its first line: the rest is the package's long description.)
+        let summary = app.description.trim().lines().next().unwrap_or("").trim();
+        entry += &format!("Comment={}\n", escape_desktop(summary));
     }
     if !mimes.is_empty() {
         entry += &format!("MimeType={};\n", mimes.join(";"));
@@ -279,17 +283,44 @@ fn write_executable(out: &Path, bytes: &[u8]) -> Result<(), String> {
 
 // ===== .deb =====
 
+/// The package's maintainer: the author (or the app's name) and `email`.
+fn deb_maintainer(app: &App) -> String {
+    let who = if app.author.is_empty() { app.name } else { app.author };
+    if who.contains('<') {
+        return who.to_string();
+    }
+    let email = if app.email.is_empty() { "nobody@localhost" } else { app.email.trim_matches(['<', '>']) };
+    format!("{who} <{email}>")
+}
+
+/// The control file's `Description`: the description's first line, then
+/// the lines after it as the long description (or the first line again).
+fn deb_description(app: &App) -> String {
+    let mut lines = app.description.trim().lines();
+    let summary = lines.next().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(app.name);
+    let rest: Vec<&str> = lines.map(str::trim_end).collect();
+    let rest: Vec<&str> = rest.iter().copied().skip_while(|l| l.trim().is_empty()).collect();
+    let mut out = format!("{summary}\n");
+    if rest.is_empty() {
+        out += &format!(" {summary}\n");
+    } else {
+        for l in rest {
+            // (A blank line is written " .".)
+            out += &if l.trim().is_empty() { " .\n".to_string() } else { format!(" {}\n", l.trim_start()) };
+        }
+    }
+    out
+}
+
 fn write_deb(out: &Path, app: &App, program: &[u8], exe_name: &str, arch: &str) -> Result<(), String> {
     let files = with_folders(usr_files(app, program, exe_name, &format!("/usr/bin/{exe_name}")));
     let installed_kb = files.iter().map(|f| if let Data::Bytes(b) = &f.data { b.len() } else { 0 }).sum::<usize>().div_ceil(1024);
     let data = gzip(&tar(&files))?;
-    let maintainer = if app.author.is_empty() { app.name.to_string() } else { app.author.to_string() };
-    let maintainer = if maintainer.contains('<') { maintainer } else { format!("{maintainer} <nobody@localhost>") };
-    let summary = if app.description.is_empty() { app.name.to_string() } else { app.description.lines().next().unwrap_or("").to_string() };
     let control = format!(
-        "Package: {exe_name}\nVersion: {}\nArchitecture: {arch}\nMaintainer: {maintainer}\nInstalled-Size: {installed_kb}\nDepends: libc6 (>= 2.28), libgcc-s1 | libgcc1\nSection: misc\nPriority: optional\nDescription: {summary}\n {} is a Tessel app.\n",
+        "Package: {exe_name}\nVersion: {}\nArchitecture: {arch}\nMaintainer: {}\nInstalled-Size: {installed_kb}\nDepends: libc6 (>= 2.28), libgcc-s1 | libgcc1\nSection: misc\nPriority: optional\nDescription: {}",
         deb_version(app.version),
-        app.name,
+        deb_maintainer(app),
+        deb_description(app),
     );
     let control_tar = gzip(&tar(&[
         Entry { path: ".".into(), mode: 0o755, data: Data::Dir },
@@ -370,6 +401,31 @@ mod tests {
         assert_eq!(slug("  Todos!  "), "todos");
         assert_eq!(deb_version("1.2.3"), "1.2.3");
         assert_eq!(deb_version("beta 2"), "0beta2");
+    }
+
+    #[test]
+    fn control_file_has_the_maintainer_and_descriptions() {
+        let icon = Icon::of_program(None, None).unwrap();
+        let app = |description, author, email| App {
+            name: "Riptide",
+            id: "dev.example.riptide",
+            version: "1.0",
+            description,
+            author,
+            email,
+            category: None,
+            icon: &icon,
+            documents: Vec::new(),
+            arch: "x86_64",
+        };
+        let a = app("3D water flow", "Ada Lovelace", "ada@example.com");
+        assert_eq!(deb_maintainer(&a), "Ada Lovelace <ada@example.com>");
+        assert_eq!(deb_description(&a), "3D water flow\n 3D water flow\n");
+        let b = app("3D water flow\n\nSimulates water.\n\nWith VOF.", "", "");
+        assert_eq!(deb_maintainer(&b), "Riptide <nobody@localhost>");
+        assert_eq!(deb_description(&b), "3D water flow\n Simulates water.\n .\n With VOF.\n");
+        assert_eq!(deb_description(&app("", "", "")), "Riptide\n Riptide\n");
+        assert_eq!(deb_maintainer(&app("", "Ada <a@b.c>", "x@y.z")), "Ada <a@b.c>");
     }
 
     #[test]

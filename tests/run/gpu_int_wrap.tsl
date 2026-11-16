@@ -1,0 +1,22 @@
+// In a kernel `Int` is 32-bit and wraps, also in constant expressions,
+// which a GPU's compiler works out ahead (#78: `1 << 31` stopped Metal).
+
+kernel fn wraps(_ i: Int, out: GPUBuffer<Int>) {
+    if i == 0 {
+        out[i] = 1 << 31
+    } else if i == 1 {
+        out[i] = 2147483647 + 1
+    } else if i == 2 {
+        out[i] = 65536 * 65536 + 7
+    } else if i == 3 {
+        out[i] = 3 << 30
+    } else {
+        out[i] = (1 << 31) >> 31
+    }
+}
+
+fn main() {
+    let b = GPUBuffer<Int>(count: 5)
+    gpu.run(wraps, over: 5, b)
+    print(b.read())
+}

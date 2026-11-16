@@ -13,10 +13,30 @@ are listed together under its last version. See
 
 ## 0.23.1
 
-*November 11, 2026*
+*November 16, 2026*
 
-Fixes for five reported problems:
+**New:**
 
+- **`Data(float32s:)` and `data.float32s()`** (and `float64s`) turn a whole
+  list of decimal numbers into bytes and back in one step, as raw number
+  files hold them: 2 million samples take a few milliseconds instead of a
+  fifth of a second. See [Data](/reference/stdlib/#numbers-in-bytes). ([#80](https://github.com/alexiusacademia/tessel/issues/80))
+- **An app's own Edit menu items take the standard ones' places** when they
+  have the same keys: `MenuItem("Undo Mute Drums", shortcut: "cmd+z")`
+  comes first, where Undo was, instead of after a keyless Undo. While a text
+  field is edited it does what Undo would. ([#76](https://github.com/alexiusacademia/tessel/issues/76))
+- **`email`** in `tessel.toml`'s `[app]` is the Linux package's maintainer
+  address, and the lines of `description` after the first are its long
+  description (it said "*Name* is a Tessel app."). ([#74](https://github.com/alexiusacademia/tessel/issues/74))
+
+**Fixed:**
+
+- **Menu shortcuts without Cmd** (`"m"`, `"space"`) no longer take keys
+  from the text field being edited. ([#75](https://github.com/alexiusacademia/tessel/issues/75))
+- **`GPUBuffer` in tuples and lists** (`(GPUBuffer<Float32>, Int)`,
+  `buffers.enumerated()`) is no longer an "unknown type". ([#77](https://github.com/alexiusacademia/tessel/issues/77), [#79](https://github.com/alexiusacademia/tessel/issues/79))
+- **`1 << 31` in a kernel** gives -2147483648 on the GPU too, instead of
+  stopping the program on Metal. ([#78](https://github.com/alexiusacademia/tessel/issues/78))
 - **A kernel with too many buffers** is now a compile error at its line: a
   kernel takes at most 29 buffers, which is what Apple's GPUs allow. Before,
   it compiled and then stopped the program on Metal at its first run (the

@@ -1126,6 +1126,8 @@ pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
             "float32" | "float64" => {
                 method(vec![P::new("at", Ty::Int), P::new("bigEndian", Ty::Bool).default()], Ty::Float)
             }
+            "float32s" => method(vec![P::new("bigEndian", Ty::Bool).default()], Ty::list(Ty::Float32)),
+            "float64s" => method(vec![P::new("bigEndian", Ty::Bool).default()], Ty::list(Ty::Float)),
             _ => return None,
         },
         t if *t == GRAPHICS => return graphics_method(name),
@@ -1405,7 +1407,7 @@ pub fn member_names(recv: &Ty) -> &'static [&'static str] {
         Ty::Float => &["formatted", "clamped", "isNaN", "isFinite", "bytes"],
         Ty::Data => &[
             "count", "isEmpty", "bytes", "text", "base64", "hex", "latin1", "slice", "hash", "int8", "int16", "uint16", "int32", "uint32",
-            "int64", "float32", "float64", "compressed", "decompressed", "append",
+            "int64", "float32", "float64", "float32s", "float64s", "compressed", "decompressed", "append",
         ],
         t if *t == GRAPHICS => &[
             "width", "height", "beginPath", "moveTo", "lineTo", "quadTo", "curveTo", "closePath", "lines", "rect", "circle",
@@ -1643,6 +1645,8 @@ pub fn runtime_method(recv: &Ty, name: &str) -> Option<RtCall> {
         (Ty::Data, "int64") => rt_number("tsl_data_int64"),
         (Ty::Data, "float32") => rt_number("tsl_data_float32"),
         (Ty::Data, "float64") => rt_number("tsl_data_float64"),
+        (Ty::Data, "float32s") => rt_d("tsl_data_float32s", &[Dflt::Bool(false)]),
+        (Ty::Data, "float64s") => rt_d("tsl_data_float64s", &[Dflt::Bool(false)]),
         (t, _) if *t == GRAPHICS => return graphics_call(name),
         (t, _) if *t == SCENE => return scene_call(name),
         // (The receiver goes as its `id`.)

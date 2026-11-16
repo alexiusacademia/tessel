@@ -1,0 +1,9 @@
+menus
+key cmd+z
+key cmd+a
+menu "Edit" "Redo"
+tree
+click "Name"
+key cmd+a
+type "x"
+tree

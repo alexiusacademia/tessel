@@ -4072,7 +4072,8 @@ impl Checker<'_> {
         builtins::JOB
     }
 
-    /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`.
+    /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`, `Data(float32s:)`
+    /// and `Data(float64s:)` (with `bigEndian:`).
     fn data_init(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
         let label = args.first().and_then(|a| a.label.as_ref()).map(|l| l.name.as_str());
         match (args, label) {
@@ -4083,11 +4084,32 @@ impl Checker<'_> {
             ([a], Some("text")) => {
                 self.expect(&a.value, &Ty::Str);
             }
+            ([a, rest @ ..], Some(l @ ("float32s" | "float64s"))) if rest.len() <= 1 && trailing.is_none() => {
+                if let [b] = rest {
+                    if b.label.as_ref().map(|x| x.name.as_str()) != Some("bigEndian") {
+                        self.error(b.value.span, "the second value is `bigEndian: Bool`");
+                    }
+                    self.expect(&b.value, &Ty::Bool);
+                }
+                // `[Float32]` or `[Float]` for 32-bit floats; `[Float]` for 64-bit.
+                let want32 = l == "float32s";
+                let t = self.expr(&a.value, Some(&Ty::list(if want32 { Ty::Float32 } else { Ty::Float })));
+                let ok = match &t {
+                    Ty::List(e) => **e == Ty::Float || (want32 && **e == Ty::Float32) || e.is_error(),
+                    Ty::Error => true,
+                    _ => false,
+                };
+                if !ok {
+                    let what = self.a(&t);
+                    let want = if want32 { "a `[Float32]` or a `[Float]`" } else { "a `[Float]`" };
+                    self.error(a.value.span, format!("`{l}:` takes {want}, not {what}"));
+                }
+            }
             _ => {
                 for a in args {
                     self.expr(&a.value, None);
                 }
-                self.error(span, "make Data with `Data()`, `Data(bytes: [Int])` or `Data(text: String)`");
+                self.error(span, "make Data with `Data()`, `Data(bytes: [Int])`, `Data(text: String)`, `Data(float32s: […])` or `Data(float64s: [Float])`");
             }
         }
         Ty::Data
@@ -5256,6 +5278,7 @@ impl Checker<'_> {
             Ty::Dict(k, v) => TypeExpr::Dict(Box::new(self.type_expr_of(k, span)), Box::new(self.type_expr_of(v, span)), span),
             Ty::Opt(e) => TypeExpr::Optional(Box::new(self.type_expr_of(e, span)), span),
             Ty::Set(e) => TypeExpr::Generic(Ident { name: "Set".into(), span }, vec![self.type_expr_of(e, span)], span),
+            Ty::GpuBuffer(e) => TypeExpr::Generic(Ident { name: "GPUBuffer".into(), span }, vec![self.type_expr_of(e, span)], span),
             Ty::Fn(ps, r) => TypeExpr::Fn(
                 ps.iter().map(|p| self.type_expr_of(p, span)).collect(),
                 (**r != Ty::Void).then(|| Box::new(self.type_expr_of(r, span))),

@@ -2,5 +2,5 @@ tessel: tests/run/app_manifest_bad/tessel.toml: TOML parse error at line 3, colu
   |
 3 | verison = "1.0"
   | ^^^^^^^
-unknown field `verison`, expected one of `name`, `id`, `version`, `build`, `description`, `author`, `copyright`, `icon`, `category`, `license`, `documents`
+unknown field `verison`, expected one of `name`, `id`, `version`, `build`, `description`, `author`, `email`, `copyright`, `icon`, `category`, `license`, `documents`
 

@@ -255,15 +255,42 @@ pub fn bar(user: Option<&Node>, app_name: &str, native: bool, shortcut_keys: &[S
         }
         e
     };
-    let edit = vec![
-        std("Undo", "cmd+z", Std::Undo),
-        std("Redo", "cmd+shift+z", Std::Redo),
-        Entry::Divider,
-        std("Cut", "cmd+x", Std::Cut),
-        std("Copy", "cmd+c", Std::Copy),
-        std("Paste", "cmd+v", Std::Paste),
-        std("Select All", "cmd+a", Std::SelectAll),
-    ];
+    let edit: Vec<Entry> = [
+        ("Undo", "cmd+z", Some(Std::Undo)),
+        ("Redo", "cmd+shift+z", Some(Std::Redo)),
+        ("", "", None),
+        ("Cut", "cmd+x", Some(Std::Cut)),
+        ("Copy", "cmd+c", Some(Std::Copy)),
+        ("Paste", "cmd+v", Some(Std::Paste)),
+        ("Select All", "cmd+a", Some(Std::SelectAll)),
+    ]
+    .into_iter()
+    .map(|(label, keys, command)| match command {
+        // An item of the app's own Edit menu with the same keys takes the
+        // standard one's place (and while text is edited, it does what the
+        // standard one would: see `App::run_entry`).
+        Some(c) => match menus.iter_mut().find(|m| m.label() == "Edit") {
+            Some(Entry::Sub { items, .. }) => {
+                let wanted = Shortcut::parse(keys);
+                match items.iter().position(|e| matches!(e, Entry::Item { shortcut, .. } if *shortcut == wanted)) {
+                    Some(i) => items.remove(i),
+                    None => std(label, keys, c),
+                }
+            }
+            _ => std(label, keys, c),
+        },
+        None => Entry::Divider,
+    })
+    .collect();
+    // (Its own items that took them leave no divider of their own behind.)
+    if let Some(Entry::Sub { items, .. }) = menus.iter_mut().find(|m| m.label() == "Edit") {
+        while matches!(items.first(), Some(Entry::Divider)) {
+            items.remove(0);
+        }
+        while matches!(items.last(), Some(Entry::Divider)) {
+            items.pop();
+        }
+    }
     // A standard menu the app has too: the standard items first.
     let merge = |menus: &mut Vec<Entry>, title: &str, standard: Vec<Entry>, at: usize| {
         match menus.iter_mut().find(|m| m.label() == title) {

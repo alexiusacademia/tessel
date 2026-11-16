@@ -225,7 +225,9 @@ impl Wgsl<'_> {
 
     fn binary_text(&self, op: BinOp, a: &str, b: &str, t: &Ty) -> String {
         match op {
-            BinOp::Shl => format!("({a} << (u32({b}) & 31u))"),
+            // (On a u32: WGSL refuses a constant `1i << 31` as an overflow,
+            // and Tessel's `Int` wraps.)
+            BinOp::Shl => format!("bitcast<i32>(bitcast<u32>({a}) << (u32({b}) & 31u))"),
             BinOp::Shr => format!("({a} >> (u32({b}) & 31u))"),
             // WGSL's own rules for these (`a / 0` is `a`, `a % 0` is 0, MIN /
             // -1 is MIN), spelled out: not every backend keeps them (naga's

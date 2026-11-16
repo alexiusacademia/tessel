@@ -1,0 +1,20 @@
+// An item of the app's own Edit menu with the keys of a standard one takes
+// its place (#76). While a field is edited, it does what the standard one
+// would (Cmd+A selects the field's text); otherwise it runs.
+app EditMenu(width: 300, height: 200) {
+    state log = ""
+    state text = "hello"
+    VStack {
+        Text("log: {log}")
+        TextField("Name", text: text)
+    }
+    .menuBar {
+        Menu("Edit") {
+            MenuItem("Undo Mute Drums", shortcut: "cmd+z") { log += "undo " }
+            MenuItem("Redo", shortcut: "cmd+shift+z") { log += "redo " }
+            MenuItem("Select All Tracks", shortcut: "cmd+a") { log += "all " }
+            MenuDivider()
+            MenuItem("Split", shortcut: "cmd+e") { log += "split " }
+        }
+    }
+}

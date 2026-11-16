@@ -1,0 +1,12 @@
+MenuBar (native) "MenuKeys" "Play" "Edit" "Window"
+Root
+  View
+    VStack
+      Text "n 100"
+      TextField "Name" = "m "
+MenuBar (native) "MenuKeys" "Play" "Edit" "Window"
+Root
+  View
+    VStack
+      Text "n 111"
+      TextField "Name" = "m "

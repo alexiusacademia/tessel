@@ -1,0 +1,28 @@
+// GPU buffers in tuples, lists, optionals and generic types (#77, #79).
+
+struct Holder<T> {
+    item: T
+}
+
+fn make(_ n: Int) -> (GPUBuffer<Float32>, Int) {
+    (GPUBuffer<Float32>(count: n), n)
+}
+
+fn main() {
+    let (b, n) = make(4)
+    print("{b.count} {n}")
+    let a = GPUBuffer<Int>(count: 2)
+    let c = GPUBuffer<Int>(from: [1, 2, 3])
+    let bs = [a, c]
+    for (i, x) in bs.enumerated() {
+        print("{i} {x.count}")
+    }
+    let maybe: GPUBuffer<Int>? = bs.first
+    print(maybe?.count ?? 0)
+    let h = Holder(item: c)
+    print(h.item.read())
+    let pairs: [(String, GPUBuffer<Int>)] = [("a", a), ("c", c)]
+    for (name, buf) in pairs {
+        print("{name} {buf.count}")
+    }
+}

@@ -235,7 +235,9 @@ pub fn version_resource(info: &VersionInfo) -> Vec<u8> {
     for v in [0xFEEF04BDu32, 0x0001_0000, ms, ls, ms, ls, 0x3F, 0, 0x0004_0004, 1, 0, 0, 0] {
         fixed.extend(v.to_le_bytes());
     }
-    let description = if info.description.is_empty() { &info.name } else { &info.description };
+    // (The description's first line: a longer one is for the Linux package.)
+    let first = info.description.trim().lines().next().unwrap_or("").trim().to_string();
+    let description = if first.is_empty() { &info.name } else { &first };
     let strings: Vec<Vec<u8>> = [
         ("CompanyName", info.author.as_str()),
         ("FileDescription", description.as_str()),

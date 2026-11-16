@@ -1019,6 +1019,7 @@ fn make_linux_packages(exe: &Path, app: Option<&AppInfo>, program: Option<&Path>
         version: info.version.as_deref().unwrap_or("1.0"),
         description: info.description.as_deref().unwrap_or(""),
         author: info.author.as_deref().unwrap_or(""),
+        email: info.email.as_deref().unwrap_or(""),
         category: info.category.as_deref(),
         icon: &icon,
         documents: types,

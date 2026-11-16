@@ -216,6 +216,34 @@ The second read asks for more than is there, so it gives the last three
 bytes. `fileSize` tells you where the file ends, so you can read it a piece
 at a time.
 
+### Saving a list of numbers as bytes
+
+Programs that measure or compute lots of numbers (a sound's samples, the
+heights of a terrain) often save them as raw bytes: 4 bytes per number,
+the way other programs read them. `Data(float32s:)` turns a whole list into
+bytes, and `float32s()` turns the bytes back into a list:
+
+```tessel
+fn main() {
+    var heights: [Float32] = []
+    for i in 0..5 {
+        heights.append(Float32(i) * 1.5)
+    }
+    writeData(path: "heights.bin", data: Data(float32s: heights))
+    print(fileSize("heights.bin") ?? 0)
+    let back = readData("heights.bin")?.float32s() ?? []
+    print(back)
+}
+```
+
+```text
+20
+[0.0, 1.5, 3.0, 4.5, 6.0]
+```
+
+Five numbers of 4 bytes each make 20 bytes. For full precision, use
+`Data(float64s:)` and `float64s()` with a `[Float]`: 8 bytes per number.
+
 ## Folders, and checking what's there
 
 `fileExists` tells you whether a file (or folder) exists, `createFolder`

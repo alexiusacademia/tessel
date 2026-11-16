@@ -7859,6 +7859,23 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     self.release(l, &lt);
                     d
                 }
+                Some(l @ ("float32s" | "float64s")) => {
+                    let lt = self.ty(&args[0].value);
+                    let l32 = lt == Ty::list(Ty::Float32);
+                    let list = self.expr_as(&args[0].value, &lt).unwrap();
+                    let big = match args.get(1) {
+                        Some(b) => self.expr_as(&b.value, &Ty::Bool).unwrap(),
+                        None => self.i8().const_zero().into(),
+                    };
+                    let rt = match (l, l32) {
+                        ("float32s", true) => "tsl_data_from_float32s",
+                        ("float32s", false) => "tsl_data_from_floats_as32",
+                        _ => "tsl_data_from_float64s",
+                    };
+                    let d = self.call_rt_generic(rt, &[(list, lt.clone()), (big, Ty::Bool)], &Ty::Data).unwrap();
+                    self.release(list, &lt);
+                    d
+                }
                 Some(_) => {
                     let s = self.expr_as(&args[0].value, &Ty::Str).unwrap();
                     let d = self.call_rt_generic("tsl_data_from_str", &[(s, Ty::Str)], &Ty::Data).unwrap();

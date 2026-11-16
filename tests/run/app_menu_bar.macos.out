@@ -26,11 +26,9 @@ Menu "Edit"
   MenuItem "Redo" cmd+shift+z
   MenuDivider
   MenuItem "Cut" cmd+x
-  MenuItem "Copy"
+  MenuItem "Copy Feature" cmd+c
   MenuItem "Paste" cmd+v
   MenuItem "Select All" cmd+a
-  MenuDivider
-  MenuItem "Copy Feature" cmd+c
 Menu "Window"
   MenuItem "Minimize" cmd+m
   MenuItem "Zoom"
@@ -70,11 +68,9 @@ Menu "Edit"
   MenuItem "Redo" cmd+shift+z
   MenuDivider
   MenuItem "Cut" cmd+x
-  MenuItem "Copy"
+  MenuItem "Copy Feature" cmd+c
   MenuItem "Paste" cmd+v
   MenuItem "Select All" cmd+a
-  MenuDivider
-  MenuItem "Copy Feature" cmd+c
 Menu "Window"
   MenuItem "Minimize" cmd+m
   MenuItem "Zoom"
@@ -151,11 +147,9 @@ Menu "Edit"
   MenuItem "Redo" cmd+shift+z
   MenuDivider
   MenuItem "Cut" cmd+x
-  MenuItem "Copy"
+  MenuItem "Copy Feature" cmd+c
   MenuItem "Paste" cmd+v
   MenuItem "Select All" cmd+a
-  MenuDivider
-  MenuItem "Copy Feature" cmd+c
 MenuBar (drawn) "File" "View" "Edit"
 Root
   View

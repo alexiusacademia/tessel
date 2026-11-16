@@ -5411,7 +5411,11 @@ impl App {
     /// own items, and the standard ones that aren't about text (Copy and
     /// the like reach the views, which do them).
     fn bar_takes(&self, name: &str, mods: Mods) -> bool {
-        let editing = self.ui.editing.is_some() && mods.primary && !mods.alt && matches!(name, "a" | "c" | "x" | "v" | "z");
+        // While text is edited, the field keeps its own Cmd keys, and every
+        // key without Cmd: a menu item's `"m"` or `"space"` would take the
+        // typing away (and a field uses all the keys a menu item can have).
+        let editing = self.ui.editing.is_some()
+            && ((mods.primary && !mods.alt && matches!(name, "a" | "c" | "x" | "v" | "z")) || !mods.primary);
         match menu::find_shortcut(&self.bar, name, mods.primary, mods.shift, mods.alt) {
             Some(Entry::Item { command: Command::User(_), .. }) => !editing,
             Some(Entry::Item { command: Command::Std(Std::Quit | Std::Hide | Std::HideOthers | Std::Minimize | Std::CloseWindow), .. }) => true,

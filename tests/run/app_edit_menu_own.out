@@ -1,0 +1,35 @@
+Menu "EditMenu"
+  MenuItem "About EditMenu"
+  MenuDivider
+  MenuItem "Hide EditMenu" cmd+h
+  MenuItem "Hide Others" cmd+alt+h
+  MenuItem "Show All"
+  MenuDivider
+  MenuItem "Quit EditMenu" cmd+q
+Menu "Edit"
+  MenuItem "Undo Mute Drums" cmd+z
+  MenuItem "Redo" cmd+shift+z
+  MenuDivider
+  MenuItem "Cut" cmd+x
+  MenuItem "Copy" cmd+c
+  MenuItem "Paste" cmd+v
+  MenuItem "Select All Tracks" cmd+a
+  MenuDivider
+  MenuItem "Split" cmd+e
+Menu "Window"
+  MenuItem "Minimize" cmd+m
+  MenuItem "Zoom"
+  MenuDivider
+  MenuItem "Close Window" cmd+w
+MenuBar (native) "EditMenu" "Edit" "Window"
+Root
+  View
+    VStack
+      Text "log: undo all redo "
+      TextField "Name" = "hello"
+MenuBar (native) "EditMenu" "Edit" "Window"
+Root
+  View
+    VStack
+      Text "log: undo all redo "
+      TextField "Name" = "x"
