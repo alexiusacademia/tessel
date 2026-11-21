@@ -89,6 +89,7 @@ import csv
 | [regex](https://tessel-packages.syncster.dev/regex/) | Regular expressions that always run in linear time |
 | [units](https://tessel-packages.syncster.dev/units/) | Engineering units: conversions, checked quantities, parsing and formatting |
 | [viewport](https://tessel-packages.syncster.dev/viewport/) | Pan, zoom and rotate for Canvas views, with grids, rulers and scale bars |
+| [web](https://tessel-packages.syncster.dev/web/) | Web servers: routes, middleware, forms, cookies, sessions, static files and HTML templates |
 
 `tessel publish` publishes your own; see
 [Libraries](https://tessel-lang.syncster.dev/guides/libraries/).

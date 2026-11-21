@@ -329,6 +329,12 @@ open http://192.168.1.128:8585/
   [`resolveHost`](/reference/stdlib/#resolvehost) turns a name into
   addresses.
 
+For a site with many pages, the [web](https://tessel-packages.syncster.dev/web/)
+library (`tessel add web`) is built on `serveHTTP` and adds routes with
+values in the path (`/users/:id`), middleware, forms and uploads, cookies,
+sessions in a signed cookie, folders of static files with caching and
+ranges, and HTML templates.
+
 ## In an app
 
 Sockets in an `app` work the same; keep their ids in `state`, and close

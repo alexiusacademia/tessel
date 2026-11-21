@@ -251,6 +251,40 @@ program a remote control for itself: a page with buttons, opened on a
 phone. (The first time, macOS and Windows ask whether to let the app
 accept connections: that's their firewall. Linux usually doesn't ask.)
 
+### Bigger sites: the web library
+
+A site with many pages soon becomes a long `if` on `r.path`. The
+[web](https://tessel-packages.syncster.dev/web/) library, built on
+`serveHTTP`, does that part: add it with `tessel add web`, then give each
+path a handler that returns the answer.
+
+```tessel
+import web
+
+fn main() {
+    var hits = 0
+    var router = web.Router()
+    router.get("/") { r in
+        hits += 1
+        web.html("<h1>Hit {hits}</h1>")
+    }
+    router.get("/hello/:name") { r in web.text("Hello, {r.param("name")}!") }
+    router.files("/photos", folder: "photos")
+
+    let server = web.serve(router, port: 8080)
+    if server == -1 {
+        print("port 8080 is taken")
+        return
+    }
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+`/hello/Ann%20Lee` answers `Hello, Ann Lee!`: `:name` takes that part of
+the path, decoded. `/photos/cat.jpg` sends `photos/cat.jpg` with its type,
+and a POST to `/` gets `405 Method Not Allowed` without any code of yours.
+The library also has forms, cookies, sign-in sessions and HTML templates.
+
 ## Worked example: a chat for the local network
 
 Let's put TCP in an app: a chat where one copy hosts, and others join by
