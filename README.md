@@ -43,11 +43,19 @@ is an honest list of where things stand.
   types, SQLite, HTTP and WebSockets, TCP and UDP sockets and an HTTP
   server, dates and time zones, running other programs, and work on a
   background thread.
+- **GPU compute:** a `kernel fn`, written in Tessel, runs once for each
+  index of a list, a grid or a block of cells, all at once on the GPU
+  (Metal on macOS, DirectX 12 on Windows, Vulkan or OpenGL on Linux).
+  `GPUBuffer` keeps numbers on the GPU between runs, `gpu.sum`, `gpu.min`,
+  `gpu.max` and `gpu.dot` add them up there, and `Float32` is a type in
+  the whole language. Without a usable GPU, kernels run on all the CPU's
+  cores with the same 32-bit numbers. See
+  [Computing on the GPU](https://tessel-lang.syncster.dev/guides/gpu/).
 - **The tools:** the `tessel` command, the Tessel IDE, a REPL, hot reload,
   a debugger, a language server, a VS Code extension, and a headless mode
   for testing apps.
-- **Libraries:** published libraries for charts, CSV files, regular
-  expressions, units, linear algebra and more, added with `tessel add`
+- **Libraries:** published libraries for web servers, charts, CSV files,
+  regular expressions, units, linear algebra and more, added with `tessel add`
   (see [Libraries](#libraries)).
 
 A program doesn't need a window:
