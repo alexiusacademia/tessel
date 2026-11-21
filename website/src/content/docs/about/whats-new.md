@@ -11,6 +11,45 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.24.0
+
+*November 21, 2026*
+
+**New:**
+
+- **Servers on several threads:** `serveHTTP(port:workers:start:)` handles
+  requests on that many worker threads at once, each with its own block
+  made by `start:`. A slow request no longer holds up the rest, and a
+  server uses more than one core: four workers answered 3.3 times as many
+  slow requests a second as one thread. See
+  [Many requests at once](/guides/networking/#many-requests-at-once-workers).
+- **A runtime error in a worker doesn't stop the server:** it's printed,
+  that worker's requests get a `500`, and a new worker takes its place.
+- **`Shared<T>`:** one value that every thread may read and change, under a
+  lock: `let hits = Shared(0)`, then `hits.update { n in n + 1 }` from any
+  worker or background work. See [Shared](/reference/stdlib/#shared).
+- **Answers in pieces:** `startHTTP`, `sendHTTP` and `endHTTP` send an
+  answer bit by bit (in chunks, or with a length), for big files and
+  server-sent events; `httpQueued` says how much waits, for slow clients.
+- **WebSocket servers:** `acceptWebSocket` keeps a request open as a
+  WebSocket; `sendWebSocket`, `sendWebSocketData` and `closeWebSocket` work
+  on it as on a client's.
+- **`randomBytes(count)`** gives bytes from the system's secure random
+  number generator, for keys, tokens and salts. ([#84](https://github.com/alexiusacademia/tessel/issues/84))
+- **`background` work can use top-level functions** and `Shared` values.
+- **A header's value with line breaks** is sent as several headers of the
+  same name, so an answer can set two cookies. ([#83](https://github.com/alexiusacademia/tessel/issues/83))
+
+**Fixed:**
+
+- **`readData(path, from:count:)` reads devices** like `/dev/urandom`,
+  which have no size (it read nothing). ([#85](https://github.com/alexiusacademia/tessel/issues/85))
+- **An HTTP/1.0 client that asks to keep its connection** is now told it's
+  kept, instead of waiting for it to close. ([#82](https://github.com/alexiusacademia/tessel/issues/82))
+- **A local function named like one of the struct's changing methods**
+  (`if let add = hook { add(1) }`) no longer makes a method "change" its
+  value. ([#81](https://github.com/alexiusacademia/tessel/issues/81))
+
 ## 0.23.1
 
 *November 16, 2026*

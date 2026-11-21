@@ -1,6 +1,6 @@
 ---
 title: Sockets and servers
-description: "TCP connections and servers, UDP packets, multicast discovery, an HTTP server of your own, and what to know about firewalls, ports and testing."
+description: "TCP connections and servers, UDP packets, multicast discovery, an HTTP server of your own with streaming, WebSockets and worker threads, and what to know about firewalls, ports and testing."
 ---
 
 [`fetch`, `request`, `download`](/ui/async/#downloading-text-with-fetch) and
@@ -15,7 +15,9 @@ browser.
 
 Everything here works the same in an app and in a program with only
 `fn main()`, which keeps running while a socket is open. Blocks run on
-the UI thread, so they can change `state`.
+the UI thread, so they can change `state` (except a server's
+[workers](#many-requests-at-once-workers), whose blocks run on their own
+threads).
 
 ## A TCP connection
 
@@ -334,6 +336,160 @@ library (`tessel add web`) is built on `serveHTTP` and adds routes with
 values in the path (`/users/:id`), middleware, forms and uploads, cookies,
 sessions in a signed cookie, folders of static files with caching and
 ranges, and HTML templates.
+
+### Answers in pieces
+
+[`startHTTP`](/reference/stdlib/#starthttp-sendhttp-and-endhttp) sends an
+answer's status and headers, [`sendHTTP`](/reference/stdlib/#starthttp-sendhttp-and-endhttp)
+its body a piece at a time, and `endHTTP` ends it: for a file too big to
+read at once, a long report made bit by bit, or server-sent events that a
+page's `EventSource` reads as they come. Without a `Content-Length` the
+pieces go in chunks.
+
+A client may take bytes more slowly than the server makes them;
+[`httpQueued`](/reference/stdlib/#httpqueued) says how many wait, so the
+server can wait too. This one sends a file of any size, holding at most
+about a megabyte of it:
+
+```tessel
+// Sends a big file in 64 KB pieces, waiting while the client is behind.
+fn sendFile(_ request: Int, _ path: String) {
+    let size = fileSize(path) ?? 0
+    startHTTP(request, headers: ["Content-Type": "application/octet-stream", "Content-Length": "{size}"])
+    var at = 0
+    var timer = 0
+    timer = every(seconds: 0.01) {
+        // More than 1 MB waiting: the client is slow, so wait a little.
+        while at < size && httpQueued(request) < 1_000_000 {
+            let piece = readData(path, from: at, count: 65536) ?? Data()
+            if !sendHTTP(request, data: piece) {
+                at = size
+            }
+            at += piece.count
+        }
+        if at >= size {
+            stopTimer(timer)
+            endHTTP(request)
+        }
+    }
+}
+
+fn main() {
+    let server = serveHTTP(port: 8080) { r in
+        sendFile(r.id, "big.bin")
+    }
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+A 50 MB file arrives in a fraction of a second on this computer, and a
+client that reads at 2 MB a second leaves the server using about 13 MB of
+memory. `sendHTTP` gives `false` once the client has gone, which ends
+the loop.
+
+### WebSockets of your own
+
+[`acceptWebSocket`](/reference/stdlib/#acceptwebsocket) answers a request
+for a WebSocket and keeps the connection open, so the server can send
+whenever it likes. Its id works with `sendWebSocket`, `sendWebSocketData`
+and `closeWebSocket`, as an `openWebSocket`'s does. This page shows a count
+that everyone looking at it sees change at once:
+
+```tessel
+// A page with a count that everyone watching sees change at once.
+let page = "<!doctype html><title>Live</title><p id=n>…</p><button>+1</button><script>" +
+    "const ws = new WebSocket('ws://' + location.host + '/ws');" +
+    "ws.onmessage = e => n.textContent = e.data;" +
+    "document.querySelector('button').onclick = () => ws.send('add')</script>"
+
+fn main() {
+    var count = 0
+    var viewers: [Int] = []
+    let server = serveHTTP(port: 8080) { r in
+        if r.path != "/ws" {
+            respondHTTP(r.id, headers: ["Content-Type": "text/html"], body: Data(text: page))
+            return
+        }
+        var id = -1
+        id = acceptWebSocket(r.id, onMessage: { text in
+            count += 1
+            for v in viewers {
+                sendWebSocket(v, text: "{count}")
+            }
+        }) { reason in
+            viewers = viewers.filter { v in v != id }
+        }
+        viewers.append(id)
+        sendWebSocket(id, text: "{count}")
+    }
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+A request that doesn't ask for a WebSocket gets -1 from `acceptWebSocket`,
+and is answered as usual (here, with the page).
+
+### Many requests at once: workers
+
+A server's blocks run one at a time, so a request that takes a second of
+work holds up the rest for that second. With `workers:`, requests are
+handled on that many threads at once. Each worker makes its own block with
+`start:`, because threads share no variables; what all requests should
+see goes in a [`Shared`](/reference/stdlib/#shared) value, or a database:
+
+```tessel
+// How many primes there are below a number: slow work, done on four
+// threads at once.
+let asked = Shared(0)
+
+fn primesBelow(_ n: Int) -> Int {
+    var count = 0
+    for k in 2..n {
+        var prime = true
+        var d = 2
+        while d * d <= k {
+            if k % d == 0 {
+                prime = false
+                break
+            }
+            d += 1
+        }
+        if prime {
+            count += 1
+        }
+    }
+    count
+}
+
+fn answer() -> fn(ServerRequest) {
+    { r in
+        let n = Int(r.query) ?? 1000
+        let total = asked.update { a in a + 1 }
+        respondHTTP(r.id, body: Data(text: "{primesBelow(n)} primes below {n} (question {total})\n"))
+    }
+}
+
+fn main() {
+    let server = serveHTTP(port: 8080, workers: 4, start: { answer() })
+    print("try http://127.0.0.1:{tcpPort(server)}/?1000000")
+}
+```
+
+```text
+$ curl "http://127.0.0.1:8080/?1000000"
+78498 primes below 1000000 (question 1)
+```
+
+With ApacheBench sending four at a time, one thread answered 22 of these a
+second on this computer, and four workers 74.
+
+- `start:` follows [`background`](/reference/stdlib/#background)'s rules:
+  it gets copies of the values it uses, and can call top-level functions.
+- Timers, requests and `background` work started on a worker call back on
+  that worker.
+- A runtime error in a worker doesn't stop the server: the error is
+  printed, the requests on that worker get a `500`, and another worker
+  takes its place.
 
 ## In an app
 

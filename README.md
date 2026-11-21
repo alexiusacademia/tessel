@@ -40,9 +40,10 @@ is an honest list of where things stand.
   light and dark appearance, and animation. Tessel draws every control
   itself, so an app looks the same everywhere.
 - **The standard library:** files, JSON and binary encoding of your own
-  types, SQLite, HTTP and WebSockets, TCP and UDP sockets and an HTTP
-  server, dates and time zones, running other programs, and work on a
-  background thread.
+  types, SQLite, HTTP and WebSockets, TCP and UDP sockets, an HTTP server
+  (on worker threads if you like, with answers in pieces and WebSockets of
+  its own), dates and time zones, running other programs, work on a
+  background thread, and `Shared` values for data that threads share.
 - **GPU compute:** a `kernel fn`, written in Tessel, runs once for each
   index of a list, a grid or a block of cells, all at once on the GPU
   (Metal on macOS, DirectX 12 on Windows, Vulkan or OpenGL on Linux).

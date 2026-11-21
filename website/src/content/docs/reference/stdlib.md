@@ -293,8 +293,28 @@ and [`shuffled`](#randomelement-and-shuffled).
 
 :::caution
 The numbers are good enough for games, simulations and picking things at
-random, but they're not safe for secrets such as passwords or keys.
+random, but they're not safe for secrets such as passwords or keys: use
+[`randomBytes`](#randombytes) for those.
 :::
+
+### randomBytes
+
+```text
+randomBytes(_ count: Int) -> Data
+```
+
+`count` bytes from the system's secure random number generator: for keys,
+tokens, session ids and salts, which mustn't be guessable.
+
+```tessel
+let key = randomBytes(32)
+print(key.count)                // 32
+print(randomBytes(16).hex.count) // 32
+let token = randomBytes(24).base64
+print(token.count)              // 32
+```
+
+A negative `count` stops the program with a runtime error.
 
 ## Files
 
@@ -513,6 +533,8 @@ time. Use [`fileSize`](#filesize) to know where the file ends.
 - At or past the end, you get empty `Data`.
 - `nil` if the file can't be read, or if `from` or `count` is negative.
 - Leave out `count` to read to the end, or `from` to start at the beginning.
+- A device or a pipe (like `/dev/urandom` or a file in `/proc`) has no size:
+  it gives up to `count` bytes as they come, and needs a `count`.
 
 ```tessel
 // The 4 bytes at the start of a file, then the last 128.
@@ -2773,8 +2795,9 @@ that aren't web servers (other copies of your program, devices on the
 local network, peer-to-peer protocols), and for being talked to. Ids are
 `Int`s; starting something returns -1 when it can't (a port in use, an
 address this computer doesn't have). Blocks run on the UI thread, like
-every other callback's, and a program with only `fn main` keeps running
-while a socket is open. See [Sockets and servers](/guides/networking/) for
+every other callback's (on a server's [workers](#on-several-threads-workers),
+on the worker that started them), and a program with only `fn main` keeps
+running while a socket is open. See [Sockets and servers](/guides/networking/) for
 a guide, and [23. Talking over the network](/learn/23-networking/) in the
 course.
 
@@ -3037,6 +3060,46 @@ fn main() {
 - Stop it with [`stopHTTP`](#stophttp); [`tcpPort`](#tcpport) gives the
   port it got.
 
+#### On several threads: `workers:`
+
+```text
+serveHTTP(port: Int, host: String = "127.0.0.1", workers: Int,
+          start: fn() -> fn(ServerRequest)) -> Int
+```
+
+With `workers:`, requests are handled on that many threads at once, so a
+slow request doesn't hold up the others and the server uses more than one
+of the computer's cores. Each worker runs `start` once, on its own thread,
+to make its block for requests; a request goes to a worker that's free.
+
+```tessel
+let hits = Shared(0)
+
+fn handler(_ greeting: String) -> fn(ServerRequest) {
+    { r in
+        let n = hits.update { h in h + 1 }
+        respondHTTP(r.id, body: Data(text: "{greeting} #{n}"))
+    }
+}
+
+fn main() {
+    let greeting = "Hello"
+    let server = serveHTTP(port: 8080, workers: 4, start: { handler(greeting) })
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+- Threads share no variables: `start` follows the rules of
+  [`background`](#background)'s `work:`. It gets copies of the values it
+  uses (`greeting` above), and can call top-level functions. Data that
+  every request should see goes in a [`Shared`](#shared) value (`hits`) or
+  a database.
+- Everything a worker starts (timers, `request`, `background`, sockets)
+  calls its blocks back on that worker.
+- A runtime error in a worker doesn't stop the server: the error is
+  printed, the requests that worker had get a `500`, the locks of `Shared`
+  values it held are let go, and a new worker takes its place.
+
 ### ServerRequest
 
 ```text
@@ -3062,7 +3125,9 @@ respondHTTP(_ request: Int, status: Int = 200, headers: [String: String] = [:],
 ```
 
 Answers a request by its `id`. `Content-Length` is added unless `headers`
-has one; a `HEAD` request's answer carries no body. Returns `false` if the
+has one; a `HEAD` request's answer carries no body. A header's value with
+line breaks is sent as several headers of the same name, one for each
+line: two cookies are `["Set-Cookie": "a=1\nb=2"]`. Returns `false` if the
 request was answered already, or its connection is gone. The answer may
 come from a later block (after a request of your own, a timer, or
 `background` work): the client waits.
@@ -3080,6 +3145,93 @@ stopHTTP(_ id: Int)
 
 Stops a server: its connections are closed, and requests not yet answered
 are dropped (`respondHTTP` returns `false` for them).
+
+### startHTTP, sendHTTP and endHTTP
+
+```text
+startHTTP(_ request: Int, status: Int = 200, headers: [String: String] = [:]) -> Bool
+sendHTTP(_ request: Int, data: Data) -> Bool
+endHTTP(_ request: Int) -> Bool
+```
+
+An answer sent in pieces, for one that's big, or that's made bit by bit:
+`startHTTP` sends the status and headers, each `sendHTTP` a piece of the
+body, and `endHTTP` ends it. Without a `Content-Length` header, the pieces
+go in chunks (HTTP/1.1; to an HTTP/1.0 client, as they are, and the
+connection closes at the end). The pieces can come from later blocks.
+Each returns `false` if the request was answered already, or its client
+is gone, so a long answer can stop then.
+
+```tessel
+fn main() {
+    let server = serveHTTP(port: 8080) { r in
+        // Server-sent events: the page's `EventSource` gets each one.
+        startHTTP(r.id, headers: ["Content-Type": "text/event-stream", "Cache-Control": "no-cache"])
+        var n = 0
+        var timer = 0
+        timer = every(seconds: 1) {
+            n += 1
+            if !sendHTTP(r.id, data: Data(text: "data: tick {n}\n\n")) || n == 10 {
+                stopTimer(timer)
+                endHTTP(r.id)
+            }
+        }
+    }
+    print("open http://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+`respondHTTP` doesn't answer a request whose answer has started.
+
+### httpQueued
+
+```text
+httpQueued(_ request: Int) -> Int
+```
+
+How many bytes of a request's answer are waiting to be sent: when it
+grows, the client is slower than the answer is made, and the next piece
+can wait (for a timer) until it goes down.
+
+### acceptWebSocket
+
+```text
+acceptWebSocket(_ request: Int, onMessage: fn(String), onData: fn(Data)? = nil,
+                onClose: fn(String)) -> Int
+```
+
+Answers a request that asks for a WebSocket (a browser's `new
+WebSocket("ws://…")`, or [`openWebSocket`](#openwebsocket)), which then
+stays open, with messages both ways. It returns the WebSocket's id, for
+[`sendWebSocket`](#sendwebsocket), [`sendWebSocketData`](#sendwebsocketdata)
+and [`closeWebSocket`](#closewebsocket), or -1 if the request doesn't ask
+for a WebSocket (answer it as usual then). The blocks are
+[`openWebSocket`](#openwebsocket)'s: text messages, binary ones (to
+`onMessage` as text without `onData`), and the reason it closed.
+
+```tessel
+fn main() {
+    var clients: [Int] = []
+    let server = serveHTTP(port: 8080) { r in
+        var id = -1
+        id = acceptWebSocket(r.id, onMessage: { text in
+            for c in clients {
+                sendWebSocket(c, text: text)
+            }
+        }) { reason in
+            clients = clients.filter { c in c != id }
+        }
+        if id == -1 {
+            respondHTTP(r.id, status: 400, body: Data(text: "this is a WebSocket server"))
+        } else {
+            clients.append(id)
+        }
+    }
+    print("ws://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+Pings are answered, and messages in several frames are joined, by Tessel.
 
 ### resolveHost
 
@@ -3210,7 +3362,10 @@ makes it safe, and it leads to a few rules, which `tessel check` enforces:
   the app or view: they belong to the UI thread. Copy what it needs into a
   `let` first, as with `n` above.
 - The values it uses and its result must be values [`toBinary`](#tobinary)
-  can save: not functions or views.
+  can save, or [`Shared`](#shared) values; it can use functions too, if
+  they're top-level functions (a block that uses values from where it was
+  made stops the program with an error when it's handed over). Its result
+  can't be a function or a view.
 - `work` must end with a value. `return` works inside it too.
 
 Values are copied when `background` is called, so changes made afterwards
@@ -3267,6 +3422,51 @@ A struct for work started with [`background`](#background), with one field,
 | `progress(_ fraction: Float, note: String = "")` | | Inside `work`: reports how far it is (usually 0 to 1) to the `progress:` block. |
 | `isCancelled()` | `Bool` | Whether `cancel()` was called. |
 | `cancel()` | | Cancels the work: its blocks don't run any more. |
+
+## Shared
+
+```text
+Shared(_ value: T) -> Shared<T>
+```
+
+One value that every thread may read and change: background work, the
+workers of a server, and the main thread. A `Shared` is a handle: copies
+of it are the same value, and it's usually a constant, made once:
+
+```tessel
+struct Order {
+    id: Int
+    total: Float
+}
+
+let orders = Shared<[Order]>([])
+let count = Shared(0)
+
+fn place(_ total: Float) -> Int {
+    let id = count.update { n in n + 1 }
+    orders.update { list in list + [Order(id: id, total: total)] }
+    id
+}
+
+fn main() {
+    print(place(9.5), place(20))
+    print(orders.get().count)       // 2
+    count.set(100)
+    print(count.get())              // 100
+}
+```
+
+| Method | |
+|---|---|
+| `get() -> T` | The value, now. |
+| `set(_ value: T)` | Replaces it. |
+| `update(_ change: fn(T) -> T) -> T` | Gives the block the value and keeps what it returns (and returns that too). No other thread reads or changes the value until the block ends, so `count.update { n in n + 1 }` never loses a count. |
+
+- `T` is data: numbers, text, lists, dictionaries, structs, enums and
+  other `Shared` values, not functions, views or interface values.
+- Keep `update` blocks short: other threads wait while one runs. Inside
+  one, the same thread may `get` the value again.
+- `Shared` values can't be compared with `==` or saved.
 
 ## Int
 
@@ -4160,3 +4360,7 @@ error: index 5 is out of range for a list of 3 items
 
 `Float` arithmetic never stops the program: dividing by `0.0` gives an
 infinite value (printed as `inf`).
+
+On a [server's worker](#on-several-threads-workers), a runtime error stops
+only that worker: its requests are answered with a `500`, and another
+worker takes its place.

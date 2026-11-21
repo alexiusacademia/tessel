@@ -285,6 +285,38 @@ the path, decoded. `/photos/cat.jpg` sends `photos/cat.jpg` with its type,
 and a POST to `/` gets `405 Method Not Allowed` without any code of yours.
 The library also has forms, cookies, sign-in sessions and HTML templates.
 
+### The server talks first: WebSockets
+
+An HTTP answer goes back once, when it's asked for. A **WebSocket** stays
+open, so the server can send whenever it has something new: a chat, a
+score, a progress bar. `acceptWebSocket` turns a request into one, and
+`sendWebSocket` sends on it:
+
+```tessel
+fn main() {
+    var ticks = 0
+    let server = serveHTTP(port: 8080) { r in
+        var id = -1
+        id = acceptWebSocket(r.id, onMessage: { text in
+            sendWebSocket(id, text: "you said: {text}")
+        }) { reason in
+            print("gone: {reason}")
+        }
+        if id == -1 {
+            respondHTTP(r.id, status: 400, body: Data(text: "connect with a WebSocket"))
+        } else {
+            sendWebSocket(id, text: "welcome")
+        }
+    }
+    print("ws://127.0.0.1:{tcpPort(server)}/")
+}
+```
+
+A page connects with `new WebSocket("ws://127.0.0.1:8080/")`, and a Tessel
+program with `openWebSocket`. For a server that's asked a lot of slow
+questions at once, `serveHTTP(port:workers:start:)` answers them on several
+threads; see [Many requests at once](/guides/networking/#many-requests-at-once-workers).
+
 ## Worked example: a chat for the local network
 
 Let's put TCP in an app: a chat where one copy hosts, and others join by
@@ -523,6 +555,8 @@ fn main() {
   group, which is how programs find each other.
 - **`serveHTTP(port:onRequest:)`** makes the program a web server;
   **`respondHTTP(id, status:headers:body:)`** answers a `ServerRequest`.
+  **`acceptWebSocket`** keeps a request open as a WebSocket, which the
+  server sends on with **`sendWebSocket`**.
 - A program with an open socket keeps running; -1 from any of these means
   it couldn't start (the port is taken).
 - For more, see [Sockets and servers](/guides/networking/) and the

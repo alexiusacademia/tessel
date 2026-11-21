@@ -692,7 +692,10 @@ after it gets a copy of the result. For that to work:
   like `primesBelow` are fine, and so are local values.
 - The values it uses, and its result, must be plain data that
   [`toBinary`](/reference/stdlib/#tobinary) could save: numbers, strings,
-  lists, dictionaries, your structs and enums, and so on, but not functions.
+  lists, dictionaries, your structs and enums, and so on. A value it uses
+  may also be a top-level function, or a [`Shared`](/reference/stdlib/#shared)
+  value, which every thread can read and change (under a lock) to share
+  results as they come.
 
 That's why the example copies `limit` into `let n` first. Using `limit`
 directly is an error:
