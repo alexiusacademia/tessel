@@ -1,9 +1,7 @@
 started: true
 respond while streaming: false
-client piece: piece 1
-client piece: piece 2
 ended: true, again: false, send after: false
-client piece: piece 3
+client got: ["piece 1", "piece 2", "piece 3"]
 stream: 200 chunked
 sized: 200 helloworld 10
 not a websocket: -1

@@ -61,9 +61,12 @@ fn main() {
         }
     }
     let base = "127.0.0.1:{tcpPort(server)}"
+    // (Pieces that arrive together are joined: what counts is all of them.)
+    var streamed = ""
     request(url: "http://{base}/stream", onData: { piece in
-        print("client piece: {(piece.text ?? "").trim()}")
+        streamed += piece.text ?? ""
     }) { r in
+        print("client got: {streamed.lines()}")
         print("stream: {r.status} {r.headers["transfer-encoding"] ?? "-"}")
         request(url: "http://{base}/sized") { r in
             print("sized: {r.status} {r.text} {r.headers["content-length"] ?? "-"}")
