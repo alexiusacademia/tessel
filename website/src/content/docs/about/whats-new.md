@@ -11,6 +11,17 @@ Tessel's first releases came quickly, several on some days, so each day's
 are listed together under its last version. See
 [How Tessel is made](/about/roadmap/#how-tessel-is-made).
 
+## 0.24.1
+
+*November 22, 2026*
+
+**Fixed:**
+
+- **`expect(x == .case)`** in a test works: a side written `.case`,
+  `.case(…)`, `nil`, `[]` or `[:]` takes the other side's type, as it does
+  outside `expect` (it said "can't tell which type `.case` belongs to"). A
+  failing comparison still shows both sides. ([#86](https://github.com/alexiusacademia/tessel/issues/86))
+
 ## 0.24.0
 
 *November 22, 2026*
