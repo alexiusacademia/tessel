@@ -26,5 +26,9 @@ FAIL  a crash fails only this test  (main.tsl:50, … ms)
 FAIL  a test that never ends (stopped by --timeout 2)  (main.tsl:55, … ms)
       it took longer than 2 s, and was stopped
 ok    plain true  (… ms)
+FAIL  a case written .name, nil and [] get the other side's type  (main.tsl:71, … ms)
+      main.tsl:79: expect(w == .dry)
+        left:  {"rain":{"mm":3}}
+        right: "dry"
 
-3 passed, 5 failed, in … s
+3 passed, 6 failed, in … s

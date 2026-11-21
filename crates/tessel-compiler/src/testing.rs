@@ -138,7 +138,21 @@ impl Lowering<'_> {
                         let local = |name: &str, value: Expr| {
                             Stmt::Let(LocalDecl { name: Ident { name: name.into(), span: value.span }, ty: None, span: value.span, value })
                         };
-                        let stmts = vec![local(&l, *left), local(&r, *right)];
+                        // A side that takes its type from the other (`.case`,
+                        // `.case(…)`, `nil`, `[]`, `[:]`) gets it as a list's
+                        // second item does from its first: `[l, .case][1]` (#86).
+                        let (left, right) = (*left, *right);
+                        let stmts = match (needs_context(&left), needs_context(&right)) {
+                            (false, true) => {
+                                let typed = self.typed_like(&l, right, span);
+                                vec![local(&l, left), local(&r, typed)]
+                            }
+                            (true, false) => {
+                                let typed = self.typed_like(&r, left, span);
+                                vec![local(&r, right), local(&l, typed)]
+                            }
+                            _ => vec![local(&l, left), local(&r, right)],
+                        };
                         let (lv, rv) = (self.new_expr(ExprKind::Name(l.clone()), span), self.new_expr(ExprKind::Name(r.clone()), span));
                         let compared = self.new_expr(ExprKind::Binary(op, Box::new(lv), Box::new(rv)), condition.span);
                         // (As JSON, which nearly every value can be shown as:
@@ -161,6 +175,14 @@ impl Lowering<'_> {
             }
             _ => None,
         }
+    }
+
+    /// `[other, value][1]`: `value`, with the type of the local `other`.
+    fn typed_like(&mut self, other: &str, value: Expr, span: Span) -> Expr {
+        let o = self.new_expr(ExprKind::Name(other.into()), span);
+        let list = self.new_expr(ExprKind::List(vec![o, value]), span);
+        let one = self.new_expr(ExprKind::Int(1), span);
+        self.new_expr(ExprKind::Index(Box::new(list), Box::new(one)), span)
     }
 
     fn block(&mut self, b: &mut Block) {
@@ -248,5 +270,17 @@ impl Lowering<'_> {
         if let Some(kind) = self.lowered(e) {
             e.kind = kind;
         }
+    }
+}
+
+/// Whether an expression takes its type from where it's used: an enum case
+/// written `.name` (or `.name(…)`), `nil`, or an empty list or dictionary.
+fn needs_context(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::DotName(_) | ExprKind::Nil => true,
+        ExprKind::Call { callee, .. } => matches!(callee.kind, ExprKind::DotName(_)),
+        ExprKind::List(items) => items.is_empty(),
+        ExprKind::Dict(pairs) => pairs.is_empty(),
+        _ => false,
     }
 }

@@ -62,3 +62,19 @@ test "plain true" {
     let ok = [1, 2].contains(2)
     expect(ok)
 }
+
+enum Weather {
+    dry
+    rain(mm: Int)
+}
+
+test "a case written .name, nil and [] get the other side's type" {
+    let w = Weather.rain(mm: 3)
+    let note: String? = nil
+    let none: [Int] = []
+    expect(w == .rain(mm: 3))
+    expect(.dry != w)
+    expect(note == nil)
+    expect(none == [])
+    expect(w == .dry)
+}
