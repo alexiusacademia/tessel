@@ -3656,6 +3656,7 @@ dependencies = [
  "chrono-tz",
  "flate2",
  "fontique",
+ "getrandom 0.3.4",
  "iana-time-zone",
  "if-addrs",
  "image",

@@ -28,6 +28,7 @@ mod stack_guard;
 mod stdlib;
 mod gpu_compute;
 pub mod ui;
+mod shared;
 
 use std::ffi::{c_char, CStr};
 use std::io::Write;
@@ -405,6 +406,8 @@ pub fn on_error(hook: fn()) {
 
 /// The end of a runtime error, after its message.
 pub(crate) fn stop() -> ! {
+    // A worker of a server goes on without this thread (see `ui::worker_failed`).
+    ui::worker_failed();
     if let Some(hook) = ON_ERROR.get() {
         hook();
     }

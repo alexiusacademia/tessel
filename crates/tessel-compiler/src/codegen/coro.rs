@@ -198,14 +198,15 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     /// Whether every counted thing in a value of `t` can be marked shared:
-    /// nothing in it is a function, a view or an interface value.
+    /// nothing in it is a view or an interface value (a function is, if it
+    /// uses no values: checked when it's marked).
     pub(super) fn shareable(&self, t: &Ty) -> bool {
         fn walk(g: &Gen<'_, '_>, t: &Ty, seen: &mut Vec<Ty>) -> bool {
             if seen.contains(t) {
                 return true;
             }
             match t {
-                Ty::Fn(..) | Ty::View | Ty::Iface(_) => false,
+                Ty::View | Ty::Iface(_) => false,
                 Ty::List(e) | Ty::Set(e) | Ty::Opt(e) => walk(g, e, seen),
                 Ty::Dict(k, v) => walk(g, k, seen) && walk(g, v, seen),
                 Ty::Struct(id) => {
@@ -223,7 +224,11 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     }
 
     fn mark_helper(&mut self, t: &Ty, share: bool) -> Option<FunctionValue<'ctx>> {
-        let follows = |g: &Self, t: &Ty| g.needs_rc(t) && !matches!(t, Ty::Fn(..) | Ty::View | Ty::Iface(_));
+        // (A function is followed only to be shared: checked to use no
+        // values, which another thread couldn't count; see `tsl_fn_portable`.)
+        let follows = |g: &Self, t: &Ty| {
+            g.needs_rc(t) && !matches!(t, Ty::View | Ty::Iface(_)) && (share || !matches!(t, Ty::Fn(..)))
+        };
         if !follows(self, t) {
             return None;
         }
@@ -243,10 +248,19 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         self.in_helper(f, |g| {
             let at = f.get_nth_param(0).unwrap().into_pointer_value();
             match &t {
-                Ty::Str | Ty::Data => {
+                // (A `Shared`: the object, not what it holds, which changes
+                // under its lock and is marked as it's put there.)
+                Ty::Str | Ty::Data | Ty::Shared(_) => {
                     let obj = g.b.build_load(p, at, "").unwrap();
                     let rt = g.declare_rt(if share { "tsl_share" } else { "tsl_immortal" }, &[p.into()], None);
                     g.b.build_call(rt, &[obj.into()], "").unwrap();
+                }
+                Ty::Fn(..) => {
+                    let ft = g.llty(&t).unwrap();
+                    let closure = g.b.build_load(ft, at, "").unwrap().into_struct_value();
+                    let env = g.b.build_extract_value(closure, 1, "").unwrap();
+                    let rt = g.declare_rt("tsl_fn_portable", &[p.into()], None);
+                    g.b.build_call(rt, &[env.into()], "").unwrap();
                 }
                 Ty::List(elem) => {
                     let obj = g.b.build_load(p, at, "").unwrap();

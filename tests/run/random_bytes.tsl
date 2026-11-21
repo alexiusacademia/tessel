@@ -1,0 +1,16 @@
+// randomBytes gives bytes from the system's secure generator (#84), and
+// readData reads a device such as /dev/zero, which has no size (#85).
+
+fn main() {
+    let a = randomBytes(32)
+    let b = randomBytes(32)
+    print(a.count, b.count, a != b)
+    print(randomBytes(0).count)
+    if platform() != "windows" {
+        print((readData("/dev/urandom", from: 0, count: 16) ?? Data()).count)
+        print((readData("/dev/zero", from: 5, count: 3) ?? Data()).bytes)
+    } else {
+        print(16)
+        print([0, 0, 0])
+    }
+}

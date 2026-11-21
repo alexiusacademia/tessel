@@ -46,6 +46,7 @@ mod coro;
 mod debug;
 mod kernel;
 mod stdlib;
+mod threads;
 mod ui;
 
 /// Byte offset of a box's data (matches the runtime's `BOX_DATA`).
@@ -905,6 +906,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         match t {
             Ty::List(x) => format!("[{}]", inner(self, x, open)),
             Ty::Set(x) => format!("Set<{}>", inner(self, x, open)),
+            Ty::Shared(x) => format!("Shared<{}>", inner(self, x, open)),
             Ty::Opt(x) => format!("{}?", inner(self, x, open)),
             Ty::Dict(k, v) => format!("[{}: {}]", inner(self, k, open), inner(self, v, open)),
             Ty::Struct(_) | Ty::Enum(_) if open.contains(t) => self.checked.show(t),
@@ -1229,7 +1231,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Float => self.ctx.f64_type().into(),
             Ty::Float32 => self.ctx.f32_type().into(),
             Ty::Bool => self.ctx.bool_type().into(),
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) => self.ptr_ty().into(),
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) | Ty::Shared(_) => self.ptr_ty().into(),
             // A view value is a closure that emits the view when called.
             Ty::View => self.ctx.struct_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false).into(),
             Ty::Range => self.ctx.struct_type(&[self.i64().into(), self.i64().into()], false).into(),
@@ -1307,6 +1309,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
             Ty::Dict(k, v) => format!("D{}{}", self.key(k), self.key(v)),
             Ty::Set(t) => format!("Z{}", self.key(t)),
             Ty::GpuBuffer(t) => format!("G{}", self.key(t)),
+            Ty::Shared(t) => format!("H{}", self.key(t)),
             Ty::Opt(t) => format!("O{}", self.key(t)),
             Ty::Fn(ps, r) => format!("F{}_{}", ps.iter().map(|p| self.key(p)).collect::<String>(), self.key(r)),
             Ty::Struct(id) => format!("S{}{}", self.checked.structs[*id].name.len(), self.checked.structs[*id].name),
@@ -1318,7 +1321,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
 
     fn needs_rc(&self, t: &Ty) -> bool {
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => true,
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) | Ty::Shared(_) | Ty::Fn(..) | Ty::View | Ty::Iface(_) => {
+                true
+            }
             Ty::Enum(id) => self.has_payload(*id),
             Ty::Struct(id) => self.checked.structs[*id].fields.iter().any(|f| self.needs_rc(&f.ty)),
             Ty::Opt(inner) => self.needs_rc(inner),
@@ -1980,7 +1985,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
         }
         let f = if retain { "tsl_retain" } else { "tsl_release" };
         match t {
-            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) => {
+            Ty::Str | Ty::Data | Ty::List(_) | Ty::Dict(..) | Ty::Set(_) | Ty::GpuBuffer(_) | Ty::Shared(_) => {
                 self.call_rt(f, &[v]);
             }
             Ty::Fn(..) | Ty::Enum(_) | Ty::View | Ty::Iface(_) => {
@@ -2388,7 +2393,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 .build_float_compare(FloatPredicate::OEQ, a.into_float_value(), b.into_float_value(), "")
                 .unwrap(),
             // (The same buffer: a handle compares by identity.)
-            Ty::GpuBuffer(_) => {
+            Ty::GpuBuffer(_) | Ty::Shared(_) => {
                 let (x, y) = (a.into_pointer_value(), b.into_pointer_value());
                 let i = self.i64();
                 let x = self.b.build_ptr_to_int(x, i, "").unwrap();
@@ -5387,6 +5392,8 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.builtin_method(recv, name, object, &info, &arg, args, trailing, &t, e.span, None)
             }
             Callee::BuiltinFn(name) if name == "GPUBuffer" => Some(self.gpu_buffer_init(args, &t)),
+            Callee::BuiltinFn(name) if name == "Shared" => Some(self.shared_init(args, &t)),
+            Callee::BuiltinFn(name) if name == "serveHTTP workers" => Some(self.serve_workers(args, trailing)),
             Callee::BuiltinFn(name) if name.starts_with("gpu.") => self.gpu_builtin(name, args),
             Callee::BuiltinFn(name) => self.builtin_fn(name, args, &info, &arg, &t, e.span),
             Callee::Value => {
@@ -5839,6 +5846,9 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
     ) -> Option<Val<'ctx>> {
         if let Ty::GpuBuffer(_) = recv {
             return self.gpu_buffer_method(recv, name, object, args);
+        }
+        if let Ty::Shared(_) = recv {
+            return self.shared_method(recv, name, object, args, trailing);
         }
         // Methods that change the receiver work on its storage (`slot`, if
         // the caller already has it).
@@ -7755,8 +7765,10 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 self.release(headers, &dict_t);
                 id
             }
-            "openWebSocket" => {
-                let url = self.expr_as(arg(info.args[0].unwrap()), &Ty::Str).unwrap();
+            "openWebSocket" | "acceptWebSocket" => {
+                let accept = name == "acceptWebSocket";
+                let first_t = if accept { Ty::Int } else { Ty::Str };
+                let url = self.expr_as(arg(info.args[0].unwrap()), &first_t).unwrap();
                 let ft = Ty::func(vec![Ty::Str], Ty::Void);
                 let on_msg = self.expr_as(arg(info.args[1].unwrap()), &ft).unwrap().into_struct_value();
                 // The block for binary messages, or null for none.
@@ -7782,13 +7794,14 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                 vals.push(self.b.build_extract_value(on_close, 0, "").unwrap().into());
                 vals.push(self.b.build_extract_value(on_close, 1, "").unwrap().into());
                 let p = self.ptr_ty();
+                let first: inkwell::types::BasicMetadataTypeEnum = if accept { self.i64().into() } else { p.into() };
                 let f = self.declare_rt(
-                    "tsl_open_web_socket",
-                    &[p.into(), p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
+                    if accept { "tsl_accept_web_socket" } else { "tsl_open_web_socket" },
+                    &[first, p.into(), p.into(), p.into(), p.into(), p.into(), p.into()],
                     Some(self.i64().into()),
                 );
                 let id = self.b.build_call(f, &vals, "").unwrap().try_as_basic_value().basic();
-                self.release(url, &Ty::Str);
+                self.release(url, &first_t);
                 id
             }
             "connectTCP" | "listenTCP" | "openUDP" | "serveHTTP" | "resolveHost" => self.socket_call(name, info, arg),
@@ -7979,7 +7992,7 @@ impl<'ctx, 'a> Gen<'ctx, 'a> {
                     vals.push((v, p.ty.clone()));
                 }
                 self.unhold(vals.len());
-                let r = self.call_rt_generic(call.rt, &vals, t);
+                let r = self.call_rt_located(call.rt, &vals, t, call.located.then_some(span));
                 for (v, ty) in vals {
                     self.release(v, &ty);
                 }

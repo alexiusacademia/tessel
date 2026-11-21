@@ -735,6 +735,7 @@ impl Builtins {
             "__lastError" => FnSig { params: vec![], ret: Ty::Str },
             "__clearError" => FnSig { params: vec![], ret: Ty::Void },
             "decodeBase64" => FnSig { params: vec![P::unlabeled("text", Ty::Str)], ret: Ty::opt(Ty::Data) },
+            "randomBytes" => FnSig { params: vec![P::unlabeled("count", Ty::Int)], ret: Ty::Data },
             "request" => FnSig {
                 params: vec![
                     P::new("url", Ty::Str),
@@ -822,6 +823,26 @@ impl Builtins {
                     P::new("port", Ty::Int),
                     P::new("host", Ty::Str).default(),
                     P::new("onRequest", Ty::func(vec![SERVER_REQUEST], Ty::Void)),
+                ],
+                ret: Ty::Int,
+            },
+            "startHTTP" => FnSig {
+                params: vec![
+                    P::unlabeled("request", Ty::Int),
+                    P::new("status", Ty::Int).default(),
+                    P::new("headers", Ty::Dict(Box::new(Ty::Str), Box::new(Ty::Str))).default(),
+                ],
+                ret: Ty::Bool,
+            },
+            "sendHTTP" => FnSig { params: vec![P::unlabeled("request", Ty::Int), P::new("data", Ty::Data)], ret: Ty::Bool },
+            "endHTTP" => FnSig { params: vec![P::unlabeled("request", Ty::Int)], ret: Ty::Bool },
+            "httpQueued" => FnSig { params: vec![P::unlabeled("request", Ty::Int)], ret: Ty::Int },
+            "acceptWebSocket" => FnSig {
+                params: vec![
+                    P::unlabeled("request", Ty::Int),
+                    P::new("onMessage", Ty::func(vec![Ty::Str], Ty::Void)),
+                    P::new("onData", Ty::opt(Ty::func(vec![Ty::Data], Ty::Void))).default(),
+                    P::new("onClose", Ty::func(vec![Ty::Str], Ty::Void)),
                 ],
                 ret: Ty::Int,
             },
@@ -959,12 +980,12 @@ impl Builtins {
 }
 
 pub const FUNCTION_NAMES: &[&str] = &[
-    "print", "fetch", "after", "Int", "Float", "Float32", "GPUBuffer", "String", "readFile", "writeFile", "listFolder", "fileExists",
+    "print", "fetch", "after", "Int", "Float", "Float32", "GPUBuffer", "Shared", "String", "readFile", "writeFile", "listFolder", "fileExists",
     "isFolder", "deleteFile", "createFolder", "renameFile", "currentFolder", "environment", "runCommand",
     "stopCommand", "sendToCommand", "sqrt", "pow", "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
     "floor", "ceil", "round", "abs", "min", "max", "openFile", "saveFile", "Data", "readData", "writeData", "appendData",
     "toJson", "fromJson", "toBinary", "fromBinary", "now", "randomFloat", "formatDate", "parseDate", "date",
-    "every", "stopTimer", "random", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
+    "every", "stopTimer", "random", "randomBytes", "appendFile", "copyFile", "fileSize", "modifiedTime", "homeFolder",
     "documentsFolder", "tempFolder", "appPath", "appFolder", "scrollTo", "startEditing", "__richId", "__richMarks", "__richApply", "platform", "appDataFolder", "joinPath", "arguments", "exit", "openURL",
     "copyToClipboard", "clipboardText", "decodeBase64", "request", "download", "openWebSocket", "sendWebSocket",
     "closeWebSocket", "background", "printError", "readLine", "readInput", "__lastError", "__clearError", "Set", "zip",
@@ -975,6 +996,7 @@ pub const FUNCTION_NAMES: &[&str] = &[
     "quit", "closeWindow", "dismiss", "showNotice",
     "resizeFile", "connectTCP", "listenTCP", "sendTCP", "tcpQueued", "pauseTCP", "closeTCP", "tcpPort", "tcpPeer",
     "openUDP", "sendUDP", "joinMulticast", "udpPort", "closeUDP", "serveHTTP", "respondHTTP", "stopHTTP",
+    "startHTTP", "sendHTTP", "endHTTP", "httpQueued", "acceptWebSocket",
     "resolveHost", "localAddresses",
     "textOutline", "__textGlyphs", "__fontMetrics", "__fontStyleNames", "__fontStyleKinds",
     "__permission", "startLocation", "stopLocation", "__location", "__satellites", "startCompass", "stopCompass", "__heading",
@@ -1034,6 +1056,16 @@ fn equatable(t: &Ty) -> bool {
 pub fn method_of(recv: &Ty, name: &str) -> Option<Method> {
     let pred = |t: &Ty| Ty::func(vec![t.clone()], Ty::Bool);
     Some(match recv {
+        // (A handle: these change the shared value, not the variable.)
+        Ty::Shared(t) => {
+            let t = (**t).clone();
+            match name {
+                "get" => method(vec![], t),
+                "set" => method(vec![P::unlabeled("value", t)], Ty::Void),
+                "update" => method(vec![P::unlabeled("change", Ty::func(vec![t.clone()], t.clone()))], t),
+                _ => return None,
+            }
+        }
         // (A handle: these change what's on the GPU, not the variable.)
         Ty::GpuBuffer(t) => {
             let t = (**t).clone();
@@ -1385,6 +1417,7 @@ pub fn graphics_variant<'a>(name: &'a str, first_label: Option<&str>) -> &'a str
 pub fn member_names(recv: &Ty) -> &'static [&'static str] {
     match recv {
         Ty::GpuBuffer(_) => &["count", "read", "write", "fill", "copy"],
+        Ty::Shared(_) => &["get", "set", "update"],
         Ty::List(_) => &[
             "count", "isEmpty", "first", "last", "append", "insert", "remove", "removeAll", "filter", "contains", "enumerated",
             "reversed", "map", "sorted", "joined", "index", "lastIndex", "firstIndex", "any", "all", "sum", "min",
@@ -1547,6 +1580,7 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "readLine" => rt("tsl_read_line"),
         "readInput" => rt("tsl_read_input"),
         "decodeBase64" => rt("tsl_decode_base64"),
+        "randomBytes" => RtCall { rt: "tsl_random_bytes", defaults: &[], located: true, no_receiver: false },
         "sendWebSocket" => rt("tsl_send_web_socket"),
         "sendToCommand" => rt("tsl_send_to_command"),
         "closeWebSocket" => rt("tsl_close_web_socket"),
@@ -1599,6 +1633,10 @@ pub fn runtime_fn(name: &str) -> Option<RtCall> {
         "joinMulticast" => rt("tsl_join_multicast"),
         // (An empty body is an empty string: `Data` and `String` share a layout.)
         "respondHTTP" => rt_d("tsl_respond_http", &[Dflt::Req, Dflt::Int(200), Dflt::EmptyDict, Dflt::Str("")]),
+        "startHTTP" => rt_d("tsl_start_http", &[Dflt::Req, Dflt::Int(200), Dflt::EmptyDict]),
+        "sendHTTP" => rt("tsl_send_http"),
+        "endHTTP" => rt("tsl_end_http"),
+        "httpQueued" => rt("tsl_http_queued"),
         "localAddresses" => rt("tsl_local_addresses"),
         _ => return None,
     })

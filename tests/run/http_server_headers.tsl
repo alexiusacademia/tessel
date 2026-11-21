@@ -1,0 +1,28 @@
+// An HTTP server's headers: a value with line breaks is sent as several
+// headers of the same name (#83), and an HTTP/1.0 client that asks to keep
+// its connection is told it's kept, and can send another request (#82).
+
+fn main() {
+    var server = -1
+    server = serveHTTP(port: 0) { r in
+        respondHTTP(r.id, headers: ["Set-Cookie": "a=1; Path=/\nb=2; Path=/", "X-Note": "one\r\nX-Injected: no"],
+                    body: Data(text: "hi {r.path}"))
+    }
+    var received = ""
+    var client = -1
+    client = connectTCP(host: "127.0.0.1", port: tcpPort(server), onConnect: {
+        sendTCP(client, data: Data(text: "GET /first HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"))
+    }, onData: { data in
+        received += data.text ?? ""
+        if received.contains("hi /first") && !received.contains("/second") {
+            sendTCP(client, data: Data(text: "GET /second HTTP/1.0\r\n\r\n"))
+        }
+    }) { reason in
+        for line in received.lines() {
+            if !line.hasPrefix("Content-Length") {
+                print(line)
+            }
+        }
+        stopHTTP(server)
+    }
+}

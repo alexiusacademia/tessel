@@ -44,12 +44,15 @@ const BODY_LIMIT: usize = 64 << 20;
 /// The waker's token (ids are the other tokens).
 const WAKE: Token = Token(usize::MAX);
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A new socket or request id (unique across threads: accepted connections
 /// get theirs on the I/O thread).
+static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
 fn new_id() -> u64 {
-    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    super::threads::own_socket(id);
+    id
 }
 
 /// What the UI thread reads about a socket without asking the I/O thread.
@@ -100,6 +103,18 @@ enum Cmd {
     Close(u64),
     /// The answer to an HTTP request, ready to send.
     Respond { request: u64, bytes: Vec<u8> },
+    /// The status and headers of an answer sent in pieces (`startHTTP`).
+    Start { request: u64, status: i64, headers: Vec<(String, String)>, head: bool },
+    /// A piece of it (`sendHTTP`).
+    Piece { request: u64, bytes: Vec<u8> },
+    /// Its end (`endHTTP`).
+    End { request: u64 },
+    /// An answer that can't be finished: its connection closes.
+    Abort { request: u64 },
+    /// A request becomes a WebSocket (`acceptWebSocket`): the 101 answer.
+    Upgrade { request: u64, bytes: Vec<u8> },
+    /// A message on a server's WebSocket (a frame, ready to send).
+    Frame { id: u64, bytes: Vec<u8> },
 }
 
 /// What the I/O thread tells the UI thread.
@@ -115,6 +130,10 @@ pub enum Note {
     /// The connection of a request ended before it was answered.
     Unanswered(u64),
     Resolved(u64, Vec<String>),
+    /// A text message on a server's WebSocket (by its connection's id).
+    WsText(u64, String),
+    /// A binary message on a server's WebSocket.
+    WsBinary(u64, Bytes),
 }
 
 /// A `Data` made on the I/O thread, for the UI thread (which owns it then).
@@ -123,13 +142,16 @@ unsafe impl Send for Bytes {}
 
 /// An HTTP request, parsed on the I/O thread.
 pub struct Request {
-    id: u64,
+    pub(super) id: u64,
     method: String,
     path: String,
     query: String,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
     remote: String,
+    /// Its connection, and what the app reads about it (`httpQueued`).
+    conn: u64,
+    shared: Arc<Shared>,
 }
 
 /// The request as the compiler's adapter receives it (all owned).
@@ -155,6 +177,9 @@ enum Kind {
     /// `socket` is a second handle on the same socket, to send with.
     Udp { on_packet: Callback, socket: std::net::UdpSocket },
     Http { on_request: Callback },
+    /// A server whose requests go to worker threads (see `threads`): the
+    /// main thread keeps it only to stop it.
+    Pool,
 }
 
 struct Open {
@@ -167,16 +192,43 @@ struct Open {
 thread_local! {
     /// Open sockets, by id.
     static OPEN: RefCell<HashMap<u64, Open>> = RefCell::new(HashMap::new());
-    /// HTTP requests waiting for `respondHTTP`: whether each is a HEAD.
-    static ASKED: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::new());
+    /// HTTP requests waiting for their answers.
+    static ASKED: RefCell<HashMap<u64, Asked>> = RefCell::new(HashMap::new());
+    /// Server WebSockets (`acceptWebSocket`), by id, and their ids by
+    /// connection.
+    static SERVER_WS: RefCell<HashMap<u64, ServerWs>> = RefCell::new(HashMap::new());
+    static WS_OF_CONN: RefCell<HashMap<u64, u64>> = RefCell::new(HashMap::new());
     /// `resolveHost` blocks waiting for their addresses.
     static RESOLVING: RefCell<HashMap<u64, Callback>> = RefCell::new(HashMap::new());
+}
+
+/// A request waiting for its answer.
+struct Asked {
+    head: bool,
+    /// Its connection, and what's known about it without asking the I/O
+    /// thread.
+    conn: u64,
+    shared: Arc<Shared>,
+    /// The answer is being sent in pieces (`startHTTP`).
+    started: bool,
+    /// The client's `Sec-WebSocket-Key`, if it asked for a WebSocket.
+    ws_key: Option<String>,
+}
+
+/// A server's WebSocket.
+struct ServerWs {
+    conn: u64,
+    on_message: Callback,
+    on_data: Option<Callback>,
+    on_close: Callback,
 }
 
 /// Is any socket open, or a name being resolved? (A program with only `fn
 /// main` keeps running while one is.)
 pub fn busy() -> bool {
-    OPEN.with(|o| !o.borrow().is_empty()) || RESOLVING.with(|r| !r.borrow().is_empty())
+    OPEN.with(|o| !o.borrow().is_empty())
+        || RESOLVING.with(|r| !r.borrow().is_empty())
+        || SERVER_WS.with(|w| !w.borrow().is_empty())
 }
 
 /// The I/O thread: started by the first socket.
@@ -416,6 +468,7 @@ pub extern "C" fn tsl_pause_tcp(id: i64, paused: u8) {
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_close_tcp(id: i64) {
     let id = id as u64;
+    super::threads::stop_pool(id);
     let open = OPEN.with(|o| {
         o.borrow_mut().get_mut(&id).is_some_and(|open| {
             let was = open.closing;
@@ -545,6 +598,182 @@ pub unsafe extern "C" fn tsl_serve_http(port: i64, host: *const Str, request_f: 
     id as i64
 }
 
+/// `serveHTTP(port:host:workers:start:)`: like `tsl_serve_http`, but each
+/// request is handled on one of `workers` threads, each with its own block
+/// made by `start` (see `threads`). Returns the server's id, or -1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_serve_http_workers(port: i64, host: *const Str, workers: i64, start: super::StartFn, input: *mut u8) -> i64 {
+    let (listener, port) = match listen("serve", &text(host), port) {
+        Ok(l) => l,
+        Err(e) => {
+            crate::set_error(e);
+            return -1;
+        }
+    };
+    let id = new_id();
+    OPEN.with(|o| o.borrow_mut().insert(id, Open { kind: Kind::Pool, shared: Shared::new(port), closing: false }));
+    super::threads::start_pool(id, workers.clamp(1, 1024) as usize, start, input);
+    send(Cmd::Listen { id, listener, http: true });
+    id as i64
+}
+
+/// The client's `Sec-WebSocket-Key`, if the request asks for a WebSocket.
+fn ws_key(r: &Request) -> Option<String> {
+    let header = |n: &str| r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, v)| v.as_str());
+    let upgrade = header("upgrade").is_some_and(|v| v.to_ascii_lowercase().contains("websocket"));
+    let connection = header("connection").is_some_and(|v| v.to_ascii_lowercase().contains("upgrade"));
+    if r.method != "GET" || !upgrade || !connection || header("sec-websocket-version") != Some("13") {
+        return None;
+    }
+    header("sec-websocket-key").map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
+}
+
+fn server_ws<T>(conn: u64, f: impl FnOnce(&ServerWs) -> T) -> Option<T> {
+    let id = WS_OF_CONN.with(|m| m.borrow().get(&conn).copied())?;
+    SERVER_WS.with(|w| w.borrow().get(&id).map(f))
+}
+
+/// `startHTTP(request, status:headers:)`: sends an answer's status and
+/// headers; its body follows with `sendHTTP`, and ends with `endHTTP`.
+/// Without a Content-Length it goes in chunks. False if the request was
+/// answered already, or its connection is gone.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_start_http(request: i64, status: i64, headers: *const crate::Dict) -> u8 {
+    let request = request as u64;
+    let head = ASKED.with(|a| match a.borrow_mut().get_mut(&request) {
+        Some(asked) if !asked.started => {
+            asked.started = true;
+            Some(asked.head)
+        }
+        _ => None,
+    });
+    let Some(head) = head else { return 0 };
+    let headers = unsafe { super::net::pairs(headers) };
+    let status = if (100..1000).contains(&status) { status } else { 500 };
+    send(Cmd::Start { request, status, headers, head });
+    if head {
+        // (A HEAD's answer has no body: it's finished.)
+        ASKED.with(|a| a.borrow_mut().remove(&request));
+    }
+    1
+}
+
+/// `sendHTTP(request, data:)`: the next piece of an answer `startHTTP`
+/// began. False if it wasn't started, or its connection is gone.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_send_http(request: i64, data: *const Str) -> u8 {
+    let request = request as u64;
+    if !ASKED.with(|a| a.borrow().get(&request).is_some_and(|x| x.started)) {
+        return 0;
+    }
+    let bytes = unsafe { crate::codec::data_bytes(data) }.to_vec();
+    send(Cmd::Piece { request, bytes });
+    1
+}
+
+/// `endHTTP(request)`: ends an answer sent in pieces.
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_end_http(request: i64) -> u8 {
+    let request = request as u64;
+    let started = ASKED.with(|a| {
+        let mut a = a.borrow_mut();
+        if a.get(&request).is_some_and(|x| x.started) {
+            a.remove(&request);
+            true
+        } else {
+            false
+        }
+    });
+    if started {
+        send(Cmd::End { request });
+    }
+    started as u8
+}
+
+/// `httpQueued(request)`: bytes of the answer not yet sent (0 once it's
+/// answered or its connection is gone).
+#[unsafe(no_mangle)]
+pub extern "C" fn tsl_http_queued(request: i64) -> i64 {
+    ASKED.with(|a| a.borrow().get(&(request as u64)).map_or(0, |x| x.shared.queued.load(Ordering::Relaxed).max(0)))
+}
+
+/// `acceptWebSocket(request, onMessage:onData:onClose:)`: answers a
+/// request that asks for a WebSocket, which stays open: messages from the
+/// client come to the blocks, and `sendWebSocket` sends to it. Returns its
+/// id (from the same series as `openWebSocket`'s), or -1 if the request
+/// isn't asking for a WebSocket, or was answered already.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_accept_web_socket(
+    request: i64,
+    msg_f: *const c_void,
+    msg_env: *mut Header,
+    data_f: *const c_void,
+    data_env: *mut Header,
+    close_f: *const c_void,
+    close_env: *mut Header,
+) -> i64 {
+    let on_message = Callback::new(msg_f, msg_env);
+    let on_data = (!data_f.is_null()).then(|| Callback::new(data_f, data_env));
+    let on_close = Callback::new(close_f, close_env);
+    let request = request as u64;
+    let asked = ASKED.with(|a| {
+        let mut a = a.borrow_mut();
+        if a.get(&request).is_some_and(|x| !x.started && x.ws_key.is_some()) { a.remove(&request) } else { None }
+    });
+    let Some(asked) = asked else { return -1 };
+    let key = asked.ws_key.unwrap_or_default();
+    use sha1::Digest;
+    let accept = crate::codec::base64_encode(&sha1::Sha1::digest(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes()));
+    let bytes = format!(
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+    )
+    .into_bytes();
+    let id = super::next_id();
+    // (The connection's events come to this thread from now on.)
+    super::threads::own_socket(asked.conn);
+    SERVER_WS.with(|w| w.borrow_mut().insert(id, ServerWs { conn: asked.conn, on_message, on_data, on_close }));
+    WS_OF_CONN.with(|m| m.borrow_mut().insert(asked.conn, id));
+    send(Cmd::Upgrade { request, bytes });
+    id as i64
+}
+
+/// A message on a server's WebSocket (`sendWebSocket`): `None` if `id`
+/// isn't one, else whether it's open.
+pub(super) fn ws_send(id: u64, binary: bool, payload: &[u8]) -> Option<bool> {
+    let conn = SERVER_WS.with(|w| w.borrow().get(&id).map(|x| x.conn))?;
+    send(Cmd::Frame { id: conn, bytes: ws_frame_bytes(if binary { 0x2 } else { 0x1 }, payload) });
+    Some(true)
+}
+
+/// `closeWebSocket(id)` for a server's WebSocket: false if `id` isn't one.
+pub(super) fn ws_close(id: u64) -> bool {
+    let Some(conn) = SERVER_WS.with(|w| w.borrow().get(&id).map(|x| x.conn)) else { return false };
+    send(Cmd::Frame { id: conn, bytes: ws_frame_bytes(0x8, &1000u16.to_be_bytes()) });
+    send(Cmd::Close(conn));
+    true
+}
+
+/// On a worker: its block for the requests of `listener`.
+pub(super) fn serve_here(listener: u64, on_request: Callback) {
+    OPEN.with(|o| o.borrow_mut().insert(listener, Open { kind: Kind::Http { on_request }, shared: Shared::new(0), closing: false }));
+}
+
+/// On a worker that failed: a 500 for each request it was given and
+/// hasn't answered.
+pub(super) fn fail_waiting() {
+    let waiting: Vec<(u64, Asked)> = ASKED.with(|a| a.borrow_mut().drain().collect());
+    for (request, asked) in waiting {
+        if asked.started {
+            // (Half an answer is out: its connection closes.)
+            send(Cmd::Abort { request });
+            continue;
+        }
+        let body = b"Internal Server Error";
+        let headers = vec![("Content-Type".to_string(), "text/plain; charset=utf-8".to_string())];
+        send(Cmd::Respond { request, bytes: response_bytes(500, &headers, body, asked.head) });
+    }
+}
+
 /// The reason phrase of an HTTP status.
 fn reason(status: i64) -> &'static str {
     match status {
@@ -584,6 +813,119 @@ fn reason(status: i64) -> &'static str {
     }
 }
 
+/// Queues bytes to send on a connection, counted for `httpQueued`.
+fn queue(conn: &mut Conn, bytes: Vec<u8>) {
+    conn.shared.queued.fetch_add(bytes.len() as i64, Ordering::Relaxed);
+    conn.out.push_back(bytes);
+}
+
+/// The status line and headers of an answer sent in pieces.
+fn head_bytes(status: i64, headers: &[(String, String)]) -> Vec<u8> {
+    let mut out = format!("HTTP/1.1 {status} {}\r\n", reason(status)).into_bytes();
+    for (k, v) in headers {
+        let k = k.replace(['\r', '\n', ':'], "");
+        for line in v.split('\n') {
+            let line = line.replace('\r', "");
+            out.extend_from_slice(format!("{k}: {line}\r\n").as_bytes());
+        }
+    }
+    out.extend_from_slice(b"\r\n");
+    out
+}
+
+/// A WebSocket frame from a client, read from the start of `input`.
+struct WsFrame {
+    fin: bool,
+    opcode: u8,
+    payload: Vec<u8>,
+    consumed: usize,
+}
+
+/// The frame at the start of `input`: `None` if it isn't all here yet.
+/// A client's frames are masked; one that isn't, or is too big, is an error.
+fn ws_frame(input: &[u8], limit: usize) -> Result<Option<WsFrame>, &'static str> {
+    if input.len() < 2 {
+        return Ok(None);
+    }
+    let fin = input[0] & 0x80 != 0;
+    if input[0] & 0x70 != 0 {
+        return Err("unknown extension");
+    }
+    let opcode = input[0] & 0x0f;
+    if !matches!(opcode, 0x0 | 0x1 | 0x2 | 0x8 | 0x9 | 0xA) {
+        return Err("unknown frame");
+    }
+    if input[1] & 0x80 == 0 {
+        return Err("a client's frames must be masked");
+    }
+    let mut at = 2;
+    let mut len = (input[1] & 0x7f) as u64;
+    if len == 126 {
+        if input.len() < 4 {
+            return Ok(None);
+        }
+        len = u16::from_be_bytes([input[2], input[3]]) as u64;
+        at = 4;
+    } else if len == 127 {
+        if input.len() < 10 {
+            return Ok(None);
+        }
+        len = u64::from_be_bytes(input[2..10].try_into().unwrap());
+        at = 10;
+    }
+    if len > limit as u64 {
+        return Err("message too big");
+    }
+    if input.len() < at + 4 + len as usize {
+        return Ok(None);
+    }
+    let mask = [input[at], input[at + 1], input[at + 2], input[at + 3]];
+    at += 4;
+    let payload: Vec<u8> = input[at..at + len as usize].iter().enumerate().map(|(i, b)| b ^ mask[i % 4]).collect();
+    Ok(Some(WsFrame { fin, opcode, payload, consumed: at + len as usize }))
+}
+
+/// A frame from the server (not masked), with the whole message.
+pub(super) fn ws_frame_bytes(opcode: u8, payload: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x80 | opcode];
+    let n = payload.len();
+    if n < 126 {
+        out.push(n as u8);
+    } else if n <= 0xffff {
+        out.push(126);
+        out.extend_from_slice(&(n as u16).to_be_bytes());
+    } else {
+        out.push(127);
+        out.extend_from_slice(&(n as u64).to_be_bytes());
+    }
+    out.extend_from_slice(payload);
+    out
+}
+
+fn ws_close_frame(code: u16, why: &str) -> Vec<u8> {
+    let mut payload = code.to_be_bytes().to_vec();
+    payload.extend_from_slice(why.as_bytes());
+    ws_frame_bytes(0x8, &payload)
+}
+
+/// A response with `Connection: keep-alive` after its status line, unless
+/// it has a Connection header of its own.
+fn with_keep_alive(bytes: Vec<u8>) -> Vec<u8> {
+    let Some(line_end) = find(&bytes, b"\r\n", 0) else { return bytes };
+    let head_end = find(&bytes, b"\r\n\r\n", 0).unwrap_or(bytes.len());
+    let has_own = bytes[line_end..head_end]
+        .split(|&b| b == b'\n')
+        .any(|line| line.len() >= 11 && line[..11].eq_ignore_ascii_case(b"connection:"));
+    if has_own {
+        return bytes;
+    }
+    let mut out = Vec::with_capacity(bytes.len() + 24);
+    out.extend_from_slice(&bytes[..line_end + 2]);
+    out.extend_from_slice(b"Connection: keep-alive\r\n");
+    out.extend_from_slice(&bytes[line_end + 2..]);
+    out
+}
+
 /// An HTTP/1.1 response: the status line, `headers` (with a Content-Length
 /// unless one is given), and the body (none for a HEAD, 204 or 304).
 fn response_bytes(status: i64, headers: &[(String, String)], body: &[u8], head: bool) -> Vec<u8> {
@@ -593,9 +935,14 @@ fn response_bytes(status: i64, headers: &[(String, String)], body: &[u8], head: 
         if k.eq_ignore_ascii_case("content-length") {
             has_length = true;
         }
-        // (A header can't contain line breaks: they'd make more headers.)
-        let v = v.replace(['\r', '\n'], " ");
-        out.extend_from_slice(format!("{k}: {v}\r\n").as_bytes());
+        // A value with line breaks is several headers of the same name, one
+        // for each line (two `Set-Cookie`s, say); nothing else can make a
+        // header (#83).
+        let k = k.replace(['\r', '\n', ':'], "");
+        for line in v.split('\n') {
+            let line = line.replace('\r', "");
+            out.extend_from_slice(format!("{k}: {line}\r\n").as_bytes());
+        }
     }
     if !has_length {
         out.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
@@ -612,7 +959,11 @@ fn response_bytes(status: i64, headers: &[(String, String)], body: &[u8], head: 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_respond_http(request: i64, status: i64, headers: *const crate::Dict, body: *const Str) -> u8 {
     let request = request as u64;
-    let Some(head) = ASKED.with(|a| a.borrow_mut().remove(&request)) else { return 0 };
+    // (An answer being sent in pieces ends with `endHTTP`.)
+    if ASKED.with(|a| a.borrow().get(&request).is_some_and(|x| x.started)) {
+        return 0;
+    }
+    let Some(Asked { head, .. }) = ASKED.with(|a| a.borrow_mut().remove(&request)) else { return 0 };
     let headers = unsafe { super::net::pairs(headers) };
     let body = unsafe { crate::codec::data_bytes(body) };
     let status = if (100..1000).contains(&status) { status } else { 500 };
@@ -727,6 +1078,13 @@ pub fn deliver(note: Note) {
             }
         }
         Note::Closed(id, reason) => {
+            // A server's WebSocket: its `onClose`.
+            if let Some(ws_id) = WS_OF_CONN.with(|m| m.borrow_mut().remove(&id)) {
+                if let Some(ws) = SERVER_WS.with(|w| w.borrow_mut().remove(&ws_id)) {
+                    ws.on_close.call_with(str_new(&reason) as *mut u8);
+                }
+                return;
+            }
             let Some(open) = OPEN.with(|o| o.borrow_mut().remove(&id)) else { return };
             match open.kind {
                 Kind::Client { on_close, .. } => on_close.call_with(str_new(&reason) as *mut u8),
@@ -739,7 +1097,7 @@ pub fn deliver(note: Note) {
                         cb.call_with_int_ptr(id as i64, str_new(&reason) as *mut u8);
                     }
                 }
-                Kind::Listener { .. } | Kind::Udp { .. } | Kind::Http { .. } => {}
+                Kind::Listener { .. } | Kind::Udp { .. } | Kind::Http { .. } | Kind::Pool => {}
             }
         }
         Note::Packet { id, data, from, port } => {
@@ -758,7 +1116,13 @@ pub fn deliver(note: Note) {
                 _ => None,
             });
             let Some(cb) = cb else { return };
-            ASKED.with(|a| a.borrow_mut().insert(request.id, request.method == "HEAD"));
+            let ws_key = ws_key(&request);
+            ASKED.with(|a| {
+                a.borrow_mut().insert(
+                    request.id,
+                    Asked { head: request.method == "HEAD", conn: request.conn, shared: request.shared.clone(), started: false, ws_key },
+                )
+            });
             let mut c = RequestC {
                 id: request.id as i64,
                 method: str_new(&request.method),
@@ -772,6 +1136,23 @@ pub fn deliver(note: Note) {
         }
         Note::Unanswered(request) => {
             ASKED.with(|a| a.borrow_mut().remove(&request));
+        }
+        Note::WsText(conn, text) => {
+            let cb = server_ws(conn, |w| w.on_message.clone());
+            if let Some(cb) = cb {
+                cb.call_with(str_new(&text) as *mut u8);
+            }
+        }
+        Note::WsBinary(conn, data) => {
+            match server_ws(conn, |w| (w.on_data.clone(), w.on_message.clone())) {
+                Some((Some(on_data), _)) => on_data.call_with(data.0 as *mut u8),
+                Some((None, on_message)) => {
+                    let text = String::from_utf8_lossy(unsafe { crate::codec::data_bytes(data.0) }).into_owned();
+                    release_data(data);
+                    on_message.call_with(str_new(&text) as *mut u8);
+                }
+                None => release_data(data),
+            }
         }
         Note::Resolved(id, addrs) => {
             if let Some(cb) = RESOLVING.with(|r| r.borrow_mut().remove(&id)) {
@@ -798,6 +1179,14 @@ struct Http {
     /// Close once the pending request is answered (HTTP/1.0, or
     /// `Connection: close`).
     close_after: bool,
+    /// An HTTP/1.0 client asked to keep the connection: the answer must
+    /// say it's kept (#82).
+    say_kept: bool,
+    /// An HTTP/1.1 client (it takes an answer in chunks).
+    version_11: bool,
+    /// An answer being sent in pieces: in chunks (HTTP/1.1, no length
+    /// given), or as they are.
+    streaming: Option<bool>,
     /// "100 Continue" was sent for the request being read.
     continued: bool,
 }
@@ -817,6 +1206,19 @@ struct Conn {
     /// Its remote address.
     peer: String,
     http: Option<Http>,
+    /// A server's WebSocket (an HTTP connection that was upgraded).
+    ws: Option<Ws>,
+}
+
+/// A server's WebSocket: frames being read.
+#[derive(Default)]
+struct Ws {
+    inbuf: Vec<u8>,
+    /// A message in pieces: its kind (1 text, 2 binary) and what came.
+    kind: u8,
+    message: Vec<u8>,
+    /// Why it's closing, for `onClose`.
+    reason: Option<String>,
 }
 
 enum Entry {
@@ -907,6 +1309,7 @@ impl Loop {
                     listener: None,
                     peer: String::new(),
                     http: None,
+                    ws: None,
                 };
                 if self.poll.registry().register(&mut conn.stream, Token(id as usize), Interest::READABLE | Interest::WRITABLE).is_err() {
                     post(Event::Socket(Note::Closed(id, "can't connect".into())));
@@ -950,25 +1353,184 @@ impl Loop {
             Cmd::Poke(id) => self.read(id),
             Cmd::Close(id) => self.close(id),
             Cmd::Respond { request, bytes } => {
-                let Some(id) = self.requests.remove(&request) else { return };
+                let Some(&id) = self.requests.get(&request) else { return };
                 let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
-                conn.out.push_back(bytes);
-                let close_after = match &mut conn.http {
-                    Some(http) if http.pending == Some(request) => {
-                        http.pending = None;
-                        http.close_after
-                    }
-                    _ => false,
-                };
-                if close_after {
-                    conn.state = State::Closing { deadline: Instant::now() + CLOSE_GRACE };
+                let say_kept = conn.http.as_ref().is_some_and(|h| h.say_kept && h.pending == Some(request));
+                queue(conn, if say_kept { with_keep_alive(bytes) } else { bytes });
+                self.answered(request);
+            }
+            Cmd::Start { request, status, mut headers, head } => {
+                let Some(&id) = self.requests.get(&request) else { return };
+                let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+                let Some(http) = &mut conn.http else { return };
+                let has_length = headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-length"));
+                headers.retain(|(k, _)| !k.eq_ignore_ascii_case("transfer-encoding"));
+                // In chunks if the client takes them and no length is
+                // given; otherwise as they come, and an answer without a
+                // length ends with the connection.
+                let chunked = !has_length && http.version_11;
+                if chunked {
+                    headers.push(("Transfer-Encoding".into(), "chunked".into()));
+                } else if !has_length {
+                    http.close_after = true;
+                    http.say_kept = false;
+                    headers.push(("Connection".into(), "close".into()));
+                }
+                http.streaming = Some(chunked);
+                let mut bytes = head_bytes(status, &headers);
+                if http.say_kept && has_length {
+                    bytes = with_keep_alive(bytes);
+                }
+                queue(conn, bytes);
+                if head {
+                    self.answered(request);
+                } else {
+                    self.flush(id);
+                }
+            }
+            Cmd::Piece { request, bytes } => {
+                let Some(&id) = self.requests.get(&request) else { return };
+                let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+                let Some(chunked) = conn.http.as_ref().and_then(|h| h.streaming) else { return };
+                if bytes.is_empty() {
+                    return;
+                }
+                if chunked {
+                    let mut piece = format!("{:x}\r\n", bytes.len()).into_bytes();
+                    piece.extend_from_slice(&bytes);
+                    piece.extend_from_slice(b"\r\n");
+                    queue(conn, piece);
+                } else {
+                    queue(conn, bytes);
                 }
                 self.flush(id);
-                if !close_after {
-                    self.parse_http(id);
+            }
+            Cmd::End { request } => {
+                let Some(&id) = self.requests.get(&request) else { return };
+                let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+                if conn.http.as_ref().and_then(|h| h.streaming) == Some(true) {
+                    queue(conn, b"0\r\n\r\n".to_vec());
+                }
+                self.answered(request);
+            }
+            Cmd::Abort { request } => {
+                let Some(id) = self.requests.remove(&request) else { return };
+                if let Some(Entry::Conn(conn)) = self.entries.get_mut(&id)
+                    && let Some(http) = &mut conn.http
+                {
+                    http.pending = None;
+                }
+                self.finish(id, "closed".into());
+            }
+            Cmd::Upgrade { request, bytes } => {
+                let Some(id) = self.requests.remove(&request) else { return };
+                let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+                // What came after the request is the first frames.
+                let rest = conn.http.take().map(|h| h.inbuf).unwrap_or_default();
+                conn.ws = Some(Ws { inbuf: rest, ..Ws::default() });
+                queue(conn, bytes);
+                self.flush(id);
+                self.read_ws(id, Vec::new());
+            }
+            Cmd::Frame { id, bytes } => {
+                if let Some(Entry::Conn(conn)) = self.entries.get_mut(&id)
+                    && conn.ws.is_some()
+                    && matches!(conn.state, State::Open)
+                {
+                    queue(conn, bytes);
+                    self.flush(id);
                 }
             }
         }
+    }
+
+    /// `request` has had all of its answer: the connection closes, or goes
+    /// on to the next request.
+    fn answered(&mut self, request: u64) {
+        let Some(id) = self.requests.remove(&request) else { return };
+        let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+        let close_after = match &mut conn.http {
+            Some(http) if http.pending == Some(request) => {
+                http.pending = None;
+                http.streaming = None;
+                http.close_after
+            }
+            _ => false,
+        };
+        if close_after {
+            conn.state = State::Closing { deadline: Instant::now() + CLOSE_GRACE };
+        }
+        self.flush(id);
+        if !close_after {
+            self.parse_http(id);
+        }
+    }
+
+    /// Reads the frames that have come on a server's WebSocket: messages go
+    /// to the app; pings are answered, and a close is answered and ends it.
+    fn read_ws(&mut self, id: u64, input: Vec<u8>) {
+        let Some(Entry::Conn(conn)) = self.entries.get_mut(&id) else { return };
+        let Some(ws) = &mut conn.ws else { return };
+        ws.inbuf.extend_from_slice(&input);
+        let mut replies: Vec<Vec<u8>> = Vec::new();
+        let mut closing = false;
+        loop {
+            let frame = match ws_frame(&ws.inbuf, BODY_LIMIT) {
+                Ok(Some(f)) => f,
+                Ok(None) => break,
+                Err(why) => {
+                    replies.push(ws_close_frame(1002, why));
+                    ws.reason = Some(format!("closed: {why}"));
+                    closing = true;
+                    break;
+                }
+            };
+            ws.inbuf.drain(..frame.consumed);
+            match frame.opcode {
+                0x1 | 0x2 | 0x0 => {
+                    if frame.opcode != 0 {
+                        ws.kind = frame.opcode;
+                        ws.message.clear();
+                    }
+                    ws.message.extend_from_slice(&frame.payload);
+                    if ws.message.len() > BODY_LIMIT {
+                        replies.push(ws_close_frame(1009, "message too big"));
+                        ws.reason = Some("closed: message too big".into());
+                        closing = true;
+                        break;
+                    }
+                    if frame.fin {
+                        let message = std::mem::take(&mut ws.message);
+                        if ws.kind == 0x2 {
+                            post(Event::Socket(Note::WsBinary(id, Bytes(crate::codec::data_new(&message)))));
+                        } else {
+                            post(Event::Socket(Note::WsText(id, String::from_utf8_lossy(&message).into_owned())));
+                        }
+                    }
+                }
+                0x8 => {
+                    let reason = if frame.payload.len() > 2 {
+                        String::from_utf8_lossy(&frame.payload[2..]).into_owned()
+                    } else {
+                        "closed by the client".into()
+                    };
+                    ws.reason.get_or_insert(reason);
+                    let code = if frame.payload.len() >= 2 { u16::from_be_bytes([frame.payload[0], frame.payload[1]]) } else { 1000 };
+                    replies.push(ws_close_frame(code, ""));
+                    closing = true;
+                    break;
+                }
+                0x9 => replies.push(ws_frame_bytes(0xA, &frame.payload)),
+                _ => {}
+            }
+        }
+        for r in replies {
+            queue(conn, r);
+        }
+        if closing {
+            conn.state = State::Closing { deadline: Instant::now() + CLOSE_GRACE };
+        }
+        self.flush(id);
     }
 
     /// The app closes `id`: a connection (once what's queued is sent), a
@@ -1025,6 +1587,7 @@ impl Loop {
                 post(Event::Socket(Note::Unanswered(request)));
             }
         } else {
+            let reason = conn.ws.as_mut().and_then(|w| w.reason.take()).unwrap_or(reason);
             post(Event::Socket(Note::Closed(id, reason)));
         }
     }
@@ -1171,7 +1734,16 @@ impl Loop {
                 interest: Some(Interest::READABLE),
                 listener: Some(id),
                 peer: peer.to_string(),
-                http: http.then(|| Http { inbuf: Vec::new(), pending: None, close_after: false, continued: false }),
+                http: http.then(|| Http {
+                    inbuf: Vec::new(),
+                    pending: None,
+                    close_after: false,
+                    say_kept: false,
+                    version_11: true,
+                    streaming: None,
+                    continued: false,
+                }),
+                ws: None,
             };
             self.entries.insert(cid, Entry::Conn(conn));
             if !http {
@@ -1250,7 +1822,7 @@ impl Loop {
                     break;
                 }
                 Ok(n) => {
-                    if conn.http.is_some() {
+                    if conn.http.is_some() || conn.ws.is_some() {
                         http_input.extend_from_slice(&self.buf[..n]);
                         if http_input.len() > HEAD_LIMIT + BODY_LIMIT {
                             break;
@@ -1278,10 +1850,14 @@ impl Loop {
             }
         }
         if !http_input.is_empty() {
-            if let Some(http) = &mut conn.http {
-                http.inbuf.extend_from_slice(&http_input);
+            if conn.ws.is_some() {
+                self.read_ws(id, http_input);
+            } else {
+                if let Some(http) = &mut conn.http {
+                    http.inbuf.extend_from_slice(&http_input);
+                }
+                self.parse_http(id);
             }
-            self.parse_http(id);
         }
         if let Some(reason) = ended {
             self.finish(id, reason);
@@ -1305,7 +1881,7 @@ impl Loop {
                 // body ("Expect: 100-continue") is told once.
                 if !http.continued && expects_continue(&http.inbuf) {
                     http.continued = true;
-                    conn.out.push_back(b"HTTP/1.1 100 Continue\r\n\r\n".to_vec());
+                    queue(conn, b"HTTP/1.1 100 Continue\r\n\r\n".to_vec());
                     self.flush(id);
                 }
                 return;
@@ -1322,6 +1898,9 @@ impl Loop {
         let request = new_id();
         http.pending = Some(request);
         http.close_after = parsed.close;
+        http.say_kept = parsed.keep_alive_10;
+        http.version_11 = parsed.version_11;
+        http.streaming = None;
         self.requests.insert(request, id);
         let (path, query) = match parsed.target.split_once('?') {
             Some((p, q)) => (p.to_string(), q.to_string()),
@@ -1329,9 +1908,20 @@ impl Loop {
         };
         let listener = conn.listener.unwrap_or(0);
         let remote = conn.peer.clone();
+        let shared = conn.shared.clone();
         post(Event::Socket(Note::Request {
             listener,
-            request: Box::new(Request { id: request, method: parsed.method, path, query, headers: parsed.headers, body: parsed.body, remote }),
+            request: Box::new(Request {
+                id: request,
+                method: parsed.method,
+                path,
+                query,
+                headers: parsed.headers,
+                body: parsed.body,
+                remote,
+                conn: id,
+                shared,
+            }),
         }));
     }
 }
@@ -1355,6 +1945,10 @@ struct Parsed {
     consumed: usize,
     /// The connection closes after the answer.
     close: bool,
+    /// An HTTP/1.0 request that asked to keep the connection.
+    keep_alive_10: bool,
+    /// An HTTP/1.1 request.
+    version_11: bool,
 }
 
 fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -1423,7 +2017,9 @@ fn parse_request(input: &[u8], head_limit: usize, body_limit: usize) -> Result<O
     };
     let connection = header("connection").map(|v| v.to_ascii_lowercase()).unwrap_or_default();
     let close = connection.contains("close") || (version == "HTTP/1.0" && !connection.contains("keep-alive"));
-    Ok(Some(Parsed { method: method.to_string(), target: target.to_string(), headers, body, consumed, close }))
+    let keep_alive_10 = version == "HTTP/1.0" && !close;
+    let version_11 = version != "HTTP/1.0";
+    Ok(Some(Parsed { method: method.to_string(), target: target.to_string(), headers, body, consumed, close, keep_alive_10, version_11 }))
 }
 
 /// A chunked body at the start of `input`, and how much it took: `None`

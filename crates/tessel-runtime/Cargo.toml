@@ -15,6 +15,7 @@ gpu = ["dep:vello", "dep:skrifa", "dep:wgpu", "dep:parley", "dep:image", "dep:po
 native = ["dep:windows", "dep:windows-numerics", "dep:windows-core"]
 
 [dependencies]
+getrandom = "0.3"
 parley = { version = "0.11", optional = true }
 pollster = { version = "1.0.1", optional = true }
 # Glyphs' outlines, for text in PDFs (vello and parley draw with it too).

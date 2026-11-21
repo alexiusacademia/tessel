@@ -1,0 +1,22 @@
+started: true
+respond while streaming: false
+client piece: piece 1
+client piece: piece 2
+ended: true, again: false, send after: false
+client piece: piece 3
+stream: 200 chunked
+sized: 200 helloworld 10
+not a websocket: -1
+notws: 400
+accepted: true, again: -1
+client got: echo: hello
+client got bytes: [1, 2, 3, 9]
+client got: echo: last
+client closed: closed
+client got: worker echo: hello worker
+worker client closed: closed
+server got: hello
+server got 3 bytes
+server got: last
+server ws closed: closed by the client
+["worker ws closed: closed by the client"]

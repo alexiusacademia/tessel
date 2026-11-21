@@ -360,6 +360,9 @@ pub(crate) fn read_range(path: &str, from: u64, count: u64) -> std::io::Result<(
     if meta.is_dir() {
         return Err(std::io::Error::from(std::io::ErrorKind::IsADirectory));
     }
+    if !meta.is_file() {
+        return read_stream(file, from, count);
+    }
     let size = meta.len();
     let want = count.min(size.saturating_sub(from)) as usize;
     let data = data_new_zeroed(want);
@@ -386,6 +389,36 @@ pub(crate) fn read_range(path: &str, from: u64, count: u64) -> std::io::Result<(
         unsafe { (*data).len = got as i64 };
     }
     Ok((data, size))
+}
+
+/// `read_range` for what isn't a plain file (a device like /dev/urandom,
+/// a pipe, a /proc file), whose size reads as 0: up to `count` bytes as
+/// they come, after skipping `from`. Its "size" is what was read.
+fn read_stream(mut file: std::fs::File, from: u64, count: u64) -> std::io::Result<(*mut Str, u64)> {
+    use std::io::Read;
+    let mut skip = from;
+    let mut chunk = vec![0u8; 64 * 1024];
+    while skip > 0 {
+        let take = skip.min(chunk.len() as u64) as usize;
+        let n = file.read(&mut chunk[..take])?;
+        if n == 0 {
+            break;
+        }
+        skip -= n as u64;
+    }
+    let mut out: Vec<u8> = Vec::new();
+    while (out.len() as u64) < count {
+        let room = (count - out.len() as u64).min(chunk.len() as u64) as usize;
+        match file.read(&mut chunk[..room]) {
+            Ok(0) => break,
+            Ok(n) => out.extend_from_slice(&chunk[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    let data = data_new_zeroed(out.len());
+    unsafe { std::ptr::copy_nonoverlapping(out.as_ptr(), (data as *mut u8).add(size_of::<Str>()), out.len()) };
+    Ok((data, from + out.len() as u64))
 }
 
 /// A new `Data` of `len` zero bytes, to fill in place.

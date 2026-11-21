@@ -168,6 +168,7 @@ impl Checked {
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
             Ty::Set(t) => format!("Set<{}>", self.show(t)),
             Ty::GpuBuffer(t) => format!("GPUBuffer<{}>", self.show(t)),
+            Ty::Shared(t) => format!("Shared<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -625,6 +626,7 @@ impl Checker<'_> {
             Ty::Dict(k, v) => format!("[{}: {}]", self.show(k), self.show(v)),
             Ty::Set(t) => format!("Set<{}>", self.show(t)),
             Ty::GpuBuffer(t) => format!("GPUBuffer<{}>", self.show(t)),
+            Ty::Shared(t) => format!("Shared<{}>", self.show(t)),
             Ty::Opt(t) if matches!(**t, Ty::Fn(..)) => format!("({})?", self.show(t)),
             Ty::Opt(t) => format!("{}?", self.show(t)),
             Ty::Fn(ps, r) => {
@@ -1029,6 +1031,10 @@ impl Checker<'_> {
                     self.error(id.span, "`GPUBuffer` needs the type of its numbers, like `GPUBuffer<Float32>`");
                     Ty::Error
                 }
+                "Shared" => {
+                    self.error(id.span, "`Shared` needs the type of its value, like `Shared<Int>`");
+                    Ty::Error
+                }
                 "$error" => Ty::Error,
                 name if name.starts_with('$') => Ty::Generic(name[1..].parse().unwrap_or(0)),
                 name => match {
@@ -1080,6 +1086,7 @@ impl Checker<'_> {
             },
             TypeExpr::Generic(id, args, span) if id.name == "Set" => self.set_type(args, *span),
             TypeExpr::Generic(id, args, span) if id.name == "GPUBuffer" => self.gpu_buffer_type(args, *span),
+            TypeExpr::Generic(id, args, span) if id.name == "Shared" => self.shared_type(args, *span),
             TypeExpr::Generic(id, args, span) => self.generic_name_ty(&id.name, args, *span),
             TypeExpr::List(t, _) => Ty::list(self.resolve(t)),
             TypeExpr::Dict(kt, v, _) => {
@@ -2118,6 +2125,10 @@ impl Checker<'_> {
         };
         // (The methods of `Graphics` draw: what `image` returns may be ignored.)
         if recv.has_error() || matches!(recv, Ty::View) || recv == builtins::GRAPHICS || recv == builtins::SCENE {
+            return;
+        }
+        // (`shared.update { … }` changes the shared value: what it gives back may be ignored.)
+        if matches!(recv, Ty::Shared(_)) && name == "update" {
             return;
         }
         let returns_value = match builtins::method_of(&recv, &name) {
@@ -3704,6 +3715,7 @@ impl Checker<'_> {
             ExprKind::GenericName(n, targs) => match self.generic_name_ty(n, targs, callee.span) {
                 Ty::Set(t) if n == "Set" => self.set_init(Some(*t), args, trailing, span, expected),
                 Ty::GpuBuffer(t) if n == "GPUBuffer" => self.gpu_buffer_init(Some(*t), args, trailing, span, expected),
+                Ty::Shared(t) if n == "Shared" => self.shared_init(Some(*t), args, trailing, span, expected),
                 Ty::Struct(id) => {
                     let name = self.structs[id].name.clone();
                     self.call_name(&name, callee.span, args, trailing, span, expected)
@@ -3906,7 +3918,11 @@ impl Checker<'_> {
                     "Data" => return self.data_init(args, trailing, span),
                     "Set" => return self.set_init(None, args, trailing, span, expected),
                     "GPUBuffer" => return self.gpu_buffer_init(None, args, trailing, span, expected),
+                    "Shared" => return self.shared_init(None, args, trailing, span, expected),
                     "background" => return self.background(args, trailing, span),
+                    "serveHTTP" if args.iter().any(|a| a.label.as_ref().is_some_and(|l| l.name == "workers")) => {
+                        return self.serve_workers(args, trailing, span);
+                    }
                     "toJson" | "toBinary" | "fromJson" | "fromBinary" => {
                         return self.codec_call(n, args, trailing, span, expected);
                     }
@@ -4039,7 +4055,67 @@ impl Checker<'_> {
             let what = self.a(&result);
             self.error(work.span, format!("background work can't return {what}")).help(why);
         }
-        // What the work uses from outside: copied in, so it must be plain values.
+        self.thread_captures(body, params, work.span, "background work");
+        if result != Ty::Void && !result.has_error() {
+            self.expect(done, &Ty::func(vec![result], Ty::Void));
+        }
+        builtins::JOB
+    }
+
+    /// `serveHTTP(port:host:workers:start:)`: `start` runs on each of the
+    /// worker threads and makes that thread's block for requests.
+    fn serve_workers(&mut self, args: &[Arg], trailing: Option<&Expr>, span: Span) -> Ty {
+        self.set_callee(Callee::BuiltinFn("serveHTTP workers".into()));
+        let labeled = |l: &str| args.iter().find(|a| a.label.as_ref().is_some_and(|x| x.name == l)).map(|a| &a.value);
+        for a in args {
+            match &a.label {
+                Some(l) if matches!(l.name.as_str(), "port" | "host" | "workers" | "start") => {}
+                Some(l) => {
+                    self.error(l.span, format!("`serveHTTP` with workers has no `{}:`", l.name))
+                        .help("it takes `port:`, `host:`, `workers:` and `start:`");
+                }
+                None => {
+                    self.error(a.value.span, "`serveHTTP`'s values need their labels");
+                }
+            }
+        }
+        match labeled("port") {
+            Some(p) => {
+                self.expect(p, &Ty::Int);
+            }
+            None => {
+                self.error(span, "`serveHTTP` needs a `port:`");
+            }
+        }
+        if let Some(h) = labeled("host") {
+            self.expect(h, &Ty::Str);
+        }
+        if let Some(w) = labeled("workers") {
+            self.expect(w, &Ty::Int);
+        }
+        let Some(start) = labeled("start").or(trailing) else {
+            self.error(span, "with `workers:`, each worker makes its own block for requests: add `start: { … }`")
+                .help("`serveHTTP(port: 8080, workers: 4, start: { { r in respondHTTP(r.id, body: Data(text: \"hi\")) } })`");
+            return Ty::Int;
+        };
+        let ExprKind::Closure { body, params } = &start.kind else {
+            self.error(start.span, "`start:` must be a block, like `start: { makeHandler() }`");
+            return Ty::Int;
+        };
+        if !params.is_empty() {
+            self.error(start.span, "the `start:` block takes no values");
+            return Ty::Int;
+        }
+        let handler = Ty::func(vec![builtins::SERVER_REQUEST], Ty::Void);
+        self.expect(start, &Ty::func(vec![], handler));
+        self.thread_captures(body, params, start.span, "a worker's `start:` block");
+        Ty::Int
+    }
+
+    /// What a block run on another thread (`what`: "background work") uses
+    /// from outside: copied in, so it must be plain values (or functions
+    /// that use none, or `Shared` values).
+    fn thread_captures(&mut self, body: &Block, params: &[Ident], span: Span, what: &str) {
         let mut free = std::collections::BTreeSet::new();
         crate::codegen::free_block(body, &mut params.iter().map(|p| p.name.clone()).collect(), &mut free);
         for name in &free {
@@ -4060,16 +4136,12 @@ impl Checker<'_> {
                 } else {
                     format!("copy what it needs first, like `let input = {name}`, and use that")
                 };
-                self.error(work.span, format!("background work can't use `{name}`: {problem}")).help(help);
-            } else if let Err(why) = self.saveable(&local.ty) {
-                let what = self.a(&local.ty);
-                self.error(work.span, format!("background work can't use `{name}`, which is {what}")).help(why);
+                self.error(span, format!("{what} can't use `{name}`: {problem}")).help(help);
+            } else if let Err(why) = self.sendable(&local.ty) {
+                let kind = self.a(&local.ty);
+                self.error(span, format!("{what} can't use `{name}`, which is {kind}")).help(why);
             }
         }
-        if result != Ty::Void && !result.has_error() {
-            self.expect(done, &Ty::func(vec![result], Ty::Void));
-        }
-        builtins::JOB
     }
 
     /// `Data()`, `Data(bytes: [Int])`, `Data(text: String)`, `Data(float32s:)`
@@ -4211,6 +4283,7 @@ impl Checker<'_> {
             }
             Ty::Fn(..) => Err("functions can't be saved".into()),
             Ty::GpuBuffer(_) => Err("GPU buffers can't be saved; save what `read()` gives".into()),
+            Ty::Shared(_) => Err("a `Shared` value can't be saved; save what `get()` gives".into()),
             Ty::Iface(i) => {
                 // Saved with its type's name, so any conforming type can be loaded back.
                 for (t, _, _) in self.conforms.iter().filter(|(_, j, _)| j == i) {
@@ -4642,7 +4715,7 @@ impl Checker<'_> {
                 self.args(&what, &[p], args, trailing, span);
                 Ty::Void
             }
-            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::GpuBuffer(_) => match builtins::method_of(&recv, n) {
+            Ty::List(_) | Ty::Str | Ty::Dict(..) | Ty::Set(_) | Ty::Float | Ty::Int | Ty::Data | Ty::GpuBuffer(_) | Ty::Shared(_) => match builtins::method_of(&recv, n) {
                 Some(m) => {
                     self.set_callee(Callee::Builtin { recv: recv.clone(), name: n.to_string() });
                     if m.mutating {
@@ -5260,6 +5333,7 @@ impl Checker<'_> {
             Ty::List(e) => format!("[{}]", self.type_key(e)),
             Ty::Dict(k, v) => format!("[{}: {}]", self.type_key(k), self.type_key(v)),
             Ty::Set(e) => format!("Set<{}>", self.type_key(e)),
+            Ty::Shared(e) => format!("Shared<{}>", self.type_key(e)),
             Ty::Opt(e) => format!("{}?", self.type_key(e)),
             Ty::Fn(ps, r) => format!(
                 "fn({}) -> {}",
@@ -5279,6 +5353,7 @@ impl Checker<'_> {
             Ty::Opt(e) => TypeExpr::Optional(Box::new(self.type_expr_of(e, span)), span),
             Ty::Set(e) => TypeExpr::Generic(Ident { name: "Set".into(), span }, vec![self.type_expr_of(e, span)], span),
             Ty::GpuBuffer(e) => TypeExpr::Generic(Ident { name: "GPUBuffer".into(), span }, vec![self.type_expr_of(e, span)], span),
+            Ty::Shared(e) => TypeExpr::Generic(Ident { name: "Shared".into(), span }, vec![self.type_expr_of(e, span)], span),
             Ty::Fn(ps, r) => TypeExpr::Fn(
                 ps.iter().map(|p| self.type_expr_of(p, span)).collect(),
                 (**r != Ty::Void).then(|| Box::new(self.type_expr_of(r, span))),
@@ -5293,7 +5368,7 @@ impl Checker<'_> {
     fn contains_generic(t: &Ty) -> bool {
         match t {
             Ty::Generic(_) => true,
-            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) => Self::contains_generic(e),
+            Ty::List(e) | Ty::Opt(e) | Ty::Set(e) | Ty::Shared(e) => Self::contains_generic(e),
             Ty::Dict(k, v) => Self::contains_generic(k) || Self::contains_generic(v),
             Ty::Fn(ps, r) => ps.iter().any(Self::contains_generic) || Self::contains_generic(r),
             _ => false,
@@ -5405,7 +5480,9 @@ impl Checker<'_> {
             (Ty::Generic(k), a) if params.contains(k) => {
                 binds.entry(*k).or_insert_with(|| a.clone());
             }
-            (Ty::List(p), Ty::List(a)) | (Ty::Opt(p), Ty::Opt(a)) | (Ty::Set(p), Ty::Set(a)) => self.unify(p, a, params, binds),
+            (Ty::List(p), Ty::List(a)) | (Ty::Opt(p), Ty::Opt(a)) | (Ty::Set(p), Ty::Set(a)) | (Ty::Shared(p), Ty::Shared(a)) => {
+                self.unify(p, a, params, binds)
+            }
             (Ty::Opt(p), a) => self.unify(p, a, params, binds),
             (Ty::Dict(pk, pv), Ty::Dict(ak, av)) => {
                 self.unify(pk, ak, params, binds);
@@ -5438,6 +5515,7 @@ impl Checker<'_> {
             Ty::Generic(k) => binds.get(k)?.clone(),
             Ty::List(e) => Ty::list(self.subst(e, binds, span)?),
             Ty::Set(e) => Ty::set(self.subst(e, binds, span)?),
+            Ty::Shared(e) => Ty::Shared(Box::new(self.subst(e, binds, span)?)),
             Ty::Opt(e) => Ty::opt(self.subst(e, binds, span)?),
             Ty::Dict(k, v) => Ty::Dict(Box::new(self.subst(k, binds, span)?), Box::new(self.subst(v, binds, span)?)),
             Ty::Fn(ps, r) => {
@@ -5734,6 +5812,127 @@ impl Checker<'_> {
         Ty::set(t)
     }
 
+    /// `Shared<T>`: `T` is data that every thread may hold (see `thread_data`).
+    fn shared_type(&mut self, targs: &[TypeExpr], span: Span) -> Ty {
+        let [item] = targs else {
+            self.error(span, "`Shared` takes one type, like `Shared<Int>`");
+            return Ty::Error;
+        };
+        let t = self.resolve(item);
+        if let Err(why) = self.thread_data(&t) {
+            let what = self.a(&t);
+            self.error(item.span(), format!("a `Shared` value can't hold {what}")).help(why);
+            return Ty::Error;
+        }
+        Ty::Shared(Box::new(t))
+    }
+
+    /// `Shared(value)`, or `Shared<T>(value)`.
+    fn shared_init(&mut self, elem: Option<Ty>, args: &[Arg], trailing: Option<&Expr>, span: Span, expected: Option<&Ty>) -> Ty {
+        self.set_callee(Callee::BuiltinFn("Shared".into()));
+        let elem = elem.or_else(|| match expected.map(strip_opt) {
+            Some(Ty::Shared(t)) => Some((**t).clone()),
+            _ => None,
+        });
+        let [a] = args else {
+            self.args_unchecked(args, trailing);
+            self.error(span, "write it with the value it starts with: `Shared(0)`, `Shared<[String]>([])`");
+            return Ty::Error;
+        };
+        if trailing.is_some() || a.label.is_some() {
+            self.args_unchecked(args, trailing);
+            self.error(span, "write it with the value it starts with, without a label: `Shared(0)`");
+            return Ty::Error;
+        }
+        let t = match &elem {
+            Some(t) => self.expect(&a.value, t),
+            None => self.expr(&a.value, None),
+        };
+        if let Some(f) = self.frames.last_mut() {
+            f.args = vec![Some(ArgRef::Arg(0))];
+        }
+        let t = elem.unwrap_or(t);
+        if t.has_error() {
+            return Ty::Error;
+        }
+        if let Err(why) = self.thread_data(&t) {
+            let what = self.a(&t);
+            self.error(a.value.span, format!("a `Shared` value can't hold {what}")).help(why);
+            return Ty::Error;
+        }
+        Ty::Shared(Box::new(t))
+    }
+
+    /// Whether every thread may hold a value of type `t`: data (numbers,
+    /// text, lists, dictionaries, structs, enums, `Shared` values), not
+    /// functions, views or interface values, whose insides can't be
+    /// marked for other threads.
+    fn thread_data(&self, t: &Ty) -> Result<(), String> {
+        fn walk(c: &Checker<'_>, t: &Ty, seen: &mut Vec<Ty>) -> Result<(), String> {
+            if seen.contains(t) {
+                return Ok(());
+            }
+            match t {
+                Ty::Fn(..) => Err("it can hold data, not functions".into()),
+                Ty::View => Err("it can hold data, not views".into()),
+                Ty::Iface(_) => Err("it can hold data, not interface values: use the struct or an enum".into()),
+                Ty::GpuBuffer(_) => Err("a GPU buffer belongs to the thread that made it".into()),
+                Ty::List(e) | Ty::Set(e) | Ty::Opt(e) => walk(c, e, seen),
+                Ty::Dict(k, v) => walk(c, k, seen).and_then(|_| walk(c, v, seen)),
+                Ty::Struct(id) => {
+                    seen.push(t.clone());
+                    for f in &c.structs[*id].fields {
+                        walk(c, &f.ty, seen).map_err(|e| format!("field `{}`: {e}", f.name))?;
+                    }
+                    Ok(())
+                }
+                Ty::Enum(id) => {
+                    seen.push(t.clone());
+                    for case in &c.enums[*id].cases {
+                        for f in &case.fields {
+                            walk(c, &f.ty, seen).map_err(|e| format!("case `{}`: {e}", case.name))?;
+                        }
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        }
+        walk(self, t, &mut Vec::new())
+    }
+
+    /// Whether a value of type `t` can go to another thread (what `work:`
+    /// and `start:` blocks use): data that can be saved (it goes as a copy),
+    /// or data that every thread may hold, functions included (a function
+    /// must use no values from where it was made: checked when it goes).
+    fn sendable(&self, t: &Ty) -> Result<(), String> {
+        let saved = self.saveable(t);
+        if saved.is_ok() {
+            return saved;
+        }
+        fn walk(c: &Checker<'_>, t: &Ty, seen: &mut Vec<Ty>) -> bool {
+            if seen.contains(t) {
+                return true;
+            }
+            match t {
+                Ty::View | Ty::Iface(_) | Ty::GpuBuffer(_) => false,
+                Ty::Fn(ps, r) => ps.iter().all(|p| walk(c, p, seen)) && walk(c, r, seen),
+                Ty::List(e) | Ty::Set(e) | Ty::Opt(e) => walk(c, e, seen),
+                Ty::Dict(k, v) => walk(c, k, seen) && walk(c, v, seen),
+                Ty::Struct(id) => {
+                    seen.push(t.clone());
+                    c.structs[*id].fields.iter().all(|f| walk(c, &f.ty, seen))
+                }
+                Ty::Enum(id) => {
+                    seen.push(t.clone());
+                    c.enums[*id].cases.iter().all(|k| k.fields.iter().all(|f| walk(c, &f.ty, seen)))
+                }
+                _ => true,
+            }
+        }
+        if walk(self, t, &mut Vec::new()) { Ok(()) } else { saved }
+    }
+
     /// `GPUBuffer<T>`: `T` is `Float32` or `Int` (32-bit on the GPU).
     fn gpu_buffer_type(&mut self, targs: &[TypeExpr], span: Span) -> Ty {
         let [item] = targs else {
@@ -5861,6 +6060,9 @@ impl Checker<'_> {
         }
         if n == "GPUBuffer" {
             return self.gpu_buffer_type(targs, span);
+        }
+        if n == "Shared" {
+            return self.shared_type(targs, span);
         }
         let args: Vec<Ty> = targs.iter().map(|a| self.resolve(a)).collect();
         // (`Stack<Int>`: the name is what it starts with.)
@@ -6161,7 +6363,7 @@ fn math_arity(n: &str) -> usize {
 
 fn equatable(t: &Ty) -> bool {
     match t {
-        Ty::Fn(..) | Ty::View | Ty::Any | Ty::GpuBuffer(_) => false,
+        Ty::Fn(..) | Ty::View | Ty::Any | Ty::GpuBuffer(_) | Ty::Shared(_) => false,
         Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => equatable(t),
         Ty::Dict(k, v) => equatable(k) && equatable(v),
         _ => true,
@@ -6248,13 +6450,15 @@ fn path_steps(e: &Expr, out: &mut Vec<Step>) {
 struct Owned {
     roots: HashSet<String>,
     loops: HashMap<String, (String, Vec<Step>)>,
+    /// Names declared in the method (they hide its type's methods).
+    locals: HashSet<String>,
 }
 
 impl Owned {
     fn new(roots: &HashSet<String>) -> Owned {
         let mut roots = roots.clone();
         roots.insert("self".into());
-        Owned { roots, loops: HashMap::new() }
+        Owned { roots, loops: HashMap::new(), locals: HashSet::new() }
     }
 
     /// Is `e` (a path) inside something the method's value owns?
@@ -6278,6 +6482,16 @@ impl Owned {
     fn shadow(&mut self, name: &str) {
         self.roots.remove(name);
         self.loops.remove(name);
+        self.locals.insert(name.to_string());
+    }
+
+    /// A copy in which `names` are declared (in a block of their own).
+    fn hiding<'n>(&self, names: impl IntoIterator<Item = &'n str>) -> Owned {
+        let mut inner = self.clone();
+        for n in names {
+            inner.shadow(n);
+        }
+        inner
     }
 
     /// Inside `for var in iter`: if `iter` is a list the value owns, `var`
@@ -6311,7 +6525,11 @@ fn walk_owned<'a>(b: &'a Block, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &Owned
                 walk_owned_expr(&d.value, &own, f);
                 own.shadow(&d.name.name);
             }
-            Stmt::Fn(d) => walk_owned(&d.body, &own, f),
+            Stmt::Fn(d) => {
+                own.shadow(&d.name.name);
+                let inner = own.hiding(d.params.iter().map(|p| p.name.name.as_str()));
+                walk_owned(&d.body, &inner, f);
+            }
             Stmt::Assign { target, value, .. } => {
                 f(Visit::Write(target), &own);
                 walk_owned_expr(target, &own, f);
@@ -6328,9 +6546,15 @@ fn walk_owned<'a>(b: &'a Block, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &Owned
             }
             Stmt::While { cond, body, .. } => {
                 match cond {
-                    Cond::Expr(c) | Cond::Let(_, _, c) => walk_owned_expr(c, &own, f),
+                    Cond::Expr(c) => {
+                        walk_owned_expr(c, &own, f);
+                        walk_owned(body, &own, f);
+                    }
+                    Cond::Let(name, _, c) => {
+                        walk_owned_expr(c, &own, f);
+                        walk_owned(body, &own.hiding([name.name.as_str()]), f);
+                    }
                 }
-                walk_owned(body, &own, f);
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Expr(e) => walk_owned_expr(e, &own, f),
@@ -6375,12 +6599,19 @@ fn walk_owned_expr<'a>(e: &'a Expr, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &O
             }
         }
         ExprKind::Member { object, .. } => w(object),
-        ExprKind::Closure { body, .. } | ExprKind::Block(body) => walk_owned(body, own, f),
+        ExprKind::Closure { params, body } => walk_owned(body, &own.hiding(params.iter().map(|p| p.name.as_str())), f),
+        ExprKind::Block(body) => walk_owned(body, own, f),
         ExprKind::If { cond, then, otherwise } => {
             match cond {
-                Cond::Expr(c) | Cond::Let(_, _, c) => walk_owned_expr(c, own, f),
+                Cond::Expr(c) => {
+                    walk_owned_expr(c, own, f);
+                    walk_owned(then, own, f);
+                }
+                Cond::Let(name, _, c) => {
+                    walk_owned_expr(c, own, f);
+                    walk_owned(then, &own.hiding([name.name.as_str()]), f);
+                }
             }
-            walk_owned(then, own, f);
             match otherwise {
                 Some(Else::Block(b)) => walk_owned(b, own, f),
                 Some(Else::If(x)) => walk_owned_expr(x, own, f),
@@ -6390,7 +6621,11 @@ fn walk_owned_expr<'a>(e: &'a Expr, own: &Owned, f: &mut dyn FnMut(Visit<'a>, &O
         ExprKind::Match { subject, arms } => {
             walk_owned_expr(subject, own, f);
             for a in arms {
-                walk_owned_expr(&a.body, own, f);
+                let bound = a.patterns.iter().flat_map(|p| match p {
+                    Pattern::Case { bindings, .. } => bindings.iter().map(|b| b.name.as_str()).collect(),
+                    _ => Vec::new(),
+                });
+                walk_owned_expr(&a.body, &own.hiding(bound), f);
             }
         }
         _ => {}
@@ -6405,6 +6640,8 @@ fn method_calls(b: &Block, roots: &HashSet<String>) -> Vec<MethodCall> {
         let Visit::Expr(e) = v else { return };
         let ExprKind::Call { callee, args, .. } = &e.kind else { return };
         let call = match &callee.kind {
+            // (A local function value of the same name is not the method.)
+            ExprKind::Name(name) if own.locals.contains(name) => return,
             ExprKind::Name(name) => MethodCall::Own(name.clone()),
             ExprKind::Member { object, name, .. } => match &object.kind {
                 ExprKind::Name(n) if n == "self" => MethodCall::Own(name.name.clone()),

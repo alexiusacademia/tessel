@@ -25,6 +25,9 @@ pub enum Ty {
     /// `GPUBuffer<T>` (`T` is `Float32` or `Int`): numbers kept on the GPU
     /// between kernel runs (see docs/gpu.md). A handle: copies share it.
     GpuBuffer(Box<Ty>),
+    /// `Shared<T>`: one value for all threads, read and changed under a
+    /// lock. A handle: copies share it.
+    Shared(Box<Ty>),
     Opt(Box<Ty>),
     Fn(Vec<Ty>, Box<Ty>),
     Struct(usize),
@@ -71,7 +74,7 @@ impl Ty {
     pub fn has_error(&self) -> bool {
         match self {
             Ty::Error | Ty::Generic(_) => true,
-            Ty::List(t) | Ty::Opt(t) | Ty::Set(t) => t.has_error(),
+            Ty::List(t) | Ty::Opt(t) | Ty::Set(t) | Ty::Shared(t) => t.has_error(),
             Ty::Dict(k, v) => k.has_error() || v.has_error(),
             Ty::Fn(ps, r) => ps.iter().any(Ty::has_error) || r.has_error(),
             _ => false,

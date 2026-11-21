@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Connection: keep-alive
+Set-Cookie: a=1; Path=/
+Set-Cookie: b=2; Path=/
+X-Note: one
+X-Note: X-Injected: no
+
+hi /firstHTTP/1.1 200 OK
+Set-Cookie: a=1; Path=/
+Set-Cookie: b=2; Path=/
+X-Note: one
+X-Note: X-Injected: no
+
+hi /second

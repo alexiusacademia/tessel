@@ -1,0 +1,73 @@
+// serveHTTP with workers: requests are handled on worker threads, each
+// with its own block made by `start:`. A Shared value counts across them;
+// a worker's timers, background work and requests come back to it; and a
+// worker that hits a runtime error answers 500 and is replaced.
+
+let hits = Shared(0)
+
+fn handler(_ greeting: String, _ other: String) -> fn(ServerRequest) {
+    { r in
+        let n = hits.update { h in h + 1 }
+        match r.path {
+            "/hello" -> respondHTTP(r.id, body: Data(text: "{greeting} {n > 0}"))
+            "/later" -> {
+                after(seconds: 0.05) {
+                    respondHTTP(r.id, body: Data(text: "later"))
+                }
+            }
+            "/work" -> {
+                background(work: { [3, 4, 5].sum() }) { total in
+                    respondHTTP(r.id, body: Data(text: "worked {total}"))
+                }
+            }
+            "/ask" -> {
+                request(url: "{other}/answer") { a in
+                    respondHTTP(r.id, body: Data(text: "asked: {a.text}"))
+                }
+            }
+            "/crash" -> {
+                let list = [1, 2, 3]
+                print("never: {list[r.query.count + 5]}")
+            }
+            _ -> respondHTTP(r.id, status: 404)
+        }
+    }
+}
+
+fn main() {
+    let helper = serveHTTP(port: 0) { r in
+        respondHTTP(r.id, body: Data(text: "42"))
+    }
+    let other = "http://127.0.0.1:{tcpPort(helper)}"
+    let greeting = "hi"
+    let server = serveHTTP(port: 0, workers: 3, start: { handler(greeting, other) })
+    print("serving: {server > 0}")
+    let base = "http://127.0.0.1:{tcpPort(server)}"
+    request(url: "{base}/hello") { a in
+        print("hello: {a.status} {a.text}")
+        request(url: "{base}/later") { b in
+            print("later: {b.status} {b.text}")
+            request(url: "{base}/work") { c in
+                print("work: {c.status} {c.text}")
+                request(url: "{base}/ask") { d in
+                    print("ask: {d.status} {d.text}")
+                    request(url: "{base}/crash") { e in
+                        print("crash: {e.status} {e.text}")
+                        var left = 6
+                        for _ in 0..6 {
+                            request(url: "{base}/hello") { f in
+                                left -= 1
+                                if left == 0 {
+                                    print("after the crash: {f.status} {f.text}")
+                                    print("hits: {hits.get()}")
+                                    stopHTTP(server)
+                                    stopHTTP(helper)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

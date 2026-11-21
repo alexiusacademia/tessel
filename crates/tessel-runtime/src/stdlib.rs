@@ -294,6 +294,20 @@ pub unsafe extern "C" fn tsl_random_int(lo: i64, hi: i64, loc: *const crate::Loc
     (lo as i128 + (random_u64() as u128 % span) as i128) as i64
 }
 
+/// `randomBytes(count)`: bytes from the system's secure random number
+/// generator, for keys, tokens and salts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsl_random_bytes(count: i64, loc: *const crate::Loc) -> *mut Str {
+    if count < 0 {
+        unsafe { crate::panic_at(loc, &format!("can't make {count} random bytes")) };
+    }
+    let mut bytes = vec![0u8; count as usize];
+    if let Err(e) = getrandom::fill(&mut bytes) {
+        unsafe { crate::panic_at(loc, &format!("the system gave no random bytes: {e}")) };
+    }
+    crate::codec::data_new(&bytes)
+}
+
 /// `randomFloat()`: from 0 up to, not including, 1.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_random_float() -> f64 {

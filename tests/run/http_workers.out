@@ -1,0 +1,8 @@
+serving: true
+hello: 200 hi true
+later: 200 later
+work: 200 worked 12
+ask: 200 asked: 42
+crash: 500 Internal Server Error
+after the crash: 200 hi true
+hits: 11

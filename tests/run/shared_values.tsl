@@ -1,0 +1,63 @@
+// Shared values: one value for all threads, changed under a lock.
+struct Note {
+    id: Int
+    text: String
+}
+
+let hits = Shared(0)
+let notes = Shared<[Note]>([])
+
+fn bump() -> Int {
+    hits.update { n in n + 1 }
+}
+
+fn twice(_ f: fn(Int) -> Int, _ x: Int) -> Int {
+    f(f(x))
+}
+
+fn addTen(_ x: Int) -> Int {
+    x + 10
+}
+
+fn main() {
+    print(hits.get())
+    print(bump(), bump())
+    hits.set(40)
+    print(hits.update { n in n + 2 })
+    notes.update { list in list + [Note(id: 1, text: "first")] }
+    let more = notes.update { list in
+        var l = list
+        l.append(Note(id: 2, text: "second"))
+        l
+    }
+    print(more.count, notes.get()[1].text)
+    let nested = notes.update { list in
+        print("inside: {notes.get().count}")
+        list
+    }
+    print(nested.count)
+    let local = Shared(["a": 1])
+    let copy = local
+    copy.set(["b": 2])
+    print(local.get())
+
+    // Many threads at once.
+    var done = 0
+    let counter = Shared(0)
+    for _ in 0..8 {
+        background(work: {
+            for _ in 0..1000 {
+                counter.update { n in n + 1 }
+            }
+            0
+        }) { _ in
+            done += 1
+            if done == 8 {
+                print("counter: {counter.get()}")
+            }
+        }
+    }
+    // A top-level function goes to another thread.
+    let f: fn(Int) -> Int = addTen
+    background(work: { twice(f, 1) }) { r in print("twice: {r}") }
+}

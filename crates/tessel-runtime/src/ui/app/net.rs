@@ -635,6 +635,9 @@ fn run_socket(id: u64, url: &str, rx: mpsc::Receiver<Outgoing>) -> String {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_send_web_socket(id: i64, text: *const Str) -> u8 {
     let text = unsafe { str_text(text) }.to_string();
+    if let Some(open) = super::sockets::ws_send(id as u64, false, text.as_bytes()) {
+        return open as u8;
+    }
     SOCKETS.with(|s| s.borrow().get(&(id as u64)).is_some_and(|socket| socket.send.send(Outgoing::Text(text)).is_ok())) as u8
 }
 
@@ -642,12 +645,18 @@ pub unsafe extern "C" fn tsl_send_web_socket(id: i64, text: *const Str) -> u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsl_send_web_socket_data(id: i64, data: *const Str) -> u8 {
     let bytes = unsafe { crate::codec::data_bytes(data) }.to_vec();
+    if let Some(open) = super::sockets::ws_send(id as u64, true, &bytes) {
+        return open as u8;
+    }
     SOCKETS.with(|s| s.borrow().get(&(id as u64)).is_some_and(|socket| socket.send.send(Outgoing::Bytes(bytes)).is_ok())) as u8
 }
 
 /// `closeWebSocket(id)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn tsl_close_web_socket(id: i64) {
+    if super::sockets::ws_close(id as u64) {
+        return;
+    }
     SOCKETS.with(|s| {
         if let Some(socket) = s.borrow().get(&(id as u64)) {
             let _ = socket.send.send(Outgoing::Close);

@@ -1,0 +1,39 @@
+// Shared values and workers: what they can't hold or use.
+
+interface Shape {
+}
+
+struct Item {
+    name: String
+}
+
+let names = Shared<[String]>([])
+
+fn handler() -> fn(ServerRequest) {
+    { r in respondHTTP(r.id) }
+}
+
+app Demo {
+    state count = 0
+
+    VStack {
+        Text("{count}")
+    }
+    .onAppear {
+        let s = Shared<fn()>({ }) // error: a `Shared` value can't hold `fn()`
+        let t = Shared({ x in x }) // error: can't tell the types of this block's parameters
+        let g = Shared // error: `Shared` must be called: `Shared(…)`
+        let u = Shared(1, 2) // error: write it with the value it starts with: `Shared(0)`, `Shared<[String]>([])`
+        let v = Shared(label: 1) // error: write it with the value it starts with, without a label: `Shared(0)`
+        print(names == names) // error: `Shared<[String]>` values can't be compared with `==`
+        let a = serveHTTP(port: 0, workers: 2) // error: with `workers:`, each worker makes its own block for requests: add `start: { … }`
+        let b = serveHTTP(port: 0, workers: 2, start: handler) // error: `start:` must be a block, like `start: { makeHandler() }`
+        let c = serveHTTP(port: 0, workers: 2, start: { r in }) // error: the `start:` block takes no values
+        let d = serveHTTP(port: 0, workers: 2, start: { handler() }, onRequest: { r in }) // error: `serveHTTP` with workers has no `onRequest:`
+        let e = serveHTTP(port: 0, workers: 2, start: { // error: a worker's `start:` block can't use `count`: `count` is `state`, which the app keeps changing
+            print(count)
+            return handler()
+        })
+        let f = serveHTTP(port: 0, workers: 2, start: { 5 }) // error: expected `fn(ServerRequest)`, found `Int`
+    }
+}

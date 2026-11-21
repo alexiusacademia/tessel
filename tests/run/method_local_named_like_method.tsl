@@ -1,0 +1,44 @@
+// A local function value named like a changing method is the local (#81).
+struct Box {
+    items: [Int] = []
+    hook: fn(Int)? = nil
+
+    fn add(_ n: Int) {
+        items.append(n)
+    }
+
+    fn fire() {
+        if let add = hook {
+            add(1)
+        }
+    }
+}
+
+fn fireAll(_ b: Box) {
+    b.fire()
+}
+
+fn main() {
+    fireAll(Box(hook: { n in print("hook {n}") }))
+    runIt(Router(hook: { x, k in k(x * 10) }))
+}
+
+struct Router {
+    routes: [Int] = []
+    hook: fn(Int, fn(Int))? = nil
+    fn later(_ n: Int) { routes.append(n) }
+    fn run() {
+        relay({ x, done in
+            if let later = hook {
+                later(x, done)
+            }
+        })
+        let add: fn(Int) = { n in print("closure {n}") }
+        add(2)
+        apply({ later in later(3, { v in print("v {v}") }) })
+    }
+}
+
+fn relay(_ f: fn(Int, fn(Int))) { f(1, { n in print("done {n}") }) }
+fn apply(_ f: fn(fn(Int, fn(Int)))) { f({ a, k in k(a) }) }
+fn runIt(_ r: Router) { r.run() }

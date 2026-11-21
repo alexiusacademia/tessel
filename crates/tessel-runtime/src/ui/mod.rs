@@ -67,6 +67,7 @@ use std::hash::{Hash, Hasher};
 use crate::{tsl_release, tsl_retain, Header, Str, TslType};
 
 pub use app::{on_reload, run_on_ui, run_until_idle, tsl_ui_hot, tsl_ui_run};
+pub(crate) use app::worker_failed;
 pub use theme::tsl_is_dark_mode;
 #[cfg(target_os = "macos")]
 #[doc(hidden)]

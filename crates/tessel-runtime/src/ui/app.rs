@@ -57,6 +57,10 @@
 
 mod net;
 mod sockets;
+mod threads;
+
+pub(crate) use threads::worker_failed;
+pub(crate) use threads::StartFn;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -290,21 +294,14 @@ enum Event {
     Call(usize),
     /// Something a socket did (see `sockets`).
     Socket(sockets::Note),
+    /// A worker's server stopped: its loop ends (see `threads`).
+    Stop,
 }
-
-static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
-/// Set when an event is posted, for loops without a window to wait on.
-static POSTED: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
 
 /// Waits until background work posts an event, or `limit` passes (without
 /// a window: a window's event loop is woken instead).
 fn wait_for_events(limit: Duration) {
-    let (posted, cv) = &POSTED;
-    let mut p = posted.lock().unwrap();
-    if !*p {
-        p = cv.wait_timeout(p, limit).unwrap().0;
-    }
-    *p = false;
+    threads::this_box().wait(limit);
 }
 /// Wakes the window's event loop when background work produces something.
 static WAKE: Mutex<Option<EventLoopProxy<()>>> = Mutex::new(None);
@@ -322,14 +319,16 @@ thread_local! {
     /// `background` work still running: the blocks that get its result and
     /// its progress.
     static COMPUTING: RefCell<HashMap<u64, (Callback, Option<Callback>, Discard)>> = RefCell::new(HashMap::new());
-    static NEXT_ID: Cell<u64> = const { Cell::new(0) };
 }
 
+/// Ids of timers, loads, commands, jobs and sockets: one series for all
+/// threads, so an id says which thread it belongs to (see `threads`).
+static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 fn next_id() -> u64 {
-    NEXT_ID.with(|n| {
-        n.set(n.get() + 1);
-        n.get()
-    })
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    threads::own(id);
+    id
 }
 
 /// Wakes the app's loop (something waits for it that isn't an `Event`).
@@ -344,12 +343,18 @@ pub(crate) fn wake() {
 /// delivery hasn't started: one wake at a time is enough.
 static WAKE_SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Hands an event to the thread it belongs to: a worker's, or the main
+/// thread's.
 fn post(event: Event) {
-    EVENTS.lock().unwrap().push(event);
+    if let Some(event) = threads::route(event) {
+        post_main(event);
+    }
+}
+
+/// Hands an event to the main thread's loop.
+fn post_main(event: Event) {
     // A loop waiting without a window (`fn main`, headless runs) goes on now.
-    let (posted, cv) = &POSTED;
-    *posted.lock().unwrap() = true;
-    cv.notify_all();
+    threads::MAIN.put(event);
     // A wake for each result would starve timers and drawing: winit hands
     // the app wakes for as long as more arrive, and a result's block can
     // start work that finishes before the next wake is looked for (#56).
@@ -579,7 +584,7 @@ fn take_progress(id: u64) -> Option<(f64, String)> {
 
 /// Runs the blocks for finished background work. Returns whether any ran.
 fn deliver_background() -> bool {
-    let events: Vec<Event> = std::mem::take(&mut *EVENTS.lock().unwrap());
+    let events: Vec<Event> = threads::this_box().take();
     let ran = !events.is_empty();
     for event in events {
         match event {
@@ -633,6 +638,7 @@ fn deliver_background() -> bool {
                 f();
             }
             Event::Socket(note) => sockets::deliver(note),
+            Event::Stop => threads::stop_this(),
             other => net::deliver(other),
         }
     }

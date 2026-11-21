@@ -1,0 +1,108 @@
+// An answer sent in pieces (startHTTP, sendHTTP, endHTTP: in chunks, or
+// as they are with a Content-Length), and WebSockets a server accepts
+// (acceptWebSocket), on the main thread and on a worker.
+
+let workerLog = Shared<[String]>([])
+
+fn wsHandler() -> fn(ServerRequest) {
+    { r in
+        var id = -1
+        id = acceptWebSocket(r.id, onMessage: { text in
+            sendWebSocket(id, text: "worker echo: {text}")
+        }) { reason in
+            workerLog.update { log in log + ["worker ws closed: {reason}"] }
+        }
+    }
+}
+
+fn main() {
+    var log: [String] = []
+    var server = -1
+    server = serveHTTP(port: 0) { r in
+        match r.path {
+            "/stream" -> {
+                print("started: {startHTTP(r.id, headers: ["Content-Type": "text/plain"])}")
+                print("respond while streaming: {respondHTTP(r.id)}")
+                var n = 0
+                var timer = 0
+                timer = every(seconds: 0.02) {
+                    n += 1
+                    sendHTTP(r.id, data: Data(text: "piece {n}\n"))
+                    if n == 3 {
+                        stopTimer(timer)
+                        print("ended: {endHTTP(r.id)}, again: {endHTTP(r.id)}, send after: {sendHTTP(r.id, data: Data())}")
+                    }
+                }
+            }
+            "/sized" -> {
+                startHTTP(r.id, headers: ["Content-Length": "10"])
+                sendHTTP(r.id, data: Data(text: "hello"))
+                sendHTTP(r.id, data: Data(text: "world"))
+                endHTTP(r.id)
+            }
+            "/ws" -> {
+                var id = -1
+                id = acceptWebSocket(r.id, onMessage: { text in
+                    log.append("server got: {text}")
+                    sendWebSocket(id, text: "echo: {text}")
+                }, onData: { data in
+                    log.append("server got {data.count} bytes")
+                    sendWebSocketData(id, data: data + Data(bytes: [9]))
+                }) { reason in
+                    log.append("server ws closed: {reason}")
+                }
+                print("accepted: {id > 0}, again: {acceptWebSocket(r.id, onMessage: { t in }) { why in }}")
+            }
+            "/notws" -> {
+                print("not a websocket: {acceptWebSocket(r.id, onMessage: { t in }) { why in }}")
+                respondHTTP(r.id, status: 400)
+            }
+            _ -> respondHTTP(r.id, status: 404)
+        }
+    }
+    let base = "127.0.0.1:{tcpPort(server)}"
+    request(url: "http://{base}/stream", onData: { piece in
+        print("client piece: {(piece.text ?? "").trim()}")
+    }) { r in
+        print("stream: {r.status} {r.headers["transfer-encoding"] ?? "-"}")
+        request(url: "http://{base}/sized") { r in
+            print("sized: {r.status} {r.text} {r.headers["content-length"] ?? "-"}")
+            request(url: "http://{base}/notws") { r in
+                print("notws: {r.status}")
+                var ws = -1
+                var got = 0
+                ws = openWebSocket(url: "ws://{base}/ws", onMessage: { text in
+                    print("client got: {text}")
+                    got += 1
+                    if got == 2 {
+                        closeWebSocket(ws)
+                    }
+                }, onData: { data in
+                    print("client got bytes: {data.bytes}")
+                    sendWebSocket(ws, text: "last")
+                }) { reason in
+                    print("client closed: {reason}")
+                    let workers = serveHTTP(port: 0, workers: 2, start: { wsHandler() })
+                    var w = -1
+                    w = openWebSocket(url: "ws://127.0.0.1:{tcpPort(workers)}/ws", onMessage: { text in
+                        print("client got: {text}")
+                        closeWebSocket(w)
+                    }) { reason in
+                        print("worker client closed: {reason}")
+                        after(seconds: 0.2) {
+                            for line in log {
+                                print(line)
+                            }
+                            print(workerLog.get())
+                            stopHTTP(workers)
+                            stopHTTP(server)
+                        }
+                    }
+                    sendWebSocket(w, text: "hello worker")
+                }
+                sendWebSocket(ws, text: "hello")
+                sendWebSocketData(ws, data: Data(bytes: [1, 2, 3]))
+            }
+        }
+    }
+}
