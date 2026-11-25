@@ -1,6 +1,6 @@
 ---
 title: Built with Tessel
-description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a media player, a subtitle editor, a PDF editor, a CAD app, a BitTorrent client, a math notebook and engineering apps among them.
+description: Desktop apps written in Tessel, a spreadsheet, a word processor, a project scheduler, a media player, a subtitle editor, a PDF editor, a CAD app, a BIM app, a BitTorrent client, a math notebook and engineering apps among them.
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
@@ -17,6 +17,7 @@ import reel from '../../assets/showcase/reel.jpg';
 import leaf from '../../assets/showcase/leaf.jpg';
 import draftwork from '../../assets/showcase/draftwork.jpg';
 import terrace from '../../assets/showcase/terrace.jpg';
+import forma from '../../assets/showcase/forma.jpg';
 import swarm from '../../assets/showcase/swarm.jpg';
 import subtle from '../../assets/showcase/subtle.jpg';
 import ide from '../../assets/screens/ide.png';
@@ -195,6 +196,27 @@ About 240,000 lines of Tessel, built on Draftwork's CAD core, with about
 heights match PROJ's EGM2008.
 
 <LinkButton href="https://terrace.syncster.dev/" icon="external">terrace.syncster.dev</LinkButton>
+
+</section>
+
+<section>
+
+<Image src={forma} loading="eager" alt="Forma with a two-storey house open: the Project Browser listing views, schedules and sheets, the Level 1 plan beside a shaded 3D view, and sheet A101 with its plans, section and door schedule below them" />
+
+## Forma
+
+Building information modeling with Revit's scope, and its tools, words and
+shortcuts: walls, floors, roofs, stairs and curtain walls; beams, columns,
+rebar and an analytical model solved for each load combination; ducts, pipes
+and systems that size themselves; and plans, sections, schedules and sheets
+drawn from the one model and redrawn when it changes. It has a family editor,
+phases, design options and worksharing, renders photoreal views, and reads and
+writes IFC, exports DWG, DXF and PDF, and links DWG drawings.
+
+About 160,000 lines of Tessel, with about 7,100 tests checking it against
+IfcOpenShell, OpenSees, Shapely, trimesh and the ODA File Converter.
+
+<LinkButton href="https://forma.syncster.dev/" icon="external">forma.syncster.dev</LinkButton>
 
 </section>
 
