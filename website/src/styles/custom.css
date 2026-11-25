@@ -1,14 +1,16 @@
-/* Tessel brand colors (blue → indigo → purple, like the logo). */
+/* Tessel brand colors: the logo's cyan (#40C0DB). Light mode uses a
+   deeper teal, since the logo's cyan is too pale for text on white. */
 :root {
-	--sl-color-accent-low: #0d1f3d;
-	--sl-color-accent: #0a84ff;
-	--sl-color-accent-high: #b8d9ff;
-	--tessel-gradient: linear-gradient(135deg, #0a84ff, #5e5ce6 55%, #bf5af2);
+	--sl-color-accent-low: #0c2e36;
+	--sl-color-accent: #40c0db;
+	--sl-color-accent-high: #bfeef7;
+	--tessel-gradient: linear-gradient(135deg, #8ae3f2, #40c0db 50%, #1f8fb0);
 }
 :root[data-theme='light'] {
-	--sl-color-accent-low: #d6e8ff;
-	--sl-color-accent: #0063d1;
-	--sl-color-accent-high: #0b2a52;
+	--sl-color-accent-low: #d3f2f8;
+	--sl-color-accent: #0a7088;
+	--sl-color-accent-high: #08343e;
+	--tessel-gradient: linear-gradient(135deg, #1597b4, #0a6b82);
 }
 
 .hero .tagline {
