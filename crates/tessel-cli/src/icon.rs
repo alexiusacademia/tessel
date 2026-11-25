@@ -315,10 +315,13 @@ mod tests {
     fn tessel_icon() {
         let icon = Icon::of_program(None, None).unwrap();
         assert_eq!(icon.size, 1024);
-        // A corner is transparent; the middle (between the tiles) is white.
+        // A corner is transparent; the middle (inside the T's stem) is the
+        // dark gray, and the T's top bar above it is cyan.
         assert_eq!(icon.rgba[3], 0);
         let middle = (512 * 1024 + 512) * 4;
-        assert_eq!(icon.rgba[middle..middle + 4], [255, 255, 255, 255]);
+        assert_eq!(icon.rgba[middle..middle + 4], [33, 36, 41, 255]);
+        let bar = (377 * 1024 + 512) * 4;
+        assert_eq!(icon.rgba[bar..bar + 4], [64, 192, 219, 255]);
     }
 
     #[test]
